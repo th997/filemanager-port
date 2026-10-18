@@ -1,0 +1,13 @@
+[package]
+name = "fm-ops"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fm-core.workspace = true
+fm-vfs.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

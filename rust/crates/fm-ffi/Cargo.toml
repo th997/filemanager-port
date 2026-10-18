@@ -1,0 +1,18 @@
+[package]
+name = "fm-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "fm_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+fm-core.workspace = true
+fm-vfs.workspace = true
+fm-local.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+flutter_rust_bridge = "2.13.0"
