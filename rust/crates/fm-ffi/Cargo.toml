@@ -1,5 +1,5 @@
 [package]
-name = "fm-ffi"
+name = "fm_ffi"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,4 +15,4 @@ fm-vfs.workspace = true
 fm-local.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
-flutter_rust_bridge = "2.13.0"
+flutter_rust_bridge = "=2.13.0"

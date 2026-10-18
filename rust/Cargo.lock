@@ -310,18 +310,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fm-ffi"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "flutter_rust_bridge",
- "fm-core",
- "fm-local",
- "fm-vfs",
- "tokio",
-]
-
-[[package]]
 name = "fm-index"
 version = "0.1.0"
 dependencies = [
@@ -383,6 +371,18 @@ dependencies = [
  "async-trait",
  "fm-core",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "fm_ffi"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "flutter_rust_bridge",
+ "fm-core",
+ "fm-local",
+ "fm-vfs",
  "tokio",
 ]
 

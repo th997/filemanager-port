@@ -1,12 +1,14 @@
 # Rust
 rust/target/
+rust/crates/*/target/
+rust/crates/*/Cargo.lock
 **/*.rs.bk
 
 # Flutter / Dart
-app/.dart_tool/
-app/.flutter-plugins
-app/.flutter-plugins-dependencies
-app/.packages
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
 app/build/
 app/ios/Pods/
 app/ios/.symlinks/
