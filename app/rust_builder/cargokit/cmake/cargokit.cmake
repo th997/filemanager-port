@@ -34,10 +34,26 @@ function(apply_cargokit target manifest_dir lib_name any_symbol_name)
     endif()
     set(CARGOKIT_OHOS_SDK_HOME $ENV{OHOS_SDK_HOME})
 
-    get_filename_component(RESOLVED_MANIFEST_DIR "${cargokit_cmake_root}/../${manifest_dir}" ABSOLUTE)
-    if (NOT EXISTS "${RESOLVED_MANIFEST_DIR}/Cargo.toml")
+    set(FOUND_MANIFEST_DIR "")
+    foreach(BASE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/${manifest_dir}"
+        "${cargokit_cmake_root}/../${manifest_dir}"
+        "${CMAKE_SOURCE_DIR}/../../rust/crates/fm-ffi"
+        "${CMAKE_SOURCE_DIR}/../../${manifest_dir}"
+    )
+        get_filename_component(CHECK_DIR "${BASE_DIR}" ABSOLUTE)
+        if (EXISTS "${CHECK_DIR}/Cargo.toml")
+            set(FOUND_MANIFEST_DIR "${CHECK_DIR}")
+            break()
+        endif()
+    endforeach()
+
+    if (FOUND_MANIFEST_DIR)
+        set(RESOLVED_MANIFEST_DIR "${FOUND_MANIFEST_DIR}")
+    else()
         get_filename_component(RESOLVED_MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${manifest_dir}" ABSOLUTE)
     endif()
+    message(STATUS "Cargokit using manifest directory: ${RESOLVED_MANIFEST_DIR}")
 
     set(CARGOKIT_ENV
         "CARGOKIT_CMAKE=${CMAKE_COMMAND}"
