@@ -23,5 +23,6 @@ tokio.workspace = true
 uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+hex.workspace = true
 parking_lot = "0.12"
 flutter_rust_bridge = "=2.13.0"

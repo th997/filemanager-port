@@ -189,8 +189,24 @@ class BrowserPageState extends State<BrowserPage> {
     // If inside archive, navigate back to host folder
     if (_root.startsWith('archive://')) {
       final archiveHost = _root.substring('archive://'.length);
+      if (archiveHost.startsWith('remote://')) {
+        final withoutPrefix = archiveHost.substring('remote://'.length);
+        final slashIdx = withoutPrefix.indexOf('/');
+        if (slashIdx != -1) {
+          final remoteId = withoutPrefix.substring(0, slashIdx);
+          final fullRemotePath = withoutPrefix.substring(slashIdx + 1);
+          final segments = fullRemotePath.split('/').where((s) => s.isNotEmpty).toList();
+          if (segments.isNotEmpty) segments.removeLast();
+          navigateTo('remote://$remoteId', segments.join('/'));
+          return;
+        } else {
+          navigateTo('remote://$withoutPrefix', '');
+          return;
+        }
+      }
       final parentDir = archiveHost.split('/').sublist(0, archiveHost.split('/').length - 1).join('/');
       navigateTo(parentDir.isEmpty ? '/' : parentDir, '');
+      return;
     }
   }
 
@@ -213,6 +229,10 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     if (item.isArchive) {
+      if (_needsDownloadPrompt(item)) {
+        _downloadThenOpen(item);
+        return;
+      }
       final fullPath = _root.endsWith('/')
           ? '$_root${_fullEntryPath(item)}'
           : '$_root/${_fullEntryPath(item)}';
@@ -367,6 +387,11 @@ class BrowserPageState extends State<BrowserPage> {
     String path,
     EntryItem item,
   ) async {
+    if (item.isArchive) {
+      final fullPath = root.endsWith('/') ? '$root$path' : '$root/$path';
+      navigateTo('archive://$fullPath', '');
+      return;
+    }
     if (item.isText || item.isMarkdown || item.isHtml) {
       await Navigator.of(context).push(
         MaterialPageRoute(

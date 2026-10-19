@@ -75,14 +75,14 @@ pub fn init_database(db_path: String) {
 }
 
 pub async fn get_capabilities(root: String) -> CapabilitiesDto {
-    match VfsRegistry::global().get_or_create(&root) {
+    match VfsRegistry::global().get_or_create(&root).await {
         Ok(vfs) => vfs.capabilities().into(),
         Err(_) => Capabilities::READ_ONLY.into(),
     }
 }
 
 pub async fn list_dir(root: String, path: String) -> Result<Vec<EntryDto>, String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     backend
         .list(&vfs_path)
@@ -97,7 +97,7 @@ pub async fn list_dir_paged(
     page: u32,
     page_size: u32,
 ) -> Result<PagedEntriesDto, String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     let (entries, has_more) = backend
         .list_paged(&vfs_path, page, page_size)
@@ -113,7 +113,7 @@ pub async fn list_dir_paged(
 }
 
 pub async fn stat_entry(root: String, path: String) -> Result<EntryDto, String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     backend
         .stat(&vfs_path)
@@ -123,19 +123,19 @@ pub async fn stat_entry(root: String, path: String) -> Result<EntryDto, String> 
 }
 
 pub async fn create_dir(root: String, path: String) -> Result<(), String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     backend.mkdir(&vfs_path).await.map_err(|e| e.to_string())
 }
 
 pub async fn remove_entry(root: String, path: String) -> Result<(), String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     backend.remove(&vfs_path).await.map_err(|e| e.to_string())
 }
 
 pub async fn rename_entry(root: String, from: String, to: String) -> Result<(), String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let from_path = VfsPath::from_slash_path(&from);
     let to_path = VfsPath::from_slash_path(&to);
     backend
@@ -145,7 +145,7 @@ pub async fn rename_entry(root: String, from: String, to: String) -> Result<(), 
 }
 
 pub async fn read_text_file(root: String, path: String) -> Result<String, String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     let mut reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
     let mut buffer = String::new();
@@ -157,7 +157,7 @@ pub async fn read_text_file(root: String, path: String) -> Result<String, String
 }
 
 pub async fn write_text_file(root: String, path: String, content: String) -> Result<(), String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     let mut writer = backend
         .open_write(&vfs_path, WriteMode::Truncate)
@@ -181,7 +181,7 @@ pub async fn export_to_native(
     path: String,
     cache_dir: String,
 ) -> Result<String, String> {
-    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     let name = vfs_path.name().unwrap_or("file").to_string();
     let dir = Path::new(&cache_dir);

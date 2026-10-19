@@ -61,8 +61,8 @@ pub async fn start_copy_task(
     let tid = task_id.clone();
     tokio::spawn(async move {
         let run = async {
-            let src_vfs = VfsRegistry::global().get_or_create(&src_root)?;
-            let dst_vfs = VfsRegistry::global().get_or_create(&dst_root)?;
+            let src_vfs = VfsRegistry::global().get_or_create(&src_root).await?;
+            let dst_vfs = VfsRegistry::global().get_or_create(&dst_root).await?;
             let dst_base = VfsPath::from_slash_path(&dst_dir);
 
             // Totals let the UI show a real progress bar instead of a spinner.
@@ -129,8 +129,8 @@ pub async fn start_move_task(
     let tid = task_id.clone();
     tokio::spawn(async move {
         let run = async {
-            let src_vfs = VfsRegistry::global().get_or_create(&src_root)?;
-            let dst_vfs = VfsRegistry::global().get_or_create(&dst_root)?;
+            let src_vfs = VfsRegistry::global().get_or_create(&src_root).await?;
+            let dst_vfs = VfsRegistry::global().get_or_create(&dst_root).await?;
             let dst_base = VfsPath::from_slash_path(&dst_dir);
 
             for src in &src_paths {
@@ -184,7 +184,7 @@ pub async fn start_delete_task(root: String, paths: Vec<String>) -> Result<Strin
     let tid = task_id.clone();
     tokio::spawn(async move {
         let run = async {
-            let vfs = VfsRegistry::global().get_or_create(&root)?;
+            let vfs = VfsRegistry::global().get_or_create(&root).await?;
             for p in paths {
                 if cancel.is_cancelled() {
                     break;

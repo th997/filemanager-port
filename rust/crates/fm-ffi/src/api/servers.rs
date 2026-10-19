@@ -71,7 +71,7 @@ pub fn get_lan_ip_list() -> Vec<String> {
 /// One server per root is reused across files so opening the next video does
 /// not rebind a port. The URL includes the random access token.
 pub async fn start_media_stream(root: String) -> Result<String, String> {
-    let vfs = VfsRegistry::global().get_or_create(&root)?;
+    let vfs = VfsRegistry::global().get_or_create(&root).await?;
 
     {
         let guard = STREAMS.lock();
