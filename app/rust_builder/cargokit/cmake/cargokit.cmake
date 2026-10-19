@@ -34,10 +34,15 @@ function(apply_cargokit target manifest_dir lib_name any_symbol_name)
     endif()
     set(CARGOKIT_OHOS_SDK_HOME $ENV{OHOS_SDK_HOME})
 
+    get_filename_component(RESOLVED_MANIFEST_DIR "${cargokit_cmake_root}/../${manifest_dir}" ABSOLUTE)
+    if (NOT EXISTS "${RESOLVED_MANIFEST_DIR}/Cargo.toml")
+        get_filename_component(RESOLVED_MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${manifest_dir}" ABSOLUTE)
+    endif()
+
     set(CARGOKIT_ENV
         "CARGOKIT_CMAKE=${CMAKE_COMMAND}"
         "CARGOKIT_CONFIGURATION=$<CONFIG>"
-        "CARGOKIT_MANIFEST_DIR=${CMAKE_CURRENT_SOURCE_DIR}/${manifest_dir}"
+        "CARGOKIT_MANIFEST_DIR=${RESOLVED_MANIFEST_DIR}"
         "CARGOKIT_TARGET_TEMP_DIR=${CARGOKIT_TEMP_DIR}"
         "CARGOKIT_OUTPUT_DIR=${CARGOKIT_OUTPUT_DIR}"
         "CARGOKIT_TARGET_PLATFORM=${CARGOKIT_TARGET_PLATFORM}"
