@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 void initDatabase({required String dbPath}) =>
     RustLib.instance.api.crateApiFileManagerInitDatabase(dbPath: dbPath);
@@ -17,6 +17,18 @@ Future<CapabilitiesDto> getCapabilities({required String root}) =>
 
 Future<List<EntryDto>> listDir({required String root, required String path}) =>
     RustLib.instance.api.crateApiFileManagerListDir(root: root, path: path);
+
+Future<PagedEntriesDto> listDirPaged({
+  required String root,
+  required String path,
+  required int page,
+  required int pageSize,
+}) => RustLib.instance.api.crateApiFileManagerListDirPaged(
+  root: root,
+  path: path,
+  page: page,
+  pageSize: pageSize,
+);
 
 Future<EntryDto> statEntry({required String root, required String path}) =>
     RustLib.instance.api.crateApiFileManagerStatEntry(root: root, path: path);
@@ -152,4 +164,32 @@ class EntryDto {
           size == other.size &&
           modifiedMillis == other.modifiedMillis &&
           hidden == other.hidden;
+}
+
+class PagedEntriesDto {
+  final List<EntryDto> entries;
+  final int page;
+  final int pageSize;
+  final bool hasMore;
+
+  const PagedEntriesDto({
+    required this.entries,
+    required this.page,
+    required this.pageSize,
+    required this.hasMore,
+  });
+
+  @override
+  int get hashCode =>
+      entries.hashCode ^ page.hashCode ^ pageSize.hashCode ^ hasMore.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PagedEntriesDto &&
+          runtimeType == other.runtimeType &&
+          entries == other.entries &&
+          page == other.page &&
+          pageSize == other.pageSize &&
+          hasMore == other.hasMore;
 }

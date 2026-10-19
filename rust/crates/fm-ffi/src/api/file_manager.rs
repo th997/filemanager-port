@@ -56,6 +56,14 @@ impl From<Entry> for EntryDto {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PagedEntriesDto {
+    pub entries: Vec<EntryDto>,
+    pub page: u32,
+    pub page_size: u32,
+    pub has_more: bool,
+}
+
 #[flutter_rust_bridge::frb(init)]
 pub fn init_app() {
     flutter_rust_bridge::setup_default_user_utils();
@@ -81,6 +89,27 @@ pub async fn list_dir(root: String, path: String) -> Result<Vec<EntryDto>, Strin
         .await
         .map(|entries| entries.into_iter().map(EntryDto::from).collect())
         .map_err(|error| error.to_string())
+}
+
+pub async fn list_dir_paged(
+    root: String,
+    path: String,
+    page: u32,
+    page_size: u32,
+) -> Result<PagedEntriesDto, String> {
+    let backend = VfsRegistry::global().get_or_create(&root)?;
+    let vfs_path = VfsPath::from_slash_path(&path);
+    let (entries, has_more) = backend
+        .list_paged(&vfs_path, page, page_size)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(PagedEntriesDto {
+        entries: entries.into_iter().map(EntryDto::from).collect(),
+        page,
+        page_size,
+        has_more,
+    })
 }
 
 pub async fn stat_entry(root: String, path: String) -> Result<EntryDto, String> {

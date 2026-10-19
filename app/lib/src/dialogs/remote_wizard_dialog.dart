@@ -173,8 +173,11 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                 if (_kind == 's3' || _kind == 'oss') ...[
                   TextFormField(
                     controller: _bucketController,
-                    decoration: const InputDecoration(labelText: 'Bucket Name', border: OutlineInputBorder()),
-                    validator: (v) => v == null || v.trim().isEmpty ? 'Bucket is required' : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Bucket Name (Optional, empty for all buckets)',
+                      hintText: 'Leave empty to browse all buckets, or comma-separated',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

@@ -231,6 +231,91 @@ impl Vfs for OpendalFs {
         Ok(entries)
     }
 
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let op_dir = Self::to_opendal_dir_path(dir);
+        let mut lister = self
+            .operator
+            .lister(&op_dir)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: dir.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let skip = ((page - 1) as usize).saturating_mul(page_size as usize);
+
+        for _ in 0..skip {
+            if lister.next().await.is_none() {
+                return Ok((Vec::new(), false));
+            }
+        }
+
+        let mut entries = Vec::with_capacity(page_size as usize);
+        while entries.len() < page_size as usize {
+            match lister.next().await {
+                Some(Ok(item)) => {
+                    let raw_path = item.path().trim_end_matches('/');
+                    let name = match raw_path.rsplit('/').next() {
+                        Some(n) if !n.is_empty() => n.to_string(),
+                        _ => continue,
+                    };
+
+                    let meta = item.metadata();
+                    let is_dir = meta.mode() == EntryMode::DIR || item.path().ends_with('/');
+                    let kind = if is_dir {
+                        EntryKind::Dir
+                    } else {
+                        EntryKind::File
+                    };
+
+                    let child_path = dir.join(&name);
+                    let size = if is_dir {
+                        None
+                    } else {
+                        Some(meta.content_length())
+                    };
+                    let modified = meta.last_modified().map(SystemTime::from);
+                    let hidden = name.starts_with('.');
+
+                    entries.push(Entry {
+                        name,
+                        path: child_path,
+                        kind,
+                        size,
+                        modified,
+                        mode: None,
+                        hidden,
+                        mime: None,
+                    });
+                }
+                Some(Err(e)) => {
+                    return Err(VfsError::Backend {
+                        path: dir.clone(),
+                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    });
+                }
+                None => break,
+            }
+        }
+
+        let has_more = lister.next().await.is_some();
+
+        entries.sort_by(|a, b| {
+            let a_dir = a.kind == EntryKind::Dir;
+            let b_dir = b.kind == EntryKind::Dir;
+            b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))
+        });
+
+        Ok((entries, has_more))
+    }
+
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         let op_path = Self::to_opendal_path(path);
         let meta = self

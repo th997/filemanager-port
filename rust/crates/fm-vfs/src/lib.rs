@@ -63,6 +63,24 @@ pub trait Vfs: Send + Sync {
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>>;
 
+    /// Paginated directory listing. Backends with native pagination or streaming
+    /// override this to avoid materializing all entries.
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let all = self.list(dir).await?;
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let skip = ((page - 1) as usize).saturating_mul(page_size as usize);
+        let total = all.len();
+        let has_more = skip + (page_size as usize) < total;
+        let entries = all.into_iter().skip(skip).take(page_size as usize).collect();
+        Ok((entries, has_more))
+    }
+
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry>;
 
     async fn open_read(

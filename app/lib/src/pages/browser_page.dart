@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import '../dialogs/download_prompt_dialog.dart';
+import '../dialogs/file_picker_dialog.dart';
+import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/task_progress_dialog.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/file_open_service.dart';
+import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
 import 'image_viewer_page.dart';
@@ -59,6 +62,13 @@ class BrowserPageState extends State<BrowserPage> {
   bool _isSelecting = false;
   final Set<String> _selectedPaths = <String>{};
 
+  // Pagination state
+  int _currentPage = 1;
+  static const int _pageSize = 100;
+  bool _hasMore = false;
+  bool _loadingMore = false;
+  final ScrollController _scrollController = ScrollController();
+
   // Clipboard state for copy/cut/paste
   static ClipboardState? _clipboard;
 
@@ -67,13 +77,52 @@ class BrowserPageState extends State<BrowserPage> {
     super.initState();
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
+    _scrollController.addListener(_onScroll);
     _load();
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 250 &&
+        _hasMore &&
+        !_loadingMore &&
+        !_loading) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final nextPage = _currentPage + 1;
+      final paged = await listDirPaged(
+        root: _root,
+        path: _relPath,
+        page: nextPage,
+        pageSize: _pageSize,
+      );
+      if (mounted) {
+        setState(() {
+          _currentPage = nextPage;
+          _entries.addAll(paged.entries.map((e) => EntryItem(e)));
+          _hasMore = paged.hasMore;
+          _loadingMore = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingMore = false);
+      }
+    }
   }
 
   void navigateTo(String root, String relPath) {
@@ -85,6 +134,8 @@ class BrowserPageState extends State<BrowserPage> {
       _isSearching = false;
       _filterQuery = '';
       _searchController.clear();
+      _currentPage = 1;
+      _hasMore = false;
     });
     _load();
   }
@@ -93,17 +144,24 @@ class BrowserPageState extends State<BrowserPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _currentPage = 1;
     });
 
     try {
       final caps = await getCapabilities(root: _root);
-      final rawEntries = await listDir(root: _root, path: _relPath);
-      final items = rawEntries.map((e) => EntryItem(e)).toList();
+      final paged = await listDirPaged(
+        root: _root,
+        path: _relPath,
+        page: _currentPage,
+        pageSize: _pageSize,
+      );
+      final items = paged.entries.map((e) => EntryItem(e)).toList();
 
       if (mounted) {
         setState(() {
           _capabilities = caps;
           _entries = items;
+          _hasMore = paged.hasMore;
           _loading = false;
         });
         StorageService.instance.recordHistory(root: _root, path: _relPath);
@@ -428,6 +486,11 @@ class BrowserPageState extends State<BrowserPage> {
                 title: const Text('Open with'),
                 onTap: () => Navigator.of(ctx).pop('open'),
               ),
+            ListTile(
+              leading: const Icon(Icons.download_outlined, color: Colors.blue),
+              title: const Text('Download to local'),
+              onTap: () => Navigator.of(ctx).pop('download'),
+            ),
             if (!item.isDir)
               ListTile(
                 leading: const Icon(Icons.share_outlined),
@@ -457,6 +520,9 @@ class BrowserPageState extends State<BrowserPage> {
     switch (action) {
       case 'open':
         _openEntry(item);
+        break;
+      case 'download':
+        _downloadSingle(item);
         break;
       case 'share':
         _shareEntry(item);
@@ -512,6 +578,74 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   // File Operations
+  Future<void> _uploadFiles() async {
+    final picked = await FilePickerDialog.show(
+      context,
+      title: 'Upload Files to Current Folder',
+    );
+    if (picked == null || picked.paths.isEmpty || !mounted) return;
+
+    final taskId = await TaskService.instance.copy(
+      srcRoot: picked.root,
+      srcPaths: picked.paths,
+      dstRoot: _root,
+      dstDir: _relPath,
+    );
+    if (mounted) {
+      await TaskProgressDialog.show(context, taskId, 'Uploading Files...');
+      _load();
+    }
+  }
+
+  Future<void> _downloadSelected() async {
+    if (_selectedPaths.isEmpty) return;
+    final dest = await FolderPickerDialog.show(
+      context,
+      title: 'Select Download Destination',
+      initialRoot: PlatformPaths.defaultRoot(),
+    );
+    if (dest == null || !mounted) return;
+
+    final taskId = await TaskService.instance.copy(
+      srcRoot: _root,
+      srcPaths: _selectedPaths.toList(),
+      dstRoot: dest.root,
+      dstDir: dest.relPath,
+    );
+    if (mounted) {
+      await TaskProgressDialog.show(context, taskId, 'Downloading Files...');
+      if (!mounted) return;
+      _clearSelection();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Downloaded to ${dest.path}')),
+      );
+    }
+  }
+
+  Future<void> _downloadSingle(EntryItem item) async {
+    final dest = await FolderPickerDialog.show(
+      context,
+      title: 'Select Download Destination',
+      initialRoot: PlatformPaths.defaultRoot(),
+    );
+    if (dest == null || !mounted) return;
+
+    final taskId = await TaskService.instance.copy(
+      srcRoot: _root,
+      srcPaths: [_fullEntryPath(item)],
+      dstRoot: dest.root,
+      dstDir: dest.relPath,
+      dstName: item.name,
+    );
+    if (mounted) {
+      await TaskProgressDialog.show(context, taskId, 'Downloading ${item.name}...');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Downloaded ${item.name} to ${dest.path}')),
+      );
+    }
+  }
+
   Future<void> _createFolder() async {
     final ctrl = TextEditingController();
     final name = await showDialog<String>(
@@ -868,6 +1002,11 @@ class BrowserPageState extends State<BrowserPage> {
               },
             ),
             IconButton(
+              icon: const Icon(Icons.cloud_upload_outlined),
+              tooltip: 'Upload Files',
+              onPressed: _uploadFiles,
+            ),
+            IconButton(
               icon: const Icon(Icons.create_new_folder),
               tooltip: 'New Folder',
               onPressed: _createFolder,
@@ -1046,7 +1185,7 @@ class BrowserPageState extends State<BrowserPage> {
           _capChip('mkdir', caps.mkdir),
           _capChip('remove', caps.remove),
           const Spacer(),
-          Text('${_filteredAndSortedEntries.length} items', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text('${_filteredAndSortedEntries.length} items${_hasMore ? ' (more below)' : ''}', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -1079,6 +1218,7 @@ class BrowserPageState extends State<BrowserPage> {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             if (_isSelecting) ...[
+              _actionButton(Icons.download, 'Download', _downloadSelected, color: Colors.blue),
               _actionButton(Icons.copy, 'Copy', () => _copySelected(isCut: false)),
               _actionButton(Icons.cut, 'Cut', () => _copySelected(isCut: true)),
               _actionButton(Icons.delete, 'Delete', _deleteSelected, color: Colors.red),
@@ -1156,6 +1296,7 @@ class BrowserPageState extends State<BrowserPage> {
 
     if (_isGrid) {
       return GridView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.all(8),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 110,
@@ -1163,8 +1304,23 @@ class BrowserPageState extends State<BrowserPage> {
           crossAxisSpacing: 8,
           childAspectRatio: 0.85,
         ),
-        itemCount: list.length,
+        itemCount: list.length + (_hasMore ? 1 : 0),
         itemBuilder: (ctx, i) {
+          if (i == list.length) {
+            return Center(
+              child: _loadingMore
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.more_horiz),
+                      tooltip: 'Load more',
+                      onPressed: _loadMore,
+                    ),
+            );
+          }
           final item = list[i];
           final path = _fullEntryPath(item);
           final isSelected = _selectedPaths.contains(path);
@@ -1218,8 +1374,27 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     return ListView.builder(
-      itemCount: list.length,
+      controller: _scrollController,
+      itemCount: list.length + (_hasMore ? 1 : 0),
       itemBuilder: (ctx, i) {
+        if (i == list.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: _loadingMore
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : TextButton.icon(
+                      icon: const Icon(Icons.expand_more, size: 18),
+                      label: const Text('Load more'),
+                      onPressed: _loadMore,
+                    ),
+            ),
+          );
+        }
         final item = list[i];
         final path = _fullEntryPath(item);
         final isSelected = _selectedPaths.contains(path);

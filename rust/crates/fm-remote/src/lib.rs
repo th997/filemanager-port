@@ -1,6 +1,7 @@
 //! Remote protocol backends.
 
 pub mod ftp_backend;
+pub mod multi_bucket;
 pub mod opendal_backend;
 pub mod sftp_backend;
 pub mod smb_backend;
@@ -10,6 +11,7 @@ use fm_vfs::{Vfs, VfsError, VfsResult};
 use serde::{Deserialize, Serialize};
 
 pub use ftp_backend::FtpFs;
+pub use multi_bucket::MultiBucketFs;
 pub use opendal_backend::OpendalFs;
 pub use sftp_backend::SftpFs;
 pub use smb_backend::SmbFs;
@@ -84,12 +86,32 @@ impl RemoteConfig {
     pub fn create_vfs(&self) -> VfsResult<Box<dyn Vfs>> {
         match self.kind {
             LocationKind::S3 => {
-                let fs = OpendalFs::new_s3(self)?;
-                Ok(Box::new(fs))
+                let is_multi = self
+                    .bucket
+                    .as_deref()
+                    .map(|b| b.trim().is_empty() || b.contains(',') || b.contains(' '))
+                    .unwrap_or(true);
+                if is_multi {
+                    let fs = MultiBucketFs::new(self);
+                    Ok(Box::new(fs))
+                } else {
+                    let fs = OpendalFs::new_s3(self)?;
+                    Ok(Box::new(fs))
+                }
             }
             LocationKind::Oss => {
-                let fs = OpendalFs::new_oss(self)?;
-                Ok(Box::new(fs))
+                let is_multi = self
+                    .bucket
+                    .as_deref()
+                    .map(|b| b.trim().is_empty() || b.contains(',') || b.contains(' '))
+                    .unwrap_or(true);
+                if is_multi {
+                    let fs = MultiBucketFs::new(self);
+                    Ok(Box::new(fs))
+                } else {
+                    let fs = OpendalFs::new_oss(self)?;
+                    Ok(Box::new(fs))
+                }
             }
             LocationKind::WebDav => {
                 let fs = OpendalFs::new_webdav(self)?;
