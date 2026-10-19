@@ -70,6 +70,43 @@ pub trait Vfs: Send + Sync {
         path: &VfsPath,
     ) -> VfsResult<Box<dyn tokio::io::AsyncRead + Send + Unpin>>;
 
+    /// Open a byte range for media streaming.
+    ///
+    /// `length` is `None` when the caller wants everything from `offset` to the
+    /// end. The default implementation skips bytes by reading them, which is
+    /// correct but wasteful; backends with native range support override it.
+    async fn open_read_range(
+        &self,
+        path: &VfsPath,
+        offset: u64,
+        length: Option<u64>,
+    ) -> VfsResult<Box<dyn tokio::io::AsyncRead + Send + Unpin>> {
+        use tokio::io::AsyncReadExt;
+
+        let mut reader = self.open_read(path).await?;
+        let mut remaining = offset;
+        let mut scratch = [0u8; 16 * 1024];
+        while remaining > 0 {
+            let want = remaining.min(scratch.len() as u64) as usize;
+            let read = reader
+                .read(&mut scratch[..want])
+                .await
+                .map_err(|source| VfsError::Backend {
+                    path: path.clone(),
+                    source,
+                })?;
+            if read == 0 {
+                return Ok(Box::new(tokio::io::empty()));
+            }
+            remaining -= read as u64;
+        }
+
+        Ok(match length {
+            Some(len) => Box::new(reader.take(len)),
+            None => Box::new(reader),
+        })
+    }
+
     async fn open_write(
         &self,
         path: &VfsPath,

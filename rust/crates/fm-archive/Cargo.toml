@@ -11,3 +11,11 @@ fm-vfs.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+zip.workspace = true
+tar.workspace = true
+flate2.workspace = true
+sevenz-rust.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -155,6 +155,29 @@ impl Vfs for LocalFs {
         Ok(Box::new(file))
     }
 
+    async fn open_read_range(
+        &self,
+        path: &VfsPath,
+        offset: u64,
+        length: Option<u64>,
+    ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+        let native = self.resolve(path)?;
+        let mut file = tokio::fs::File::open(&native)
+            .await
+            .map_err(|error| self.io_error(path, error))?;
+        if offset > 0 {
+            file.seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(|error| self.io_error(path, error))?;
+        }
+        Ok(match length {
+            Some(len) => Box::new(file.take(len)),
+            None => Box::new(file),
+        })
+    }
+
     async fn open_write(
         &self,
         path: &VfsPath,

@@ -12,7 +12,7 @@ Target platforms and minimum versions follow Flutter 3.47:
 |---|---|---|---|---|---|
 | Browse local files | SAF tree or `MANAGE_EXTERNAL_STORAGE` | granted roots only | native | sandbox + bookmark | native |
 | Archive browse/extract/compress | Rust | Rust | Rust | Rust | Rust |
-| SFTP / FTP / FTPS / SMB / WebDAV | Rust | Rust | Rust | Rust | Rust |
+| S3 / OSS / WebDAV / SFTP / FTP / SMB | Rust | Rust | Rust | Rust | Rust |
 | HTTP share server | foreground service | foreground only | yes | yes | yes |
 | FTP share server | foreground service | foreground only | yes | yes | yes |
 | Recycle bin | in-app | in-app | in-app | in-app | in-app |

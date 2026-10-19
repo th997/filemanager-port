@@ -9,7 +9,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`
 
-CapabilitiesDto getCapabilities({required String root}) =>
+void initDatabase({required String dbPath}) =>
+    RustLib.instance.api.crateApiFileManagerInitDatabase(dbPath: dbPath);
+
+Future<CapabilitiesDto> getCapabilities({required String root}) =>
     RustLib.instance.api.crateApiFileManagerGetCapabilities(root: root);
 
 Future<List<EntryDto>> listDir({required String root, required String path}) =>
@@ -17,6 +20,53 @@ Future<List<EntryDto>> listDir({required String root, required String path}) =>
 
 Future<EntryDto> statEntry({required String root, required String path}) =>
     RustLib.instance.api.crateApiFileManagerStatEntry(root: root, path: path);
+
+Future<void> createDir({required String root, required String path}) =>
+    RustLib.instance.api.crateApiFileManagerCreateDir(root: root, path: path);
+
+Future<void> removeEntry({required String root, required String path}) =>
+    RustLib.instance.api.crateApiFileManagerRemoveEntry(root: root, path: path);
+
+Future<void> renameEntry({
+  required String root,
+  required String from,
+  required String to,
+}) => RustLib.instance.api.crateApiFileManagerRenameEntry(
+  root: root,
+  from: from,
+  to: to,
+);
+
+Future<String> readTextFile({required String root, required String path}) =>
+    RustLib.instance.api.crateApiFileManagerReadTextFile(
+      root: root,
+      path: path,
+    );
+
+Future<void> writeTextFile({
+  required String root,
+  required String path,
+  required String content,
+}) => RustLib.instance.api.crateApiFileManagerWriteTextFile(
+  root: root,
+  path: path,
+  content: content,
+);
+
+/// Copy one VFS entry to a native path the platform can hand to another app.
+///
+/// `cache_dir` is chosen by the host (an app-private directory); the file keeps
+/// its own name so the receiving app sees the right extension. Re-opening the
+/// same entry overwrites the cached copy instead of accumulating copies.
+Future<String> exportToNative({
+  required String root,
+  required String path,
+  required String cacheDir,
+}) => RustLib.instance.api.crateApiFileManagerExportToNative(
+  root: root,
+  path: path,
+  cacheDir: cacheDir,
+);
 
 class CapabilitiesDto {
   final bool read;

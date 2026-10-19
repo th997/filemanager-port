@@ -1,11 +1,12 @@
 //! Archive backend.
-//!
-//! Format support is deliberately pure Rust so the same code builds for
-//! Android and iOS without a system libarchive. Readers for zip, tar and
-//! 7z land in M3; this crate currently defines the format registry so callers
-//! and UI can be written against a stable surface.
+
+pub mod archive_fs;
+pub mod ops;
 
 use fm_core::LocationKind;
+
+pub use archive_fs::ArchiveFs;
+pub use ops::{create_zip, extract_archive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
@@ -57,6 +58,7 @@ pub fn is_known_unsupported(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fm_vfs::Vfs;
 
     #[test]
     fn recognises_container_formats() {
@@ -71,5 +73,49 @@ mod tests {
     fn rar_is_reported_separately() {
         assert!(is_known_unsupported("movie.RAR"));
         assert!(!is_known_unsupported("movie.zip"));
+    }
+
+    #[test]
+    fn zip_archive_roundtrip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src_file = temp_dir.path().join("test.txt");
+        std::fs::write(&src_file, b"archive data content").unwrap();
+
+        let zip_file = temp_dir.path().join("output.zip");
+        create_zip(&[src_file], &zip_file).unwrap();
+
+        let fs = ArchiveFs::open(&zip_file).unwrap();
+        let entries = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(fs.list(&fm_core::VfsPath::root()))
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "test.txt");
+
+        let content = fs.read_entry_bytes(&entries[0].path).unwrap();
+        assert_eq!(content, b"archive data content");
+    }
+
+    #[test]
+    fn range_read_skips_into_zip_entry() {
+        use tokio::io::AsyncReadExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src_file = temp_dir.path().join("test.txt");
+        std::fs::write(&src_file, b"0123456789abcdef").unwrap();
+
+        let zip_file = temp_dir.path().join("output.zip");
+        create_zip(&[src_file], &zip_file).unwrap();
+
+        let fs = ArchiveFs::open(&zip_file).unwrap();
+        let path = fm_core::VfsPath::from_slash_path("test.txt");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let bytes = runtime.block_on(async {
+            let mut reader = fs.open_read_range(&path, 4, Some(6)).await.unwrap();
+            let mut buf = Vec::new();
+            reader.read_to_end(&mut buf).await.unwrap();
+            buf
+        });
+        assert_eq!(bytes, b"456789");
     }
 }

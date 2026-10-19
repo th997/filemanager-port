@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/services/storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   await RustLib.init();
+  StorageService.instance.ensureInitialized();
   runApp(const FileManagerApp());
 }
 

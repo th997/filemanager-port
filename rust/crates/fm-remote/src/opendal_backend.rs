@@ -1,0 +1,381 @@
+//! OpenDAL VFS backend supporting S3, Aliyun OSS, and WebDAV.
+
+use async_trait::async_trait;
+use fm_core::{Capabilities, Entry, EntryKind, LocationKind, VfsPath, WriteMode};
+use fm_vfs::{Vfs, VfsError, VfsResult};
+use futures_util::StreamExt;
+use opendal::services::{Oss, S3, Webdav};
+use opendal::{EntryMode, Operator};
+use std::time::SystemTime;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
+
+use crate::RemoteConfig;
+
+/// The facade crate has `auto-register-services` disabled, so the process-wide
+/// HTTP transport has to be installed before the first operator runs.
+fn ensure_http_transport() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(opendal::install_default);
+}
+
+pub struct OpendalFs {
+    operator: Operator,
+    kind: LocationKind,
+    capabilities: Capabilities,
+}
+
+impl OpendalFs {
+    pub fn new_s3(config: &RemoteConfig) -> Result<Self, VfsError> {
+        ensure_http_transport();
+        let mut builder = S3::default();
+        if let Some(bucket) = &config.bucket {
+            builder = builder.bucket(bucket);
+        }
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.endpoint(endpoint);
+        }
+        if let Some(region) = &config.region {
+            builder = builder.region(region);
+        }
+        if let Some(key_id) = &config.key_id {
+            builder = builder.access_key_id(key_id);
+        }
+        if let Some(key_secret) = &config.key_secret {
+            builder = builder.secret_access_key(key_secret);
+        }
+        if !config.root.is_empty() && config.root != "/" {
+            builder = builder.root(&config.root);
+        }
+        if !config.path_style {
+            builder = builder.enable_virtual_host_style();
+        }
+
+        let op = Operator::new(builder).map_err(|e| VfsError::Connection {
+            message: format!("failed to initialize S3 operator: {e}"),
+        })?;
+
+        Ok(Self {
+            operator: op,
+            kind: LocationKind::S3,
+            capabilities: Capabilities {
+                read: true,
+                write: true,
+                rename: true,
+                copy: true,
+                mkdir: true,
+                remove: true,
+                serve_http: false,
+                serve_ftp: false,
+            },
+        })
+    }
+
+    pub fn new_oss(config: &RemoteConfig) -> Result<Self, VfsError> {
+        ensure_http_transport();
+        let mut builder = Oss::default();
+        if let Some(bucket) = &config.bucket {
+            builder = builder.bucket(bucket);
+        }
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.endpoint(endpoint);
+        }
+        if let Some(key_id) = &config.key_id {
+            builder = builder.access_key_id(key_id);
+        }
+        if let Some(key_secret) = &config.key_secret {
+            builder = builder.access_key_secret(key_secret);
+        }
+        if !config.root.is_empty() && config.root != "/" {
+            builder = builder.root(&config.root);
+        }
+
+        let op = Operator::new(builder).map_err(|e| VfsError::Connection {
+            message: format!("failed to initialize OSS operator: {e}"),
+        })?;
+
+        Ok(Self {
+            operator: op,
+            kind: LocationKind::Oss,
+            capabilities: Capabilities {
+                read: true,
+                write: true,
+                rename: true,
+                copy: true,
+                mkdir: true,
+                remove: true,
+                serve_http: false,
+                serve_ftp: false,
+            },
+        })
+    }
+
+    pub fn new_webdav(config: &RemoteConfig) -> Result<Self, VfsError> {
+        ensure_http_transport();
+        let mut builder = Webdav::default();
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.endpoint(endpoint);
+        } else if let Some(host) = &config.host {
+            let port = config.port.unwrap_or(443);
+            let scheme = if port == 443 { "https" } else { "http" };
+            builder = builder.endpoint(&format!("{scheme}://{host}:{port}"));
+        }
+        if let Some(user) = &config.username {
+            builder = builder.username(user);
+        }
+        if let Some(pass) = &config.password {
+            builder = builder.password(pass);
+        }
+        if !config.root.is_empty() && config.root != "/" {
+            builder = builder.root(&config.root);
+        }
+
+        let op = Operator::new(builder).map_err(|e| VfsError::Connection {
+            message: format!("failed to initialize WebDAV operator: {e}"),
+        })?;
+
+        Ok(Self {
+            operator: op,
+            kind: LocationKind::WebDav,
+            capabilities: Capabilities::READ_WRITE,
+        })
+    }
+
+    pub fn kind(&self) -> LocationKind {
+        self.kind
+    }
+
+    fn to_opendal_path(path: &VfsPath) -> String {
+        let segs = path.segments();
+        if segs.is_empty() {
+            String::new()
+        } else {
+            segs.join("/")
+        }
+    }
+
+    fn to_opendal_dir_path(path: &VfsPath) -> String {
+        let mut p = Self::to_opendal_path(path);
+        if !p.is_empty() && !p.ends_with('/') {
+            p.push('/');
+        }
+        p
+    }
+}
+
+#[async_trait]
+impl Vfs for OpendalFs {
+    fn capabilities(&self) -> Capabilities {
+        self.capabilities
+    }
+
+    async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
+        let op_dir = Self::to_opendal_dir_path(dir);
+        let mut lister = self
+            .operator
+            .lister(&op_dir)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: dir.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        let mut entries = Vec::new();
+        while let Some(item_res) = lister.next().await {
+            let item = item_res.map_err(|e| VfsError::Backend {
+                path: dir.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+            let raw_path = item.path().trim_end_matches('/');
+            let name = match raw_path.rsplit('/').next() {
+                Some(n) if !n.is_empty() => n.to_string(),
+                _ => continue,
+            };
+
+            let meta = item.metadata();
+            let is_dir = meta.mode() == EntryMode::DIR || item.path().ends_with('/');
+            let kind = if is_dir {
+                EntryKind::Dir
+            } else {
+                EntryKind::File
+            };
+
+            let child_path = dir.join(&name);
+            let size = if is_dir {
+                None
+            } else {
+                Some(meta.content_length())
+            };
+            let modified = meta.last_modified().map(SystemTime::from);
+            let hidden = name.starts_with('.');
+
+            entries.push(Entry {
+                name,
+                path: child_path,
+                kind,
+                size,
+                modified,
+                mode: None,
+                hidden,
+                mime: None,
+            });
+        }
+
+        entries.sort_by(|a, b| {
+            let a_dir = a.kind == EntryKind::Dir;
+            let b_dir = b.kind == EntryKind::Dir;
+            b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))
+        });
+
+        Ok(entries)
+    }
+
+    async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
+        let op_path = Self::to_opendal_path(path);
+        let meta = self
+            .operator
+            .stat(&op_path)
+            .await
+            .map_err(|e| match e.kind() {
+                opendal::ErrorKind::NotFound => VfsError::NotFound { path: path.clone() },
+                opendal::ErrorKind::PermissionDenied => {
+                    VfsError::PermissionDenied { path: path.clone() }
+                }
+                _ => VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                },
+            })?;
+
+        let is_dir = meta.mode() == EntryMode::DIR;
+        let kind = if is_dir {
+            EntryKind::Dir
+        } else {
+            EntryKind::File
+        };
+        let name = path.name().unwrap_or("").to_string();
+        let size = if is_dir {
+            None
+        } else {
+            Some(meta.content_length())
+        };
+        let modified = meta.last_modified().map(SystemTime::from);
+        let hidden = name.starts_with('.');
+
+        Ok(Entry {
+            name,
+            path: path.clone(),
+            kind,
+            size,
+            modified,
+            mode: None,
+            hidden,
+            mime: None,
+        })
+    }
+
+    async fn open_read(&self, path: &VfsPath) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
+        let op_path = Self::to_opendal_path(path);
+        let reader = self
+            .operator
+            .reader(&op_path)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        let futures_reader = reader
+            .into_futures_async_read(..)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        Ok(Box::new(futures_reader.compat()))
+    }
+
+    async fn open_read_range(
+        &self,
+        path: &VfsPath,
+        offset: u64,
+        length: Option<u64>,
+    ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
+        use opendal::BytesRange;
+
+        let op_path = Self::to_opendal_path(path);
+        let reader = self
+            .operator
+            .reader(&op_path)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        let futures_reader = reader
+            .into_futures_async_read(BytesRange::new(offset, length))
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        Ok(Box::new(futures_reader.compat()))
+    }
+
+    async fn open_write(
+        &self,
+        path: &VfsPath,
+        _mode: WriteMode,
+    ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
+        let op_path = Self::to_opendal_path(path);
+        let writer = self
+            .operator
+            .writer(&op_path)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })?;
+
+        let futures_writer = writer.into_futures_async_write();
+        Ok(Box::new(futures_writer.compat_write()))
+    }
+
+    async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
+        let op_dir = Self::to_opendal_dir_path(path);
+        self.operator
+            .create_dir(&op_dir)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })
+    }
+
+    async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
+        let op_path = Self::to_opendal_path(path);
+        self.operator
+            .delete(&op_path)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })
+    }
+
+    async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
+        let op_from = Self::to_opendal_path(from);
+        let op_to = Self::to_opendal_path(to);
+        self.operator
+            .rename(&op_from, &op_to)
+            .await
+            .map_err(|e| VfsError::Backend {
+                path: from.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            })
+    }
+}

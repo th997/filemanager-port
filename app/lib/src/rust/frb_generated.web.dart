@@ -7,6 +7,10 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/file_manager.dart';
+import 'api/metadata.dart';
+import 'api/remotes.dart';
+import 'api/servers.dart';
+import 'api/tasks.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -27,10 +31,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  BookmarkDto dco_decode_bookmark_dto(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  double dco_decode_box_autoadd_f_32(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  RemoteConfigDto dco_decode_box_autoadd_remote_config_dto(dynamic raw);
+
+  @protected
+  TaskProgressDto dco_decode_box_autoadd_task_progress_dto(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
@@ -42,19 +61,67 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EntryDto dco_decode_entry_dto(dynamic raw);
 
   @protected
+  double dco_decode_f_32(dynamic raw);
+
+  @protected
+  HistoryDto dco_decode_history_dto(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<BookmarkDto> dco_decode_list_bookmark_dto(dynamic raw);
 
   @protected
   List<EntryDto> dco_decode_list_entry_dto(dynamic raw);
 
   @protected
+  List<HistoryDto> dco_decode_list_history_dto(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<RemoteConfigDto> dco_decode_list_remote_config_dto(dynamic raw);
+
+  @protected
+  List<TrashItemDto> dco_decode_list_trash_item_dto(dynamic raw);
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  double? dco_decode_opt_box_autoadd_f_32(dynamic raw);
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
+  TaskProgressDto? dco_decode_opt_box_autoadd_task_progress_dto(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  RemoteConfigDto dco_decode_remote_config_dto(dynamic raw);
+
+  @protected
+  ServerStatusDto dco_decode_server_status_dto(dynamic raw);
+
+  @protected
+  TaskProgressDto dco_decode_task_progress_dto(dynamic raw);
+
+  @protected
+  TrashItemDto dco_decode_trash_item_dto(dynamic raw);
+
+  @protected
+  int dco_decode_u_16(dynamic raw);
 
   @protected
   BigInt dco_decode_u_64(dynamic raw);
@@ -69,10 +136,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  BookmarkDto sse_decode_bookmark_dto(SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  double sse_decode_box_autoadd_f_32(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  RemoteConfigDto sse_decode_box_autoadd_remote_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TaskProgressDto sse_decode_box_autoadd_task_progress_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
@@ -84,19 +170,73 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EntryDto sse_decode_entry_dto(SseDeserializer deserializer);
 
   @protected
+  double sse_decode_f_32(SseDeserializer deserializer);
+
+  @protected
+  HistoryDto sse_decode_history_dto(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<BookmarkDto> sse_decode_list_bookmark_dto(SseDeserializer deserializer);
 
   @protected
   List<EntryDto> sse_decode_list_entry_dto(SseDeserializer deserializer);
 
   @protected
+  List<HistoryDto> sse_decode_list_history_dto(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<RemoteConfigDto> sse_decode_list_remote_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<TrashItemDto> sse_decode_list_trash_item_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  TaskProgressDto? sse_decode_opt_box_autoadd_task_progress_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  RemoteConfigDto sse_decode_remote_config_dto(SseDeserializer deserializer);
+
+  @protected
+  ServerStatusDto sse_decode_server_status_dto(SseDeserializer deserializer);
+
+  @protected
+  TaskProgressDto sse_decode_task_progress_dto(SseDeserializer deserializer);
+
+  @protected
+  TrashItemDto sse_decode_trash_item_dto(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_u_16(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer);
@@ -114,13 +254,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bookmark_dto(BookmarkDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_i_64(
     PlatformInt64 self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_remote_config_dto(
+    RemoteConfigDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_task_progress_dto(
+    TaskProgressDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
@@ -135,10 +296,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_entry_dto(EntryDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_f_32(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_history_dto(HistoryDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_bookmark_dto(
+    List<BookmarkDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_entry_dto(List<EntryDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_history_dto(
+    List<HistoryDto> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_strict(
@@ -147,13 +329,64 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_remote_config_dto(
+    List<RemoteConfigDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_trash_item_dto(
+    List<TrashItemDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_32(double? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_task_progress_dto(
+    TaskProgressDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_remote_config_dto(
+    RemoteConfigDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_server_status_dto(
+    ServerStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_progress_dto(
+    TaskProgressDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_trash_item_dto(TrashItemDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_64(BigInt self, SseSerializer serializer);

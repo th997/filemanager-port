@@ -16,8 +16,8 @@ void main() {
     }
   });
 
-  test('VFS getCapabilities for local root', () {
-    final caps = getCapabilities(root: '/tmp');
+  test('VFS getCapabilities for local root', () async {
+    final caps = await getCapabilities(root: '/tmp');
     expect(caps.read, isTrue);
     expect(caps.write, isTrue);
   });

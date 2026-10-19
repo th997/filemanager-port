@@ -5,6 +5,7 @@ on:
     paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
   pull_request:
     paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
+  workflow_dispatch:
 
 jobs:
   linux:
@@ -61,7 +62,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build Windows
         working-directory: app
-        run: flutter build windows --debug
+        run: flutter build windows --release
+      - name: Package Release
+        shell: pwsh
+        run: Compress-Archive -Path "app/build/windows/x64/runner/Release/*" -DestinationPath "filemanager-windows-x64.zip"
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-windows-x64
+          path: filemanager-windows-x64.zip
 
   apple:
     runs-on: macos-latest

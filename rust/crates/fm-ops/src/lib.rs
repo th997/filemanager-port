@@ -7,6 +7,9 @@
 use fm_core::VfsPath;
 use std::fmt;
 
+pub mod runner;
+pub use runner::{copy_recursive, delete_recursive, total_bytes, TaskHandle, TaskManager};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationKind {
     Copy,
@@ -35,6 +38,8 @@ pub struct TaskProgress {
     pub total: Option<u64>,
     /// Item currently being processed.
     pub current: Option<VfsPath>,
+    /// Why the task failed, when it did.
+    pub error: Option<String>,
 }
 
 impl TaskProgress {
@@ -44,6 +49,7 @@ impl TaskProgress {
             completed: 0,
             total: None,
             current: None,
+            error: None,
         }
     }
 
@@ -109,5 +115,50 @@ mod tests {
         assert!(!progress.is_terminal());
         progress.state = TaskState::Cancelled;
         assert!(progress.is_terminal());
+    }
+
+    #[tokio::test]
+    async fn copy_and_delete_flow() {
+        use fm_local::LocalFs;
+        use std::sync::{Arc, Mutex};
+        use tokio_util::sync::CancellationToken;
+
+        let temp1 = tempfile::tempdir().unwrap();
+        let temp2 = tempfile::tempdir().unwrap();
+
+        std::fs::write(temp1.path().join("file.txt"), b"copied content").unwrap();
+
+        let src_fs = LocalFs::new(temp1.path());
+        let dst_fs = LocalFs::new(temp2.path());
+
+        let progress = Arc::new(Mutex::new(TaskProgress::pending()));
+        let cancel = CancellationToken::new();
+
+        copy_recursive(
+            &src_fs,
+            &VfsPath::from_slash_path("/file.txt"),
+            &dst_fs,
+            &VfsPath::from_slash_path("/file_dest.txt"),
+            &progress,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read(temp2.path().join("file_dest.txt")).unwrap(),
+            b"copied content"
+        );
+
+        delete_recursive(
+            &dst_fs,
+            &VfsPath::from_slash_path("/file_dest.txt"),
+            &progress,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert!(!temp2.path().join("file_dest.txt").exists());
     }
 }

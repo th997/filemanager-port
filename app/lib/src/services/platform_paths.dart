@@ -15,6 +15,30 @@ class PlatformPaths {
     return Platform.environment['HOME'] ?? '/';
   }
 
+  static String appDataDir() {
+    String dir;
+    if (Platform.isAndroid) {
+      dir = '/storage/emulated/0/.filemanager';
+    } else if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'] ?? Platform.environment['USERPROFILE'] ?? 'C:\\';
+      dir = '$appData\\filemanager';
+    } else {
+      final home = Platform.environment['HOME'] ?? '/tmp';
+      dir = '$home/.filemanager';
+    }
+    final d = Directory(dir);
+    if (!d.existsSync()) {
+      try {
+        d.createSync(recursive: true);
+      } catch (_) {}
+    }
+    return dir;
+  }
+
+  static String databasePath() {
+    return '${appDataDir()}/filemanager.db';
+  }
+
   static List<QuickTarget> quickTargets() {
     final targets = <QuickTarget>[];
     if (Platform.isAndroid) {

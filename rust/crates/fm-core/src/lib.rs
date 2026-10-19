@@ -29,6 +29,8 @@ pub enum LocationKind {
     Ftps,
     Smb,
     WebDav,
+    S3,
+    Oss,
 }
 
 /// A browsable root. `root` is the backend-native path of the location root.
