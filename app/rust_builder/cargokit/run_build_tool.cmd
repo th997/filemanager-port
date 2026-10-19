@@ -11,7 +11,14 @@ if not exist "%CARGOKIT_TOOL_TEMP_DIR%" (
 cd /D "%CARGOKIT_TOOL_TEMP_DIR%"
 
 SET BUILD_TOOL_PKG_DIR=%BASEDIR%build_tool
-SET DART=%FLUTTER_ROOT%\bin\cache\dart-sdk\bin\dart
+if defined FLUTTER_ROOT (
+    SET FLUTTER_ROOT=!FLUTTER_ROOT:/=\!
+)
+if exist "%FLUTTER_ROOT%\bin\cache\dart-sdk\bin\dart.exe" (
+    SET DART=%FLUTTER_ROOT%\bin\cache\dart-sdk\bin\dart.exe
+) else (
+    SET DART=dart
+)
 
 set BUILD_TOOL_PKG_DIR_POSIX=%BUILD_TOOL_PKG_DIR:\=/%
 

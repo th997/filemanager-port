@@ -60,9 +60,12 @@ jobs:
           channel: stable
           cache: true
       - uses: dtolnay/rust-toolchain@stable
+      - name: Build Rust fm-ffi
+        working-directory: rust
+        run: cargo build -p fm_ffi --release
       - name: Build Windows
         working-directory: app
-        run: flutter build windows --release
+        run: flutter build windows --release -v
       - name: Package Release
         shell: pwsh
         run: Compress-Archive -Path "app/build/windows/x64/runner/Release/*" -DestinationPath "filemanager-windows-x64.zip"
