@@ -39,7 +39,21 @@ impl LocalFs {
     fn resolve(&self, path: &VfsPath) -> VfsResult<PathBuf> {
         let mut native = self.root.clone();
         for segment in path.segments() {
-            if segment == ".." || segment == "." || segment.is_empty() {
+            // A segment is one path component. Anything containing a separator
+            // or a drive prefix would let a crafted archive/remote name escape
+            // the granted root (notably on Windows, where `Path::push` treats
+            // `C:` and `\\server` as new roots).
+            #[cfg(windows)]
+            let unsafe_segment = segment.contains('\\') || segment.contains(':');
+            #[cfg(not(windows))]
+            let unsafe_segment = false;
+            if segment.is_empty()
+                || segment == "."
+                || segment == ".."
+                || segment.contains('/')
+                || segment.contains('\0')
+                || unsafe_segment
+            {
                 return Err(VfsError::PermissionDenied { path: path.clone() });
             }
             native.push(segment);
@@ -124,9 +138,11 @@ impl Vfs for LocalFs {
             let child = dir.join(name.clone());
             let metadata = match item.metadata().await {
                 Ok(metadata) => metadata,
-                // A racing delete is not a reason to fail the whole listing.
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(self.io_error(&child, error)),
+                // Broken symlinks or restricted entries fall back to symlink metadata or skip.
+                Err(_) => match tokio::fs::symlink_metadata(item.path()).await {
+                    Ok(meta) => meta,
+                    Err(_) => continue,
+                },
             };
             entries.push(entry_from_metadata(child, name, &metadata));
         }
@@ -229,8 +245,21 @@ impl Vfs for LocalFs {
         let metadata = tokio::fs::symlink_metadata(&native)
             .await
             .map_err(|error| self.io_error(path, error))?;
-        let result = if metadata.is_dir() {
-            tokio::fs::remove_dir(&native).await
+        let result = if metadata.file_type().is_symlink() {
+            #[cfg(windows)]
+            {
+                if metadata.is_dir() {
+                    tokio::fs::remove_dir(&native).await
+                } else {
+                    tokio::fs::remove_file(&native).await
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                tokio::fs::remove_file(&native).await
+            }
+        } else if metadata.is_dir() {
+            tokio::fs::remove_dir_all(&native).await
         } else {
             tokio::fs::remove_file(&native).await
         };
@@ -270,6 +299,13 @@ mod tests {
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::File::create(dir.path().join("sub/child")).unwrap();
         dir
+    }
+
+    #[tokio::test]
+    async fn lists_system_root() {
+        let fs = LocalFs::new("/");
+        let entries = fs.list(&VfsPath::root()).await.unwrap();
+        assert!(!entries.is_empty());
     }
 
     #[tokio::test]

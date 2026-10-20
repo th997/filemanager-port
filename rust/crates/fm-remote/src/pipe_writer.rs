@@ -1,0 +1,121 @@
+//! Adapter for protocol writers that push chunks instead of implementing
+//! `AsyncWrite`.
+//!
+//! The caller writes into an in-memory pipe; a spawned task drains it into the
+//! protocol writer and finalizes it. `shutdown` waits for that finalization so
+//! upload errors reach the caller instead of being lost with the task.
+
+use std::future::Future;
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
+
+pub(crate) struct PipeWriter {
+    tx: Option<DuplexStream>,
+    result: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+    done: bool,
+}
+
+impl AsyncWrite for PipeWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        match this.tx.as_mut() {
+            Some(tx) => Pin::new(tx).poll_write(cx, buf),
+            None => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "writer already shut down",
+            ))),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        match this.tx.as_mut() {
+            Some(tx) => Pin::new(tx).poll_flush(cx),
+            None => Poll::Ready(Ok(())),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if this.done {
+            return Poll::Ready(Ok(()));
+        }
+        if let Some(tx) = this.tx.as_mut() {
+            match Pin::new(tx).poll_shutdown(cx) {
+                Poll::Ready(_) => {
+                    this.tx = None;
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+        match this.result.as_mut() {
+            Some(rx) => match Pin::new(rx).poll(cx) {
+                Poll::Ready(Ok(Ok(()))) => {
+                    this.done = true;
+                    Poll::Ready(Ok(()))
+                }
+                Poll::Ready(Ok(Err(e))) => {
+                    this.done = true;
+                    Poll::Ready(Err(io::Error::other(e)))
+                }
+                Poll::Ready(Err(_)) => {
+                    this.done = true;
+                    Poll::Ready(Err(io::Error::other("upload task ended unexpectedly")))
+                }
+                Poll::Pending => Poll::Pending,
+            },
+            None => {
+                this.done = true;
+                Poll::Ready(Ok(()))
+            }
+        }
+    }
+}
+
+impl Drop for PipeWriter {
+    fn drop(&mut self) {
+        // Dropping the pipe makes the upload task see EOF and finalize.
+        self.tx = None;
+    }
+}
+
+/// Spawn `upload`, handing it the read half of an in-memory pipe.
+pub(crate) fn pipe_writer<F, Fut>(upload: F) -> Box<dyn AsyncWrite + Send + Unpin>
+where
+    F: FnOnce(DuplexStream) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), String>> + Send + 'static,
+{
+    let (tx, rx) = tokio::io::duplex(256 * 1024);
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let _ = done_tx.send(upload(rx).await);
+    });
+    Box::new(PipeWriter {
+        tx: Some(tx),
+        result: Some(done_rx),
+        done: false,
+    })
+}
+
+/// Copy the pipe to `sink` until EOF.
+pub(crate) async fn drain_pipe(
+    rx: &mut DuplexStream,
+    sink: &mut (impl AsyncWrite + Unpin),
+) -> Result<(), String> {
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = rx.read(&mut buf).await.map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Ok(());
+        }
+        sink.write_all(&buf[..n])
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+}

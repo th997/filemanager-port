@@ -2,7 +2,7 @@
 
 use fm_vfs::{VfsError, VfsResult};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use zip::write::SimpleFileOptions;
 
@@ -62,16 +62,58 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
             })?;
         }
         ArchiveFormat::SevenZip => {
-            sevenz_rust::decompress_file(archive_path, destination_dir).map_err(|e| {
-                VfsError::Backend {
-                    path: fm_core::VfsPath::root(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-                }
+            // sevenz-rust joins entry names onto the destination without
+            // sanitising them, so a crafted archive can write outside it.
+            sevenz_rust::decompress_file_with_extract_fn(
+                archive_path,
+                destination_dir,
+                |entry, reader, _dest| {
+                    let target = safe_join(destination_dir, entry.name()).ok_or_else(|| {
+                        sevenz_rust::Error::other(format!(
+                            "unsafe archive entry path: {}",
+                            entry.name()
+                        ))
+                    })?;
+                    if entry.is_directory() {
+                        std::fs::create_dir_all(&target).map_err(sevenz_rust::Error::io)?;
+                    } else {
+                        if let Some(parent) = target.parent() {
+                            std::fs::create_dir_all(parent).map_err(sevenz_rust::Error::io)?;
+                        }
+                        let mut file =
+                            File::create(&target).map_err(sevenz_rust::Error::io)?;
+                        std::io::copy(reader, &mut file).map_err(sevenz_rust::Error::io)?;
+                    }
+                    Ok(true)
+                },
+            )
+            .map_err(|e| VfsError::Backend {
+                path: fm_core::VfsPath::root(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
             })?;
         }
     }
 
     Ok(())
+}
+
+/// Join an archive entry name onto `base`, rejecting absolute paths and any
+/// component that would escape it.
+fn safe_join(base: &Path, entry_name: &str) -> Option<std::path::PathBuf> {
+    let normalized = entry_name.replace('\\', "/");
+    let mut out = base.to_path_buf();
+    for component in normalized.split('/') {
+        match component {
+            "" | "." => continue,
+            ".." => return None,
+            _ => out.push(component),
+        }
+    }
+    if out.starts_with(base) {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsResult<()> {
@@ -100,12 +142,7 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
                 path: fm_core::VfsPath::root(),
                 source: e,
             })?;
-            let mut buffer = Vec::new();
-            f.read_to_end(&mut buffer).map_err(|e| VfsError::Backend {
-                path: fm_core::VfsPath::root(),
-                source: e,
-            })?;
-            zip.write_all(&buffer).map_err(|e| VfsError::Backend {
+            std::io::copy(&mut f, &mut zip).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
                 source: e,
             })?;
@@ -147,14 +184,23 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
             })?;
         let rel_path_str = rel_path.to_string_lossy().replace('\\', "/");
 
-        if path.is_dir() {
+        let file_type = entry.file_type().map_err(|e| VfsError::Backend {
+            path: fm_core::VfsPath::root(),
+            source: e,
+        })?;
+        if file_type.is_symlink() {
+            // Avoid cyclic symlink recursion and directory traversal
+            continue;
+        }
+
+        if file_type.is_dir() {
             zip.add_directory(&format!("{rel_path_str}/"), options)
                 .map_err(|e| VfsError::Backend {
                     path: fm_core::VfsPath::root(),
                     source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
                 })?;
             add_dir_to_zip(zip, base_dir, &path, options)?;
-        } else if path.is_file() {
+        } else if file_type.is_file() {
             zip.start_file(&rel_path_str, options)
                 .map_err(|e| VfsError::Backend {
                     path: fm_core::VfsPath::root(),
@@ -164,12 +210,7 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
                 path: fm_core::VfsPath::root(),
                 source: e,
             })?;
-            let mut buffer = Vec::new();
-            f.read_to_end(&mut buffer).map_err(|e| VfsError::Backend {
-                path: fm_core::VfsPath::root(),
-                source: e,
-            })?;
-            zip.write_all(&buffer).map_err(|e| VfsError::Backend {
+            std::io::copy(&mut f, zip).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
                 source: e,
             })?;

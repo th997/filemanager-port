@@ -54,6 +54,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
   final Set<String> _selectedPaths = {};
   bool _loading = false;
   String? _error;
+  final TextEditingController _filterController = TextEditingController();
+  String _filterQuery = '';
 
   @override
   void initState() {
@@ -61,6 +63,12 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
     _load();
+  }
+
+  @override
+  void dispose() {
+    _filterController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -97,6 +105,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     setState(() {
       _relPath = _relPath.isEmpty ? name : '$_relPath/$name';
       _selectedPaths.clear();
+      _filterQuery = '';
+      _filterController.clear();
     });
     _load();
   }
@@ -108,6 +118,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     setState(() {
       _relPath = segments.join('/');
       _selectedPaths.clear();
+      _filterQuery = '';
+      _filterController.clear();
     });
     _load();
   }
@@ -123,6 +135,21 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
         _selectedPaths.remove(p);
       } else {
         _selectedPaths.add(p);
+      }
+    });
+  }
+
+  void _selectAllFiles() {
+    setState(() {
+      final allSelected = _files.isNotEmpty && _files.every((f) => _selectedPaths.contains(_fullPath(f)));
+      if (allSelected) {
+        for (final f in _files) {
+          _selectedPaths.remove(_fullPath(f));
+        }
+      } else {
+        for (final f in _files) {
+          _selectedPaths.add(_fullPath(f));
+        }
       }
     });
   }
@@ -159,6 +186,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                               _root = target.root;
                               _relPath = target.relPath;
                               _selectedPaths.clear();
+                              _filterQuery = '';
+                              _filterController.clear();
                             });
                             _load();
                           },
@@ -182,9 +211,51 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ),
+                if (_files.isNotEmpty)
+                  TextButton.icon(
+                    icon: Icon(
+                      _files.every((f) => _selectedPaths.contains(_fullPath(f)))
+                          ? Icons.deselect
+                          : Icons.select_all,
+                      size: 16,
+                    ),
+                    label: Text(
+                      _files.every((f) => _selectedPaths.contains(_fullPath(f)))
+                          ? 'Deselect All'
+                          : 'Select All',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: _selectAllFiles,
+                  ),
               ],
             ),
             const Divider(height: 1),
+            if ((_folders.length + _files.length > 5) || _filterQuery.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                child: TextField(
+                  controller: _filterController,
+                  decoration: InputDecoration(
+                    hintText: 'Filter files & folders...',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    suffixIcon: _filterQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () {
+                              setState(() {
+                                _filterQuery = '';
+                                _filterController.clear();
+                              });
+                            },
+                          )
+                        : null,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onChanged: (v) => setState(() => _filterQuery = v),
+                ),
+              ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -192,29 +263,51 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                       ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)))
                       : (_folders.isEmpty && _files.isEmpty)
                           ? const Center(child: Text('Folder is empty', style: TextStyle(color: Colors.grey)))
-                          : ListView(
-                              children: [
-                                for (final folder in _folders)
-                                  ListTile(
-                                    dense: true,
-                                    leading: const Icon(Icons.folder, color: Colors.amber),
-                                    title: Text(folder.name),
-                                    trailing: const Icon(Icons.chevron_right, size: 16),
-                                    onTap: () => _openFolder(folder.name),
-                                  ),
-                                for (final file in _files)
-                                  ListTile(
-                                    dense: true,
-                                    leading: Checkbox(
-                                      value: _selectedPaths.contains(_fullPath(file)),
-                                      onChanged: (_) => _toggleSelect(file),
+                          : () {
+                              final query = _filterQuery.toLowerCase();
+                              final displayedFolders = query.isEmpty
+                                  ? _folders
+                                  : _folders.where((f) => f.name.toLowerCase().contains(query)).toList();
+                              final displayedFiles = query.isEmpty
+                                  ? _files
+                                  : _files.where((f) => f.name.toLowerCase().contains(query)).toList();
+
+                              if (displayedFolders.isEmpty && displayedFiles.isEmpty) {
+                                return const Center(
+                                  child: Text('No matching items', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                );
+                              }
+
+                              return ListView(
+                                children: [
+                                  for (final folder in displayedFolders)
+                                    ListTile(
+                                      dense: true,
+                                      leading: const Icon(Icons.folder, color: Colors.amber),
+                                      title: Text(folder.name),
+                                      trailing: const Icon(Icons.chevron_right, size: 16),
+                                      onTap: () => _openFolder(folder.name),
                                     ),
-                                    title: Text(file.name),
-                                    subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
-                                    onTap: () => _toggleSelect(file),
-                                  ),
-                              ],
-                            ),
+                                  for (final file in displayedFiles)
+                                    ListTile(
+                                      dense: true,
+                                      leading: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Checkbox(
+                                            value: _selectedPaths.contains(_fullPath(file)),
+                                            onChanged: (_) => _toggleSelect(file),
+                                          ),
+                                          Icon(file.icon, color: file.iconColor(context), size: 22),
+                                        ],
+                                      ),
+                                      title: Text(file.name),
+                                      subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
+                                      onTap: () => _toggleSelect(file),
+                                    ),
+                                ],
+                              );
+                            }(),
             ),
           ],
         ),

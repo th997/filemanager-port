@@ -74,6 +74,41 @@ class PlatformPaths {
           relPath: 'Documents',
         ),
       ]);
+    } else if (Platform.isWindows) {
+      final home = Platform.environment['USERPROFILE'] ?? 'C:\\';
+      targets.addAll([
+        QuickTarget(
+          name: 'Home',
+          path: home,
+          root: home,
+          relPath: '',
+        ),
+        QuickTarget(
+          name: 'Downloads',
+          path: '$home\\Downloads',
+          root: home,
+          relPath: 'Downloads',
+        ),
+        QuickTarget(
+          name: 'Documents',
+          path: '$home\\Documents',
+          root: home,
+          relPath: 'Documents',
+        ),
+      ]);
+      for (final letter in 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('')) {
+        final drive = '$letter:\\';
+        if (Directory(drive).existsSync()) {
+          targets.add(
+            QuickTarget(
+              name: 'Drive ($letter:)',
+              path: drive,
+              root: drive,
+              relPath: '',
+            ),
+          );
+        }
+      }
     } else {
       final home = Platform.environment['HOME'] ?? '/';
       targets.addAll([

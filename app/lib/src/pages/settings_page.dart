@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../dialogs/folder_picker_dialog.dart';
 import '../rust/api/servers.dart';
+import '../services/file_open_service.dart';
 import '../services/platform_paths.dart';
 import '../services/sharing_service.dart';
 
@@ -28,6 +30,21 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _portCtrl = TextEditingController(text: '8080');
   final TextEditingController _pwdCtrl = TextEditingController();
   bool _readOnly = true;
+  bool _obscurePwd = true;
+
+  Future<void> _pickShareFolder() async {
+    final picked = await FolderPickerDialog.show(
+      context,
+      title: 'Choose shared folder',
+      initialRoot: _shareRoot,
+    );
+    if (picked != null && mounted) {
+      setState(() => _shareRoot = picked.path);
+    }
+  }
+
+  int _cacheSizeBytes = 0;
+  bool _clearingCache = false;
 
   @override
   void initState() {
@@ -35,6 +52,33 @@ class _SettingsPageState extends State<SettingsPage> {
     _shareRoot = PlatformPaths.defaultRoot();
     _serverRunning = SharingService.instance.isRunning;
     _serverStatus = SharingService.instance.currentStatus;
+    _updateCacheSize();
+  }
+
+  Future<void> _updateCacheSize() async {
+    final bytes = await FileOpenService.instance.getExportCacheSizeBytes();
+    if (mounted) {
+      setState(() => _cacheSizeBytes = bytes);
+    }
+  }
+
+  Future<void> _clearCache() async {
+    setState(() => _clearingCache = true);
+    await FileOpenService.instance.clearExports();
+    await _updateCacheSize();
+    if (mounted) {
+      setState(() => _clearingCache = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Temporary cache cleared')),
+      );
+    }
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   @override
@@ -204,6 +248,39 @@ class _SettingsPageState extends State<SettingsPage> {
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                     const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.folder_shared, size: 20, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Shared Folder', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                                Text(
+                                  _shareRoot,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _serverRunning ? null : _pickShareFolder,
+                            child: const Text('Change'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -217,8 +294,17 @@ class _SettingsPageState extends State<SettingsPage> {
                         Expanded(
                           child: TextField(
                             controller: _pwdCtrl,
-                            obscureText: true,
-                            decoration: const InputDecoration(labelText: 'Password (Optional)', border: OutlineInputBorder(), isDense: true),
+                            obscureText: _obscurePwd,
+                            decoration: InputDecoration(
+                              labelText: 'Password (Optional)',
+                              border: const OutlineInputBorder(),
+                              isDense: true,
+                              suffixIcon: IconButton(
+                                icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
+                                tooltip: _obscurePwd ? 'Show password' : 'Hide password',
+                                onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -235,6 +321,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 ],
               ),
             ),
+          ),
+
+          const Divider(),
+          _buildSectionHeader('Storage & Cache'),
+          ListTile(
+            leading: const Icon(Icons.cleaning_services),
+            title: const Text('Export & Preview Cache'),
+            subtitle: Text('Temporary files cached when opening with external apps (${_formatSize(_cacheSizeBytes)})'),
+            trailing: _clearingCache
+                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                : OutlinedButton(
+                    onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
+                    child: const Text('Clear'),
+                  ),
           ),
 
           const Divider(),

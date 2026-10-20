@@ -131,6 +131,16 @@ class HighlightService {
       color: theme['root']?.color,
     );
 
+    // Guard against large files freezing UI isolate with regex backtracking
+    if (code.length > 64 * 1024) return null;
+    int lineCount = 1;
+    for (int i = 0; i < code.length; i++) {
+      if (code.codeUnitAt(i) == 10) {
+        lineCount++;
+        if (lineCount > 1500) return null;
+      }
+    }
+
     try {
       final result = _highlight.highlight(code: code, language: language);
       final renderer = TextSpanRenderer(base, theme);

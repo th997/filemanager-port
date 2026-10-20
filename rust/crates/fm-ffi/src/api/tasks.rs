@@ -3,13 +3,52 @@ use fm_archive::ops::{create_zip, extract_archive};
 use fm_core::VfsPath;
 use fm_ops::{copy_recursive, delete_recursive, total_bytes, TaskManager, TaskProgress, TaskState};
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 static TASK_MGR: OnceLock<TaskManager> = OnceLock::new();
 
 fn task_mgr() -> &'static TaskManager {
     TASK_MGR.get_or_init(TaskManager::new)
+}
+
+/// Record the terminal state of a task.
+///
+/// A cancellation makes the worker's operation fail; reporting that as
+/// `failed` would show a scary error for an action the user chose, so the
+/// cancellation wins over the error it caused.
+fn finish(
+    progress: &Arc<Mutex<TaskProgress>>,
+    cancel: &CancellationToken,
+    result: Result<(), String>,
+) {
+    let mut p = progress.lock().unwrap();
+    match result {
+        Ok(()) => {
+            if p.state != TaskState::Cancelled {
+                p.state = TaskState::Completed;
+            }
+        }
+        Err(_) if cancel.is_cancelled() => {
+            p.state = TaskState::Cancelled;
+            p.error = None;
+        }
+        Err(e) => {
+            p.state = TaskState::Failed;
+            p.error = Some(e);
+        }
+    }
+}
+
+/// Remove a destination that this task created, after a failed or cancelled
+/// copy. Only call this when the destination did not exist beforehand, so a
+/// merge into an existing directory never deletes unrelated content. Cleanup
+/// runs with its own token so cancellation does not skip it.
+async fn discard_partial_copy(vfs: &dyn fm_vfs::Vfs, dst: &VfsPath) {
+    let progress = Arc::new(Mutex::new(TaskProgress::pending()));
+    let cleanup_cancel = CancellationToken::new();
+    let _ = delete_recursive(vfs, dst, &progress, &cleanup_cancel).await;
 }
 
 #[derive(Debug, Clone)]
@@ -75,16 +114,35 @@ pub async fn start_copy_task(
                 p.total = Some(total);
             }
 
+            let is_batch = src_paths.len() > 1;
             for src in src_paths {
                 if cancel.is_cancelled() {
                     break;
                 }
                 let src_p = VfsPath::from_slash_path(&src);
-                let file_name = dst_name
-                    .clone()
-                    .unwrap_or_else(|| src_p.name().unwrap_or("file").to_string());
+                let file_name = if is_batch {
+                    src_p.name().unwrap_or("file").to_string()
+                } else {
+                    dst_name
+                        .clone()
+                        .unwrap_or_else(|| src_p.name().unwrap_or("file").to_string())
+                };
                 let dst_p = dst_base.join(file_name);
-                copy_recursive(
+                if src_root.trim_end_matches('/') == dst_root.trim_end_matches('/') {
+                    // Copying a directory into itself recurses forever, and
+                    // copying a file onto itself truncates the source before it
+                    // is read.
+                    if dst_p == src_p || dst_p.starts_with(&src_p) {
+                        return Err(format!(
+                            "cannot copy {} into itself",
+                            src_p.to_slash_string()
+                        ));
+                    }
+                }
+                // A destination that existed before the copy is not ours to
+                // remove if the copy fails.
+                let created = dst_vfs.stat(&dst_p).await.is_err();
+                if let Err(e) = copy_recursive(
                     src_vfs.as_ref(),
                     &src_p,
                     dst_vfs.as_ref(),
@@ -93,25 +151,21 @@ pub async fn start_copy_task(
                     &cancel,
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                {
+                    if created {
+                        discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
+                    }
+                    return Err(e.to_string());
+                }
             }
             Ok::<(), String>(())
         };
 
-        match run.await {
-            Ok(()) => {
-                let mut p = progress.lock().unwrap();
-                if p.state != TaskState::Cancelled {
-                    p.state = TaskState::Completed;
-                }
-            }
-            Err(e) => {
-                eprintln!("copy task {tid} failed: {e}");
-                let mut p = progress.lock().unwrap();
-                p.state = TaskState::Failed;
-                p.error = Some(e);
-            }
+        let result = run.await;
+        if let Err(e) = &result {
+            eprintln!("copy task {tid} failed: {e}");
         }
+        finish(&progress, &cancel, result);
     });
 
     Ok(task_id)
@@ -140,7 +194,16 @@ pub async fn start_move_task(
                 let src_p = VfsPath::from_slash_path(src);
                 let file_name = src_p.name().unwrap_or("file");
                 let dst_p = dst_base.join(file_name);
-                copy_recursive(
+                if src_root.trim_end_matches('/') == dst_root.trim_end_matches('/')
+                    && (dst_p == src_p || dst_p.starts_with(&src_p))
+                {
+                    return Err(format!(
+                        "cannot move {} into itself",
+                        src_p.to_slash_string()
+                    ));
+                }
+                let created = dst_vfs.stat(&dst_p).await.is_err();
+                if let Err(e) = copy_recursive(
                     src_vfs.as_ref(),
                     &src_p,
                     dst_vfs.as_ref(),
@@ -149,29 +212,30 @@ pub async fn start_move_task(
                     &cancel,
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                {
+                    if created {
+                        discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
+                    }
+                    return Err(e.to_string());
+                }
 
-                delete_recursive(src_vfs.as_ref(), &src_p, &progress, &cancel)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                if let Err(e) =
+                    delete_recursive(src_vfs.as_ref(), &src_p, &progress, &cancel).await
+                {
+                    if created {
+                        discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
+                    }
+                    return Err(e.to_string());
+                }
             }
             Ok::<(), String>(())
         };
 
-        match run.await {
-            Ok(()) => {
-                let mut p = progress.lock().unwrap();
-                if p.state != TaskState::Cancelled {
-                    p.state = TaskState::Completed;
-                }
-            }
-            Err(e) => {
-                eprintln!("move task {tid} failed: {e}");
-                let mut p = progress.lock().unwrap();
-                p.state = TaskState::Failed;
-                p.error = Some(e);
-            }
+        let result = run.await;
+        if let Err(e) = &result {
+            eprintln!("move task {tid} failed: {e}");
         }
+        finish(&progress, &cancel, result);
     });
 
     Ok(task_id)
@@ -197,20 +261,11 @@ pub async fn start_delete_task(root: String, paths: Vec<String>) -> Result<Strin
             Ok::<(), String>(())
         };
 
-        match run.await {
-            Ok(()) => {
-                let mut p = progress.lock().unwrap();
-                if p.state != TaskState::Cancelled {
-                    p.state = TaskState::Completed;
-                }
-            }
-            Err(e) => {
-                eprintln!("delete task {tid} failed: {e}");
-                let mut p = progress.lock().unwrap();
-                p.state = TaskState::Failed;
-                p.error = Some(e);
-            }
+        let result = run.await;
+        if let Err(e) = &result {
+            eprintln!("delete task {tid} failed: {e}");
         }
+        finish(&progress, &cancel, result);
     });
 
     Ok(task_id)
@@ -224,8 +279,10 @@ pub async fn start_compress_task(
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
 
+    let tid = task_id.clone();
     tokio::spawn(async move {
         if cancel.is_cancelled() {
+            finish(&progress, &cancel, Ok(()));
             return;
         }
         let root = PathBuf::from(src_root);
@@ -235,20 +292,21 @@ pub async fn start_compress_task(
             .collect();
 
         let dst = PathBuf::from(dst_archive_path);
-        let res = create_zip(&items, &dst);
+        // Archiving blocks on the filesystem; keep the async worker free.
+        let res = tokio::task::spawn_blocking(move || create_zip(&items, &dst))
+            .await
+            .unwrap_or_else(|e| {
+                Err(fm_vfs::VfsError::Backend {
+                    path: VfsPath::root(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+            });
 
-        let mut p = progress.lock().unwrap();
-        match res {
-            Ok(()) => {
-                if p.state != TaskState::Cancelled {
-                    p.state = TaskState::Completed;
-                }
-            }
-            Err(e) => {
-                p.state = TaskState::Failed;
-                p.error = Some(e.to_string());
-            }
+        let result = res.map_err(|e| e.to_string());
+        if let Err(e) = &result {
+            eprintln!("compress task {tid} failed: {e}");
         }
+        finish(&progress, &cancel, result);
     });
 
     Ok(task_id)
@@ -258,26 +316,29 @@ pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
 
+    let tid = task_id.clone();
     tokio::spawn(async move {
         if cancel.is_cancelled() {
+            finish(&progress, &cancel, Ok(()));
             return;
         }
         let src = PathBuf::from(archive_path);
         let dst = PathBuf::from(dst_dir);
-        let res = extract_archive(&src, &dst);
+        // Extraction blocks on the filesystem; keep the async worker free.
+        let res = tokio::task::spawn_blocking(move || extract_archive(&src, &dst))
+            .await
+            .unwrap_or_else(|e| {
+                Err(fm_vfs::VfsError::Backend {
+                    path: VfsPath::root(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+            });
 
-        let mut p = progress.lock().unwrap();
-        match res {
-            Ok(()) => {
-                if p.state != TaskState::Cancelled {
-                    p.state = TaskState::Completed;
-                }
-            }
-            Err(e) => {
-                p.state = TaskState::Failed;
-                p.error = Some(e.to_string());
-            }
+        let result = res.map_err(|e| e.to_string());
+        if let Err(e) = &result {
+            eprintln!("extract task {tid} failed: {e}");
         }
+        finish(&progress, &cancel, result);
     });
 
     Ok(task_id)

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../rust/api/tasks.dart';
 import '../services/task_service.dart';
 
@@ -13,6 +14,8 @@ class TaskProgressDialog extends StatefulWidget {
     required this.title,
   });
 
+  /// Resolves to `true` only when the task completed; failures and
+  /// cancellations resolve to `false` so callers can skip success messages.
   static Future<bool?> show(BuildContext context, String taskId, String title) {
     return showDialog<bool>(
       context: context,
@@ -28,18 +31,28 @@ class TaskProgressDialog extends StatefulWidget {
 class _TaskProgressDialogState extends State<TaskProgressDialog> {
   StreamSubscription<TaskProgressDto>? _sub;
   TaskProgressDto? _latest;
+  bool _dismissed = false;
+
+  void _pop(bool result) {
+    if (_dismissed || !mounted) return;
+    _dismissed = true;
+    _sub?.cancel();
+    Navigator.of(context).pop(result);
+  }
 
   @override
   void initState() {
     super.initState();
     _sub = TaskService.instance.watch(widget.taskId).listen((p) {
-      if (mounted) {
-        setState(() => _latest = p);
-        if (p.state == 'completed') {
-          Navigator.of(context).pop(true);
-        } else if (p.state == 'failed') {
-          // Keep the dialog open so the reason is visible.
-        }
+      if (!mounted) return;
+      setState(() => _latest = p);
+      if (p.state == 'completed') {
+        _pop(true);
+      }
+      // Failures stay open so the reason is visible. A cancellation is the
+      // user's own action, so close instead of asking them to dismiss it.
+      if (p.state == 'cancelled') {
+        _pop(false);
       }
     });
   }
@@ -52,7 +65,43 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
 
   void _cancel() {
     TaskService.instance.cancel(widget.taskId);
-    Navigator.of(context).pop(false);
+    _pop(false);
+  }
+
+  String _statusLabel(String state) {
+    switch (state) {
+      case 'pending':
+        return 'Waiting…';
+      case 'running':
+        return 'In progress…';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return state;
+    }
+  }
+
+  String _formatBytes(BigInt bytes) {
+    final value = bytes.toDouble();
+    if (value < 1024) return '${value.toInt()} B';
+    if (value < 1024 * 1024) return '${(value / 1024).toStringAsFixed(1)} KB';
+    if (value < 1024 * 1024 * 1024) {
+      return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  /// Bytes when the task measured a byte total; otherwise a plain item count.
+  String _processedLabel(TaskProgressDto p) {
+    final total = p.total;
+    if (total != null) {
+      return '${_formatBytes(p.completed)} of ${_formatBytes(total)}';
+    }
+    return '${p.completed} items';
   }
 
   @override
@@ -67,15 +116,26 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _statusLabel(state),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              if (fraction != null)
+                Text(
+                  '${(fraction * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
           if (fraction != null)
             LinearProgressIndicator(value: fraction)
           else
             const LinearProgressIndicator(),
           const SizedBox(height: 12),
-          Text(
-            'Status: $state',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-          ),
           if (p?.current != null) ...[
             const SizedBox(height: 4),
             Text(
@@ -88,7 +148,7 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
           if (p != null) ...[
             const SizedBox(height: 4),
             Text(
-              'Processed: ${p.completed} items/bytes',
+              _processedLabel(p),
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
           ],
@@ -102,12 +162,23 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
         ],
       ),
       actions: [
-        if (state == 'failed')
-          TextButton(
+        if (state == 'failed') ...[
+          if (p?.error != null)
+            TextButton.icon(
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('Copy Error'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: p!.error!));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Error copied to clipboard')),
+                );
+              },
+            ),
+          FilledButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Close'),
-          )
-        else
+          ),
+        ] else
           TextButton(
             onPressed: _cancel,
             child: const Text('Cancel'),

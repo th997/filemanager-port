@@ -148,12 +148,20 @@ pub async fn read_text_file(root: String, path: String) -> Result<String, String
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
     let mut reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
-    let mut buffer = String::new();
+    let mut bytes = Vec::new();
     reader
-        .read_to_string(&mut buffer)
+        .read_to_end(&mut bytes)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(buffer)
+    // Text files in the wild are not guaranteed UTF-8; show replacement
+    // characters instead of refusing to open the file.
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Drop a cached backend so the next access rebuilds it from stored config.
+#[flutter_rust_bridge::frb(sync)]
+pub fn invalidate_root(root: String) {
+    VfsRegistry::global().invalidate(&root);
 }
 
 pub async fn write_text_file(root: String, path: String, content: String) -> Result<(), String> {
@@ -168,6 +176,8 @@ pub async fn write_text_file(root: String, path: String, content: String) -> Res
         .await
         .map_err(|e| e.to_string())?;
     writer.flush().await.map_err(|e| e.to_string())?;
+    // Remote writers commit the object on shutdown; flush alone is not enough.
+    writer.shutdown().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 

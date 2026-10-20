@@ -3,6 +3,7 @@
 pub mod ftp_backend;
 pub mod multi_bucket;
 pub mod opendal_backend;
+pub(crate) mod pipe_writer;
 pub mod sftp_backend;
 pub mod smb_backend;
 

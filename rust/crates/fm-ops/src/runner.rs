@@ -135,7 +135,7 @@ async fn copy_single_file(
     cancel: &CancellationToken,
 ) -> VfsResult<()> {
     let mut reader = src_vfs.open_read(src_path).await?;
-    let mut writer = dst_vfs.open_write(dst_path, WriteMode::Create).await?;
+    let mut writer = dst_vfs.open_write(dst_path, WriteMode::Truncate).await?;
 
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -164,6 +164,7 @@ async fn copy_single_file(
         path: dst_path.clone(),
         source: e,
     })?;
+    let _ = writer.shutdown().await;
 
     Ok(())
 }
@@ -177,6 +178,12 @@ pub async fn delete_recursive(
 ) -> VfsResult<()> {
     if cancel.is_cancelled() {
         return Err(VfsError::Unsupported { operation: "cancelled" });
+    }
+
+    {
+        let mut p = progress.lock().unwrap();
+        p.state = TaskState::Running;
+        p.current = Some(path.clone());
     }
 
     let stat = vfs.stat(path).await?;

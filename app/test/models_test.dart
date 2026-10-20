@@ -1,5 +1,6 @@
 import 'package:filemanager/src/models/entry_item.dart';
 import 'package:filemanager/src/rust/api/file_manager.dart';
+import 'package:filemanager/src/services/path_utils.dart';
 import 'package:filemanager/src/services/platform_paths.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -66,6 +67,24 @@ void main() {
         EntryDto(name: 'c', path: '/c', isDir: false, size: BigInt.from(5 * 1024 * 1024), hidden: false),
       );
       expect(large.formattedSize, '5.0 MB');
+    });
+  });
+
+  group('Path utils', () {
+    test('joins relative paths onto native roots without doubling separators', () {
+      expect(joinNative('/', 'a/b'), '/a/b');
+      expect(joinNative('/home/user', 'a/b'), '/home/user/a/b');
+      expect(joinNative('/home/user/', 'a'), '/home/user/a');
+      expect(joinNative('/home/user', ''), '/home/user');
+      expect(joinNative(r'C:\', 'a/b'), r'C:\a\b');
+    });
+
+    test('recognises native roots only', () {
+      expect(isNativeRoot('/storage/emulated/0'), isTrue);
+      expect(isNativeRoot(r'C:\'), isTrue);
+      expect(isNativeRoot('C:/foo/bar'), isTrue);
+      expect(isNativeRoot('remote://abc'), isFalse);
+      expect(isNativeRoot('archive:///tmp/a.zip'), isFalse);
     });
   });
 

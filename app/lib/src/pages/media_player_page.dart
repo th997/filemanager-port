@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../rust/api/servers.dart';
+import '../services/path_utils.dart';
 
 /// Video and audio playback for local, remote, and archive files.
 ///
@@ -33,25 +35,62 @@ class MediaPlayerPage extends StatefulWidget {
 class _MediaPlayerPageState extends State<MediaPlayerPage> {
   late final Player _player;
   late final VideoController _controller;
+  StreamSubscription<String>? _errorSub;
+  StreamSubscription<double>? _volumeSub;
   String? _error;
   bool _opened = false;
+  bool _isLooping = false;
+  double _volume = 100.0;
+  double _lastNonZeroVolume = 100.0;
 
   @override
   void initState() {
     super.initState();
     _player = Player();
-    _controller = VideoController(_player);
-    _player.stream.error.listen((message) {
+    _controller = VideoController(
+      _player,
+      configuration: VideoControllerConfiguration(
+        hwdec: Platform.isLinux ? 'no' : null,
+        enableHardwareAcceleration: !Platform.isLinux,
+      ),
+    );
+    _volume = _player.state.volume;
+    _volumeSub = _player.stream.volume.listen((vol) {
+      if (mounted) setState(() => _volume = vol);
+    });
+    _errorSub = _player.stream.error.listen((message) {
       if (mounted) setState(() => _error = message);
     });
     _open();
   }
 
+  void _toggleMute() {
+    if (_volume > 0) {
+      _lastNonZeroVolume = _volume;
+      _player.setVolume(0.0);
+    } else {
+      _player.setVolume(_lastNonZeroVolume > 0 ? _lastNonZeroVolume : 100.0);
+    }
+  }
+
+  void _changeVolume(double delta) {
+    final newVol = (_volume + delta).clamp(0.0, 100.0);
+    _player.setVolume(newVol);
+    if (newVol > 0) _lastNonZeroVolume = newVol;
+  }
+
+  void _seekRelative(int seconds) {
+    final duration = _player.state.duration;
+    final pos = _player.state.position + Duration(seconds: seconds);
+    final target = pos < Duration.zero ? Duration.zero : (pos > duration ? duration : pos);
+    _player.seek(target);
+  }
+
   Future<void> _open() async {
     try {
       final String uri;
-      final native = '${widget.root}/${widget.path}';
-      if (widget.root.startsWith('/') && File(native).existsSync()) {
+      final native = joinNative(widget.root, widget.path);
+      if (isNativeRoot(widget.root) && File(native).existsSync()) {
         uri = Uri.file(native).toString();
       } else {
         final base = (await startMediaStream(root: widget.root))
@@ -72,6 +111,9 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
 
   @override
   void dispose() {
+    _errorSub?.cancel();
+    _volumeSub?.cancel();
+    _player.stop();
     _player.dispose();
     super.dispose();
   }
@@ -125,13 +167,86 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black87,
-        foregroundColor: Colors.white,
-        title: Text(widget.fileName, overflow: TextOverflow.ellipsis),
-      ),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          _player.playOrPause();
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+          _seekRelative(-5);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+          _seekRelative(5);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+          _changeVolume(10);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+          _changeVolume(-10);
+        },
+        const SingleActivator(LogicalKeyboardKey.keyM): () {
+          _toggleMute();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: PopScope(
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            _player.stop();
+          },
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            appBar: AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () async {
+                  await _player.stop();
+                  if (context.mounted) {
+                    Navigator.of(context).maybePop();
+                  }
+                },
+              ),
+              backgroundColor: Colors.black87,
+              foregroundColor: Colors.white,
+              title: Text(widget.fileName, overflow: TextOverflow.ellipsis),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.replay_10),
+                  tooltip: 'Rewind 10s (←)',
+                  onPressed: () => _seekRelative(-10),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.forward_10),
+                  tooltip: 'Forward 10s (→)',
+                  onPressed: () => _seekRelative(10),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _volume == 0
+                        ? Icons.volume_off
+                        : (_volume < 50 ? Icons.volume_down : Icons.volume_up),
+                  ),
+                  tooltip: _volume == 0
+                      ? 'Unmute (M)'
+                      : 'Mute (M) (${_volume.toInt()}%)',
+                  onPressed: _toggleMute,
+                ),
+                IconButton(
+                  icon: Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
+                  tooltip: _isLooping ? 'Loop: Single' : 'Loop: Off',
+                  color: _isLooping ? Colors.blueAccent : Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _isLooping = !_isLooping;
+                      _player.setPlaylistMode(
+                        _isLooping ? PlaylistMode.single : PlaylistMode.none,
+                      );
+                    });
+                  },
+                ),
+              ],
+            ),
       body: _error != null
           ? Center(
               child: Padding(
@@ -195,6 +310,9 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                       ),
                   ],
                 ),
+          ),
+        ),
+      ),
     );
   }
 }

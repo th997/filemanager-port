@@ -38,11 +38,15 @@ pub fn parse_configured_buckets(bucket_str: Option<&str>) -> Option<Vec<String>>
     }
 }
 
-/// Lists all buckets for an AWS S3 or compatible service account using SigV4.
-pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsError> {
-    let (base_url, host) = if let Some(endpoint) = &config.endpoint {
-        let ep = endpoint.trim_end_matches('/');
-        let parsed = reqwest::Url::parse(ep).map_err(|e| VfsError::Connection {
+fn get_s3_base_and_host(config: &RemoteConfig) -> Result<(String, String), VfsError> {
+    if let Some(endpoint) = &config.endpoint {
+        let trimmed = endpoint.trim().trim_end_matches('/');
+        let ep = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+            format!("https://{trimmed}")
+        } else {
+            trimmed.to_string()
+        };
+        let parsed = reqwest::Url::parse(&ep).map_err(|e| VfsError::Connection {
             message: format!("invalid S3 endpoint URL: {e}"),
         })?;
         let host = parsed.host_str().unwrap_or("localhost").to_string();
@@ -51,26 +55,90 @@ pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsEr
         } else {
             host
         };
-        (ep.to_string(), host_header)
+        Ok((ep, host_header))
     } else {
         let region = config.region.as_deref().unwrap_or("us-east-1");
         if region == "us-east-1" {
-            (
+            Ok((
                 "https://s3.amazonaws.com".to_string(),
                 "s3.amazonaws.com".to_string(),
-            )
+            ))
         } else {
-            (
+            Ok((
                 format!("https://s3.{region}.amazonaws.com"),
                 format!("s3.{region}.amazonaws.com"),
-            )
+            ))
         }
-    };
+    }
+}
 
-    let region = config.region.as_deref().unwrap_or("us-east-1");
+fn sign_s3_request(
+    method: &str,
+    uri_path: &str,
+    host_header: &str,
+    region: &str,
+    key_id: &str,
+    key_secret: &str,
+    payload_hash: &str,
+) -> Result<(String, String, String), VfsError> {
     let now = Utc::now();
     let date_stamp = now.format("%Y%m%d").to_string();
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
+
+    let canonical_headers = format!(
+        "host:{host_header}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n"
+    );
+    let signed_headers = "host;x-amz-content-sha256;x-amz-date";
+    let canonical_request = format!(
+        "{method}\n{uri_path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+    );
+
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_request.as_bytes());
+    let canonical_request_hash = hex::encode(hasher.finalize());
+
+    let credential_scope = format!("{date_stamp}/{region}/s3/aws4_request");
+    let string_to_sign = format!(
+        "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{canonical_request_hash}"
+    );
+
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(format!("AWS4{key_secret}").as_bytes())
+        .map_err(|e| VfsError::Connection { message: e.to_string() })?;
+    mac.update(date_stamp.as_bytes());
+    let k_date = mac.finalize().into_bytes();
+
+    let mut mac = HmacSha256::new_from_slice(&k_date)
+        .map_err(|e| VfsError::Connection { message: e.to_string() })?;
+    mac.update(region.as_bytes());
+    let k_region = mac.finalize().into_bytes();
+
+    let mut mac = HmacSha256::new_from_slice(&k_region)
+        .map_err(|e| VfsError::Connection { message: e.to_string() })?;
+    mac.update(b"s3");
+    let k_service = mac.finalize().into_bytes();
+
+    let mut mac = HmacSha256::new_from_slice(&k_service)
+        .map_err(|e| VfsError::Connection { message: e.to_string() })?;
+    mac.update(b"aws4_request");
+    let k_signing = mac.finalize().into_bytes();
+
+    let mut mac = HmacSha256::new_from_slice(&k_signing)
+        .map_err(|e| VfsError::Connection { message: e.to_string() })?;
+    mac.update(string_to_sign.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let auth_header = format!(
+        "AWS4-HMAC-SHA256 Credential={key_id}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
+    );
+
+    Ok((auth_header, amz_date, host_header.to_string()))
+}
+
+/// Lists all buckets for an AWS S3 or compatible service account using SigV4.
+pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsError> {
+    let (base_url, host_header) = get_s3_base_and_host(config)?;
+    let region = config.region.as_deref().unwrap_or("us-east-1");
     let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     let client = reqwest::Client::builder()
@@ -83,67 +151,20 @@ pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsEr
 
     if let (Some(key_id), Some(key_secret)) = (&config.key_id, &config.key_secret) {
         if !key_id.is_empty() && !key_secret.is_empty() {
-            let canonical_headers = format!(
-                "host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n"
-            );
-            let signed_headers = "host;x-amz-content-sha256;x-amz-date";
-            let canonical_request = format!(
-                "GET\n/\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
-            );
-
-            let mut hasher = Sha256::new();
-            hasher.update(canonical_request.as_bytes());
-            let canonical_request_hash = hex::encode(hasher.finalize());
-
-            let credential_scope = format!("{date_stamp}/{region}/s3/aws4_request");
-            let string_to_sign = format!(
-                "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{canonical_request_hash}"
-            );
-
-            type HmacSha256 = Hmac<Sha256>;
-            let mut mac = HmacSha256::new_from_slice(format!("AWS4{key_secret}").as_bytes())
-                .map_err(|e| VfsError::Connection {
-                    message: e.to_string(),
-                })?;
-            mac.update(date_stamp.as_bytes());
-            let k_date = mac.finalize().into_bytes();
-
-            let mut mac = HmacSha256::new_from_slice(&k_date).map_err(|e| VfsError::Connection {
-                message: e.to_string(),
-            })?;
-            mac.update(region.as_bytes());
-            let k_region = mac.finalize().into_bytes();
-
-            let mut mac =
-                HmacSha256::new_from_slice(&k_region).map_err(|e| VfsError::Connection {
-                    message: e.to_string(),
-                })?;
-            mac.update(b"s3");
-            let k_service = mac.finalize().into_bytes();
-
-            let mut mac =
-                HmacSha256::new_from_slice(&k_service).map_err(|e| VfsError::Connection {
-                    message: e.to_string(),
-                })?;
-            mac.update(b"aws4_request");
-            let k_signing = mac.finalize().into_bytes();
-
-            let mut mac =
-                HmacSha256::new_from_slice(&k_signing).map_err(|e| VfsError::Connection {
-                    message: e.to_string(),
-                })?;
-            mac.update(string_to_sign.as_bytes());
-            let signature = hex::encode(mac.finalize().into_bytes());
-
-            let auth_header = format!(
-                "AWS4-HMAC-SHA256 Credential={key_id}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
-            );
-
+            let (auth, amz_date, host) = sign_s3_request(
+                "GET",
+                "/",
+                &host_header,
+                region,
+                key_id,
+                key_secret,
+                payload_hash,
+            )?;
             req = req
-                .header("host", &host)
-                .header("x-amz-date", &amz_date)
+                .header("host", host)
+                .header("x-amz-date", amz_date)
                 .header("x-amz-content-sha256", payload_hash)
-                .header("authorization", auth_header);
+                .header("authorization", auth);
         }
     }
 
@@ -164,6 +185,104 @@ pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsEr
     })?;
 
     parse_bucket_names(&xml)
+}
+
+/// Create a new bucket in S3.
+pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(), VfsError> {
+    let (base_url, host_header) = get_s3_base_and_host(config)?;
+    let region = config.region.as_deref().unwrap_or("us-east-1");
+    let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| VfsError::Connection {
+            message: format!("failed to build HTTP client: {e}"),
+        })?;
+
+    let uri_path = format!("/{bucket}");
+    let mut req = client.put(format!("{base_url}/{bucket}"));
+
+    if let (Some(key_id), Some(key_secret)) = (&config.key_id, &config.key_secret) {
+        if !key_id.is_empty() && !key_secret.is_empty() {
+            let (auth, amz_date, host) = sign_s3_request(
+                "PUT",
+                &uri_path,
+                &host_header,
+                region,
+                key_id,
+                key_secret,
+                payload_hash,
+            )?;
+            req = req
+                .header("host", host)
+                .header("x-amz-date", amz_date)
+                .header("x-amz-content-sha256", payload_hash)
+                .header("authorization", auth);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| VfsError::Connection {
+        message: format!("failed to send S3 CreateBucket request: {e}"),
+    })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(VfsError::Connection {
+            message: format!("S3 CreateBucket returned status {status}: {body}"),
+        });
+    }
+
+    Ok(())
+}
+
+/// Delete an empty bucket in S3.
+pub async fn delete_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(), VfsError> {
+    let (base_url, host_header) = get_s3_base_and_host(config)?;
+    let region = config.region.as_deref().unwrap_or("us-east-1");
+    let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| VfsError::Connection {
+            message: format!("failed to build HTTP client: {e}"),
+        })?;
+
+    let uri_path = format!("/{bucket}");
+    let mut req = client.delete(format!("{base_url}/{bucket}"));
+
+    if let (Some(key_id), Some(key_secret)) = (&config.key_id, &config.key_secret) {
+        if !key_id.is_empty() && !key_secret.is_empty() {
+            let (auth, amz_date, host) = sign_s3_request(
+                "DELETE",
+                &uri_path,
+                &host_header,
+                region,
+                key_id,
+                key_secret,
+                payload_hash,
+            )?;
+            req = req
+                .header("host", host)
+                .header("x-amz-date", amz_date)
+                .header("x-amz-content-sha256", payload_hash)
+                .header("authorization", auth);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| VfsError::Connection {
+        message: format!("failed to send S3 DeleteBucket request: {e}"),
+    })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(VfsError::Connection {
+            message: format!("S3 DeleteBucket returned status {status}: {body}"),
+        });
+    }
+
+    Ok(())
 }
 
 /// Lists all buckets for an Aliyun OSS account.
@@ -532,6 +651,16 @@ impl Vfs for MultiBucketFs {
         let (bucket, subpath) = self.split_path(path).ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
+        if subpath.is_root() {
+            if self.kind == LocationKind::S3 {
+                create_s3_bucket(&self.config, bucket).await?;
+                *self.bucket_list_cache.write() = None;
+                return Ok(());
+            }
+            return Err(VfsError::Unsupported {
+                operation: "creating an OSS bucket from the app",
+            });
+        }
         let bucket_fs = self.get_or_create_bucket_fs(bucket)?;
         bucket_fs.mkdir(&subpath).await
     }
@@ -540,6 +669,13 @@ impl Vfs for MultiBucketFs {
         let (bucket, subpath) = self.split_path(path).ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
+        if subpath.is_root() {
+            if self.kind == LocationKind::S3 {
+                delete_s3_bucket(&self.config, bucket).await?;
+                *self.bucket_list_cache.write() = None;
+                return Ok(());
+            }
+        }
         let bucket_fs = self.get_or_create_bucket_fs(bucket)?;
         bucket_fs.remove(&subpath).await
     }

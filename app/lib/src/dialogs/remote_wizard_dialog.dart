@@ -28,6 +28,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   late final TextEditingController _passwordController;
   late final TextEditingController _rootPathController;
   bool _pathStyle = false;
+  bool _obscurePassword = true;
+  bool _obscureSecretKey = true;
 
   bool _testing = false;
   String? _testResult;
@@ -71,7 +73,16 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   RemoteConfigDto _buildConfig() {
     final id = widget.initialConfig?.id ??
         'remote_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
-    final portInt = int.tryParse(_portController.text.trim());
+    int? portInt = int.tryParse(_portController.text.trim());
+    if (portInt == null) {
+      if (_kind == 'sftp') {
+        portInt = 22;
+      } else if (_kind == 'ftp') {
+        portInt = 21;
+      } else if (_kind == 'smb') {
+        portInt = 445;
+      }
+    }
 
     return RemoteConfigDto(
       id: id,
@@ -158,6 +169,13 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                         if (_kind == 'oss' && _endpointController.text.isEmpty) {
                           _endpointController.text = 'https://oss-cn-hangzhou.aliyuncs.com';
                         }
+                        if (_kind == 'sftp' && (_portController.text.isEmpty || _portController.text == '21' || _portController.text == '445')) {
+                          _portController.text = '22';
+                        } else if (_kind == 'ftp' && (_portController.text.isEmpty || _portController.text == '22' || _portController.text == '445')) {
+                          _portController.text = '21';
+                        } else if (_kind == 'smb' && (_portController.text.isEmpty || _portController.text == '22' || _portController.text == '21')) {
+                          _portController.text = '445';
+                        }
                       });
                     }
                   },
@@ -208,8 +226,16 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _keySecretController,
-                    decoration: const InputDecoration(labelText: 'Secret Access Key', border: OutlineInputBorder()),
-                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Secret Access Key',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureSecretKey ? Icons.visibility_off : Icons.visibility),
+                        tooltip: _obscureSecretKey ? 'Show secret key' : 'Hide secret key',
+                        onPressed: () => setState(() => _obscureSecretKey = !_obscureSecretKey),
+                      ),
+                    ),
+                    obscureText: _obscureSecretKey,
                   ),
                 ] else if (_kind == 'webdav') ...[
                   TextFormField(
@@ -225,8 +251,16 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
-                    decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
+                    obscureText: _obscurePassword,
                   ),
                 ] else ...[
                   Row(
@@ -262,8 +296,16 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
-                    decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
+                    obscureText: _obscurePassword,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

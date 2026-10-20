@@ -10,8 +10,8 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::File;
-use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
+use tokio_util::io::ReaderStream;
 
 pub struct ServerState {
     pub root_dir: PathBuf,
@@ -89,15 +89,30 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
         _ => return true,
     };
 
+    let check_eq = |token: &str| -> bool {
+        if token.as_bytes().len() != expected.as_bytes().len() {
+            return false;
+        }
+        let mut diff = 0u8;
+        for (a, b) in token.as_bytes().iter().zip(expected.as_bytes()) {
+            diff |= a ^ b;
+        }
+        diff == 0
+    };
+
     if let Some(token) = &query.token {
-        if token == expected {
+        if check_eq(token) {
             return true;
         }
     }
 
     if let Some(auth_val) = headers.get(header::AUTHORIZATION) {
         if let Ok(auth_str) = auth_val.to_str() {
-            if auth_str.contains(expected) {
+            let token = auth_str
+                .strip_prefix("Bearer ")
+                .or_else(|| auth_str.strip_prefix("bearer "))
+                .unwrap_or(auth_str);
+            if check_eq(token) {
                 return true;
             }
         }
@@ -135,23 +150,36 @@ async fn handle_index() -> Html<&'static str> {
     </div>
     <script>
         let currentPath = '';
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
         async function loadDir(path) {
             currentPath = path;
             document.getElementById('path-bar').innerText = '/' + path;
-            const res = await fetch('/api/list/' + path);
+            const res = await fetch('/api/list/' + encodeURI(path));
             if (!res.ok) { document.getElementById('file-list').innerHTML = '<li>Error loading directory</li>'; return; }
             const items = await res.json();
             let html = '';
             if (path) {
-                const parent = path.split('/').slice(0, -1).join('/');
-                html += `<li><a href="#" onclick="loadDir('${parent}')">⬅️ [.. Back]</a><span></span></li>`;
+                const parts = path.split('/').filter(Boolean);
+                parts.pop();
+                const parent = parts.join('/');
+                const parentEsc = encodeURIComponent(parent);
+                html += `<li><a href="#" onclick="loadDir(decodeURIComponent('${parentEsc}'))">⬅️ [.. Back]</a><span></span></li>`;
             }
             for (const item of items) {
+                const safeName = escapeHtml(item.name);
+                const encodedPath = encodeURIComponent(item.path);
                 if (item.is_dir) {
-                    html += `<li><a href="#" onclick="loadDir('${item.path}')"><span class="folder">📁</span>${item.name}</a><span class="size">Folder</span></li>`;
+                    html += `<li><a href="#" onclick="loadDir(decodeURIComponent('${encodedPath}'))"><span class="folder">📁</span>${safeName}</a><span class="size">Folder</span></li>`;
                 } else {
                     const sizeStr = item.size ? (item.size > 1048576 ? (item.size/1048576).toFixed(1) + ' MB' : (item.size/1024).toFixed(1) + ' KB') : '-';
-                    html += `<li><a href="/download/${item.path}" target="_blank"><span class="file">📄</span>${item.name}</a><span class="size">${sizeStr}</span></li>`;
+                    html += `<li><a href="/download/${encodeURI(item.path)}" target="_blank"><span class="file">📄</span>${safeName}</a><span class="size">${sizeStr}</span></li>`;
                 }
             }
             document.getElementById('file-list').innerHTML = html || '<li>(Empty folder)</li>';
@@ -228,6 +256,19 @@ async fn handle_list_internal(
     Ok(Json(items))
 }
 
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(*b, b'-' | b'_' | b'.' | b'~') {
+            out.push(*b as char);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(out, "%{:02X}", b);
+        }
+    }
+    out
+}
+
 async fn handle_download(
     headers: HeaderMap,
     Query(query): Query<AuthQuery>,
@@ -239,29 +280,31 @@ async fn handle_download(
     }
 
     let file_path = resolve_path(&state.root_dir, &subpath).map_err(|_| StatusCode::FORBIDDEN)?;
-    let mut file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+    let file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let total_size = metadata.len();
-
-    let mut contents = Vec::new();
-    file.read_to_end(&mut contents)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("file");
 
+    let safe_ascii: String = file_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let encoded_name = percent_encode(file_name);
+    let disposition = format!("attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{encoded_name}");
+
+    let stream = ReaderStream::with_capacity(file, 64 * 1024);
+    let body = Body::from_stream(stream);
+
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header(
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{file_name}\""),
-        )
+        .header(header::CONTENT_DISPOSITION, disposition)
         .header(header::CONTENT_LENGTH, total_size.to_string())
-        .body(Body::from(contents))
+        .body(body)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(response)
@@ -273,10 +316,15 @@ fn resolve_path(root: &Path, rel: &str) -> Result<PathBuf, ()> {
         if seg.is_empty() || seg == "." {
             continue;
         }
-        if seg == ".." {
+        if seg == ".." || seg.contains('\\') || seg.contains(':') || seg.contains('\0') {
             return Err(());
         }
         target.push(seg);
+    }
+    if let (Ok(c_root), Ok(c_target)) = (root.canonicalize(), target.canonicalize()) {
+        if !c_target.starts_with(&c_root) {
+            return Err(());
+        }
     }
     Ok(target)
 }
@@ -297,4 +345,26 @@ pub fn get_lan_ip_addresses() -> Vec<String> {
         ips.push("127.0.0.1".to_string());
     }
     ips
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_percent_encode() {
+        assert_eq!(percent_encode("hello world.txt"), "hello%20world.txt");
+        assert_eq!(percent_encode("文档.pdf"), "%E6%96%87%E6%A1%A3.pdf");
+    }
+
+    #[test]
+    fn test_resolve_path_traversal() {
+        let root = Path::new("/tmp");
+        assert!(resolve_path(root, "foo/bar.txt").is_ok());
+        assert!(resolve_path(root, "../etc/passwd").is_err());
+        assert!(resolve_path(root, "..\\etc\\passwd").is_err());
+        assert!(resolve_path(root, "foo/../../etc/passwd").is_err());
+        assert!(resolve_path(root, "C:\\Windows\\win.ini").is_err());
+        assert!(resolve_path(root, "foo\0bar").is_err());
+    }
 }

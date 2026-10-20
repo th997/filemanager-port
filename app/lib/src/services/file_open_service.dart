@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../rust/api/file_manager.dart';
+import 'path_utils.dart';
 
 /// Hands files to other apps.
 ///
@@ -17,7 +18,7 @@ class FileOpenService {
 
   Future<Directory> _exportDir() async {
     final base = await getTemporaryDirectory();
-    final dir = Directory('${base.path}/open-with');
+    final dir = Directory(joinNative(base.path, 'open-with'));
     if (!dir.existsSync()) {
       await dir.create(recursive: true);
     }
@@ -26,8 +27,8 @@ class FileOpenService {
 
   /// Native path for `root`/`path`, exporting it out of the VFS when needed.
   Future<String> nativePath(String root, String path) async {
-    if (root.startsWith('/')) {
-      final native = '$root/$path';
+    if (isNativeRoot(root)) {
+      final native = joinNative(root, path);
       if (File(native).existsSync()) return native;
     }
     final dir = await _exportDir();
@@ -44,6 +45,21 @@ class FileOpenService {
     await SharePlus.instance.share(
       ShareParams(files: [XFile(native)]),
     );
+  }
+
+  /// Total size of exported temporary files in bytes.
+  Future<int> getExportCacheSizeBytes() async {
+    final dir = await _exportDir();
+    if (!dir.existsSync()) return 0;
+    int total = 0;
+    try {
+      for (final entity in dir.listSync(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          total += entity.lengthSync();
+        }
+      }
+    } catch (_) {}
+    return total;
   }
 
   /// Remove exported copies once the caller is done with them.

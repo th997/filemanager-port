@@ -1,20 +1,41 @@
 //! Pure-Rust FTP and FTPS backend using suppaftp.
 
 use async_trait::async_trait;
-use fm_core::{Capabilities, Entry, EntryKind, VfsPath, WriteMode};
+use fm_core::{Capabilities, Entry, EntryKind, LocationKind, VfsPath, WriteMode};
 use fm_vfs::{Vfs, VfsError, VfsResult};
 use suppaftp::list::ListParser;
-use suppaftp::tokio::AsyncFtpStream;
+use suppaftp::tokio::{
+    AsyncFtpStream, AsyncRustlsConnector, AsyncRustlsFtpStream, ImplAsyncFtpStream,
+    TokioTlsStream, TransferStream,
+};
+use suppaftp::tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use suppaftp::tokio_rustls::TlsConnector as RustlsTlsConnector;
 use suppaftp::types::FileType;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
 
+use crate::pipe_writer::{drain_pipe, pipe_writer};
 use crate::RemoteConfig;
+
+pub enum FtpClient {
+    Plain(AsyncFtpStream),
+    Tls(AsyncRustlsFtpStream),
+}
 
 pub struct FtpFs {
     config: RemoteConfig,
-    client: Mutex<Option<AsyncFtpStream>>,
+    client: Mutex<Option<FtpClient>>,
     capabilities: Capabilities,
+}
+
+macro_rules! with_client {
+    ($client:expr, $ftp:ident => $body:expr) => {
+        match $client {
+            FtpClient::Plain(ref mut $ftp) => $body,
+            FtpClient::Tls(ref mut $ftp) => $body,
+        }
+    };
 }
 
 impl FtpFs {
@@ -35,23 +56,61 @@ impl FtpFs {
         }
     }
 
-    pub async fn connect_client(config: &RemoteConfig) -> Result<AsyncFtpStream, VfsError> {
+    pub async fn connect_client(config: &RemoteConfig) -> Result<FtpClient, VfsError> {
         let host = config.host.as_deref().unwrap_or("127.0.0.1");
         let port = config.port.unwrap_or(21);
         let addr = format!("{host}:{port}");
 
-        let mut ftp = AsyncFtpStream::connect(&addr).await.map_err(|e| VfsError::Connection {
-            message: format!("FTP connection to {addr} failed: {e}"),
-        })?;
-
         let user = config.username.as_deref().unwrap_or("anonymous");
         let pass = config.password.as_deref().unwrap_or("anonymous@example.com");
 
-        ftp.login(user, pass).await.map_err(|e| VfsError::Connection {
-            message: format!("FTP login failed for '{user}' on {addr}: {e}"),
-        })?;
+        let connect_error = |e: suppaftp::FtpError| VfsError::Connection {
+            message: format!("FTP connection to {addr} failed: {e}"),
+        };
 
-        Ok(ftp)
+        if config.kind == LocationKind::Ftps {
+            let mut roots = RootCertStore::empty();
+            roots.add_parsable_certificates(
+                webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned(),
+            );
+            let tls = ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            let connector = AsyncRustlsConnector::from(RustlsTlsConnector::from(Arc::new(tls)));
+
+            // Port 990 is implicit FTPS (TLS from the first byte); other ports
+            // use explicit FTPS (AUTH TLS after the greeting).
+            let mut ftp = if port == 990 {
+                AsyncRustlsFtpStream::connect_secure_implicit(&addr, connector, host)
+                    .await
+                    .map_err(connect_error)?
+            } else {
+                AsyncRustlsFtpStream::connect(&addr)
+                    .await
+                    .map_err(connect_error)?
+                    .into_secure(connector, host)
+                    .await
+                    .map_err(connect_error)?
+            };
+
+            ftp.login(user, pass)
+                .await
+                .map_err(|e| VfsError::Connection {
+                    message: format!("FTPS login failed for '{user}' on {addr}: {e}"),
+                })?;
+            return Ok(FtpClient::Tls(ftp));
+        }
+
+        let mut ftp = AsyncFtpStream::connect(&addr)
+            .await
+            .map_err(connect_error)?;
+        ftp.login(user, pass)
+            .await
+            .map_err(|e| VfsError::Connection {
+                message: format!("FTP login failed for '{user}' on {addr}: {e}"),
+            })?;
+
+        Ok(FtpClient::Plain(ftp))
     }
 
     /// Start a ranged download on its own connection and stream it through an
@@ -69,72 +128,129 @@ impl FtpFs {
         length: Option<u64>,
         path: &VfsPath,
     ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let mut ftp = Self::connect_client(config).await?;
-        ftp.transfer_type(FileType::Binary)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            })?;
-        if offset > 0 {
-            ftp.resume_transfer(offset as usize)
-                .await
-                .map_err(|e| VfsError::Backend {
-                    path: path.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-                })?;
-        }
-        let stream = ftp
-            .retr_as_stream(&ftp_path)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            })?;
+        let client = Self::connect_client(config).await?;
+        let (writer, out) = tokio::io::duplex(256 * 1024);
 
-        let (mut writer, out) = tokio::io::duplex(256 * 1024);
-        tokio::spawn(async move {
-            // Keep the control connection alive until the transfer finishes.
-            let _ftp = ftp;
-            let mut stream = stream;
-            let mut left = length.unwrap_or(u64::MAX);
-            let mut buf = vec![0u8; 64 * 1024];
-            while left > 0 {
-                let want = left.min(buf.len() as u64) as usize;
-                match stream.read(&mut buf[..want]).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if writer.write_all(&buf[..n]).await.is_err() {
-                            // Reader went away (seek, close); stop downloading.
-                            break;
-                        }
-                        left -= n as u64;
-                    }
-                    Err(_) => break,
-                }
+        // Issue REST/RETR before returning so the caller sees connection
+        // failures; the body of the transfer then runs in the background.
+        match client {
+            FtpClient::Plain(mut ftp) => {
+                let stream = start_download(&mut ftp, &ftp_path, offset, path).await?;
+                tokio::spawn(pump_download(ftp, stream, length, writer));
             }
-            let _ = stream.finish().await;
-            let _ = writer.shutdown().await;
-        });
+            FtpClient::Tls(mut ftp) => {
+                let stream = start_download(&mut ftp, &ftp_path, offset, path).await?;
+                tokio::spawn(pump_download(ftp, stream, length, writer));
+            }
+        }
 
         Ok(Box::new(out))
     }
 
     fn resolve_path(&self, path: &VfsPath) -> String {
-        let rel = path.to_slash_string();
         let root = self.config.root.trim_end_matches('/');
-        if rel.is_empty() {
-            if root.is_empty() {
-                "/".to_string()
-            } else {
-                root.to_string()
-            }
-        } else if root.is_empty() {
-            format!("/{rel}")
+        let mut out = root.to_string();
+        for segment in path.segments() {
+            out.push('/');
+            out.push_str(segment);
+        }
+        if out.is_empty() {
+            "/".to_string()
         } else {
-            format!("{root}/{rel}")
+            out
         }
     }
+
+    fn ftp_error(path: &VfsPath, e: impl std::fmt::Display) -> VfsError {
+        VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        }
+    }
+}
+
+/// Put `REST`/`RETR` on the wire and hand back the data stream.
+async fn start_download<T>(
+    ftp: &mut ImplAsyncFtpStream<T>,
+    ftp_path: &str,
+    offset: u64,
+    path: &VfsPath,
+) -> VfsResult<TransferStream<T>>
+where
+    T: TokioTlsStream + Send,
+{
+    ftp.transfer_type(FileType::Binary)
+        .await
+        .map_err(|e| FtpFs::ftp_error(path, e))?;
+    if offset > 0 {
+        ftp.resume_transfer(offset as usize)
+            .await
+            .map_err(|e| FtpFs::ftp_error(path, e))?;
+    }
+    ftp.retr_as_stream(ftp_path)
+        .await
+        .map_err(|e| FtpFs::ftp_error(path, e))
+}
+
+/// Copy at most `length` bytes of the download into `writer`, then finalize.
+async fn pump_download<T>(
+    ftp: ImplAsyncFtpStream<T>,
+    mut stream: TransferStream<T>,
+    length: Option<u64>,
+    mut writer: tokio::io::DuplexStream,
+) where
+    T: TokioTlsStream + Send + 'static,
+{
+    // Keep the control connection alive until the transfer finishes.
+    let _ftp = ftp;
+    let mut left = length.unwrap_or(u64::MAX);
+    let mut buf = vec![0u8; 64 * 1024];
+    while left > 0 {
+        let want = left.min(buf.len() as u64) as usize;
+        match stream.read(&mut buf[..want]).await {
+            Ok(0) => break,
+            Ok(n) => {
+                if writer.write_all(&buf[..n]).await.is_err() {
+                    // Reader went away (seek, close); stop downloading.
+                    break;
+                }
+                left -= n as u64;
+            }
+            Err(_) => break,
+        }
+    }
+    let _ = stream.finish().await;
+    let _ = writer.shutdown().await;
+}
+
+async fn upload(
+    config: &RemoteConfig,
+    ftp_path: String,
+    mode: WriteMode,
+    mut rx: tokio::io::DuplexStream,
+) -> Result<(), String> {
+    let mut client = FtpFs::connect_client(config)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    macro_rules! send {
+        ($ftp:expr) => {{
+            $ftp.transfer_type(FileType::Binary)
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut stream = if mode == WriteMode::Append {
+                $ftp.append_with_stream(&ftp_path).await
+            } else {
+                $ftp.put_with_stream(&ftp_path).await
+            }
+            .map_err(|e| e.to_string())?;
+            drain_pipe(&mut rx, &mut stream).await?;
+            stream.finish().await.map_err(|e| e.to_string())?;
+        }};
+    }
+
+    with_client!(client, ftp => send!(ftp));
+    Ok(())
 }
 
 #[async_trait]
@@ -148,13 +264,12 @@ impl Vfs for FtpFs {
         if guard.is_none() {
             *guard = Some(Self::connect_client(&self.config).await?);
         }
-        let ftp = guard.as_mut().unwrap();
 
         let ftp_path = self.resolve_path(dir);
-        let lines = ftp.list(Some(&ftp_path)).await.map_err(|e| VfsError::Backend {
-            path: dir.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
+        let lines = with_client!(guard.as_mut().unwrap(), ftp =>
+            ftp.list(Some(&ftp_path)).await
+        )
+        .map_err(|e| Self::ftp_error(dir, e))?;
 
         let mut entries = Vec::new();
         for line in lines {
@@ -186,18 +301,23 @@ impl Vfs for FtpFs {
         if guard.is_none() {
             *guard = Some(Self::connect_client(&self.config).await?);
         }
-        let ftp = guard.as_mut().unwrap();
 
         let ftp_path = self.resolve_path(path);
-        let mut size = ftp.size(&ftp_path).await.ok().map(|s| s as u64);
         let name = path.name().unwrap_or("").to_string();
+        let mut size = with_client!(guard.as_mut().unwrap(), ftp =>
+            ftp.size(&ftp_path).await.ok()
+        )
+        .map(|s| s as u64);
 
         // Some servers reject SIZE; fall back to the parent listing before
         // concluding this is a directory.
         if size.is_none() {
             let parent = ftp_path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
             let parent = if parent.is_empty() { "/" } else { parent };
-            if let Ok(lines) = ftp.list(Some(parent)).await {
+            let lines = with_client!(guard.as_mut().unwrap(), ftp =>
+                ftp.list(Some(parent)).await
+            );
+            if let Ok(lines) = lines {
                 for line in lines {
                     if let Ok(f) = ListParser::parse_posix(&line)
                         .or_else(|_| ListParser::parse_dos(&line))
@@ -243,11 +363,17 @@ impl Vfs for FtpFs {
 
     async fn open_write(
         &self,
-        _path: &VfsPath,
-        _mode: WriteMode,
+        path: &VfsPath,
+        mode: WriteMode,
     ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
-        // Return in-memory buffer writer; on flush/drop it could write back, or use simple temp buffer
-        Err(VfsError::Unsupported { operation: "ftp stream write" })
+        if !self.capabilities.write {
+            return Err(VfsError::Unsupported { operation: "write" });
+        }
+        let ftp_path = self.resolve_path(path);
+        let config = self.config.clone();
+        Ok(pipe_writer(move |rx| async move {
+            upload(&config, ftp_path, mode, rx).await
+        }))
     }
 
     async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
@@ -255,13 +381,10 @@ impl Vfs for FtpFs {
         if guard.is_none() {
             *guard = Some(Self::connect_client(&self.config).await?);
         }
-        let ftp = guard.as_mut().unwrap();
 
         let ftp_path = self.resolve_path(path);
-        ftp.mkdir(&ftp_path).await.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
+        with_client!(guard.as_mut().unwrap(), ftp => ftp.mkdir(&ftp_path).await)
+            .map_err(|e| Self::ftp_error(path, e))?;
         Ok(())
     }
 
@@ -270,15 +393,16 @@ impl Vfs for FtpFs {
         if guard.is_none() {
             *guard = Some(Self::connect_client(&self.config).await?);
         }
-        let ftp = guard.as_mut().unwrap();
 
         let ftp_path = self.resolve_path(path);
-        if ftp.rm(&ftp_path).await.is_err() {
-            ftp.rmdir(&ftp_path).await.map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            })?;
-        }
+        let removed = with_client!(guard.as_mut().unwrap(), ftp => {
+            if ftp.rm(&ftp_path).await.is_err() {
+                ftp.rmdir(&ftp_path).await
+            } else {
+                Ok(())
+            }
+        });
+        removed.map_err(|e| Self::ftp_error(path, e))?;
         Ok(())
     }
 
@@ -287,14 +411,11 @@ impl Vfs for FtpFs {
         if guard.is_none() {
             *guard = Some(Self::connect_client(&self.config).await?);
         }
-        let ftp = guard.as_mut().unwrap();
 
         let from_p = self.resolve_path(from);
         let to_p = self.resolve_path(to);
-        ftp.rename(&from_p, &to_p).await.map_err(|e| VfsError::Backend {
-            path: from.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
+        with_client!(guard.as_mut().unwrap(), ftp => ftp.rename(&from_p, &to_p).await)
+            .map_err(|e| Self::ftp_error(from, e))?;
         Ok(())
     }
 }

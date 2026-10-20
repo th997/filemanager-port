@@ -95,6 +95,7 @@ impl ArchiveFs {
             } else {
                 Some(zip_file.size())
             };
+            self.ensure_parent_dirs(&vfs_path);
             let hidden = entry_name.starts_with('.');
 
             let entry = Entry {
@@ -181,6 +182,7 @@ impl ArchiveFs {
                 EntryKind::File
             };
             let hidden = entry_name.starts_with('.');
+            self.ensure_parent_dirs(&vfs_path);
 
             let entry = Entry {
                 name: entry_name,
@@ -209,23 +211,97 @@ impl ArchiveFs {
     }
 
     fn build_7z_index(&mut self) -> VfsResult<()> {
-        let entries = sevenz_rust::decompress_file_with_extract_fn(
-            &self.archive_path,
-            "",
-            |_entry, _reader, _dest| {
-                // index scanner only
-                Ok(true)
-            },
-        );
-
-        if let Err(e) = entries {
-            return Err(VfsError::Backend {
+        let archive = sevenz_rust::Archive::open(&self.archive_path).map_err(|e| {
+            VfsError::Backend {
                 path: VfsPath::root(),
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-            });
+            }
+        })?;
+
+        for (idx, zip_entry) in archive.files.iter().enumerate() {
+            let raw_name = zip_entry.name().replace('\\', "/");
+            let is_dir = zip_entry.is_directory() || raw_name.ends_with('/');
+            let vfs_path = VfsPath::from_slash_path(&raw_name);
+            if vfs_path.is_root() {
+                continue;
+            }
+
+            let entry_name = vfs_path.name().unwrap_or("").to_string();
+            let parent_path = vfs_path.parent().unwrap_or_else(VfsPath::root);
+
+            let kind = if is_dir {
+                EntryKind::Dir
+            } else {
+                EntryKind::File
+            };
+            let size = if is_dir {
+                None
+            } else {
+                Some(zip_entry.size())
+            };
+            let hidden = entry_name.starts_with('.');
+            self.ensure_parent_dirs(&vfs_path);
+
+            let entry = Entry {
+                name: entry_name,
+                path: vfs_path.clone(),
+                kind,
+                size,
+                modified: None,
+                mode: None,
+                hidden,
+                mime: None,
+            };
+
+            self.dir_entries
+                .entry(parent_path)
+                .or_default()
+                .push(entry);
+
+            if !is_dir {
+                self.file_map.insert(
+                    vfs_path,
+                    ArchiveFileInfo {
+                        size: zip_entry.size(),
+                        index: idx,
+                    },
+                );
+            }
         }
 
+        self.sort_directories();
         Ok(())
+    }
+
+    /// Archives written from a stream often contain no explicit directory
+    /// entries; create the missing ancestors so the tree is browsable.
+    fn ensure_parent_dirs(&mut self, path: &VfsPath) {
+        let mut ancestors = Vec::new();
+        let mut current = path.parent();
+        while let Some(dir) = current {
+            if dir.is_root() || self.dir_entries.contains_key(&dir) {
+                break;
+            }
+            ancestors.push(dir.clone());
+            current = dir.parent();
+        }
+
+        for dir in ancestors.into_iter().rev() {
+            let name = dir.name().unwrap_or("").to_string();
+            let parent = dir.parent().unwrap_or_else(VfsPath::root);
+            let entry = Entry {
+                name: name.clone(),
+                path: dir.clone(),
+                kind: EntryKind::Dir,
+                size: None,
+                modified: None,
+                mode: None,
+                hidden: name.starts_with('.'),
+                mime: None,
+            };
+            self.dir_entries.entry(dir).or_default();
+            self.dir_entries.entry(parent).or_default().push(entry);
+        }
     }
 
     fn sort_directories(&mut self) {

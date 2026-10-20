@@ -254,8 +254,8 @@ impl Database {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 item.location.0,
-                item.original_path.to_slash_string(),
-                item.stored_path.to_slash_string(),
+                item.original_path,
+                item.stored_path,
                 size as i64,
                 item.deleted_at_millis
             ],
@@ -280,8 +280,8 @@ impl Database {
                 id,
                 RecycleItem {
                     location: LocationId(loc),
-                    original_path: VfsPath::from_slash_path(&orig),
-                    stored_path: VfsPath::from_slash_path(&stored),
+                    original_path: orig,
+                    stored_path: stored,
                     deleted_at_millis: deleted,
                 },
                 size as u64,

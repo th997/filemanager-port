@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
+import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 
 /// Result of picking a destination folder.
@@ -57,6 +58,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   List<EntryItem> _folders = const [];
   bool _loading = false;
   String? _error;
+  final TextEditingController _filterController = TextEditingController();
+  String _filterQuery = '';
 
   @override
   void initState() {
@@ -64,6 +67,12 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
     _load();
+  }
+
+  @override
+  void dispose() {
+    _filterController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -97,6 +106,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   void _open(String name) {
     setState(() {
       _relPath = _relPath.isEmpty ? name : '$_relPath/$name';
+      _filterQuery = '';
+      _filterController.clear();
     });
     _load();
   }
@@ -105,8 +116,69 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     if (_relPath.isEmpty) return;
     final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
     segments.removeLast();
-    setState(() => _relPath = segments.join('/'));
+    setState(() {
+      _relPath = segments.join('/');
+      _filterQuery = '';
+      _filterController.clear();
+    });
     _load();
+  }
+
+  Future<void> _createNewFolder() async {
+    final nameController = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Folder'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Folder name',
+            hintText: 'e.g. Documents',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (val) {
+            if (val.trim().isNotEmpty) {
+              Navigator.of(ctx).pop(val.trim());
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final val = nameController.text.trim();
+              if (val.isNotEmpty) {
+                Navigator.of(ctx).pop(val);
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+
+    if (name != null && name.isNotEmpty) {
+      try {
+        final target = _relPath.isEmpty ? name : '$_relPath/$name';
+        await createDir(root: _root, path: target);
+        await _load();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create folder: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
@@ -114,7 +186,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final quickTargets = PlatformPaths.quickTargets()
-        .where((t) => t.root.startsWith('/'))
+        .where((t) => isNativeRoot(t.root))
         .toList();
 
     return AlertDialog(
@@ -162,9 +234,40 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                     style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                   ),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  tooltip: 'New Folder',
+                  onPressed: _createNewFolder,
+                ),
               ],
             ),
             const Divider(height: 1),
+            if (_folders.length > 5 || _filterQuery.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                child: TextField(
+                  controller: _filterController,
+                  decoration: InputDecoration(
+                    hintText: 'Filter subfolders...',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    suffixIcon: _filterQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () {
+                              setState(() {
+                                _filterQuery = '';
+                                _filterController.clear();
+                              });
+                            },
+                          )
+                        : null,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onChanged: (v) => setState(() => _filterQuery = v),
+                ),
+              ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -186,22 +289,37 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                                 style: TextStyle(fontSize: 12),
                               ),
                             )
-                          : ListView.builder(
-                              itemCount: _folders.length,
-                              itemBuilder: (context, index) {
-                                final folder = _folders[index];
-                                return ListTile(
-                                  dense: true,
-                                  leading: const Icon(Icons.folder, size: 20),
-                                  title: Text(
-                                    folder.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                          : () {
+                              final filtered = _filterQuery.isEmpty
+                                  ? _folders
+                                  : _folders
+                                      .where((f) => f.name.toLowerCase().contains(_filterQuery.toLowerCase()))
+                                      .toList();
+                              if (filtered.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No matching subfolders',
+                                    style: TextStyle(fontSize: 12),
                                   ),
-                                  onTap: () => _open(folder.name),
                                 );
-                              },
-                            ),
+                              }
+                              return ListView.builder(
+                                itemCount: filtered.length,
+                                itemBuilder: (context, index) {
+                                  final folder = filtered[index];
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.folder, size: 20),
+                                    title: Text(
+                                      folder.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () => _open(folder.name),
+                                  );
+                                },
+                              );
+                            }(),
             ),
           ],
         ),

@@ -34,7 +34,9 @@ fn config() -> RemoteConfig {
     }
 }
 
-#[tokio::test]
+// Reqwest dispatches on a separate task; a current-thread runtime stalls that
+// task while the test blocks on the reader.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires a local WebDAV server"]
 async fn reads_a_byte_range_over_webdav() {
     let fs = OpendalFs::new_webdav(&config()).expect("operator");

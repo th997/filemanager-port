@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../dialogs/remote_wizard_dialog.dart';
+import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/platform_paths.dart';
@@ -86,6 +87,47 @@ class _HomePageState extends State<HomePage> {
     _browserKey.currentState?.navigateTo(bm.root, bm.path);
   }
 
+  Future<void> _renameBookmark(BookmarkDto bm) async {
+    final ctrl = TextEditingController(text: bm.name);
+    final String? newName;
+    try {
+      newName = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Rename Bookmark'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Bookmark Name',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (v) {
+              if (v.trim().isNotEmpty) {
+                Navigator.of(ctx).pop(v.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Rename')),
+          ],
+        ),
+      );
+    } finally {
+      ctrl.dispose();
+    }
+    if (newName != null && newName.isNotEmpty && newName != bm.name) {
+      await StorageService.instance.renameBookmark(
+        id: bm.id,
+        newName: newName,
+        root: bm.root,
+        path: bm.path,
+      );
+      _loadMetadata();
+    }
+  }
+
   void _openHistory(HistoryDto h) {
     setState(() {
       _currentRoot = h.root;
@@ -110,12 +152,29 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _editRemote(RemoteConfigDto remote) async {
+    final updated = await showDialog<RemoteConfigDto>(
+      context: context,
+      builder: (ctx) => RemoteWizardDialog(initialConfig: remote),
+    );
+    if (updated != null) {
+      // The backend for this remote may already be cached with the old
+      // credentials; drop it so the next open reconnects with the new ones.
+      invalidateRoot(root: 'remote://${updated.id}');
+      _loadMetadata();
+    }
+  }
+
   Future<void> _deleteRemote(RemoteConfigDto remote) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Remote'),
-        content: Text('Remove "${remote.name}"?'),
+        content: Text(
+          'Remove "${remote.name}"?\n\n'
+          'This only removes the saved connection from this app. Files on the '
+          'server are not touched.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete')),
@@ -125,51 +184,67 @@ class _HomePageState extends State<HomePage> {
 
     if (confirm == true) {
       await StorageService.instance.deleteRemote(remote.id);
+      invalidateRoot(root: 'remote://${remote.id}');
+      // If the browser is showing the removed connection, its cached backend
+      // still answers; return to local storage instead of browsing a remote
+      // that no longer exists.
+      if (_currentRoot == 'remote://${remote.id}') {
+        _onQuickTargetSelected(PlatformPaths.quickTargets().first);
+      }
       _loadMetadata();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          BrowserPage(
-            key: _browserKey,
-            initialRoot: _currentRoot,
-            initialPath: _currentRelPath,
-          ),
-          _buildLocationsPage(),
-          SettingsPage(
-            currentThemeMode: widget.themeMode,
-            onThemeModeChanged: widget.onThemeModeChanged,
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) {
-          setState(() => _currentIndex = idx);
-          if (idx == 1) _loadMetadata();
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: 'Files',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Locations',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+        }
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: [
+            BrowserPage(
+              key: _browserKey,
+              initialRoot: _currentRoot,
+              initialPath: _currentRelPath,
+            ),
+            _buildLocationsPage(),
+            SettingsPage(
+              currentThemeMode: widget.themeMode,
+              onThemeModeChanged: widget.onThemeModeChanged,
+            ),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: (idx) {
+            setState(() => _currentIndex = idx);
+            if (idx == 1) _loadMetadata();
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.folder_outlined),
+              selectedIcon: Icon(Icons.folder),
+              label: 'Files',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard),
+              label: 'Locations',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings),
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -188,58 +263,97 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: RefreshIndicator(
+        onRefresh: _loadMetadata,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
           // Quick Access
           _sectionHeader('Local Storage'),
           const SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 2.2,
-            ),
-            itemCount: targets.length,
-            itemBuilder: (ctx, i) {
-              final t = targets[i];
-              IconData icon = Icons.folder;
-              if (t.name.contains('Download')) icon = Icons.download;
-              if (t.name.contains('Photos') || t.name.contains('DCIM')) icon = Icons.photo_library;
-              if (t.name.contains('Document')) icon = Icons.description;
-              if (t.name.contains('Home')) icon = Icons.home;
-              if (t.name.contains('Root')) icon = Icons.storage;
-
-              return InkWell(
-                onTap: () => _onQuickTargetSelected(t),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(icon, size: 30, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(t.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis),
-                            Text(t.path, style: TextStyle(fontSize: 10, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final crossAxisCount = constraints.maxWidth > 800
+                  ? 4
+                  : (constraints.maxWidth > 520 ? 3 : 2);
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 2.8,
                 ),
+                itemCount: targets.length,
+                itemBuilder: (ctx, i) {
+                  final t = targets[i];
+                  IconData icon = Icons.folder;
+                  Color iconColor = Colors.blue;
+                  if (t.name.contains('Download')) {
+                    icon = Icons.download;
+                    iconColor = Colors.teal;
+                  } else if (t.name.contains('Photos') || t.name.contains('DCIM') || t.name.contains('Pictures')) {
+                    icon = Icons.photo_library;
+                    iconColor = Colors.purple;
+                  } else if (t.name.contains('Document')) {
+                    icon = Icons.description;
+                    iconColor = Colors.indigo;
+                  } else if (t.name.contains('Home')) {
+                    icon = Icons.home;
+                    iconColor = Colors.deepOrange;
+                  } else if (t.name.contains('Root')) {
+                    icon = Icons.storage;
+                    iconColor = Colors.blueGrey;
+                  }
+
+                  return InkWell(
+                    onTap: () => _onQuickTargetSelected(t),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: iconColor.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(icon, size: 20, color: iconColor),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  t.name,
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  t.path,
+                                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -288,6 +402,11 @@ class _HomePageState extends State<HomePage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'Edit',
+                          onPressed: () => _editRemote(r),
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.red),
                           tooltip: 'Delete',
                           onPressed: () => _deleteRemote(r),
@@ -330,13 +449,23 @@ class _HomePageState extends State<HomePage> {
                     leading: const Icon(Icons.bookmark, color: Colors.amber),
                     title: Text(b.name),
                     subtitle: Text('${b.root}${b.path}', style: const TextStyle(fontSize: 11)),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      tooltip: 'Remove',
-                      onPressed: () async {
-                        await StorageService.instance.deleteBookmark(b.id);
-                        _loadMetadata();
-                      },
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          tooltip: 'Rename Bookmark',
+                          onPressed: () => _renameBookmark(b),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          tooltip: 'Remove',
+                          onPressed: () async {
+                            await StorageService.instance.deleteBookmark(b.id);
+                            _loadMetadata();
+                          },
+                        ),
+                      ],
                     ),
                     onTap: () => _openBookmark(b),
                   ),
@@ -346,9 +475,20 @@ class _HomePageState extends State<HomePage> {
 
           // History
           if (_history.isNotEmpty) ...[
-            _sectionHeader('Recent History'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _sectionHeader('Recent History'),
+                TextButton(
+                  onPressed: () {
+                    setState(() => _history.clear());
+                  },
+                  child: const Text('Clear', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
-            ..._history.take(5).map((h) => ListTile(
+            ..._history.take(8).map((h) => ListTile(
                   dense: true,
                   leading: const Icon(Icons.history, size: 20),
                   title: Text(h.path.isEmpty ? h.root : h.path),
@@ -357,6 +497,7 @@ class _HomePageState extends State<HomePage> {
                 )),
           ],
         ],
+      ),
       ),
     );
   }

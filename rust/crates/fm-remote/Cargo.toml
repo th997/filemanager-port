@@ -19,6 +19,7 @@ futures-util.workspace = true
 russh.workspace = true
 russh-sftp.workspace = true
 suppaftp.workspace = true
+webpki-root-certs.workspace = true
 smb2.workspace = true
 parking_lot.workspace = true
 reqwest.workspace = true

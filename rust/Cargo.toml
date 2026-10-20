@@ -36,7 +36,8 @@ futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 opendal = { version = "0.59", default-features = false, features = ["services-s3", "services-oss", "services-webdav", "http-transport-reqwest", "executors-tokio"] }
-suppaftp = { version = "12", default-features = false, features = ["tokio", "tokio-rustls-aws-lc-rs"] }
+suppaftp = { version = "12", default-features = false, features = ["tokio", "tokio-rustls-aws-lc-rs", "deprecated"] }
+webpki-root-certs = "1"
 smb2 = { version = "0.31", features = ["tokio"] }
 russh = "0.64"
 russh-sftp = "3.0"

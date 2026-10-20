@@ -7,9 +7,10 @@ use smb2::client::stream::FileReader;
 use smb2::client::{ClientConfig, SmbClient, Tree};
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::Mutex;
 
+use crate::pipe_writer::pipe_writer;
 use crate::RemoteConfig;
 
 struct SmbSession {
@@ -66,28 +67,29 @@ impl SmbFs {
     }
 
     fn split_path(&self, path: &VfsPath) -> (Option<String>, String) {
-        let root = self.config.root.trim_matches('/');
-        let rel = path.to_slash_string();
-
-        if !root.is_empty() {
-            let mut parts = root.splitn(2, '/');
-            let share = parts.next().unwrap_or("").to_string();
-            let prefix = parts.next().unwrap_or("");
-            let full_sub = if prefix.is_empty() {
-                rel
-            } else if rel.is_empty() {
-                prefix.to_string()
-            } else {
-                format!("{prefix}/{rel}")
-            };
-            (Some(share), full_sub)
-        } else if rel.is_empty() {
-            (None, String::new())
+        let root_trimmed = self.config.root.trim_matches('/');
+        let root_parts: Vec<&str> = if root_trimmed.is_empty() {
+            Vec::new()
         } else {
-            let mut parts = rel.splitn(2, '/');
-            let share = parts.next().unwrap_or("").to_string();
-            let sub = parts.next().unwrap_or("").to_string();
-            (Some(share), sub)
+            root_trimmed.split('/').filter(|s| !s.is_empty()).collect()
+        };
+
+        let path_segments = path.segments();
+
+        if let Some((&share, prefix_parts)) = root_parts.split_first() {
+            // Root config specifies a share (and optional subfolder)
+            let mut sub_parts: Vec<&str> = prefix_parts.to_vec();
+            for seg in path_segments {
+                sub_parts.push(seg.as_str());
+            }
+            (Some(share.to_string()), sub_parts.join("/"))
+        } else {
+            // Root config is empty / "/": top-level represents share list
+            if let Some((share, rel_parts)) = path_segments.split_first() {
+                (Some(share.clone()), rel_parts.join("/"))
+            } else {
+                (None, String::new())
+            }
         }
     }
 
@@ -339,6 +341,7 @@ impl Vfs for SmbFs {
                 path: path.clone(),
                 source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
             })?;
+        drop(guard);
 
         Ok(Self::spawn_range_reader(reader, 0, None))
     }
@@ -380,12 +383,82 @@ impl Vfs for SmbFs {
 
     async fn open_write(
         &self,
-        _path: &VfsPath,
-        _mode: WriteMode,
+        path: &VfsPath,
+        mode: WriteMode,
     ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
-        Err(VfsError::Unsupported {
-            operation: "smb stream write",
-        })
+        if !self.capabilities.write {
+            return Err(VfsError::Unsupported { operation: "write" });
+        }
+
+        let (share_opt, subpath) = self.split_path(path);
+        let share = share_opt.ok_or_else(|| VfsError::NotFound {
+            path: path.clone(),
+        })?;
+
+        let mut guard = self.session.lock().await;
+        if guard.is_none() {
+            let client = Self::connect_client(&self.config).await?;
+            *guard = Some(SmbSession {
+                client,
+                trees: HashMap::new(),
+            });
+        }
+        let session = guard.as_mut().unwrap();
+        let mut tree = Self::get_share_tree(session, &share).await?;
+
+        let writer_res = match mode {
+            WriteMode::Create => {
+                session
+                    .client
+                    .create_file_writer_exclusive(&tree, &subpath)
+                    .await
+            }
+            WriteMode::Append => {
+                let offset = session
+                    .client
+                    .stat(&mut tree, &subpath)
+                    .await
+                    .map(|s| s.size)
+                    .unwrap_or(0);
+                session
+                    .client
+                    .create_file_writer_at(&tree, &subpath, offset)
+                    .await
+            }
+            WriteMode::Truncate => {
+                session
+                    .client
+                    .create_file_writer(&tree, &subpath)
+                    .await
+            }
+        };
+
+        let mut writer = writer_res.map_err(|e| VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        })?;
+        drop(guard);
+
+        Ok(pipe_writer(move |mut rx| async move {
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                match rx.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if let Err(e) = writer.write_chunk(&buf[..n]).await {
+                            let _ = writer.abort().await;
+                            return Err(e.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        let _ = writer.abort().await;
+                        return Err(e.to_string());
+                    }
+                }
+            }
+            writer.finish().await.map_err(|e| e.to_string())?;
+            Ok(())
+        }))
     }
 
     async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
@@ -483,5 +556,71 @@ impl Vfs for SmbFs {
             })?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fm_core::LocationKind;
+
+    fn make_fs(root: &str) -> SmbFs {
+        SmbFs::new(&RemoteConfig {
+            id: "test".into(),
+            kind: LocationKind::Smb,
+            display_name: "Test".into(),
+            endpoint: None,
+            region: None,
+            bucket: None,
+            host: Some("127.0.0.1".into()),
+            port: None,
+            root: root.into(),
+            username: None,
+            password: None,
+            key_id: None,
+            key_secret: None,
+            private_key: None,
+            path_style: false,
+        })
+    }
+
+    #[test]
+    fn split_path_default_root() {
+        let fs = make_fs("/");
+        assert_eq!(fs.split_path(&VfsPath::root()), (None, "".to_string()));
+        assert_eq!(
+            fs.split_path(&VfsPath::from_slash_path("/share1")),
+            (Some("share1".to_string()), "".to_string())
+        );
+        assert_eq!(
+            fs.split_path(&VfsPath::from_slash_path("/share1/dir/file.txt")),
+            (Some("share1".to_string()), "dir/file.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn split_path_with_share_root() {
+        let fs = make_fs("/my_share");
+        assert_eq!(
+            fs.split_path(&VfsPath::root()),
+            (Some("my_share".to_string()), "".to_string())
+        );
+        assert_eq!(
+            fs.split_path(&VfsPath::from_slash_path("/dir/file.txt")),
+            (Some("my_share".to_string()), "dir/file.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn split_path_with_subfolder_root() {
+        let fs = make_fs("/my_share/sub");
+        assert_eq!(
+            fs.split_path(&VfsPath::root()),
+            (Some("my_share".to_string()), "sub".to_string())
+        );
+        assert_eq!(
+            fs.split_path(&VfsPath::from_slash_path("/dir/file.txt")),
+            (Some("my_share".to_string()), "sub/dir/file.txt".to_string())
+        );
     }
 }

@@ -76,15 +76,30 @@ impl SftpFs {
         let username = config.username.as_deref().unwrap_or("root");
         let mut auth_ok = false;
 
-        if let Some(password) = &config.password {
-            let res = session
-                .authenticate_password(username, password)
-                .await
-                .map_err(|e| VfsError::Connection {
-                    message: format!("SSH password authentication error: {e}"),
-                })?;
-            if res.success() {
-                auth_ok = true;
+        if let Some(priv_key_str) = &config.private_key {
+            let passphrase = config.password.as_deref();
+            if let Ok(key) = russh::keys::decode_secret_key(priv_key_str, passphrase) {
+                let rsa_hash = session.best_supported_rsa_hash().await.ok().flatten().flatten();
+                let key_with_alg = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+                if let Ok(res) = session.authenticate_publickey(username, key_with_alg).await {
+                    if res.success() {
+                        auth_ok = true;
+                    }
+                }
+            }
+        }
+
+        if !auth_ok {
+            if let Some(password) = &config.password {
+                let res = session
+                    .authenticate_password(username, password)
+                    .await
+                    .map_err(|e| VfsError::Connection {
+                        message: format!("SSH password authentication error: {e}"),
+                    })?;
+                if res.success() {
+                    auth_ok = true;
+                }
             }
         }
 
@@ -128,18 +143,16 @@ impl SftpFs {
     }
 
     fn resolve_path(&self, path: &VfsPath) -> String {
-        let rel = path.to_slash_string();
         let root = self.config.root.trim_end_matches('/');
-        if rel.is_empty() {
-            if root.is_empty() {
-                "/".to_string()
-            } else {
-                root.to_string()
-            }
-        } else if root.is_empty() {
-            format!("/{rel}")
+        let mut out = root.to_string();
+        for segment in path.segments() {
+            out.push('/');
+            out.push_str(segment);
+        }
+        if out.is_empty() {
+            "/".to_string()
         } else {
-            format!("{root}/{rel}")
+            out
         }
     }
 }
@@ -261,7 +274,7 @@ impl Vfs for SftpFs {
         let sftp_path = self.resolve_path(path);
 
         let flags = match mode {
-            WriteMode::Create => OpenFlags::CREATE | OpenFlags::WRITE,
+            WriteMode::Create => OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::EXCLUDE,
             WriteMode::Truncate => OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
             WriteMode::Append => OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::APPEND,
         };
@@ -290,12 +303,19 @@ impl Vfs for SftpFs {
     async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
         let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
-        if session.sftp.remove_file(&sftp_path).await.is_err() {
-            session.sftp.remove_dir(&sftp_path).await.map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            })?;
+        let meta = session.sftp.metadata(&sftp_path).await.map_err(|e| VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        })?;
+        if meta.is_dir() {
+            session.sftp.remove_dir(&sftp_path).await
+        } else {
+            session.sftp.remove_file(&sftp_path).await
         }
+        .map_err(|e| VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        })?;
         Ok(())
     }
 

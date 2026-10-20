@@ -62,6 +62,17 @@ class StorageService {
     await meta_api.deleteBookmark(dbPath: dbPath, id: id);
   }
 
+  Future<void> renameBookmark({
+    required String id,
+    required String newName,
+    required String root,
+    required String path,
+  }) async {
+    ensureInitialized();
+    await deleteBookmark(id);
+    await addBookmark(name: newName, root: root, path: path);
+  }
+
   // History
   Future<List<meta_api.HistoryDto>> getHistory() async {
     ensureInitialized();

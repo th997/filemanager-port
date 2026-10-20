@@ -102,6 +102,13 @@ impl VfsPath {
         Some(Self { segments })
     }
 
+    /// Whether `self` is `prefix` or a descendant of it, compared per segment
+    /// so `/ab` is not considered inside `/a`.
+    pub fn starts_with(&self, prefix: &Self) -> bool {
+        self.segments.len() >= prefix.segments.len()
+            && self.segments[..prefix.segments.len()] == prefix.segments[..]
+    }
+
     /// Render with `/` separators. Display and native-path conversion only;
     /// do not parse the result back to recover identity.
     pub fn to_slash_string(&self) -> String {

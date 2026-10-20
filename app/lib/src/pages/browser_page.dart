@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import '../dialogs/download_prompt_dialog.dart';
 import '../dialogs/file_picker_dialog.dart';
@@ -7,6 +8,7 @@ import '../dialogs/task_progress_dialog.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/file_open_service.dart';
+import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
@@ -14,7 +16,7 @@ import 'image_viewer_page.dart';
 import 'media_player_page.dart';
 import 'text_editor_page.dart';
 
-enum SortField { name, size, modified }
+enum SortField { name, size, modified, type }
 
 class ClipboardState {
   final String srcRoot;
@@ -57,10 +59,52 @@ class BrowserPageState extends State<BrowserPage> {
   String _filterQuery = '';
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+
+  // Address bar direct jump state
+  bool _isEditingAddress = false;
+  final TextEditingController _addressController = TextEditingController();
+
+  String get _currentFullPath {
+    if (_root == '/') {
+      return _relPath.isEmpty ? '/' : '/$_relPath';
+    }
+    if (_root.startsWith('remote://') || _root.startsWith('archive://')) {
+      return _relPath.isEmpty ? _root : '$_root/$_relPath';
+    }
+    return _relPath.isEmpty ? _root : '$_root/$_relPath';
+  }
 
   // Multi-selection state
   bool _isSelecting = false;
   final Set<String> _selectedPaths = <String>{};
+
+  String get _selectedSummary {
+    final count = _selectedPaths.length;
+    BigInt totalBytes = BigInt.zero;
+    for (final e in _entries) {
+      if (_selectedPaths.contains(_fullEntryPath(e))) {
+        if (!e.isDir && e.size != null) {
+          totalBytes += e.size!;
+        }
+      }
+    }
+    if (totalBytes > BigInt.zero) {
+      final bytes = totalBytes.toDouble();
+      String sizeStr;
+      if (bytes < 1024) {
+        sizeStr = '${bytes.toInt()} B';
+      } else if (bytes < 1024 * 1024) {
+        sizeStr = '${(bytes / 1024).toStringAsFixed(1)} KB';
+      } else if (bytes < 1024 * 1024 * 1024) {
+        sizeStr = '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+      } else {
+        sizeStr = '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+      }
+      return '$count selected ($sizeStr)';
+    }
+    return '$count selected';
+  }
 
   // Pagination state
   int _currentPage = 1;
@@ -85,6 +129,8 @@ class BrowserPageState extends State<BrowserPage> {
   void dispose() {
     _scrollController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -99,8 +145,13 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
+  /// Directory the in-flight load belongs to. A load started for one folder
+  /// must not fill the list after the user has navigated elsewhere.
+  String? _loadingFor;
+
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
+    final loadingFor = '$_root\u0000$_relPath';
     setState(() => _loadingMore = true);
     try {
       final nextPage = _currentPage + 1;
@@ -110,13 +161,16 @@ class BrowserPageState extends State<BrowserPage> {
         page: nextPage,
         pageSize: _pageSize,
       );
-      if (mounted) {
+      if (!mounted) return;
+      if (_loadingFor == loadingFor) {
         setState(() {
           _currentPage = nextPage;
           _entries.addAll(paged.entries.map((e) => EntryItem(e)));
           _hasMore = paged.hasMore;
           _loadingMore = false;
         });
+      } else {
+        setState(() => _loadingMore = false);
       }
     } catch (e) {
       if (mounted) {
@@ -134,17 +188,67 @@ class BrowserPageState extends State<BrowserPage> {
       _isSearching = false;
       _filterQuery = '';
       _searchController.clear();
+      _isEditingAddress = false;
       _currentPage = 1;
       _hasMore = false;
     });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
     _load();
   }
 
+  void _jumpToAddress(String input) {
+    final path = input.trim();
+    if (path.isEmpty) return;
+    setState(() => _isEditingAddress = false);
+
+    if (path.startsWith('remote://')) {
+      final withoutPrefix = path.substring('remote://'.length);
+      final slashIdx = withoutPrefix.indexOf('/');
+      if (slashIdx != -1) {
+        final remoteId = withoutPrefix.substring(0, slashIdx);
+        final rel = withoutPrefix.substring(slashIdx + 1);
+        navigateTo('remote://$remoteId', rel);
+      } else {
+        navigateTo('remote://$withoutPrefix', '');
+      }
+    } else if (path.startsWith('archive://')) {
+      final withoutPrefix = path.substring('archive://'.length);
+      final match = RegExp(r'(\.(zip|apk|jar|tar\.gz|tgz|tar|7z))([/\\]|$)', caseSensitive: false).firstMatch(withoutPrefix);
+      if (match != null) {
+        final archivePath = withoutPrefix.substring(0, match.start + match.group(1)!.length);
+        final rel = withoutPrefix.substring(match.end).replaceAll(RegExp(r'^[/\\]+'), '').replaceAll('\\', '/');
+        navigateTo('archive://$archivePath', rel);
+      } else {
+        navigateTo('archive://$withoutPrefix', '');
+      }
+    } else if (path.startsWith('/')) {
+      final normalized = path == '/' ? '/' : path.replaceAll(RegExp(r'/+'), '/');
+      if (normalized == '/') {
+        navigateTo('/', '');
+      } else {
+        final rel = normalized.substring(1);
+        navigateTo('/', rel);
+      }
+    } else if (RegExp(r'^[a-zA-Z]:').hasMatch(path)) {
+      final drive = path.substring(0, 2);
+      final rel = path.substring(2).replaceAll(RegExp(r'^[/\\]+'), '').replaceAll('\\', '/');
+      navigateTo('$drive/', rel);
+    } else {
+      final nextRel = _relPath.isEmpty ? path : '$_relPath/$path';
+      navigateTo(_root, nextRel);
+    }
+  }
+
   Future<void> _load() async {
+    final loadingFor = '$_root\u0000$_relPath';
+    _loadingFor = loadingFor;
     setState(() {
       _loading = true;
       _error = null;
       _currentPage = 1;
+      _hasMore = false;
     });
 
     try {
@@ -157,17 +261,21 @@ class BrowserPageState extends State<BrowserPage> {
       );
       final items = paged.entries.map((e) => EntryItem(e)).toList();
 
-      if (mounted) {
-        setState(() {
-          _capabilities = caps;
-          _entries = items;
-          _hasMore = paged.hasMore;
-          _loading = false;
-        });
-        StorageService.instance.recordHistory(root: _root, path: _relPath);
+      // A newer navigation superseded this load; its result belongs to a
+      // folder the user already left.
+      if (!mounted || _loadingFor != loadingFor) return;
+      setState(() {
+        _capabilities = caps;
+        _entries = items;
+        _hasMore = paged.hasMore;
+        _loading = false;
+      });
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
       }
+      StorageService.instance.recordHistory(root: _root, path: _relPath);
     } catch (e) {
-      if (mounted) {
+      if (mounted && _loadingFor == loadingFor) {
         setState(() {
           _error = e.toString();
           _loading = false;
@@ -181,8 +289,36 @@ class BrowserPageState extends State<BrowserPage> {
       final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
       if (segments.isNotEmpty) {
         segments.removeLast();
-        setState(() => _relPath = segments.join('/'));
+        setState(() {
+          _relPath = segments.join('/');
+          _isSelecting = false;
+          _selectedPaths.clear();
+        });
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
         _load();
+        return;
+      }
+    }
+    if (_root.startsWith('/') && _root != '/') {
+      final segments = _root.split('/').where((s) => s.isNotEmpty).toList();
+      if (segments.isNotEmpty) {
+        segments.removeLast();
+        final newRoot = segments.isEmpty ? '/' : '/${segments.join('/')}';
+        navigateTo(newRoot, '');
+        return;
+      }
+    }
+    final driveMatch = RegExp(r'^[a-zA-Z]:[/\\]').firstMatch(_root);
+    if (driveMatch != null) {
+      final drive = _root.substring(0, 2);
+      final rest = _root.substring(driveMatch.end);
+      final segments = rest.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      if (segments.isNotEmpty) {
+        segments.removeLast();
+        final newRoot = segments.isEmpty ? '$drive/' : '$drive/${segments.join('/')}';
+        navigateTo(newRoot, '');
         return;
       }
     }
@@ -204,8 +340,19 @@ class BrowserPageState extends State<BrowserPage> {
           return;
         }
       }
-      final parentDir = archiveHost.split('/').sublist(0, archiveHost.split('/').length - 1).join('/');
-      navigateTo(parentDir.isEmpty ? '/' : parentDir, '');
+      final segments = archiveHost.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      if (segments.isNotEmpty) segments.removeLast();
+      if (RegExp(r'^[a-zA-Z]:').hasMatch(archiveHost)) {
+        final drive = archiveHost.substring(0, 2);
+        if (segments.isNotEmpty && segments.first.toLowerCase() == drive.toLowerCase()) {
+          segments.removeAt(0);
+        }
+        final target = segments.isEmpty ? '$drive/' : '$drive/${segments.join('/')}';
+        navigateTo(target, '');
+        return;
+      }
+      final parentDir = segments.isEmpty ? '/' : '/${segments.join('/')}';
+      navigateTo(parentDir, '');
       return;
     }
   }
@@ -223,7 +370,14 @@ class BrowserPageState extends State<BrowserPage> {
 
     if (item.isDir) {
       final next = _fullEntryPath(item);
-      setState(() => _relPath = next);
+      setState(() {
+        _relPath = next;
+        _isSelecting = false;
+        _selectedPaths.clear();
+      });
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
       _load();
       return;
     }
@@ -233,9 +387,7 @@ class BrowserPageState extends State<BrowserPage> {
         _downloadThenOpen(item);
         return;
       }
-      final fullPath = _root.endsWith('/')
-          ? '$_root${_fullEntryPath(item)}'
-          : '$_root/${_fullEntryPath(item)}';
+      final fullPath = joinNative(_root, _fullEntryPath(item));
       navigateTo('archive://$fullPath', '');
       return;
     }
@@ -294,6 +446,14 @@ class BrowserPageState extends State<BrowserPage> {
 
   bool _isRemoteOrArchive(String root) =>
       root.startsWith('remote://') || root.startsWith('archive://');
+
+  /// Whether the current backend accepts edits. Archive contents and
+  /// read-only accounts do not, so their menus must not offer writes.
+  bool get _canWrite => _capabilities?.write ?? true;
+
+  /// ZIP creation and extraction run on native paths, so they only work
+  /// while browsing a local folder.
+  bool get _canArchive => isNativeRoot(_root);
 
   bool _needsDownloadPrompt(EntryItem item) {
     if (!_isRemoteOrArchive(_root)) return false;
@@ -388,7 +548,7 @@ class BrowserPageState extends State<BrowserPage> {
     EntryItem item,
   ) async {
     if (item.isArchive) {
-      final fullPath = root.endsWith('/') ? '$root$path' : '$root/$path';
+      final fullPath = joinNative(root, path);
       navigateTo('archive://$fullPath', '');
       return;
     }
@@ -405,7 +565,7 @@ class BrowserPageState extends State<BrowserPage> {
       return;
     }
     if (item.isImage) {
-      final native = '$root/$path';
+      final native = joinNative(root, path);
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ImageViewerPage(
@@ -416,7 +576,7 @@ class BrowserPageState extends State<BrowserPage> {
       );
       return;
     }
-    final result = await OpenFilex.open('$root/$path');
+    final result = await OpenFilex.open(joinNative(root, path));
     if (!mounted) return;
     if (result.type == ResultType.noAppToOpen) {
       _showError('Downloaded, but no installed app can open ${item.name}');
@@ -426,11 +586,8 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _openImage(EntryItem item) async {
-    final isNative = _root.startsWith('/');
-    if (isNative) {
-      final fullLocalPath = _root.endsWith('/')
-          ? '$_root${_fullEntryPath(item)}'
-          : '$_root/${_fullEntryPath(item)}';
+    if (isNativeRoot(_root)) {
+      final fullLocalPath = joinNative(_root, _fullEntryPath(item));
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ImageViewerPage(
@@ -509,29 +666,66 @@ class BrowserPageState extends State<BrowserPage> {
               ListTile(
                 leading: const Icon(Icons.open_in_new),
                 title: const Text('Open with'),
-                onTap: () => Navigator.of(ctx).pop('open'),
+                onTap: () => Navigator.of(ctx).pop('open_with'),
+              ),
+            if (_isRemoteOrArchive(_root))
+              ListTile(
+                leading: const Icon(Icons.download_outlined, color: Colors.blue),
+                title: const Text('Download to local'),
+                onTap: () => Navigator.of(ctx).pop('download'),
               ),
             ListTile(
-              leading: const Icon(Icons.download_outlined, color: Colors.blue),
-              title: const Text('Download to local'),
-              onTap: () => Navigator.of(ctx).pop('download'),
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy'),
+              onTap: () => Navigator.of(ctx).pop('copy'),
             ),
+            if (_canWrite)
+              ListTile(
+                leading: const Icon(Icons.cut),
+                title: const Text('Cut'),
+                onTap: () => Navigator.of(ctx).pop('cut'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.checklist),
+              title: const Text('Select items'),
+              onTap: () => Navigator.of(ctx).pop('select'),
+            ),
+            if (item.isArchive && _canArchive)
+              ListTile(
+                leading: const Icon(Icons.unarchive),
+                title: const Text('Extract Here'),
+                onTap: () => Navigator.of(ctx).pop('extract'),
+              )
+            else if (_canWrite && _canArchive)
+              ListTile(
+                leading: const Icon(Icons.archive),
+                title: const Text('Compress to ZIP'),
+                onTap: () => Navigator.of(ctx).pop('compress'),
+              ),
             if (!item.isDir)
               ListTile(
                 leading: const Icon(Icons.share_outlined),
                 title: const Text('Share'),
                 onTap: () => Navigator.of(ctx).pop('share'),
               ),
-            ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline),
-              title: const Text('Rename'),
-              onTap: () => Navigator.of(ctx).pop('rename'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Delete', style: TextStyle(color: Colors.red)),
-              onTap: () => Navigator.of(ctx).pop('delete'),
-            ),
+            if (_canWrite)
+              ListTile(
+                leading: const Icon(Icons.drive_file_rename_outline),
+                title: const Text('Rename'),
+                onTap: () => Navigator.of(ctx).pop('rename'),
+              ),
+            if (_canWrite)
+              ListTile(
+                leading: const Icon(Icons.control_point_duplicate),
+                title: const Text('Duplicate'),
+                onTap: () => Navigator.of(ctx).pop('duplicate'),
+              ),
+            if (_canWrite)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Delete', style: TextStyle(color: Colors.red)),
+                onTap: () => Navigator.of(ctx).pop('delete'),
+              ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Properties'),
@@ -546,32 +740,370 @@ class BrowserPageState extends State<BrowserPage> {
       case 'open':
         _openEntry(item);
         break;
+      case 'open_with':
+        _openWithSystem(item);
+        break;
       case 'download':
         _downloadSingle(item);
+        break;
+      case 'copy':
+        setState(() {
+          _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: false);
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Copied ${item.name} to clipboard')),
+        );
+        break;
+      case 'cut':
+        setState(() {
+          _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: true);
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cut ${item.name} to clipboard')),
+        );
+        break;
+      case 'select':
+        setState(() {
+          _isSelecting = true;
+          _selectedPaths.add(path);
+        });
+        break;
+      case 'extract':
+        _extractArchive(item);
+        break;
+      case 'compress':
+        setState(() {
+          _selectedPaths
+            ..clear()
+            ..add(path);
+        });
+        _compressSelected();
         break;
       case 'share':
         _shareEntry(item);
         break;
       case 'rename':
-        setState(() {
-          _isSelecting = true;
-          _selectedPaths
-            ..clear()
-            ..add(path);
-        });
-        _renameSelected();
+        _renameSingle(item);
+        break;
+      case 'duplicate':
+        _duplicateEntry(item);
         break;
       case 'delete':
-        setState(() {
-          _isSelecting = true;
-          _selectedPaths
-            ..clear()
-            ..add(path);
-        });
-        _deleteSelected();
+        _deleteSingle(item);
         break;
       case 'info':
         _showFileInfo(item);
+        break;
+    }
+  }
+
+  /// Desktop right-click context menu on a file/folder referencing File Manager+.
+  Future<void> _showContextMenu(BuildContext originContext, Offset position, EntryItem item) async {
+    final path = _fullEntryPath(item);
+    final action = await showMenu<String>(
+      context: originContext,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'open',
+          child: Row(
+            children: [
+              Icon(item.isDir ? Icons.folder_open : Icons.open_in_new, size: 18),
+              const SizedBox(width: 8),
+              Text(item.isDir ? 'Open' : 'Open'),
+            ],
+          ),
+        ),
+        if (!item.isDir)
+          const PopupMenuItem(
+            value: 'open_with',
+            child: Row(
+              children: [
+                Icon(Icons.open_in_browser, size: 18),
+                SizedBox(width: 8),
+                Text('Open with'),
+              ],
+            ),
+          ),
+        if (_isRemoteOrArchive(_root))
+          const PopupMenuItem(
+            value: 'download',
+            child: Row(
+              children: [
+                Icon(Icons.download, size: 18, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('Download to local'),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'copy',
+          child: Row(
+            children: [
+              Icon(Icons.copy, size: 18),
+              SizedBox(width: 8),
+              Text('Copy'),
+            ],
+          ),
+        ),
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'cut',
+            child: Row(
+              children: [
+                Icon(Icons.cut, size: 18),
+                SizedBox(width: 8),
+                Text('Cut'),
+              ],
+            ),
+          ),
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'rename',
+            child: Row(
+              children: [
+                Icon(Icons.drive_file_rename_outline, size: 18),
+                SizedBox(width: 8),
+                Text('Rename'),
+              ],
+            ),
+          ),
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'duplicate',
+            child: Row(
+              children: [
+                Icon(Icons.control_point_duplicate, size: 18),
+                SizedBox(width: 8),
+                Text('Duplicate'),
+              ],
+            ),
+          ),
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                Icon(Icons.delete, size: 18, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Delete', style: TextStyle(color: Colors.red)),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        if (item.isArchive && _canArchive)
+          const PopupMenuItem(
+            value: 'extract',
+            child: Row(
+              children: [
+                Icon(Icons.unarchive, size: 18),
+                SizedBox(width: 8),
+                Text('Extract Here'),
+              ],
+            ),
+          )
+        else if (_canWrite && _canArchive)
+          const PopupMenuItem(
+            value: 'compress',
+            child: Row(
+              children: [
+                Icon(Icons.archive, size: 18),
+                SizedBox(width: 8),
+                Text('Compress to ZIP'),
+              ],
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'info',
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 18),
+              SizedBox(width: 8),
+              Text('Properties'),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'open':
+        _openEntry(item);
+        break;
+      case 'open_with':
+        _openWithSystem(item);
+        break;
+      case 'download':
+        _downloadSingle(item);
+        break;
+      case 'copy':
+        setState(() {
+          _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: false);
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Copied ${item.name} to clipboard')),
+        );
+        break;
+      case 'cut':
+        setState(() {
+          _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: true);
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cut ${item.name} to clipboard')),
+        );
+        break;
+      case 'rename':
+        _renameSingle(item);
+        break;
+      case 'duplicate':
+        _duplicateEntry(item);
+        break;
+      case 'delete':
+        _deleteSingle(item);
+        break;
+      case 'extract':
+        _extractArchive(item);
+        break;
+      case 'compress':
+        setState(() {
+          _selectedPaths
+            ..clear()
+            ..add(path);
+        });
+        _compressSelected();
+        break;
+      case 'info':
+        _showFileInfo(item);
+        break;
+    }
+  }
+
+  /// Desktop right-click context menu on empty space.
+  Future<void> _showBackgroundContextMenu(Offset position) async {
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      items: [
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'new_folder',
+            child: Row(
+              children: [
+                Icon(Icons.create_new_folder, size: 18),
+                SizedBox(width: 8),
+                Text('New Folder'),
+              ],
+            ),
+          ),
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'new_file',
+            child: Row(
+              children: [
+                Icon(Icons.note_add_outlined, size: 18),
+                SizedBox(width: 8),
+                Text('New Text File'),
+              ],
+            ),
+          ),
+        if (_canWrite)
+          const PopupMenuItem(
+            value: 'upload',
+            child: Row(
+              children: [
+                Icon(Icons.cloud_upload_outlined, size: 18),
+                SizedBox(width: 8),
+                Text('Upload Files'),
+              ],
+            ),
+          ),
+        if (_clipboard != null && _canWrite)
+          PopupMenuItem(
+            value: 'paste',
+            child: Row(
+              children: [
+                const Icon(Icons.paste, size: 18),
+                const SizedBox(width: 8),
+                Text('Paste (${_clipboard!.paths.length})'),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'refresh',
+          child: Row(
+            children: [
+              Icon(Icons.refresh, size: 18),
+              SizedBox(width: 8),
+              Text('Refresh'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'select_all',
+          child: Row(
+            children: [
+              Icon(Icons.select_all, size: 18),
+              SizedBox(width: 8),
+              Text('Select All'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'copy_path',
+          child: Row(
+            children: [
+              Icon(Icons.copy, size: 18),
+              SizedBox(width: 8),
+              Text('Copy Folder Path'),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'new_folder':
+        _createFolder();
+        break;
+      case 'new_file':
+        _createFile();
+        break;
+      case 'upload':
+        _uploadFiles();
+        break;
+      case 'paste':
+        _paste();
+        break;
+      case 'refresh':
+        _load();
+        break;
+      case 'select_all':
+        setState(() => _isSelecting = true);
+        _selectAll();
+        break;
+      case 'copy_path':
+        Clipboard.setData(ClipboardData(text: _currentFullPath));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Folder path copied to clipboard')),
+        );
         break;
     }
   }
@@ -589,8 +1121,27 @@ class BrowserPageState extends State<BrowserPage> {
 
   void _selectAll() {
     setState(() {
+      _isSelecting = true;
       for (final e in _filteredAndSortedEntries) {
         _selectedPaths.add(_fullEntryPath(e));
+      }
+    });
+  }
+
+  void _invertSelection() {
+    setState(() {
+      final currentSelected = Set<String>.from(_selectedPaths);
+      _selectedPaths.clear();
+      for (final e in _filteredAndSortedEntries) {
+        final path = _fullEntryPath(e);
+        if (!currentSelected.contains(path)) {
+          _selectedPaths.add(path);
+        }
+      }
+      if (_selectedPaths.isEmpty) {
+        _isSelecting = false;
+      } else {
+        _isSelecting = true;
       }
     });
   }
@@ -610,20 +1161,36 @@ class BrowserPageState extends State<BrowserPage> {
     );
     if (picked == null || picked.paths.isEmpty || !mounted) return;
 
-    final taskId = await TaskService.instance.copy(
-      srcRoot: picked.root,
-      srcPaths: picked.paths,
-      dstRoot: _root,
-      dstDir: _relPath,
-    );
-    if (mounted) {
-      await TaskProgressDialog.show(context, taskId, 'Uploading Files...');
-      _load();
+    try {
+      final taskId = await TaskService.instance.copy(
+        srcRoot: picked.root,
+        srcPaths: picked.paths,
+        dstRoot: _root,
+        dstDir: _relPath,
+      );
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        'Uploading ${picked.paths.length} item(s)…',
+      );
+      if (mounted) _load();
+      if (completed == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Uploaded ${picked.paths.length} item(s)')),
+        );
+      }
+    } catch (e) {
+      _showError('Upload failed: $e');
     }
   }
 
   Future<void> _downloadSelected() async {
     if (_selectedPaths.isEmpty) return;
+    if (!_isRemoteOrArchive(_root)) {
+      _showError('Already local: use Copy to place these files elsewhere.');
+      return;
+    }
     final dest = await FolderPickerDialog.show(
       context,
       title: 'Select Download Destination',
@@ -631,19 +1198,28 @@ class BrowserPageState extends State<BrowserPage> {
     );
     if (dest == null || !mounted) return;
 
-    final taskId = await TaskService.instance.copy(
-      srcRoot: _root,
-      srcPaths: _selectedPaths.toList(),
-      dstRoot: dest.root,
-      dstDir: dest.relPath,
-    );
-    if (mounted) {
-      await TaskProgressDialog.show(context, taskId, 'Downloading Files...');
+    try {
+      final taskId = await TaskService.instance.copy(
+        srcRoot: _root,
+        srcPaths: _selectedPaths.toList(),
+        dstRoot: dest.root,
+        dstDir: dest.relPath,
+      );
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        'Downloading Files…',
+      );
       if (!mounted) return;
       _clearSelection();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Downloaded to ${dest.path}')),
-      );
+      if (completed == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Downloaded to ${dest.path}')),
+        );
+      }
+    } catch (e) {
+      _showError('Download failed: $e');
     }
   }
 
@@ -655,39 +1231,53 @@ class BrowserPageState extends State<BrowserPage> {
     );
     if (dest == null || !mounted) return;
 
-    final taskId = await TaskService.instance.copy(
-      srcRoot: _root,
-      srcPaths: [_fullEntryPath(item)],
-      dstRoot: dest.root,
-      dstDir: dest.relPath,
-      dstName: item.name,
-    );
-    if (mounted) {
-      await TaskProgressDialog.show(context, taskId, 'Downloading ${item.name}...');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Downloaded ${item.name} to ${dest.path}')),
+    try {
+      final taskId = await TaskService.instance.copy(
+        srcRoot: _root,
+        srcPaths: [_fullEntryPath(item)],
+        dstRoot: dest.root,
+        dstDir: dest.relPath,
+        dstName: item.name,
       );
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        'Downloading ${item.name}…',
+      );
+      if (!mounted) return;
+      if (completed == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Downloaded ${item.name} to ${dest.path}')),
+        );
+      }
+    } catch (e) {
+      _showError('Download failed: $e');
     }
   }
 
   Future<void> _createFolder() async {
     final ctrl = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Folder'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Folder Name', border: OutlineInputBorder()),
+    final String? name;
+    try {
+      name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('New Folder'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Folder Name', border: OutlineInputBorder()),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Create')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Create')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
 
     if (name != null && name.isNotEmpty) {
       final target = _relPath.isEmpty ? name : '$_relPath/$name';
@@ -697,6 +1287,51 @@ class BrowserPageState extends State<BrowserPage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to create folder: $e')));
+        }
+      }
+    }
+  }
+
+  Future<void> _createFile() async {
+    final ctrl = TextEditingController();
+    final String? name;
+    try {
+      name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('New Text File'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'File Name',
+              hintText: 'e.g. notes.txt',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Create')),
+          ],
+        ),
+      );
+    } finally {
+      ctrl.dispose();
+    }
+
+    if (name != null && name.isNotEmpty) {
+      final target = _relPath.isEmpty ? name : '$_relPath/$name';
+      try {
+        await writeTextFile(root: _root, path: target, content: '');
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Created "$name"')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to create file: $e'), backgroundColor: Colors.red),
+          );
         }
       }
     }
@@ -720,37 +1355,102 @@ class BrowserPageState extends State<BrowserPage> {
     final cb = _clipboard;
     if (cb == null) return;
 
-    final taskId = cb.isCut
-        ? await TaskService.instance.move(
-            srcRoot: cb.srcRoot,
-            srcPaths: cb.paths,
-            dstRoot: _root,
-            dstDir: _relPath,
-          )
-        : await TaskService.instance.copy(
-            srcRoot: cb.srcRoot,
-            srcPaths: cb.paths,
-            dstRoot: _root,
-            dstDir: _relPath,
-          );
+    try {
+      final taskId = cb.isCut
+          ? await TaskService.instance.move(
+              srcRoot: cb.srcRoot,
+              srcPaths: cb.paths,
+              dstRoot: _root,
+              dstDir: _relPath,
+            )
+          : await TaskService.instance.copy(
+              srcRoot: cb.srcRoot,
+              srcPaths: cb.paths,
+              dstRoot: _root,
+              dstDir: _relPath,
+            );
 
-    if (mounted) {
-      await TaskProgressDialog.show(context, taskId, cb.isCut ? 'Moving Files...' : 'Copying Files...');
-      if (cb.isCut) setState(() => _clipboard = null);
-      _load();
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        cb.isCut ? 'Moving Files…' : 'Copying Files…',
+      );
+      // A cancelled move may have already removed some sources, so the
+      // clipboard is only cleared once the move actually finished.
+      if (cb.isCut && completed == true) {
+        setState(() => _clipboard = null);
+      }
+      if (mounted) _load();
+    } catch (e) {
+      _showError('${cb.isCut ? 'Move' : 'Copy'} failed: $e');
     }
   }
 
-  Future<void> _deleteSelected() async {
-    final count = _selectedPaths.length;
+  Future<void> _duplicateEntry(EntryItem item) async {
+    final oldName = item.name;
+    final dotIndex = oldName.lastIndexOf('.');
+    String base;
+    String ext;
+    if (!item.isDir && dotIndex > 0 && !oldName.startsWith('.')) {
+      base = oldName.substring(0, dotIndex);
+      ext = oldName.substring(dotIndex);
+    } else {
+      base = oldName;
+      ext = '';
+    }
+
+    String candidate = '${base}_copy$ext';
+    int count = 2;
+    final existingNames = _entries.map((e) => e.name).toSet();
+    while (existingNames.contains(candidate)) {
+      candidate = '${base}_copy_$count$ext';
+      count++;
+    }
+
+    try {
+      final taskId = await TaskService.instance.copy(
+        srcRoot: _root,
+        srcPaths: [_fullEntryPath(item)],
+        dstRoot: _root,
+        dstDir: _relPath,
+        dstName: candidate,
+      );
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(context, taskId, 'Duplicating…');
+      if (completed == true && mounted) {
+        _load();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Created "$candidate"')),
+        );
+      }
+    } catch (e) {
+      _showError('Duplicate failed: $e');
+    }
+  }
+
+  Future<void> _deleteSelected() => _deletePaths(_selectedPaths.toList());
+
+  Future<void> _deleteSingle(EntryItem item) =>
+      _deletePaths([_fullEntryPath(item)]);
+
+  Future<void> _deletePaths(List<String> paths) async {
+    if (paths.isEmpty) return;
+    final count = paths.length;
+    final canTrash = isNativeRoot(_root);
     final confirm = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete $count items?'),
-        content: const Text('Choose whether to move to Recycle Bin or delete permanently.'),
+        title: Text(count == 1 ? 'Delete "${paths.first.split('/').last}"?' : 'Delete $count items?'),
+        content: Text(
+          canTrash
+              ? 'Choose whether to move to Recycle Bin or delete permanently.'
+              : 'This item is on a remote server and cannot be moved to the '
+                  'local Recycle Bin. It will be deleted permanently.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          if (!_root.startsWith('remote://') && !_root.startsWith('archive://'))
+          if (canTrash)
             OutlinedButton(
               onPressed: () => Navigator.of(ctx).pop('trash'),
               child: const Text('Recycle Bin'),
@@ -763,100 +1463,145 @@ class BrowserPageState extends State<BrowserPage> {
         ],
       ),
     );
+    if (!mounted) return;
 
     if (confirm == 'trash') {
-      for (final p in _selectedPaths) {
-        final full = _root.endsWith('/') ? '$_root$p' : '$_root/$p';
-        await StorageService.instance.moveToTrash(full);
+      try {
+        for (final p in paths) {
+          await StorageService.instance.moveToTrash(joinNative(_root, p));
+        }
+      } catch (e) {
+        _showError('Could not move to Recycle Bin: $e');
       }
+      if (!mounted) return;
       _clearSelection();
       _load();
     } else if (confirm == 'permanent') {
-      final taskId = await TaskService.instance.delete(root: _root, paths: _selectedPaths.toList());
-      if (mounted) {
-        await TaskProgressDialog.show(context, taskId, 'Deleting...');
+      try {
+        final taskId = await TaskService.instance.delete(root: _root, paths: paths);
+        if (!mounted) return;
+        await TaskProgressDialog.show(context, taskId, 'Deleting…');
+        if (!mounted) return;
         _clearSelection();
         _load();
+      } catch (e) {
+        _showError('Delete failed: $e');
       }
     }
   }
 
   Future<void> _renameSelected() async {
     if (_selectedPaths.length != 1) return;
-    final oldPath = _selectedPaths.first;
-    final oldName = oldPath.split('/').last;
-    final ctrl = TextEditingController(text: oldName);
+    await _renamePath(_selectedPaths.first);
+  }
 
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'New Name', border: OutlineInputBorder()),
+  Future<void> _renameSingle(EntryItem item) =>
+      _renamePath(_fullEntryPath(item));
+
+  Future<void> _renamePath(String oldPath) async {
+    final oldName = oldPath.split('/').last;
+    final dotIndex = oldName.lastIndexOf('.');
+    final selectionEnd = (dotIndex > 0 && !oldName.startsWith('.')) ? dotIndex : oldName.length;
+    final ctrl = TextEditingController(text: oldName)
+      ..selection = TextSelection(baseOffset: 0, extentOffset: selectionEnd);
+    final String? newName;
+    try {
+      newName = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Rename'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'New Name', border: OutlineInputBorder()),
+            onSubmitted: (v) {
+              if (v.trim().isNotEmpty) {
+                Navigator.of(ctx).pop(v.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Rename')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Rename')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
 
     if (newName != null && newName.isNotEmpty && newName != oldName) {
+      if (newName.contains('/') || newName.contains('\\')) {
+        _showError('A name cannot contain "/" or "\\"');
+        return;
+      }
       final parent = oldPath.contains('/') ? oldPath.substring(0, oldPath.lastIndexOf('/')) : '';
       final newPath = parent.isEmpty ? newName : '$parent/$newName';
       try {
         await renameEntry(root: _root, from: oldPath, to: newPath);
+        if (!mounted) return;
         _clearSelection();
         _load();
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Rename failed: $e')));
-        }
+        _showError('Rename failed: $e');
       }
     }
   }
 
   Future<void> _compressSelected() async {
     final ctrl = TextEditingController(text: 'archive.zip');
-    final zipName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Compress to ZIP'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(labelText: 'Archive Name', border: OutlineInputBorder()),
+    final String? zipName;
+    try {
+      zipName = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Compress to ZIP'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(labelText: 'Archive Name', border: OutlineInputBorder()),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Compress')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Compress')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
 
     if (zipName != null && zipName.isNotEmpty) {
-      final dstPath = _relPath.isEmpty ? '$_root/$zipName' : '$_root/$_relPath/$zipName';
-      final taskId = await TaskService.instance.compress(
-        srcRoot: _root,
-        srcPaths: _selectedPaths.toList(),
-        dstArchivePath: dstPath,
-      );
-      if (mounted) {
-        await TaskProgressDialog.show(context, taskId, 'Compressing...');
+      final dstPath = joinNative(_root, _relPath.isEmpty ? zipName : '$_relPath/$zipName');
+      try {
+        final taskId = await TaskService.instance.compress(
+          srcRoot: _root,
+          srcPaths: _selectedPaths.toList(),
+          dstArchivePath: dstPath,
+        );
+        if (!mounted) return;
+        await TaskProgressDialog.show(context, taskId, 'Compressing…');
+        if (!mounted) return;
         _clearSelection();
         _load();
+      } catch (e) {
+        _showError('Compress failed: $e');
       }
     }
   }
 
   Future<void> _extractArchive(EntryItem item) async {
-    final fullArchive = _root.endsWith('/') ? '$_root${_fullEntryPath(item)}' : '$_root/${_fullEntryPath(item)}';
-    final targetDir = _relPath.isEmpty ? _root : '$_root/$_relPath';
-    final taskId = await TaskService.instance.extract(archivePath: fullArchive, dstDir: targetDir);
-    if (mounted) {
-      await TaskProgressDialog.show(context, taskId, 'Extracting Archive...');
-      _load();
+    final fullArchive = joinNative(_root, _fullEntryPath(item));
+    final targetDir = joinNative(_root, _relPath);
+    try {
+      final taskId = await TaskService.instance.extract(
+        archivePath: fullArchive,
+        dstDir: targetDir,
+      );
+      if (!mounted) return;
+      await TaskProgressDialog.show(context, taskId, 'Extracting Archive…');
+      if (mounted) _load();
+    } catch (e) {
+      _showError('Extract failed: $e');
     }
   }
 
@@ -872,6 +1617,8 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _showFileInfo(EntryItem item) {
+    final path = _fullEntryPath(item);
+    final ext = item.isDir ? null : (item.name.contains('.') ? item.name.split('.').last : null);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -886,15 +1633,33 @@ class BrowserPageState extends State<BrowserPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow('Path', item.path),
-            _infoRow('Size', item.formattedSize),
+            _infoRow('Name', item.name),
+            _infoRow('Path', path),
+            if (ext != null) _infoRow('Extension', ext.toUpperCase()),
+            _infoRow(
+              'Size',
+              item.isDir
+                  ? 'Directory'
+                  : '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
+            ),
             _infoRow('Modified', item.formattedModified),
             _infoRow('Type', item.isDir ? 'Directory' : (item.isArchive ? 'Archive' : 'File')),
             _infoRow('Hidden', item.hidden ? 'Yes' : 'No'),
           ],
         ),
         actions: [
-          if (item.isArchive)
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Path'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: path));
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Path copied to clipboard')),
+              );
+            },
+          ),
+          if (item.isArchive && _canArchive)
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -947,6 +1712,14 @@ class BrowserPageState extends State<BrowserPage> {
           final mb = b.modified ?? DateTime.fromMillisecondsSinceEpoch(0);
           cmp = ma.compareTo(mb);
           break;
+        case SortField.type:
+          final extA = a.isDir ? '' : (a.name.contains('.') ? a.name.split('.').last.toLowerCase() : '');
+          final extB = b.isDir ? '' : (b.name.contains('.') ? b.name.split('.').last.toLowerCase() : '');
+          cmp = extA.compareTo(extB);
+          if (cmp == 0) {
+            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          }
+          break;
       }
       return _sortAsc ? cmp : -cmp;
     });
@@ -957,16 +1730,111 @@ class BrowserPageState extends State<BrowserPage> {
   @override
   Widget build(BuildContext context) {
     final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-    final displayName = _root.startsWith('archive://')
-        ? '📦 [Archive] ${_root.split('/').last}'
-        : (_root.startsWith('remote://') ? '☁️ Remote Storage' : (segments.isEmpty ? _root : segments.last));
+    final String rootDisplay = _root == '/'
+        ? '/'
+        : (_root.startsWith('remote://')
+            ? '☁️ Remote Storage'
+            : (_root.startsWith('archive://')
+                ? '📦 [Archive] ${_root.split('/').last}'
+                : (_root.split('/').where((s) => s.isNotEmpty).lastOrNull ?? _root)));
+    final displayName = segments.isEmpty ? rootDisplay : segments.last;
 
-    // Back first leaves selection/search, then walks up the directory tree.
+    // Back first leaves selection/search/address, then walks up the directory tree.
     // At the top level the platform handles it (exit or tab switch).
-    final canNavigateUp = _isSelecting || _isSearching || _relPath.isNotEmpty ||
-        _root.startsWith('archive://');
+    final canNavigateUp = _isSelecting || _isSearching || _isEditingAddress || _relPath.isNotEmpty ||
+        _root.startsWith('archive://') || (_root.startsWith('/') && _root != '/');
 
-    return PopScope(
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true): _selectAll,
+        const SingleActivator(LogicalKeyboardKey.keyA, meta: true): _selectAll,
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+          setState(() => _isSearching = true);
+          _searchFocusNode.requestFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
+          setState(() => _isSearching = true);
+          _searchFocusNode.requestFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): () {
+          if (_isSelecting && _selectedPaths.isNotEmpty) {
+            _copySelected(isCut: false);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
+          if (_isSelecting && _selectedPaths.isNotEmpty) {
+            _copySelected(isCut: false);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyX, control: true): () {
+          if (_isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
+            _copySelected(isCut: true);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyX, meta: true): () {
+          if (_isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
+            _copySelected(isCut: true);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): () {
+          if (_clipboard != null && _canWrite) {
+            _paste();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
+          if (_clipboard != null && _canWrite) {
+            _paste();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
+          if (_isSelecting && _selectedPaths.length == 1 && _canWrite) {
+            final item = _entries.firstWhere(
+              (e) => _fullEntryPath(e) == _selectedPaths.first,
+              orElse: () => _entries.first,
+            );
+            _duplicateEntry(item);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
+          if (_isSelecting && _selectedPaths.length == 1 && _canWrite) {
+            final item = _entries.firstWhere(
+              (e) => _fullEntryPath(e) == _selectedPaths.first,
+              orElse: () => _entries.first,
+            );
+            _duplicateEntry(item);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.f5): _load,
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _load,
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_isSelecting) {
+            _clearSelection();
+          } else if (_isSearching) {
+            setState(() {
+              _isSearching = false;
+              _filterQuery = '';
+              _searchController.clear();
+            });
+          } else if (_isEditingAddress) {
+            setState(() => _isEditingAddress = false);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.delete): () {
+          if (_isSelecting && _canWrite) {
+            _deleteSelected();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.backspace): () {
+          if (!_isEditingAddress && !_isSearching) {
+            _navigateUp();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): _navigateUp,
+      },
+      child: Focus(
+        autofocus: true,
+        child: PopScope(
       canPop: !canNavigateUp,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
@@ -978,6 +1846,8 @@ class BrowserPageState extends State<BrowserPage> {
             _filterQuery = '';
             _searchController.clear();
           });
+        } else if (_isEditingAddress) {
+          setState(() => _isEditingAddress = false);
         } else {
           _navigateUp();
         }
@@ -990,20 +1860,33 @@ class BrowserPageState extends State<BrowserPage> {
         title: _isSearching
             ? TextField(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: 'Filter files...', border: InputBorder.none),
+                decoration: InputDecoration(
+                  hintText: 'Filter files...',
+                  border: InputBorder.none,
+                  suffixIcon: _filterQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _filterQuery = '');
+                          },
+                        )
+                      : null,
+                ),
                 onChanged: (v) => setState(() => _filterQuery = v),
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _isSelecting ? '${_selectedPaths.length} selected' : displayName,
+                    _isSelecting ? _selectedSummary : displayName,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   if (!_isSelecting)
                     Text(
-                      _relPath.isEmpty ? _root : '$_root/$_relPath',
+                      _currentFullPath,
                       style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1012,6 +1895,7 @@ class BrowserPageState extends State<BrowserPage> {
         actions: [
           if (_isSelecting) ...[
             IconButton(icon: const Icon(Icons.select_all), tooltip: 'Select All', onPressed: _selectAll),
+            IconButton(icon: const Icon(Icons.swap_horiz), tooltip: 'Invert Selection', onPressed: _invertSelection),
           ] else ...[
             IconButton(
               icon: Icon(_isSearching ? Icons.search_off : Icons.search),
@@ -1026,16 +1910,24 @@ class BrowserPageState extends State<BrowserPage> {
                 });
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.cloud_upload_outlined),
-              tooltip: 'Upload Files',
-              onPressed: _uploadFiles,
-            ),
-            IconButton(
-              icon: const Icon(Icons.create_new_folder),
-              tooltip: 'New Folder',
-              onPressed: _createFolder,
-            ),
+            if (_canWrite)
+              IconButton(
+                icon: const Icon(Icons.cloud_upload_outlined),
+                tooltip: 'Upload Files',
+                onPressed: _uploadFiles,
+              ),
+            if (_canWrite)
+              IconButton(
+                icon: const Icon(Icons.create_new_folder),
+                tooltip: 'New Folder',
+                onPressed: _createFolder,
+              ),
+            if (_canWrite)
+              IconButton(
+                icon: const Icon(Icons.note_add_outlined),
+                tooltip: 'New File',
+                onPressed: _createFile,
+              ),
             IconButton(
               icon: const Icon(Icons.bookmark_add_outlined),
               tooltip: 'Bookmark Folder',
@@ -1081,6 +1973,15 @@ class BrowserPageState extends State<BrowserPage> {
                       _sortAsc = false;
                     }
                   });
+                } else if (val == 'sort_type') {
+                  setState(() {
+                    if (_sortField == SortField.type) {
+                      _sortAsc = !_sortAsc;
+                    } else {
+                      _sortField = SortField.type;
+                      _sortAsc = true;
+                    }
+                  });
                 }
               },
               itemBuilder: (ctx) => [
@@ -1094,17 +1995,25 @@ class BrowserPageState extends State<BrowserPage> {
                   child: const Text('Select items'),
                 ),
                 const PopupMenuDivider(),
-                PopupMenuItem<String>(
+                CheckedPopupMenuItem<String>(
                   value: 'sort_name',
-                  child: Text('Sort by Name ${_sortField == SortField.name ? (_sortAsc ? '▲' : '▼') : ''}'),
+                  checked: _sortField == SortField.name,
+                  child: Text('Sort by Name ${_sortField == SortField.name ? (_sortAsc ? '(A → Z)' : '(Z → A)') : ''}'),
                 ),
-                PopupMenuItem<String>(
+                CheckedPopupMenuItem<String>(
+                  value: 'sort_type',
+                  checked: _sortField == SortField.type,
+                  child: Text('Sort by Type ${_sortField == SortField.type ? (_sortAsc ? '(A → Z)' : '(Z → A)') : ''}'),
+                ),
+                CheckedPopupMenuItem<String>(
                   value: 'sort_size',
-                  child: Text('Sort by Size ${_sortField == SortField.size ? (_sortAsc ? '▲' : '▼') : ''}'),
+                  checked: _sortField == SortField.size,
+                  child: Text('Sort by Size ${_sortField == SortField.size ? (_sortAsc ? '(Smallest)' : '(Largest)') : ''}'),
                 ),
-                PopupMenuItem<String>(
+                CheckedPopupMenuItem<String>(
                   value: 'sort_date',
-                  child: Text('Sort by Date ${_sortField == SortField.modified ? (_sortAsc ? '▲' : '▼') : ''}'),
+                  checked: _sortField == SortField.modified,
+                  child: Text('Sort by Date ${_sortField == SortField.modified ? (_sortAsc ? '(Oldest)' : '(Newest)') : ''}'),
                 ),
               ],
             ),
@@ -1120,10 +2029,57 @@ class BrowserPageState extends State<BrowserPage> {
         ],
       ),
       ),
+    ),
+    ),
     );
   }
 
   Widget _buildPathBar(List<String> segments) {
+    if (_isEditingAddress) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        child: Row(
+          children: [
+            const Icon(Icons.link, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _addressController,
+                autofocus: true,
+                style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                decoration: const InputDecoration(
+                  hintText: 'Enter path to jump (e.g. /, /etc, /home/user)...',
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+                onSubmitted: _jumpToAddress,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.arrow_forward, size: 20, color: Colors.blue),
+              tooltip: 'Jump',
+              onPressed: () => _jumpToAddress(_addressController.text),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              tooltip: 'Cancel',
+              onPressed: () => setState(() => _isEditingAddress = false),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final rootLabel = _root == '/'
+        ? '/'
+        : (_root.startsWith('remote://')
+            ? 'Cloud'
+            : (_root.startsWith('archive://')
+                ? 'Archive'
+                : (_root.split('/').where((s) => s.isNotEmpty).lastOrNull ?? _root)));
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
@@ -1132,7 +2088,9 @@ class BrowserPageState extends State<BrowserPage> {
           IconButton(
             icon: const Icon(Icons.arrow_upward, size: 20),
             tooltip: 'Up one level',
-            onPressed: (_relPath.isNotEmpty || _root.startsWith('archive://')) ? _navigateUp : null,
+            onPressed: (_relPath.isNotEmpty || _root.startsWith('archive://') || (_root.startsWith('/') && _root != '/'))
+                ? _navigateUp
+                : null,
           ),
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
@@ -1149,13 +2107,16 @@ class BrowserPageState extends State<BrowserPage> {
                     onTap: () {
                       if (_relPath.isNotEmpty) {
                         setState(() => _relPath = '');
+                        if (_scrollController.hasClients) {
+                          _scrollController.jumpTo(0);
+                        }
                         _load();
                       }
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                       child: Text(
-                        'Root',
+                        rootLabel,
                         style: TextStyle(
                           color: _relPath.isEmpty ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                           fontWeight: _relPath.isEmpty ? FontWeight.bold : FontWeight.normal,
@@ -1170,6 +2131,9 @@ class BrowserPageState extends State<BrowserPage> {
                         final next = segments.sublist(0, i + 1).join('/');
                         if (next != _relPath) {
                           setState(() => _relPath = next);
+                          if (_scrollController.hasClients) {
+                            _scrollController.jumpTo(0);
+                          }
                           _load();
                         }
                       },
@@ -1188,6 +2152,14 @@ class BrowserPageState extends State<BrowserPage> {
                 ],
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            tooltip: 'Address bar / Jump',
+            onPressed: () {
+              _addressController.text = _currentFullPath;
+              setState(() => _isEditingAddress = true);
+            },
           ),
         ],
       ),
@@ -1243,21 +2215,32 @@ class BrowserPageState extends State<BrowserPage> {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             if (_isSelecting) ...[
-              _actionButton(Icons.download, 'Download', _downloadSelected, color: Colors.blue),
+              if (_isRemoteOrArchive(_root))
+                _actionButton(Icons.download, 'Download', _downloadSelected, color: Colors.blue),
               _actionButton(Icons.copy, 'Copy', () => _copySelected(isCut: false)),
-              _actionButton(Icons.cut, 'Cut', () => _copySelected(isCut: true)),
-              _actionButton(Icons.delete, 'Delete', _deleteSelected, color: Colors.red),
-              if (_selectedPaths.length == 1)
-                _actionButton(Icons.edit, 'Rename', _renameSelected),
-              _actionButton(Icons.archive, 'Zip', _compressSelected),
+              if (_canWrite) ...[
+                _actionButton(Icons.cut, 'Cut', () => _copySelected(isCut: true)),
+                _actionButton(Icons.delete, 'Delete', _deleteSelected, color: Colors.red),
+                if (_selectedPaths.length == 1)
+                  _actionButton(Icons.edit, 'Rename', _renameSelected),
+                if (_canArchive)
+                  _actionButton(Icons.archive, 'Zip', _compressSelected),
+              ],
             ],
-            if (_clipboard != null && !_isSelecting)
+            if (_clipboard != null && !_isSelecting && _canWrite) ...[
               _actionButton(
                 Icons.paste,
                 'Paste (${_clipboard!.paths.length})',
                 _paste,
                 color: Theme.of(context).colorScheme.primary,
               ),
+              _actionButton(
+                Icons.close,
+                'Clear',
+                () => setState(() => _clipboard = null),
+                color: Colors.grey,
+              ),
+            ],
           ],
         ),
       ),
@@ -1307,141 +2290,224 @@ class BrowserPageState extends State<BrowserPage> {
 
     final list = _filteredAndSortedEntries;
     if (list.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.folder_open, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            Text('Directory is empty', style: TextStyle(color: Colors.grey.shade600)),
-          ],
+      final isFiltered = _filterQuery.isNotEmpty;
+      return RefreshIndicator(
+        onRefresh: () async => _load(),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isFiltered ? Icons.search_off : Icons.folder_open,
+                        size: 64,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        isFiltered
+                            ? 'No files matching "$_filterQuery"'
+                            : 'Directory is empty',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                      if (isFiltered) ...[
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.clear, size: 16),
+                          label: const Text('Clear Filter'),
+                          onPressed: () {
+                            setState(() {
+                              _filterQuery = '';
+                              _searchController.clear();
+                            });
+                          },
+                        ),
+                      ] else if (_canWrite) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            FilledButton.tonalIcon(
+                              icon: const Icon(Icons.create_new_folder),
+                              label: const Text('New Folder'),
+                              onPressed: _createFolder,
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton.tonalIcon(
+                              icon: const Icon(Icons.note_add_outlined),
+                              label: const Text('New File'),
+                              onPressed: _createFile,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }
 
     if (_isGrid) {
-      return GridView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 110,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 0.85,
+      return RefreshIndicator(
+        onRefresh: () async => _load(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
+          child: GridView.builder(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(8),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 110,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 0.85,
+          ),
+          itemCount: list.length + (_hasMore ? 1 : 0),
+          itemBuilder: (ctx, i) {
+            if (i == list.length) {
+              return Center(
+                child: _loadingMore
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.more_horiz),
+                        tooltip: 'Load more',
+                        onPressed: _loadMore,
+                      ),
+              );
+            }
+            final item = list[i];
+            final path = _fullEntryPath(item);
+            final isSelected = _selectedPaths.contains(path);
+
+            return GestureDetector(
+              onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition, item),
+              child: InkWell(
+                onTap: () => _openEntry(item),
+                onLongPress: () => _showEntryActions(item),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
+                    border: Border.all(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                      width: isSelected ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Stack(
+                    children: [
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(item.icon, size: 36, color: item.iconColor(ctx)),
+                            const SizedBox(height: 6),
+                            Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
+                            const SizedBox(height: 2),
+                            Text(item.formattedSize, style: TextStyle(fontSize: 9, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ),
+                      if (_isSelecting)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Checkbox(
+                            value: isSelected,
+                            onChanged: (_) => _toggleSelect(path),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
-        itemCount: list.length + (_hasMore ? 1 : 0),
+      ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => _load(),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
+        child: ListView.builder(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          itemCount: list.length + (_hasMore ? 1 : 0),
         itemBuilder: (ctx, i) {
           if (i == list.length) {
-            return Center(
-              child: _loadingMore
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.more_horiz),
-                      tooltip: 'Load more',
-                      onPressed: _loadMore,
-                    ),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: _loadingMore
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : TextButton.icon(
+                        icon: const Icon(Icons.expand_more, size: 18),
+                        label: const Text('Load more'),
+                        onPressed: _loadMore,
+                      ),
+              ),
             );
           }
           final item = list[i];
           final path = _fullEntryPath(item);
           final isSelected = _selectedPaths.contains(path);
 
-          return InkWell(
-            onTap: () => _openEntry(item),
-            onLongPress: () => _showEntryActions(item),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
-                border: Border.all(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).dividerColor.withValues(alpha: 0.3),
-                  width: isSelected ? 2 : 1,
-                ),
-                borderRadius: BorderRadius.circular(8),
+          return GestureDetector(
+            onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition, item),
+            child: ListTile(
+              dense: true,
+              selected: isSelected,
+              leading: _isSelecting
+                  ? Checkbox(value: isSelected, onChanged: (_) => _toggleSelect(path))
+                  : Icon(item.icon, color: item.iconColor(ctx), size: 28),
+              title: Text(
+                item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: item.isDir ? FontWeight.w600 : FontWeight.normal),
               ),
-              child: Stack(
-                children: [
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(item.icon, size: 36, color: item.iconColor(ctx)),
-                        const SizedBox(height: 6),
-                        Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
-                        const SizedBox(height: 2),
-                        Text(item.formattedSize, style: TextStyle(fontSize: 9, color: Colors.grey.shade600)),
-                      ],
-                    ),
-                  ),
-                  if (_isSelecting)
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: Checkbox(
-                        value: isSelected,
-                        onChanged: (_) => _toggleSelect(path),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                ],
+              subtitle: Text(
+                item.isDir
+                    ? item.formattedModified
+                    : '${item.formattedSize}  •  ${item.formattedModified}',
+                style: const TextStyle(fontSize: 11),
               ),
+              trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 18) : null,
+              onTap: () => _openEntry(item),
+              onLongPress: () => _showEntryActions(item),
             ),
           );
         },
-      );
-    }
-
-    return ListView.builder(
-      controller: _scrollController,
-      itemCount: list.length + (_hasMore ? 1 : 0),
-      itemBuilder: (ctx, i) {
-        if (i == list.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: _loadingMore
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : TextButton.icon(
-                      icon: const Icon(Icons.expand_more, size: 18),
-                      label: const Text('Load more'),
-                      onPressed: _loadMore,
-                    ),
-            ),
-          );
-        }
-        final item = list[i];
-        final path = _fullEntryPath(item);
-        final isSelected = _selectedPaths.contains(path);
-
-        return ListTile(
-          dense: true,
-          selected: isSelected,
-          leading: _isSelecting
-              ? Checkbox(value: isSelected, onChanged: (_) => _toggleSelect(path))
-              : Icon(item.icon, color: item.iconColor(ctx), size: 28),
-          title: Text(
-            item.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: item.isDir ? FontWeight.w600 : FontWeight.normal),
-          ),
-          subtitle: Text('${item.formattedSize}  •  ${item.formattedModified}', style: const TextStyle(fontSize: 11)),
-          trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 18) : null,
-          onTap: () => _openEntry(item),
-          onLongPress: () => _showEntryActions(item),
-        );
-      },
+      ),
+    ),
     );
   }
 }

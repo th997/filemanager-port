@@ -1203,6 +1203,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "webpki-root-certs",
 ]
 
 [[package]]
@@ -1254,6 +1255,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "uuid",
 ]
 

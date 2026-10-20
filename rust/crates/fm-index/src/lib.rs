@@ -21,11 +21,14 @@ pub struct HistoryEntry {
 }
 
 /// An item moved to the in-app recycle bin.
+///
+/// Paths are stored as raw native path strings: a `VfsPath` cannot represent a
+/// Windows drive path (`C:\...`) without losing the drive and separator form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecycleItem {
     pub location: LocationId,
-    pub original_path: VfsPath,
-    pub stored_path: VfsPath,
+    pub original_path: String,
+    pub stored_path: String,
     pub deleted_at_millis: i64,
 }
 

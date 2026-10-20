@@ -55,6 +55,10 @@ Future<String> readTextFile({required String root, required String path}) =>
       path: path,
     );
 
+/// Drop a cached backend so the next access rebuilds it from stored config.
+void invalidateRoot({required String root}) =>
+    RustLib.instance.api.crateApiFileManagerInvalidateRoot(root: root);
+
 Future<void> writeTextFile({
   required String root,
   required String path,
