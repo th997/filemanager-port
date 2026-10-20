@@ -312,22 +312,22 @@ class _HomePageState extends State<HomePage> {
                     onTap: () => _onQuickTargetSelected(t),
                     borderRadius: BorderRadius.circular(10),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
                       ),
                       child: Row(
                         children: [
                           Container(
-                            width: 36,
-                            height: 36,
+                            width: 28,
+                            height: 28,
                             decoration: BoxDecoration(
                               color: iconColor.withValues(alpha: 0.15),
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(icon, size: 20, color: iconColor),
+                            child: Icon(icon, size: 16, color: iconColor),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -337,13 +337,13 @@ class _HomePageState extends State<HomePage> {
                               children: [
                                 Text(
                                   t.name,
-                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 1),
                                 Text(
                                   t.path,
-                                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                  style: TextStyle(fontSize: 9.5, color: Colors.grey.shade600),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
@@ -390,28 +390,37 @@ class _HomePageState extends State<HomePage> {
             )
           else
             ..._remotes.map((r) => Card(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  elevation: 0,
+                  margin: const EdgeInsets.symmetric(vertical: 2),
                   child: ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
                     leading: _protocolBadge(r.kind),
-                    title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                     subtitle: Text(
                       r.endpoint ?? (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}'),
-                      style: const TextStyle(fontSize: 11),
+                      style: const TextStyle(fontSize: 10),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit_outlined),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                           tooltip: 'Edit',
                           onPressed: () => _editRemote(r),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                           tooltip: 'Delete',
                           onPressed: () => _deleteRemote(r),
                         ),
-                        const Icon(Icons.chevron_right),
+                        const Icon(Icons.chevron_right, size: 16),
                       ],
                     ),
                     onTap: () => _openRemote(r),
@@ -424,11 +433,15 @@ class _HomePageState extends State<HomePage> {
           _sectionHeader('Utilities'),
           const SizedBox(height: 8),
           Card(
+            elevation: 0,
+            margin: const EdgeInsets.symmetric(vertical: 2),
             child: ListTile(
-              leading: const Icon(Icons.delete_outline, size: 28, color: Colors.deepOrange),
-              title: const Text('Recycle Bin'),
-              subtitle: Text('$_trashCount items in trash'),
-              trailing: const Icon(Icons.chevron_right),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              leading: const Icon(Icons.delete_outline, size: 22, color: Colors.deepOrange),
+              title: const Text('Recycle Bin', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: Text('$_trashCount items in trash', style: const TextStyle(fontSize: 10)),
+              trailing: const Icon(Icons.chevron_right, size: 16),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const TrashPage()),
@@ -444,21 +457,30 @@ class _HomePageState extends State<HomePage> {
             _sectionHeader('Bookmarks'),
             const SizedBox(height: 8),
             ..._bookmarks.map((b) => Card(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  elevation: 0,
+                  margin: const EdgeInsets.symmetric(vertical: 2),
                   child: ListTile(
-                    leading: const Icon(Icons.bookmark, color: Colors.amber),
-                    title: Text(b.name),
-                    subtitle: Text('${b.root}${b.path}', style: const TextStyle(fontSize: 11)),
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    leading: const Icon(Icons.bookmark, color: Colors.amber, size: 20),
+                    title: Text(b.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    subtitle: Text('${b.root}${b.path}', style: const TextStyle(fontSize: 10)),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                           tooltip: 'Rename Bookmark',
                           onPressed: () => _renameBookmark(b),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close, size: 18),
+                          icon: const Icon(Icons.close, size: 16),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                           tooltip: 'Remove',
                           onPressed: () async {
                             await StorageService.instance.deleteBookmark(b.id);

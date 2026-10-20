@@ -38,16 +38,30 @@ class _FileManagerAppState extends State<FileManagerApp> {
       themeMode: _themeMode,
       theme: ThemeData(
         useMaterial3: true,
+        visualDensity: VisualDensity.compact,
         colorScheme: ColorScheme.fromSeed(
           seedColor: seedColor,
           brightness: Brightness.light,
         ),
+        listTileTheme: const ListTileThemeData(
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          minVerticalPadding: 0,
+        ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
+        visualDensity: VisualDensity.compact,
         colorScheme: ColorScheme.fromSeed(
           seedColor: seedColor,
           brightness: Brightness.dark,
+        ),
+        listTileTheme: const ListTileThemeData(
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          minVerticalPadding: 0,
         ),
       ),
       home: HomePage(

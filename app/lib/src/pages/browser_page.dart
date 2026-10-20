@@ -1882,12 +1882,12 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   Text(
                     _isSelecting ? _selectedSummary : displayName,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                   if (!_isSelecting)
                     Text(
                       _currentFullPath,
-                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       overflow: TextOverflow.ellipsis,
                     ),
                 ],
@@ -2081,19 +2081,25 @@ class BrowserPageState extends State<BrowserPage> {
                 : (_root.split('/').where((s) => s.isNotEmpty).lastOrNull ?? _root)));
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_upward, size: 20),
+            icon: const Icon(Icons.arrow_upward, size: 18),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             tooltip: 'Up one level',
             onPressed: (_relPath.isNotEmpty || _root.startsWith('archive://') || (_root.startsWith('/') && _root != '/'))
                 ? _navigateUp
                 : null,
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
+            icon: const Icon(Icons.refresh, size: 18),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             tooltip: 'Refresh',
             onPressed: _load,
           ),
@@ -2154,7 +2160,10 @@ class BrowserPageState extends State<BrowserPage> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 18),
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             tooltip: 'Address bar / Jump',
             onPressed: () {
               _addressController.text = _currentFullPath;
@@ -2250,15 +2259,15 @@ class BrowserPageState extends State<BrowserPage> {
   Widget _actionButton(IconData icon, String label, VoidCallback onTap, {Color? color}) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 10, color: color)),
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 1),
+            Text(label, style: TextStyle(fontSize: 9, color: color)),
           ],
         ),
       ),
@@ -2369,9 +2378,9 @@ class BrowserPageState extends State<BrowserPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(8),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 110,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
+            maxCrossAxisExtent: 88,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
             childAspectRatio: 0.85,
           ),
           itemCount: list.length + (_hasMore ? 1 : 0),
@@ -2380,12 +2389,12 @@ class BrowserPageState extends State<BrowserPage> {
               return Center(
                 child: _loadingMore
                     ? const SizedBox(
-                        width: 24,
-                        height: 24,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : IconButton(
-                        icon: const Icon(Icons.more_horiz),
+                        icon: const Icon(Icons.more_horiz, size: 18),
                         tooltip: 'Load more',
                         onPressed: _loadMore,
                       ),
@@ -2400,18 +2409,18 @@ class BrowserPageState extends State<BrowserPage> {
               child: InkWell(
                 onTap: () => _openEntry(item),
                 onLongPress: () => _showEntryActions(item),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
                     border: Border.all(
                       color: isSelected
                           ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).dividerColor.withValues(alpha: 0.3),
-                      width: isSelected ? 2 : 1,
+                          : Theme.of(context).dividerColor.withValues(alpha: 0.25),
+                      width: isSelected ? 1.5 : 1,
                     ),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Stack(
                     children: [
@@ -2419,11 +2428,11 @@ class BrowserPageState extends State<BrowserPage> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(item.icon, size: 36, color: item.iconColor(ctx)),
-                            const SizedBox(height: 6),
-                            Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
-                            const SizedBox(height: 2),
-                            Text(item.formattedSize, style: TextStyle(fontSize: 9, color: Colors.grey.shade600)),
+                            Icon(item.icon, size: 28, color: item.iconColor(ctx)),
+                            const SizedBox(height: 4),
+                            Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10)),
+                            const SizedBox(height: 1),
+                            Text(item.formattedSize, style: TextStyle(fontSize: 8.5, color: Colors.grey.shade600)),
                           ],
                         ),
                       ),
@@ -2484,23 +2493,34 @@ class BrowserPageState extends State<BrowserPage> {
             onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition, item),
             child: ListTile(
               dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+              minVerticalPadding: 0,
+              minLeadingWidth: 24,
               selected: isSelected,
               leading: _isSelecting
-                  ? Checkbox(value: isSelected, onChanged: (_) => _toggleSelect(path))
-                  : Icon(item.icon, color: item.iconColor(ctx), size: 28),
+                  ? Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => _toggleSelect(path),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    )
+                  : Icon(item.icon, color: item.iconColor(ctx), size: 20),
               title: Text(
                 item.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: item.isDir ? FontWeight.w600 : FontWeight.normal),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: item.isDir ? FontWeight.w600 : FontWeight.normal,
+                ),
               ),
               subtitle: Text(
                 item.isDir
                     ? item.formattedModified
                     : '${item.formattedSize}  •  ${item.formattedModified}',
-                style: const TextStyle(fontSize: 11),
+                style: const TextStyle(fontSize: 10),
               ),
-              trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 18) : null,
+              trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
               onTap: () => _openEntry(item),
               onLongPress: () => _showEntryActions(item),
             ),
