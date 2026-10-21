@@ -65,6 +65,8 @@ jobs:
         run: cargo build -p fm_ffi --release
       - name: Build Windows
         working-directory: app
+        env:
+          CL: "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
         run: flutter build windows --release -v
       - name: Package Release
         shell: pwsh
