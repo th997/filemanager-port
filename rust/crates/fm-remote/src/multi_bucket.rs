@@ -27,7 +27,7 @@ use crate::RemoteConfig;
 pub fn parse_configured_buckets(bucket_str: Option<&str>) -> Option<Vec<String>> {
     let s = bucket_str?;
     let buckets: Vec<String> = s
-        .split(|c| c == ',' || c == ' ' || c == ';' || c == '\n')
+        .split([',', ' ', ';', '\n'])
         .map(|x| x.trim().to_string())
         .filter(|x| !x.is_empty())
         .collect();
@@ -357,7 +357,7 @@ pub async fn list_oss_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsE
 fn parse_bucket_names(xml: &str) -> Result<Vec<String>, VfsError> {
     let re = Regex::new(r"<Bucket>[\s\S]*?<Name>([^<]+)</Name>").map_err(|e| VfsError::Backend {
         path: VfsPath::root(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     })?;
 
     let mut names = Vec::new();
@@ -370,7 +370,7 @@ fn parse_bucket_names(xml: &str) -> Result<Vec<String>, VfsError> {
     if names.is_empty() {
         let name_re = Regex::new(r"<Name>([^<]+)</Name>").map_err(|e| VfsError::Backend {
             path: VfsPath::root(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
         for cap in name_re.captures_iter(xml) {
             if let Some(m) = cap.get(1) {
@@ -386,11 +386,13 @@ fn parse_bucket_names(xml: &str) -> Result<Vec<String>, VfsError> {
     Ok(names)
 }
 
+type CachedBucketList = Option<(Vec<String>, Instant)>;
+
 pub struct MultiBucketFs {
     config: RemoteConfig,
     kind: LocationKind,
     operators: Arc<RwLock<HashMap<String, Arc<OpendalFs>>>>,
-    bucket_list_cache: Arc<RwLock<Option<(Vec<String>, Instant)>>>,
+    bucket_list_cache: Arc<RwLock<CachedBucketList>>,
 }
 
 impl MultiBucketFs {
@@ -669,13 +671,12 @@ impl Vfs for MultiBucketFs {
         let (bucket, subpath) = self.split_path(path).ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
-        if subpath.is_root() {
-            if self.kind == LocationKind::S3 {
+        if subpath.is_root()
+            && self.kind == LocationKind::S3 {
                 delete_s3_bucket(&self.config, bucket).await?;
                 *self.bucket_list_cache.write() = None;
                 return Ok(());
             }
-        }
         let bucket_fs = self.get_or_create_bucket_fs(bucket)?;
         bucket_fs.remove(&subpath).await
     }

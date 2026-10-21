@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
 
@@ -17,6 +18,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
 
   late String _kind;
   late final TextEditingController _nameController;
+  late final TextEditingController _idController;
+  bool _idManuallyEdited = false;
   late final TextEditingController _endpointController;
   late final TextEditingController _bucketController;
   late final TextEditingController _regionController;
@@ -41,6 +44,9 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     final c = widget.initialConfig;
     _kind = c?.kind ?? 's3';
     _nameController = TextEditingController(text: c?.name ?? '');
+    _idController = TextEditingController(text: c?.id ?? '');
+    _idManuallyEdited = c != null;
+    _nameController.addListener(_onNameChanged);
     _endpointController = TextEditingController(text: c?.endpoint ?? '');
     _bucketController = TextEditingController(text: c?.bucket ?? '');
     _regionController = TextEditingController(text: c?.region ?? 'us-east-1');
@@ -54,9 +60,31 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _pathStyle = c?.pathStyle ?? false;
   }
 
+  void _onNameChanged() {
+    if (!_idManuallyEdited && widget.initialConfig == null) {
+      final slug = _generateSlug(_nameController.text, _kind);
+      _idController.text = slug;
+    }
+  }
+
+  String _generateSlug(String name, String kind) {
+    final cleaned = name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    if (cleaned.isNotEmpty) {
+      return cleaned.startsWith(kind) ? cleaned : '${kind}_$cleaned';
+    }
+    return '${kind}_${Random().nextInt(900) + 100}';
+  }
+
   @override
   void dispose() {
+    _nameController.removeListener(_onNameChanged);
     _nameController.dispose();
+    _idController.dispose();
     _endpointController.dispose();
     _bucketController.dispose();
     _regionController.dispose();
@@ -71,8 +99,10 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   }
 
   RemoteConfigDto _buildConfig() {
-    final id = widget.initialConfig?.id ??
-        'remote_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
+    var id = _idController.text.trim();
+    if (id.isEmpty) {
+      id = widget.initialConfig?.id ?? _generateSlug(_nameController.text, _kind);
+    }
     int? portInt = int.tryParse(_portController.text.trim());
     if (portInt == null) {
       if (_kind == 'sftp') {
@@ -132,7 +162,20 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final config = _buildConfig();
-    await StorageService.instance.saveRemote(config);
+    final oldId = widget.initialConfig?.id;
+    try {
+      if (oldId != null && oldId != config.id) {
+        await StorageService.instance.deleteRemote(oldId);
+        invalidateRoot(root: 'remote://$oldId');
+      }
+      await StorageService.instance.saveRemote(config);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _testResult = 'Could not save: $e');
+        _testSuccess = false;
+      }
+      return;
+    }
     if (mounted) {
       Navigator.of(context).pop(config);
     }
@@ -185,6 +228,33 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   controller: _nameController,
                   decoration: const InputDecoration(labelText: 'Display Name', border: OutlineInputBorder()),
                   validator: (v) => v == null || v.trim().isEmpty ? 'Please enter a name' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _idController,
+                  decoration: InputDecoration(
+                    labelText: 'Identifier / ID (e.g. sftp_mac, my_nas)',
+                    hintText: 'Used in remote paths: remote://id/...',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.auto_fix_high, size: 20),
+                      tooltip: 'Generate clean ID from Name',
+                      onPressed: () {
+                        setState(() {
+                          _idManuallyEdited = true;
+                          _idController.text = _generateSlug(_nameController.text, _kind);
+                        });
+                      },
+                    ),
+                  ),
+                  onChanged: (_) => _idManuallyEdited = true,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Please enter an identifier';
+                    if (!RegExp(r'^[a-zA-Z0-9_\-]+$').hasMatch(v.trim())) {
+                      return 'Identifier may only contain letters, numbers, hyphens and underscores';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
 

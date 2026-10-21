@@ -105,6 +105,16 @@ pub async fn list_history(db_path: String) -> Result<Vec<HistoryDto>, String> {
         .collect())
 }
 
+pub async fn clear_history(db_path: String) -> Result<(), String> {
+    let db = open_db(&db_path)?;
+    db.clear_history().map_err(|e| e.to_string())
+}
+
+pub async fn remove_history(db_path: String, root: String, path: String) -> Result<(), String> {
+    let db = open_db(&db_path)?;
+    db.remove_history(&root, &path).map_err(|e| e.to_string())
+}
+
 pub async fn move_to_trash(db_path: String, source_path: String) -> Result<(), String> {
     let db = open_db(&db_path)?;
     let src = PathBuf::from(&source_path);
@@ -247,31 +257,57 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Deletes the stored payload of a trash entry.
+///
+/// A payload that is already gone counts as success; any other failure is
+/// returned so the entry stays in the bin instead of silently vanishing from
+/// the list while its bytes remain on disk.
+fn remove_stored(stored: &Path) -> Result<(), String> {
+    let result = if stored.is_dir() {
+        std::fs::remove_dir_all(stored)
+    } else {
+        std::fs::remove_file(stored)
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("cannot delete {}: {e}", stored.display())),
+    }
+}
+
 pub async fn delete_trash_item(db_path: String, id: String) -> Result<(), String> {
     let db = open_db(&db_path)?;
     let numeric_id: i64 = id.parse().map_err(|_| "invalid trash id".to_string())?;
-    if let Ok(Some(stored_path)) = db.remove_trash_item(numeric_id) {
-        let stored = PathBuf::from(stored_path);
-        if stored.is_dir() {
-            let _ = std::fs::remove_dir_all(&stored);
-        } else {
-            let _ = std::fs::remove_file(&stored);
-        }
+    // Delete the payload first: the row is only dropped once the bytes are
+    // gone, so a failed delete leaves the item visible and retryable.
+    let list = db.list_trash().map_err(|e| e.to_string())?;
+    if let Some((_, item, _)) = list.into_iter().find(|(item_id, _, _)| *item_id == numeric_id) {
+        remove_stored(Path::new(&item.stored_path))?;
     }
+    db.remove_trash_item(numeric_id).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub async fn clear_trash(db_path: String) -> Result<(), String> {
     let db = open_db(&db_path)?;
     let list = db.list_trash().map_err(|e| e.to_string())?;
+    let mut failures = Vec::new();
     for (id, item, _) in list {
         let stored = PathBuf::from(&item.stored_path);
-        if stored.is_dir() {
-            let _ = std::fs::remove_dir_all(&stored);
-        } else {
-            let _ = std::fs::remove_file(&stored);
+        match remove_stored(&stored) {
+            Ok(()) => {
+                let _ = db.remove_trash_item(id);
+            }
+            Err(e) => failures.push(e),
         }
-        let _ = db.remove_trash_item(id);
     }
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} item(s) could not be deleted: {}",
+            failures.len(),
+            failures.join("; ")
+        ))
+    }
 }

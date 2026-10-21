@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `copy_dir_recursive`, `move_path`, `open_db`
+// These functions are ignored because they are not marked as `pub`: `copy_dir_recursive`, `move_path`, `open_db`, `remove_stored`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
 Future<void> addBookmark({
@@ -40,6 +40,19 @@ Future<void> recordHistory({
 
 Future<List<HistoryDto>> listHistory({required String dbPath}) =>
     RustLib.instance.api.crateApiMetadataListHistory(dbPath: dbPath);
+
+Future<void> clearHistory({required String dbPath}) =>
+    RustLib.instance.api.crateApiMetadataClearHistory(dbPath: dbPath);
+
+Future<void> removeHistory({
+  required String dbPath,
+  required String root,
+  required String path,
+}) => RustLib.instance.api.crateApiMetadataRemoveHistory(
+  dbPath: dbPath,
+  root: root,
+  path: path,
+);
 
 Future<void> moveToTrash({
   required String dbPath,

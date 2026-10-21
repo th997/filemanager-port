@@ -196,6 +196,12 @@ impl Database {
     // History
     pub fn record_history(&self, entry: &HistoryEntry) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
+        // Revisiting a folder moves its existing row instead of appending a
+        // duplicate, so Recent shows each location once, most recent first.
+        conn.execute(
+            "DELETE FROM history WHERE location = ?1 AND path = ?2",
+            params![entry.location.0, entry.path.to_slash_string()],
+        )?;
         conn.execute(
             "INSERT INTO history (location, path, visited_at) VALUES (?1, ?2, ?3)",
             params![
@@ -238,6 +244,17 @@ impl Database {
             list.push(item?);
         }
         Ok(list)
+    }
+
+    /// Drops one history row, so a stale entry can be removed without
+    /// clearing everything else.
+    pub fn remove_history(&self, location: &str, path: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM history WHERE location = ?1 AND path = ?2",
+            params![location, path],
+        )?;
+        Ok(())
     }
 
     pub fn clear_history(&self) -> Result<(), rusqlite::Error> {

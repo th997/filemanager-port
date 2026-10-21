@@ -3,14 +3,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../services/file_open_service.dart';
+
+/// One image shown by [ImageViewerPage].
+///
+/// Native images carry [localPath]. Remote and archive images carry the VFS
+/// [root] and [remotePath] instead; they are exported to the cache the first
+/// time they are shown, so swiping does not download the whole folder up front.
+class ImageViewerEntry {
+  final String name;
+  final String? localPath;
+  final String? root;
+  final String? remotePath;
+
+  const ImageViewerEntry({
+    required this.name,
+    this.localPath,
+    this.root,
+    this.remotePath,
+  });
+
+  bool get isLocal => localPath != null;
+}
+
 class ImageViewerPage extends StatefulWidget {
   final String filePath;
   final String fileName;
+
+  /// Other images in the same folder; swiping left/right moves between them.
+  final List<ImageViewerEntry> siblings;
+  final int initialIndex;
 
   const ImageViewerPage({
     super.key,
     required this.filePath,
     required this.fileName,
+    this.siblings = const [],
+    this.initialIndex = 0,
   });
 
   @override
@@ -19,19 +48,98 @@ class ImageViewerPage extends StatefulWidget {
 
 class _ImageViewerPageState extends State<ImageViewerPage> {
   final TransformationController _transformationController = TransformationController();
+  late final PageController _pageController;
+  late final List<ImageViewerEntry> _entries;
+  late int _index;
   int _quarterTurns = 0;
+  bool _zoomed = false;
+  Offset _lastDoubleTapPosition = Offset.zero;
+
+  /// Cache path per entry index, filled in lazily for remote images.
+  final Map<int, String> _localPaths = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = widget.siblings.isEmpty
+        ? [ImageViewerEntry(name: widget.fileName, localPath: widget.filePath)]
+        : widget.siblings;
+    _index = widget.initialIndex.clamp(0, _entries.length - 1);
+    _pageController = PageController(initialPage: _index);
+    _transformationController.addListener(_onTransformChanged);
+    _prefetchNeighbors();
+  }
 
   @override
   void dispose() {
+    _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
+    _pageController.dispose();
     super.dispose();
+  }
+
+  ImageViewerEntry get _current => _entries[_index];
+
+  void _onTransformChanged() {
+    final zoomed = _transformationController.value.getMaxScaleOnAxis() > 1.02;
+    if (zoomed != _zoomed) {
+      setState(() => _zoomed = zoomed);
+    }
   }
 
   void _resetView() {
     setState(() {
       _transformationController.value = Matrix4.identity();
       _quarterTurns = 0;
+      _zoomed = false;
     });
+  }
+
+  void _goTo(int index) {
+    if (index < 0 || index >= _entries.length) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _onPageChanged(int index) {
+    setState(() {
+      _index = index;
+      _quarterTurns = 0;
+      _zoomed = false;
+      _transformationController.value = Matrix4.identity();
+    });
+    _prefetchNeighbors();
+  }
+
+  /// Warm the cache for the previous/next image so a swipe does not wait for
+  /// a fresh remote download.
+  void _prefetchNeighbors() {
+    for (final i in [_index - 1, _index + 1]) {
+      if (i < 0 || i >= _entries.length) continue;
+      _localPathFor(i).catchError((_) => '');
+    }
+  }
+
+  /// Double-tap zooms to 2.5× around the tapped point; tapping again when
+  /// already zoomed returns to fit.
+  void _toggleZoom(Offset position) {
+    if (_zoomed) {
+      _resetView();
+      return;
+    }
+    const scale = 2.5;
+    final matrix = Matrix4.identity()
+      ..translateByDouble(
+        -position.dx * (scale - 1),
+        -position.dy * (scale - 1),
+        0,
+        1,
+      )
+      ..scaleByDouble(scale, scale, 1, 1);
+    setState(() => _transformationController.value = matrix);
   }
 
   void _zoomBy(double factor) {
@@ -52,7 +160,19 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   }
 
   Future<void> _showImageDetails() async {
-    final file = File(widget.filePath);
+    final entry = _current;
+    final String native;
+    try {
+      native = await _localPathFor(_index);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cannot read image details: $e'), backgroundColor: Colors.red.shade700),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final file = File(native);
     if (!file.existsSync()) return;
 
     final stat = file.statSync();
@@ -73,12 +193,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _detailRow('Name', widget.fileName),
+            _detailRow('Name', entry.name),
             if (dimensions != null)
               _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
             _detailRow('Size', _formatSize(stat.size)),
             _detailRow('Modified', stat.modified.toString().split('.').first),
-            _detailRow('Path', widget.filePath),
+            _detailRow('Path', entry.remotePath ?? native),
           ],
         ),
         actions: [
@@ -115,9 +235,98 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     );
   }
 
+  /// Native path for an entry, exporting remote and archive images once.
+  Future<String> _localPathFor(int index) {
+    final cached = _localPaths[index];
+    if (cached != null) return Future.value(cached);
+
+    final entry = _entries[index];
+    if (entry.localPath != null) {
+      _localPaths[index] = entry.localPath!;
+      return Future.value(entry.localPath!);
+    }
+    return FileOpenService.instance
+        .nativePath(entry.root!, entry.remotePath!)
+        .then((path) {
+      _localPaths[index] = path;
+      return path;
+    });
+  }
+
+  Widget _buildImageAt(int index, {required bool interactive}) {
+    final entry = _entries[index];
+    final native = entry.localPath ?? _localPaths[index];
+
+    if (native != null) {
+      return _imageFromFile(native, interactive);
+    }
+
+    // Remote/archive image: download on first view, showing progress.
+    return FutureBuilder<String>(
+      future: _localPathFor(index),
+      builder: (ctx, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Cannot load image: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return _imageFromFile(snapshot.data!, interactive);
+      },
+    );
+  }
+
+  Widget _imageFromFile(String path, bool interactive) {
+    final file = File(path);
+    if (!file.existsSync()) {
+      return const Center(
+        child: Text('Image file not found locally', style: TextStyle(color: Colors.white70)),
+      );
+    }
+    return Image.file(
+      file,
+      fit: BoxFit.contain,
+      errorBuilder: (ctx, err, stack) => const Center(
+        child: Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+      ),
+    );
+  }
+
+  Future<void> _shareCurrent() async {
+    try {
+      final native = await _localPathFor(_index);
+      await SharePlus.instance.share(ShareParams(files: [XFile(native)]));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cannot share image: $e'), backgroundColor: Colors.red.shade700),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final file = File(widget.filePath);
+    final multiple = _entries.length > 1;
 
     return CallbackShortcuts(
       bindings: {
@@ -129,6 +338,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         const SingleActivator(LogicalKeyboardKey.numpad0): _resetView,
         const SingleActivator(LogicalKeyboardKey.keyR): () {
           setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+          if (!_zoomed) _goTo(_index - 1);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+          if (!_zoomed) _goTo(_index + 1);
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
           Navigator.of(context).maybePop();
@@ -145,7 +360,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             ),
             backgroundColor: Colors.black87,
             foregroundColor: Colors.white,
-            title: Text(widget.fileName, overflow: TextOverflow.ellipsis),
+            title: Text(
+              multiple
+                  ? '${_current.name}  (${_index + 1}/${_entries.length})'
+                  : _current.name,
+              overflow: TextOverflow.ellipsis,
+            ),
             actions: [
               IconButton(
                 icon: const Icon(Icons.zoom_in),
@@ -170,11 +390,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               IconButton(
                 icon: const Icon(Icons.share),
                 tooltip: 'Share image',
-                onPressed: () {
-                  SharePlus.instance.share(
-                    ShareParams(files: [XFile(widget.filePath)]),
-                  );
-                },
+                onPressed: _shareCurrent,
               ),
               IconButton(
                 icon: const Icon(Icons.info_outline),
@@ -183,29 +399,66 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
             ],
           ),
-          body: Center(
-            child: GestureDetector(
-              onDoubleTap: _resetView,
-              child: InteractiveViewer(
-                transformationController: _transformationController,
-                minScale: 0.2,
-                maxScale: 6.0,
-                child: RotatedBox(
-                  quarterTurns: _quarterTurns,
-                  child: file.existsSync()
-                      ? Image.file(
-                          file,
-                          fit: BoxFit.contain,
-                          errorBuilder: (ctx, err, stack) => const Center(
-                            child: Text('Failed to load image', style: TextStyle(color: Colors.white70)),
-                          ),
-                        )
-                      : const Center(
-                          child: Text('Image file not found locally', style: TextStyle(color: Colors.white70)),
-                        ),
-                ),
+          body: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageController,
+                physics: _zoomed
+                    ? const NeverScrollableScrollPhysics()
+                    : const PageScrollPhysics(),
+                itemCount: _entries.length,
+                onPageChanged: _onPageChanged,
+                itemBuilder: (ctx, i) {
+                  if (i != _index) {
+                    // Off-screen pages stay simple; zoom applies to the
+                    // visible one only.
+                    return Center(child: _buildImageAt(i, interactive: false));
+                  }
+                  return GestureDetector(
+                    onDoubleTapDown: (details) =>
+                        _lastDoubleTapPosition = details.localPosition,
+                    onDoubleTap: () => _toggleZoom(_lastDoubleTapPosition),
+                    child: InteractiveViewer(
+                      transformationController: _transformationController,
+                      minScale: 0.2,
+                      maxScale: 6.0,
+                      child: RotatedBox(
+                        quarterTurns: _quarterTurns,
+                        child: _buildImageAt(i, interactive: true),
+                      ),
+                    ),
+                  );
+                },
               ),
-            ),
+              if (multiple && !_zoomed) ...[
+                Positioned(
+                  left: 8,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_left, size: 32),
+                      color: Colors.white70,
+                      tooltip: 'Previous image',
+                      onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 8,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_right, size: 32),
+                      color: Colors.white70,
+                      tooltip: 'Next image',
+                      onPressed: _index < _entries.length - 1 ? () => _goTo(_index + 1) : null,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),

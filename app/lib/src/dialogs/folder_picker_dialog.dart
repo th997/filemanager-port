@@ -275,10 +275,21 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Cannot read this folder: $_error',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Cannot read this folder: $_error',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _load,
+                                  icon: const Icon(Icons.refresh, size: 16),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
                             ),
                           ),
                         )
@@ -330,9 +341,13 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(
-            PickedFolder(root: _root, relPath: _relPath),
-          ),
+          // Picking a folder that just failed to list would hand the caller a
+          // path it cannot use.
+          onPressed: _loading || _error != null
+              ? null
+              : () => Navigator.of(context).pop(
+                    PickedFolder(root: _root, relPath: _relPath),
+                  ),
           child: const Text('Use this folder'),
         ),
       ],

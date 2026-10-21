@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/platform_paths.dart';
+import '../services/preferences_service.dart';
 import 'folder_picker_dialog.dart';
 
 /// Outcome of the large-file download prompt.
@@ -48,6 +49,9 @@ class DownloadPromptDialog extends StatefulWidget {
 }
 
 class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
+  static const _prefRoot = 'download.root';
+  static const _prefRelPath = 'download.rel_path';
+
   late PickedFolder _destination;
 
   @override
@@ -57,6 +61,13 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
   }
 
   PickedFolder _defaultDestination() {
+    // Reuse the folder chosen last time; re-picking it on every download is
+    // the most repeated step in this dialog.
+    final savedRoot = PreferencesService.instance.getString(_prefRoot);
+    final savedRel = PreferencesService.instance.getString(_prefRelPath);
+    if (savedRoot != null && savedRel != null) {
+      return PickedFolder(root: savedRoot, relPath: savedRel);
+    }
     final targets = PlatformPaths.quickTargets();
     if (targets.isNotEmpty) {
       final preferred = targets.firstWhere(
@@ -77,6 +88,8 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
       initialPath: _destination.relPath,
     );
     if (picked != null && mounted) {
+      PreferencesService.instance.setString(_prefRoot, picked.root);
+      PreferencesService.instance.setString(_prefRelPath, picked.relPath);
       setState(() => _destination = picked);
     }
   }
@@ -84,19 +97,19 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
   IconData get _fileIcon {
     final lower = widget.fileName.toLowerCase();
     if (lower.endsWith('.zip') || lower.endsWith('.tar') || lower.endsWith('.gz') || lower.endsWith('.7z')) {
-      return Icons.folder_zip;
+      return Icons.archive;
     }
     if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi') || lower.endsWith('.mov')) {
-      return Icons.video_file;
+      return Icons.play_circle_fill;
     }
     if (lower.endsWith('.mp3') || lower.endsWith('.flac') || lower.endsWith('.wav') || lower.endsWith('.m4a')) {
-      return Icons.audio_file;
+      return Icons.music_note;
     }
     if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) {
       return Icons.image;
     }
     if (lower.endsWith('.pdf')) {
-      return Icons.picture_as_pdf;
+      return Icons.menu_book;
     }
     return Icons.insert_drive_file;
   }

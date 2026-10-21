@@ -18,7 +18,7 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("");
-    let format = ArchiveFormat::from_name(name).ok_or_else(|| VfsError::Unsupported {
+    let format = ArchiveFormat::from_name(name).ok_or(VfsError::Unsupported {
         operation: "unknown archive format for extraction",
     })?;
 
@@ -35,7 +35,7 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
             zip.extract(destination_dir)
                 .map_err(|e| VfsError::Backend {
                     path: fm_core::VfsPath::root(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
         }
         ArchiveFormat::Tar => {
@@ -89,7 +89,7 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
             )
             .map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
         }
     }
@@ -126,8 +126,17 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o755);
 
+    let dest_canon = destination_zip.canonicalize().ok();
+
     for source_ref in sources {
         let source = source_ref.as_ref();
+        if let Some(ref dc) = dest_canon {
+            if let Ok(sc) = source.canonicalize() {
+                if sc == *dc {
+                    continue;
+                }
+            }
+        }
         if source.is_file() {
             let file_name = source
                 .file_name()
@@ -136,7 +145,7 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
             zip.start_file(file_name, options)
                 .map_err(|e| VfsError::Backend {
                     path: fm_core::VfsPath::root(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
             let mut f = File::open(source).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
@@ -147,13 +156,13 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
                 source: e,
             })?;
         } else if source.is_dir() {
-            add_dir_to_zip(&mut zip, source, source, options)?;
+            add_dir_to_zip(&mut zip, source, source, options, dest_canon.as_deref())?;
         }
     }
 
     zip.finish().map_err(|e| VfsError::Backend {
         path: fm_core::VfsPath::root(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     })?;
 
     Ok(())
@@ -164,6 +173,7 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
     base_dir: &Path,
     current_dir: &Path,
     options: SimpleFileOptions,
+    dest_canon: Option<&Path>,
 ) -> VfsResult<()> {
     let read_dir = std::fs::read_dir(current_dir).map_err(|e| VfsError::Backend {
         path: fm_core::VfsPath::root(),
@@ -176,6 +186,13 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
             source: e,
         })?;
         let path = entry.path();
+        if let Some(dc) = dest_canon {
+            if let Ok(pc) = path.canonicalize() {
+                if pc == dc {
+                    continue;
+                }
+            }
+        }
         let rel_path = path
             .strip_prefix(base_dir)
             .map_err(|e| VfsError::Backend {
@@ -194,17 +211,17 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
         }
 
         if file_type.is_dir() {
-            zip.add_directory(&format!("{rel_path_str}/"), options)
+            zip.add_directory(format!("{rel_path_str}/"), options)
                 .map_err(|e| VfsError::Backend {
                     path: fm_core::VfsPath::root(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
-            add_dir_to_zip(zip, base_dir, &path, options)?;
+            add_dir_to_zip(zip, base_dir, &path, options, dest_canon)?;
         } else if file_type.is_file() {
             zip.start_file(&rel_path_str, options)
                 .map_err(|e| VfsError::Backend {
                     path: fm_core::VfsPath::root(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
             let mut f = File::open(&path).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
@@ -219,3 +236,31 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_create_zip_skips_destination_inside_source() {
+        let dir = tempdir().unwrap();
+        let src_folder = dir.path().join("my_folder");
+        std::fs::create_dir(&src_folder).unwrap();
+        std::fs::write(src_folder.join("file1.txt"), "hello world").unwrap();
+
+        // Put destination zip INSIDE the folder being compressed
+        let dest_zip = src_folder.join("archive.zip");
+        create_zip(&[&src_folder], &dest_zip).unwrap();
+
+        assert!(dest_zip.exists());
+        let file = File::open(&dest_zip).unwrap();
+        let mut zip = zip::ZipArchive::new(file).unwrap();
+        let names: Vec<String> = (0..zip.len())
+            .map(|i| zip.by_index(i).unwrap().name().unwrap().to_string())
+            .collect();
+        assert!(names.iter().any(|n| n.ends_with("file1.txt")));
+        assert!(!names.iter().any(|n| n.ends_with("archive.zip")));
+    }
+}
+

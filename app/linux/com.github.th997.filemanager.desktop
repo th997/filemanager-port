@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=File Manager
+GenericName=File Manager
+Comment=Browse local, remote and archive files
+Exec=filemanager %U
+Icon=filemanager
+Terminal=false
+Categories=System;FileTools;FileManager;
+Keywords=files;manager;browse;

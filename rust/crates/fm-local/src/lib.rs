@@ -136,9 +136,13 @@ impl Vfs for LocalFs {
         {
             let name = item.file_name().to_string_lossy().into_owned();
             let child = dir.join(name.clone());
-            let metadata = match item.metadata().await {
+            // Follow symlinks so links to directories list as directories and
+            // links to files report the target's size. `DirEntry::metadata`
+            // does not follow links, which made every link look like a plain
+            // file the UI could not open. Broken links fall back to link
+            // metadata and stay `EntryKind::Symlink`.
+            let metadata = match tokio::fs::metadata(item.path()).await {
                 Ok(metadata) => metadata,
-                // Broken symlinks or restricted entries fall back to symlink metadata or skip.
                 Err(_) => match tokio::fs::symlink_metadata(item.path()).await {
                     Ok(meta) => meta,
                     Err(_) => continue,
@@ -338,6 +342,26 @@ mod tests {
             fs.stat(&escape).await,
             Err(VfsError::PermissionDenied { .. })
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_follows_symlinks() {
+        let dir = fixture();
+        std::os::unix::fs::symlink(dir.path().join("sub"), dir.path().join("link_dir")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("b.txt"), dir.path().join("link_file"))
+            .unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("link_broken"))
+            .unwrap();
+
+        let fs = LocalFs::new(dir.path());
+        let entries = fs.list(&VfsPath::root()).await.unwrap();
+        let find = |name: &str| entries.iter().find(|e| e.name == name).unwrap();
+
+        assert_eq!(find("link_dir").kind, EntryKind::Dir);
+        assert_eq!(find("link_file").kind, EntryKind::File);
+        assert_eq!(find("link_file").size, Some(5));
+        assert_eq!(find("link_broken").kind, EntryKind::Symlink);
     }
 
     #[tokio::test]

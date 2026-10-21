@@ -43,18 +43,23 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   @override
   void initState() {
     super.initState();
-    _sub = TaskService.instance.watch(widget.taskId).listen((p) {
-      if (!mounted) return;
-      setState(() => _latest = p);
-      if (p.state == 'completed') {
-        _pop(true);
-      }
-      // Failures stay open so the reason is visible. A cancellation is the
-      // user's own action, so close instead of asking them to dismiss it.
-      if (p.state == 'cancelled') {
-        _pop(false);
-      }
-    });
+    _sub = TaskService.instance.watch(widget.taskId).listen(
+      (p) {
+        if (!mounted) return;
+        setState(() => _latest = p);
+        if (p.state == 'completed') {
+          _pop(true);
+        }
+        // Failures stay open so the reason is visible. A cancellation is the
+        // user's own action, so close instead of asking them to dismiss it.
+        if (p.state == 'cancelled') {
+          _pop(false);
+        }
+      },
+      // The task registry can drop a finished task before the terminal event
+      // arrives; without this the dialog would stay open forever.
+      onDone: () => _pop(false),
+    );
   }
 
   @override

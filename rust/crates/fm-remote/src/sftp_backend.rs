@@ -24,12 +24,38 @@ impl russh::client::Handler for SshHandler {
     }
 }
 
+/// Whether an error means the cached session is dead and a reconnect is
+/// worthwhile. russh-sftp reports both a closed transport and a closed
+/// request channel as `UnexpectedBehavior("session closed")` or `SendError`.
+fn is_closed_error(error: &VfsError) -> bool {
+    match error {
+        VfsError::Connection { .. } => true,
+        VfsError::Backend { source, .. } => {
+            let text = source.to_string().to_lowercase();
+            text.contains("session closed")
+                || text.contains("senderror")
+                || text.contains("connection reset")
+                || text.contains("broken pipe")
+                || text.contains("not connected")
+        }
+        _ => false,
+    }
+}
+
 /// Keeps the SSH transport handle alive alongside the SFTP subsystem.
 /// Dropping the russh `Handle` closes the underlying session, which would
 /// make every later SFTP operation fail with "session closed".
 pub struct SftpConnection {
-    _handle: russh::client::Handle<SshHandler>,
+    handle: russh::client::Handle<SshHandler>,
     sftp: SftpSession,
+}
+
+impl SftpConnection {
+    /// Whether the underlying SSH transport is still open. Once it closes,
+    /// every SFTP request fails with "session closed" until reconnected.
+    fn is_alive(&self) -> bool {
+        !self.handle.is_closed()
+    }
 }
 
 pub struct SftpFs {
@@ -60,11 +86,13 @@ impl SftpFs {
         let host = config.host.as_deref().unwrap_or("127.0.0.1");
         let port = config.port.unwrap_or(22);
 
-        let mut ssh_config = russh::client::Config::default();
         // Keep idle sessions alive instead of timing them out: the user may
         // sit on a directory for a long time between operations.
-        ssh_config.inactivity_timeout = None;
-        ssh_config.keepalive_interval = Some(std::time::Duration::from_secs(30));
+        let ssh_config = russh::client::Config {
+            inactivity_timeout: None,
+            keepalive_interval: Some(std::time::Duration::from_secs(30)),
+            ..Default::default()
+        };
 
         let handler = SshHandler;
         let mut session = russh::client::connect(Arc::new(ssh_config), (host, port), handler)
@@ -126,7 +154,7 @@ impl SftpFs {
             })?;
 
         Ok(Arc::new(SftpConnection {
-            _handle: session,
+            handle: session,
             sftp,
         }))
     }
@@ -134,12 +162,41 @@ impl SftpFs {
     async fn get_session(&self) -> Result<Arc<SftpConnection>, VfsError> {
         let mut guard = self.session.lock().await;
         if let Some(s) = guard.as_ref() {
-            return Ok(s.clone());
+            if s.is_alive() {
+                return Ok(s.clone());
+            }
+            // The server closed the transport (idle timeout, network drop).
+            // Keeping the dead handle makes every later call fail with
+            // "session closed", so drop it and reconnect.
+            *guard = None;
         }
 
         let s = Self::connect_session(&self.config).await?;
         *guard = Some(s.clone());
         Ok(s)
+    }
+
+    /// Forget the cached session so the next call reconnects.
+    async fn drop_session(&self) {
+        *self.session.lock().await = None;
+    }
+
+    /// Run one SFTP operation, reconnecting once if the transport died
+    /// between the liveness check and the request.
+    async fn run<T, F, Fut>(&self, op: F) -> VfsResult<T>
+    where
+        F: Fn(Arc<SftpConnection>) -> Fut,
+        Fut: std::future::Future<Output = VfsResult<T>>,
+    {
+        let session = self.get_session().await?;
+        match op(session).await {
+            Err(error) if is_closed_error(&error) => {
+                self.drop_session().await;
+                let session = self.get_session().await?;
+                op(session).await
+            }
+            result => result,
+        }
     }
 
     fn resolve_path(&self, path: &VfsPath) -> String {
@@ -164,13 +221,23 @@ impl Vfs for SftpFs {
     }
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(dir);
 
-        let read_dir = session.sftp.read_dir(&sftp_path).await.map_err(|e| VfsError::Backend {
-            path: dir.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
+        let read_dir = self
+            .run(|session| {
+                let sftp_path = sftp_path.clone();
+                async move {
+                session
+                    .sftp
+                    .read_dir(&sftp_path)
+                    .await
+                    .map_err(|e| VfsError::Backend {
+                        path: dir.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })
+                }
+            })
+            .await?;
 
         let mut entries = Vec::new();
         for item in read_dir {
@@ -197,13 +264,23 @@ impl Vfs for SftpFs {
     }
 
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
 
-        let meta = session.sftp.metadata(&sftp_path).await.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
+        let meta = self
+            .run(|session| {
+                let sftp_path = sftp_path.clone();
+                async move {
+                session
+                    .sftp
+                    .metadata(&sftp_path)
+                    .await
+                    .map_err(|e| VfsError::Backend {
+                        path: path.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })
+                }
+            })
+            .await?;
 
         let is_dir = meta.is_dir();
         let name = path.name().unwrap_or("").to_string();
@@ -224,13 +301,23 @@ impl Vfs for SftpFs {
         &self,
         path: &VfsPath,
     ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
 
-        let file = session.sftp.open(&sftp_path).await.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
+        let file = self
+            .run(|session| {
+                let sftp_path = sftp_path.clone();
+                async move {
+                session
+                    .sftp
+                    .open(&sftp_path)
+                    .await
+                    .map_err(|e| VfsError::Backend {
+                        path: path.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })
+                }
+            })
+            .await?;
 
         Ok(Box::new(file))
     }
@@ -243,21 +330,33 @@ impl Vfs for SftpFs {
     ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
         use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
 
-        let mut file = session.sftp.open(&sftp_path).await.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
-        if offset > 0 {
-            file.seek(std::io::SeekFrom::Start(offset))
-                .await
-                .map_err(|e| VfsError::Backend {
-                    path: path.clone(),
-                    source: e,
-                })?;
-        }
+        let file = self
+            .run(|session| {
+                let sftp_path = sftp_path.clone();
+                async move {
+                let mut file =
+                    session
+                        .sftp
+                        .open(&sftp_path)
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: path.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
+                if offset > 0 {
+                    file.seek(std::io::SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: path.clone(),
+                            source: e,
+                        })?;
+                }
+                Ok(file)
+                }
+            })
+            .await?;
 
         Ok(match length {
             Some(len) => Box::new(file.take(len)),
@@ -270,7 +369,6 @@ impl Vfs for SftpFs {
         path: &VfsPath,
         mode: WriteMode,
     ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
 
         let flags = match mode {
@@ -279,53 +377,87 @@ impl Vfs for SftpFs {
             WriteMode::Append => OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::APPEND,
         };
 
-        let file = session
-            .sftp
-            .open_with_flags(&sftp_path, flags)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-            })?;
+        let file = self
+            .run(|session| {
+                let sftp_path = sftp_path.clone();
+                async move {
+                session
+                    .sftp
+                    .open_with_flags(&sftp_path, flags)
+                    .await
+                    .map_err(|e| VfsError::Backend {
+                        path: path.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })
+                }
+            })
+            .await?;
 
         Ok(Box::new(file))
     }
 
     async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
-        session.sftp.create_dir(&sftp_path).await.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        self.run(|session| {
+            let sftp_path = sftp_path.clone();
+            async move {
+            session
+                .sftp
+                .create_dir(&sftp_path)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+            }
         })
+        .await
     }
 
     async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
-        let session = self.get_session().await?;
         let sftp_path = self.resolve_path(path);
-        let meta = session.sftp.metadata(&sftp_path).await.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
-        if meta.is_dir() {
-            session.sftp.remove_dir(&sftp_path).await
-        } else {
-            session.sftp.remove_file(&sftp_path).await
-        }
-        .map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-        })?;
-        Ok(())
+        self.run(|session| {
+            let sftp_path = sftp_path.clone();
+            async move {
+            let meta = session
+                .sftp
+                .metadata(&sftp_path)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })?;
+            if meta.is_dir() {
+                session.sftp.remove_dir(&sftp_path).await
+            } else {
+                session.sftp.remove_file(&sftp_path).await
+            }
+            .map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::other(e.to_string()),
+            })
+            }
+        })
+        .await
     }
 
     async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
-        let session = self.get_session().await?;
         let from_p = self.resolve_path(from);
         let to_p = self.resolve_path(to);
-        session.sftp.rename(&from_p, &to_p).await.map_err(|e| VfsError::Backend {
-            path: from.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        self.run(|session| {
+            let from_p = from_p.clone();
+            let to_p = to_p.clone();
+            async move {
+            session
+                .sftp
+                .rename(&from_p, &to_p)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: from.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+            }
         })
+        .await
     }
 }

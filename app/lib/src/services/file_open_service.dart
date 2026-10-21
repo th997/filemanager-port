@@ -37,6 +37,17 @@ class FileOpenService {
 
   Future<OpenResult> openWith(String root, String path) async {
     final native = await nativePath(root, path);
+    if (Platform.isLinux) {
+      try {
+        await Process.start('gio', ['open', native], mode: ProcessStartMode.detached);
+        return OpenResult(type: ResultType.done, message: 'done');
+      } catch (_) {
+        try {
+          await Process.start('xdg-open', [native], mode: ProcessStartMode.detached);
+          return OpenResult(type: ResultType.done, message: 'done');
+        } catch (_) {}
+      }
+    }
     return OpenFilex.open(native);
   }
 

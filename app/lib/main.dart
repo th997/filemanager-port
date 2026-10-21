@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/services/permission_service.dart';
+import 'src/services/preferences_service.dart';
 import 'src/services/storage_service.dart';
 
 Future<void> main() async {
@@ -9,6 +12,10 @@ Future<void> main() async {
   MediaKit.ensureInitialized();
   await RustLib.init();
   StorageService.instance.ensureInitialized();
+  await PreferencesService.instance.load();
+  if (Platform.isAndroid && !await PermissionService.instance.hasStorageAccess()) {
+    await PermissionService.instance.requestStorageAccess();
+  }
   runApp(const FileManagerApp());
 }
 
@@ -20,9 +27,22 @@ class FileManagerApp extends StatefulWidget {
 }
 
 class _FileManagerAppState extends State<FileManagerApp> {
+  static const _themeKey = 'theme_mode';
+
   ThemeMode _themeMode = ThemeMode.system;
 
+  @override
+  void initState() {
+    super.initState();
+    final saved = PreferencesService.instance.getString(_themeKey);
+    _themeMode = ThemeMode.values.firstWhere(
+      (mode) => mode.name == saved,
+      orElse: () => ThemeMode.system,
+    );
+  }
+
   void _updateThemeMode(ThemeMode mode) {
+    PreferencesService.instance.setString(_themeKey, mode.name);
     setState(() {
       _themeMode = mode;
     });
@@ -45,9 +65,15 @@ class _FileManagerAppState extends State<FileManagerApp> {
         ),
         listTileTheme: const ListTileThemeData(
           dense: true,
-          visualDensity: VisualDensity.compact,
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          visualDensity: VisualDensity(horizontal: -2, vertical: -3),
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
           minVerticalPadding: 0,
+          minTileHeight: 36,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          height: 52,
+          iconTheme: WidgetStateProperty.resolveWith((_) => const IconThemeData(size: 20)),
+          labelTextStyle: WidgetStateProperty.resolveWith((_) => const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
         ),
       ),
       darkTheme: ThemeData(
@@ -59,9 +85,15 @@ class _FileManagerAppState extends State<FileManagerApp> {
         ),
         listTileTheme: const ListTileThemeData(
           dense: true,
-          visualDensity: VisualDensity.compact,
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          visualDensity: VisualDensity(horizontal: -2, vertical: -3),
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
           minVerticalPadding: 0,
+          minTileHeight: 36,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          height: 52,
+          iconTheme: WidgetStateProperty.resolveWith((_) => const IconThemeData(size: 20)),
+          labelTextStyle: WidgetStateProperty.resolveWith((_) => const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
         ),
       ),
       home: HomePage(

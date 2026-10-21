@@ -164,7 +164,7 @@ impl FtpFs {
     fn ftp_error(path: &VfsPath, e: impl std::fmt::Display) -> VfsError {
         VfsError::Backend {
             path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         }
     }
 }

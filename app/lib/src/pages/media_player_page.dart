@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../rust/api/servers.dart';
 import '../services/path_utils.dart';
+import '../services/preferences_service.dart';
 
 /// Video and audio playback for local, remote, and archive files.
 ///
@@ -40,8 +41,12 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   String? _error;
   bool _opened = false;
   bool _isLooping = false;
+  static const _prefVolume = 'player.volume';
   double _volume = 100.0;
   double _lastNonZeroVolume = 100.0;
+  /// Non-null while a horizontal drag is scrubbing; shown as an overlay.
+  Duration? _dragSeekTarget;
+  double? _dragSeekMs;
 
   @override
   void initState() {
@@ -55,6 +60,15 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
       ),
     );
     _volume = _player.state.volume;
+    // Volume is a user preference, so a muted-then-closed player does not come
+    // back silent next time.
+    final savedVolume = double.tryParse(
+      PreferencesService.instance.getString(_prefVolume) ?? '',
+    );
+    if (savedVolume != null) {
+      _volume = savedVolume.clamp(0.0, 100.0);
+      _player.setVolume(_volume);
+    }
     _volumeSub = _player.stream.volume.listen((vol) {
       if (mounted) setState(() => _volume = vol);
     });
@@ -71,12 +85,21 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     } else {
       _player.setVolume(_lastNonZeroVolume > 0 ? _lastNonZeroVolume : 100.0);
     }
+    _saveVolume();
   }
 
   void _changeVolume(double delta) {
     final newVol = (_volume + delta).clamp(0.0, 100.0);
     _player.setVolume(newVol);
     if (newVol > 0) _lastNonZeroVolume = newVol;
+    _saveVolume();
+  }
+
+  /// Remember the level the user settled on; a muted session should not
+  /// silence the next video.
+  void _saveVolume() {
+    final level = _volume > 0 ? _volume : _lastNonZeroVolume;
+    PreferencesService.instance.setString(_prefVolume, level.toStringAsFixed(0));
   }
 
   void _seekRelative(int seconds) {
@@ -84,6 +107,35 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     final pos = _player.state.position + Duration(seconds: seconds);
     final target = pos < Duration.zero ? Duration.zero : (pos > duration ? duration : pos);
     _player.seek(target);
+  }
+
+  /// Horizontal drag on the video seeks proportionally to the gesture width:
+  /// the whole timeline is covered by a drag across the full screen.
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    final duration = _player.state.duration;
+    if (duration <= Duration.zero) return;
+    final width = MediaQuery.sizeOf(context).width;
+    if (width <= 0) return;
+    final deltaMs = duration.inMilliseconds * details.delta.dx / width;
+    _dragSeekMs = (_dragSeekMs ?? _player.state.position.inMilliseconds) + deltaMs;
+    final clamped = _dragSeekMs!.clamp(0, duration.inMilliseconds).toDouble();
+    setState(() => _dragSeekTarget = Duration(milliseconds: clamped.round()));
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final target = _dragSeekTarget;
+    if (target != null) _player.seek(target);
+    setState(() {
+      _dragSeekMs = null;
+      _dragSeekTarget = null;
+    });
+  }
+
+  String _formatDuration(Duration d) {
+    final hours = d.inHours;
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 
   Future<void> _open() async {
@@ -107,6 +159,19 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  /// Reopens the same source after a playback error, e.g. once the network
+  /// is back or the remote stream endpoint has restarted.
+  Future<void> _retry() async {
+    await _player.stop();
+    if (mounted) {
+      setState(() {
+        _error = null;
+        _opened = false;
+      });
+    }
+    await _open();
   }
 
   @override
@@ -271,6 +336,14 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                       style: const TextStyle(
                           fontSize: 12, color: Colors.white70),
                     ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retry'),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white),
+                    ),
                   ],
                 ),
               ),
@@ -280,12 +353,43 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
               : Stack(
                   children: [
                     _withSpeedControls(
-                      Video(
-                        controller: _controller,
-                        fill: Colors.black,
-                        controls: AdaptiveVideoControls,
+                      GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragUpdate: _onHorizontalDragUpdate,
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
+                        child: Video(
+                          controller: _controller,
+                          fill: Colors.black,
+                          controls: AdaptiveVideoControls,
+                        ),
                       ),
                     ),
+                    if (_dragSeekTarget != null)
+                      Positioned(
+                        top: 16,
+                        left: 0,
+                        right: 0,
+                        child: IgnorePointer(
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${_formatDuration(_dragSeekTarget!)} / '
+                                '${_formatDuration(_player.state.duration)}',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     if (widget.isAudio)
                       Positioned(
                         top: 24,
@@ -329,6 +433,7 @@ class _SpeedButton extends StatefulWidget {
 
 class _SpeedButtonState extends State<_SpeedButton> {
   static const _rates = [0.5, 1.0, 1.5, 2.0, 4.0, 8.0];
+  static const _prefSpeed = 'player.speed';
 
   double _rate = 1.0;
   StreamSubscription<double>? _sub;
@@ -337,6 +442,13 @@ class _SpeedButtonState extends State<_SpeedButton> {
   void initState() {
     super.initState();
     _rate = widget.player.state.rate;
+    final saved = double.tryParse(
+      PreferencesService.instance.getString(_prefSpeed) ?? '',
+    );
+    if (saved != null && _rates.contains(saved)) {
+      _rate = saved;
+      widget.player.setRate(saved);
+    }
     _sub = widget.player.stream.rate.listen((rate) {
       if (mounted) setState(() => _rate = rate);
     });
@@ -360,7 +472,10 @@ class _SpeedButtonState extends State<_SpeedButton> {
     return PopupMenuButton<double>(
       tooltip: 'Playback speed',
       initialValue: _rate,
-      onSelected: (rate) => widget.player.setRate(rate),
+      onSelected: (rate) {
+        widget.player.setRate(rate);
+        PreferencesService.instance.setString(_prefSpeed, rate.toString());
+      },
       itemBuilder: (context) => [
         for (final rate in _rates)
           PopupMenuItem<double>(

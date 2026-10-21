@@ -76,13 +76,20 @@ class TaskService {
   }
 
   Stream<tasks_api.TaskProgressDto> watch(String taskId, {Duration interval = const Duration(milliseconds: 200)}) async* {
+    // A finished task is dropped from the registry; if that happens before its
+    // terminal event was seen, polling would otherwise spin forever and leave
+    // the progress dialog open.
+    var misses = 0;
     while (true) {
       final p = poll(taskId);
       if (p != null) {
+        misses = 0;
         yield p;
         if (p.state == 'completed' || p.state == 'failed' || p.state == 'cancelled') {
           break;
         }
+      } else if (++misses >= 10) {
+        break;
       }
       await Future.delayed(interval);
     }

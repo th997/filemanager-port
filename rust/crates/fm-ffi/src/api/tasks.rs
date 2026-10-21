@@ -51,6 +51,45 @@ async fn discard_partial_copy(vfs: &dyn fm_vfs::Vfs, dst: &VfsPath) {
     let _ = delete_recursive(vfs, dst, &progress, &cleanup_cancel).await;
 }
 
+async fn generate_copy_path(
+    dst_vfs: &dyn fm_vfs::Vfs,
+    dst_base: &VfsPath,
+    src_vfs: &dyn fm_vfs::Vfs,
+    src_p: &VfsPath,
+    orig_name: &str,
+) -> VfsPath {
+    let is_dir = src_vfs
+        .stat(src_p)
+        .await
+        .map(|e| e.kind == fm_core::EntryKind::Dir)
+        .unwrap_or(false);
+
+    let (stem, ext) = if !is_dir {
+        if let Some(idx) = orig_name.rfind('.') {
+            if idx > 0 && !orig_name.starts_with('.') {
+                (&orig_name[..idx], &orig_name[idx..])
+            } else {
+                (orig_name, "")
+            }
+        } else {
+            (orig_name, "")
+        }
+    } else {
+        (orig_name, "")
+    };
+
+    let mut candidate = format!("{stem}_copy{ext}");
+    let mut count = 2;
+    while dst_vfs.stat(&dst_base.join(&candidate)).await.is_ok() {
+        candidate = format!("{stem}_copy_{count}{ext}");
+        count += 1;
+        if count > 1000 {
+            break;
+        }
+    }
+    dst_base.join(candidate)
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskProgressDto {
     pub id: String,
@@ -127,12 +166,20 @@ pub async fn start_copy_task(
                         .clone()
                         .unwrap_or_else(|| src_p.name().unwrap_or("file").to_string())
                 };
-                let dst_p = dst_base.join(file_name);
+                let mut dst_p = dst_base.join(&file_name);
                 if src_root.trim_end_matches('/') == dst_root.trim_end_matches('/') {
-                    // Copying a directory into itself recurses forever, and
-                    // copying a file onto itself truncates the source before it
-                    // is read.
-                    if dst_p == src_p || dst_p.starts_with(&src_p) {
+                    // Copying a file onto itself generates a copy name instead of truncating.
+                    // Copying a directory into itself recurses forever.
+                    if dst_p == src_p {
+                        dst_p = generate_copy_path(
+                            dst_vfs.as_ref(),
+                            &dst_base,
+                            src_vfs.as_ref(),
+                            &src_p,
+                            &file_name,
+                        )
+                        .await;
+                    } else if dst_p.starts_with(&src_p) {
                         return Err(format!(
                             "cannot copy {} into itself",
                             src_p.to_slash_string()
@@ -194,13 +241,21 @@ pub async fn start_move_task(
                 let src_p = VfsPath::from_slash_path(src);
                 let file_name = src_p.name().unwrap_or("file");
                 let dst_p = dst_base.join(file_name);
-                if src_root.trim_end_matches('/') == dst_root.trim_end_matches('/')
-                    && (dst_p == src_p || dst_p.starts_with(&src_p))
-                {
-                    return Err(format!(
-                        "cannot move {} into itself",
-                        src_p.to_slash_string()
-                    ));
+                if src_root.trim_end_matches('/') == dst_root.trim_end_matches('/') {
+                    if dst_p == src_p {
+                        continue;
+                    }
+                    if dst_p.starts_with(&src_p) {
+                        return Err(format!(
+                            "cannot move {} into itself",
+                            src_p.to_slash_string()
+                        ));
+                    }
+                    if src_vfs.capabilities().rename && src_vfs.rename(&src_p, &dst_p).await.is_ok() {
+                        let mut p = progress.lock().unwrap();
+                        p.completed += 1;
+                        continue;
+                    }
                 }
                 let created = dst_vfs.stat(&dst_p).await.is_err();
                 if let Err(e) = copy_recursive(
@@ -288,7 +343,15 @@ pub async fn start_compress_task(
         let root = PathBuf::from(src_root);
         let items: Vec<PathBuf> = src_paths
             .into_iter()
-            .map(|rel| root.join(&rel))
+            .map(|rel| {
+                let p = PathBuf::from(&rel);
+                if p.is_absolute() && p.starts_with(&root) {
+                    p
+                } else {
+                    let trimmed = rel.trim_start_matches(['/', '\\']);
+                    root.join(trimmed)
+                }
+            })
             .collect();
 
         let dst = PathBuf::from(dst_archive_path);

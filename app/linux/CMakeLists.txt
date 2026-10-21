@@ -126,3 +126,16 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Desktop entry and hicolor icons, so a system-wide install shows a proper
+# launcher icon instead of a generic executable. These are installed relative
+# to the bundle when CMAKE_INSTALL_PREFIX is the default build directory.
+set(ICON_SIZES 16 32 48 64 128 256 512)
+foreach(size ${ICON_SIZES})
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/icons/${size}x${size}/apps/filemanager.png"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/${size}x${size}/apps"
+    COMPONENT Runtime)
+endforeach(size)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/com.github.th997.filemanager.desktop"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
+  COMPONENT Runtime)

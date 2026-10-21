@@ -90,7 +90,7 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
     };
 
     let check_eq = |token: &str| -> bool {
-        if token.as_bytes().len() != expected.as_bytes().len() {
+        if token.len() != expected.len() {
             return false;
         }
         let mut diff = 0u8;

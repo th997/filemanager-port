@@ -181,7 +181,7 @@ impl Vfs for SmbFs {
                     .await
                     .map_err(|e| VfsError::Backend {
                         path: dir.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     })?;
 
                 let entries = shares
@@ -208,7 +208,7 @@ impl Vfs for SmbFs {
                     .await
                     .map_err(|e| VfsError::Backend {
                         path: dir.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     })?;
 
                 let mut entries = Vec::new();
@@ -288,7 +288,7 @@ impl Vfs for SmbFs {
                     .await
                     .map_err(|e| VfsError::Backend {
                         path: path.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     })?;
 
                 Ok(Entry {
@@ -339,7 +339,7 @@ impl Vfs for SmbFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
         drop(guard);
 
@@ -374,7 +374,7 @@ impl Vfs for SmbFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
         drop(guard);
 
@@ -435,7 +435,7 @@ impl Vfs for SmbFs {
 
         let mut writer = writer_res.map_err(|e| VfsError::Backend {
             path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
         drop(guard);
 
@@ -484,7 +484,7 @@ impl Vfs for SmbFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         Ok(())
@@ -514,7 +514,7 @@ impl Vfs for SmbFs {
                 .await
                 .map_err(|e| VfsError::Backend {
                     path: path.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
         }
 
@@ -552,7 +552,7 @@ impl Vfs for SmbFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: from.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         Ok(())

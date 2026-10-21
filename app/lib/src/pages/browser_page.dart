@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
@@ -7,9 +8,12 @@ import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/task_progress_dialog.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
+import '../rust/api/remotes.dart';
 import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
+import '../services/permission_service.dart';
 import '../services/platform_paths.dart';
+import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
 import 'image_viewer_page.dart';
@@ -56,6 +60,34 @@ class BrowserPageState extends State<BrowserPage> {
   bool _showHidden = false;
   SortField _sortField = SortField.name;
   bool _sortAsc = true;
+
+  static const _prefGrid = 'browser.grid';
+  static const _prefHidden = 'browser.show_hidden';
+  static const _prefSortField = 'browser.sort_field';
+  static const _prefSortAsc = 'browser.sort_asc';
+
+  /// Restore view preferences so a new browser keeps the last layout.
+  void _loadViewPreferences() {
+    final prefs = PreferencesService.instance;
+    _isGrid = prefs.getBool(_prefGrid) ?? _isGrid;
+    _showHidden = prefs.getBool(_prefHidden) ?? _showHidden;
+    final field = prefs.getString(_prefSortField);
+    if (field != null) {
+      _sortField = SortField.values.firstWhere(
+        (f) => f.name == field,
+        orElse: () => _sortField,
+      );
+    }
+    _sortAsc = prefs.getBool(_prefSortAsc) ?? _sortAsc;
+  }
+
+  void _saveViewPreferences() {
+    final prefs = PreferencesService.instance;
+    prefs.setBool(_prefGrid, _isGrid);
+    prefs.setBool(_prefHidden, _showHidden);
+    prefs.setString(_prefSortField, _sortField.name);
+    prefs.setBool(_prefSortAsc, _sortAsc);
+  }
   String _filterQuery = '';
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
@@ -65,14 +97,41 @@ class BrowserPageState extends State<BrowserPage> {
   bool _isEditingAddress = false;
   final TextEditingController _addressController = TextEditingController();
 
-  String get _currentFullPath {
-    if (_root == '/') {
-      return _relPath.isEmpty ? '/' : '/$_relPath';
+  String get _displayFullPath {
+    if (isNativeRoot(_root)) {
+      return joinNative(_root, _relPath);
     }
-    if (_root.startsWith('remote://') || _root.startsWith('archive://')) {
-      return _relPath.isEmpty ? _root : '$_root/$_relPath';
+    String rootPart = _root;
+    if (_root.startsWith('remote://')) {
+      final remoteId = _root.substring('remote://'.length);
+      final remote = _findRemote(remoteId);
+      if (remote != null) {
+        rootPart = 'remote://${remote.name}';
+      }
     }
-    return _relPath.isEmpty ? _root : '$_root/$_relPath';
+    if (_relPath.isEmpty) return rootPart;
+    final cleanRel = _relPath.startsWith('/') ? _relPath.substring(1) : _relPath;
+    return '$rootPart/$cleanRel';
+  }
+
+  List<RemoteConfigDto> _remotes = [];
+
+  Future<void> _loadRemotesMetadata() async {
+    try {
+      final rems = await StorageService.instance.getRemotes();
+      if (mounted) {
+        setState(() => _remotes = rems);
+      }
+    } catch (_) {}
+  }
+
+  RemoteConfigDto? _findRemote(String idOrName) {
+    for (final r in _remotes) {
+      if (r.id == idOrName || r.name.toLowerCase() == idOrName.toLowerCase()) {
+        return r;
+      }
+    }
+    return null;
   }
 
   // Multi-selection state
@@ -121,7 +180,9 @@ class BrowserPageState extends State<BrowserPage> {
     super.initState();
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
+    _loadViewPreferences();
     _scrollController.addListener(_onScroll);
+    _loadRemotesMetadata();
     _load();
   }
 
@@ -148,6 +209,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// Directory the in-flight load belongs to. A load started for one folder
   /// must not fill the list after the user has navigated elsewhere.
   String? _loadingFor;
+  DateTime? _lastItemSecondaryTap;
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
@@ -169,12 +231,17 @@ class BrowserPageState extends State<BrowserPage> {
           _hasMore = paged.hasMore;
           _loadingMore = false;
         });
+        if (_filteredAndSortedEntries.isEmpty && _hasMore) {
+          _loadMore();
+        }
       } else {
         setState(() => _loadingMore = false);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loadingMore = false);
+        // Without this the "Load more" button just does nothing on failure.
+        _showError('Could not load more: ${_friendlyError(e)}');
       }
     }
   }
@@ -207,11 +274,15 @@ class BrowserPageState extends State<BrowserPage> {
       final withoutPrefix = path.substring('remote://'.length);
       final slashIdx = withoutPrefix.indexOf('/');
       if (slashIdx != -1) {
-        final remoteId = withoutPrefix.substring(0, slashIdx);
-        final rel = withoutPrefix.substring(slashIdx + 1);
-        navigateTo('remote://$remoteId', rel);
+        final target = withoutPrefix.substring(0, slashIdx);
+        final rel = withoutPrefix.substring(slashIdx + 1).replaceAll(RegExp(r'^/+'), '');
+        final remote = _findRemote(target);
+        final resolvedId = remote != null ? remote.id : target;
+        navigateTo('remote://$resolvedId', rel);
       } else {
-        navigateTo('remote://$withoutPrefix', '');
+        final remote = _findRemote(withoutPrefix);
+        final resolvedId = remote != null ? remote.id : withoutPrefix;
+        navigateTo('remote://$resolvedId', '');
       }
     } else if (path.startsWith('archive://')) {
       final withoutPrefix = path.substring('archive://'.length);
@@ -274,14 +345,38 @@ class BrowserPageState extends State<BrowserPage> {
         _scrollController.jumpTo(0);
       }
       StorageService.instance.recordHistory(root: _root, path: _relPath);
+
+      // If hidden files are filtered out and this batch left the visible list empty,
+      // keep fetching the next page so directories with many dotfiles (like $HOME)
+      // do not display as empty.
+      if (_entries.isNotEmpty && _filteredAndSortedEntries.isEmpty && _hasMore) {
+        _loadMore();
+      }
     } catch (e) {
       if (mounted && _loadingFor == loadingFor) {
         setState(() {
-          _error = e.toString();
+          _error = _friendlyError(e);
+          // The entries and capabilities belong to the folder that just failed
+          // to load; keeping them makes the bars contradict the error body.
+          _entries = [];
+          _hasMore = false;
+          _capabilities = null;
           _loading = false;
         });
       }
     }
+  }
+
+  bool get _canNavigateUp {
+    if (_relPath.isNotEmpty) return true;
+    if (_root.startsWith('archive://')) return true;
+    if (_root.startsWith('/') && _root != '/') return true;
+    final driveMatch = RegExp(r'^[a-zA-Z]:[/\\]').firstMatch(_root);
+    if (driveMatch != null) {
+      final rest = _root.substring(driveMatch.end);
+      return rest.split(RegExp(r'[/\\]')).any((s) => s.isNotEmpty);
+    }
+    return false;
   }
 
   void _navigateUp() {
@@ -585,39 +680,74 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
+  /// Images in the current folder, for swiping inside the viewer.
+  /// Native roots pass a local path per entry; remote and archive roots pass
+  /// the VFS location, which the viewer exports lazily when each image is
+  /// actually shown.
+  (List<ImageViewerEntry>, int) _imageSiblings(EntryItem item) {
+    final images = _filteredAndSortedEntries.where((e) => !e.isDir && e.isImage).toList();
+    if (images.isEmpty) return (const [], 0);
+    final native = isNativeRoot(_root);
+    final entries = images
+        .map((e) => native
+            ? ImageViewerEntry(
+                name: e.name,
+                localPath: joinNative(_root, _fullEntryPath(e)),
+              )
+            : ImageViewerEntry(
+                name: e.name,
+                root: _root,
+                remotePath: _fullEntryPath(e),
+              ))
+        .toList();
+    final index = images.indexWhere((e) => e.name == item.name);
+    return (entries, index < 0 ? 0 : index);
+  }
+
   Future<void> _openImage(EntryItem item) async {
-    if (isNativeRoot(_root)) {
-      final fullLocalPath = joinNative(_root, _fullEntryPath(item));
+    final (siblings, index) = _imageSiblings(item);
+    final native = isNativeRoot(_root);
+    final fullLocalPath = native ? joinNative(_root, _fullEntryPath(item)) : '';
+
+    if (native) {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ImageViewerPage(
             filePath: fullLocalPath,
             fileName: item.name,
+            siblings: siblings,
+            initialIndex: index,
           ),
         ),
       );
       return;
     }
 
-    // Remote and archive images have no native path yet; export once and show.
-    try {
-      final native = await FileOpenService.instance.nativePath(_root, _fullEntryPath(item));
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ImageViewerPage(
-            filePath: native,
-            fileName: item.name,
-          ),
+    // Remote and archive images have no native path yet; the viewer exports
+    // the current one and any image swiped to.
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerPage(
+          filePath: '',
+          fileName: item.name,
+          siblings: siblings,
+          initialIndex: index,
         ),
-      );
-    } catch (e) {
-      _showError('Cannot open image: $e');
-    }
+      ),
+    );
   }
 
   Future<void> _openWithSystem(EntryItem item) async {
     try {
+      if (Platform.isAndroid && item.name.toLowerCase().endsWith('.apk')) {
+        if (!await PermissionService.instance.hasInstallPackagesAccess()) {
+          final granted = await PermissionService.instance.requestInstallPackagesAccess();
+          if (!granted) {
+            _showError('Allow installing unknown apps to open APK files');
+            return;
+          }
+        }
+      }
       final result = await FileOpenService.instance.openWith(_root, _fullEntryPath(item));
       if (!mounted) return;
       if (result.type == ResultType.noAppToOpen) {
@@ -635,6 +765,35 @@ class BrowserPageState extends State<BrowserPage> {
       await FileOpenService.instance.share(_root, _fullEntryPath(item));
     } catch (e) {
       _showError('Cannot share file: $e');
+    }
+  }
+
+  /// Backend errors arrive as `kind: detail` strings. Turn the common ones
+  /// into something a user can act on instead of echoing the Rust wording.
+  String _friendlyError(Object error) {
+    final text = error.toString();
+    if (text.startsWith('path not found:')) {
+      return 'This folder no longer exists. It may have been deleted or renamed.\n($text)';
+    }
+    if (text.startsWith('permission denied:')) {
+      return 'Permission denied. Grant storage access or pick another folder.\n($text)';
+    }
+    if (text.startsWith('connection failed:')) {
+      return 'Cannot reach the server. Check the connection and try again.\n($text)';
+    }
+    return text;
+  }
+
+  /// Filtering only searches entries already fetched. Pull the next page when
+  /// the query has no match yet, so a file past the first page is found
+  /// without scrolling to the bottom first.
+  void _onFilterChanged(String value) {
+    setState(() => _filterQuery = value);
+    if (value.trim().isNotEmpty &&
+        _filteredAndSortedEntries.isEmpty &&
+        _hasMore &&
+        !_loadingMore) {
+      _loadMore();
     }
   }
 
@@ -801,6 +960,7 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Desktop right-click context menu on a file/folder referencing File Manager+.
   Future<void> _showContextMenu(BuildContext originContext, Offset position, EntryItem item) async {
+    _lastItemSecondaryTap = DateTime.now();
     final path = _fullEntryPath(item);
     final action = await showMenu<String>(
       context: originContext,
@@ -991,6 +1151,10 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Desktop right-click context menu on empty space.
   Future<void> _showBackgroundContextMenu(Offset position) async {
+    if (_lastItemSecondaryTap != null &&
+        DateTime.now().difference(_lastItemSecondaryTap!).inMilliseconds < 400) {
+      return;
+    }
     final action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -1100,7 +1264,7 @@ class BrowserPageState extends State<BrowserPage> {
         _selectAll();
         break;
       case 'copy_path':
-        Clipboard.setData(ClipboardData(text: _currentFullPath));
+        Clipboard.setData(ClipboardData(text: _displayFullPath));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Folder path copied to clipboard')),
         );
@@ -1268,6 +1432,7 @@ class BrowserPageState extends State<BrowserPage> {
             controller: ctrl,
             autofocus: true,
             decoration: const InputDecoration(labelText: 'Folder Name', border: OutlineInputBorder()),
+            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
@@ -1308,6 +1473,7 @@ class BrowserPageState extends State<BrowserPage> {
               hintText: 'e.g. notes.txt',
               border: OutlineInputBorder(),
             ),
+            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
@@ -1429,15 +1595,16 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
-  Future<void> _deleteSelected() => _deletePaths(_selectedPaths.toList());
+  Future<void> _deleteSelected({bool permanent = false}) =>
+      _deletePaths(_selectedPaths.toList(), permanent: permanent);
 
   Future<void> _deleteSingle(EntryItem item) =>
       _deletePaths([_fullEntryPath(item)]);
 
-  Future<void> _deletePaths(List<String> paths) async {
+  Future<void> _deletePaths(List<String> paths, {bool permanent = false}) async {
     if (paths.isEmpty) return;
     final count = paths.length;
-    final canTrash = isNativeRoot(_root);
+    final canTrash = isNativeRoot(_root) && !permanent;
     final confirm = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1445,8 +1612,10 @@ class BrowserPageState extends State<BrowserPage> {
         content: Text(
           canTrash
               ? 'Choose whether to move to Recycle Bin or delete permanently.'
-              : 'This item is on a remote server and cannot be moved to the '
-                  'local Recycle Bin. It will be deleted permanently.',
+              : permanent
+                  ? 'Delete permanently? This cannot be undone.'
+                  : 'This item is on a remote server and cannot be moved to the '
+                      'local Recycle Bin. It will be deleted permanently.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
@@ -1493,6 +1662,16 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _renameSelected() async {
     if (_selectedPaths.length != 1) return;
     await _renamePath(_selectedPaths.first);
+  }
+
+  /// Properties for the single selected entry, so the action bar exposes the
+  /// same dialog as the context menu.
+  void _showSelectedInfo() {
+    if (_selectedPaths.length != 1) return;
+    final path = _selectedPaths.first;
+    final item = _entries.where((e) => _fullEntryPath(e) == path).firstOrNull;
+    if (item == null) return;
+    _showFileInfo(item);
   }
 
   Future<void> _renameSingle(EntryItem item) =>
@@ -1549,7 +1728,15 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _compressSelected() async {
-    final ctrl = TextEditingController(text: 'archive.zip');
+    // One folder or file compresses to "<name>.zip"; a multi-selection keeps
+    // the generic name. Saves retyping the obvious case.
+    String defaultName = 'archive.zip';
+    if (_selectedPaths.length == 1) {
+      final only = _selectedPaths.first.split('/').last;
+      if (only.isNotEmpty) defaultName = '$only.zip';
+    }
+    final ctrl = TextEditingController(text: defaultName)
+      ..selection = TextSelection(baseOffset: 0, extentOffset: defaultName.length - 4);
     final String? zipName;
     try {
       zipName = await showDialog<String>(
@@ -1558,7 +1745,13 @@ class BrowserPageState extends State<BrowserPage> {
           title: const Text('Compress to ZIP'),
           content: TextField(
             controller: ctrl,
+            autofocus: true,
             decoration: const InputDecoration(labelText: 'Archive Name', border: OutlineInputBorder()),
+            onSubmitted: (v) {
+              if (v.trim().isNotEmpty) {
+                Navigator.of(ctx).pop(v.trim());
+              }
+            },
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
@@ -1608,6 +1801,16 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _bookmarkCurrentFolder() async {
     final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
     final name = segments.isEmpty ? (_root.split('/').last.isEmpty ? 'Root' : _root.split('/').last) : segments.last;
+    final bookmarks = await StorageService.instance.getBookmarks();
+    final exists = bookmarks.any((b) => b.root == _root && b.path == _relPath);
+    if (exists) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"$name" is already bookmarked')),
+        );
+      }
+      return;
+    }
     await StorageService.instance.addBookmark(name: name, root: _root, path: _relPath);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1618,6 +1821,9 @@ class BrowserPageState extends State<BrowserPage> {
 
   void _showFileInfo(EntryItem item) {
     final path = _fullEntryPath(item);
+    final fullPath = isNativeRoot(_root)
+        ? joinNative(_root, path)
+        : '$_root/$path';
     final ext = item.isDir ? null : (item.name.contains('.') ? item.name.split('.').last : null);
     showDialog(
       context: context,
@@ -1634,7 +1840,7 @@ class BrowserPageState extends State<BrowserPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _infoRow('Name', item.name),
-            _infoRow('Path', path),
+            _infoRow('Path', fullPath),
             if (ext != null) _infoRow('Extension', ext.toUpperCase()),
             _infoRow(
               'Size',
@@ -1652,7 +1858,7 @@ class BrowserPageState extends State<BrowserPage> {
             icon: const Icon(Icons.copy, size: 16),
             label: const Text('Copy Path'),
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: path));
+              Clipboard.setData(ClipboardData(text: fullPath));
               Navigator.of(ctx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Path copied to clipboard')),
@@ -1730,14 +1936,6 @@ class BrowserPageState extends State<BrowserPage> {
   @override
   Widget build(BuildContext context) {
     final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-    final String rootDisplay = _root == '/'
-        ? '/'
-        : (_root.startsWith('remote://')
-            ? '☁️ Remote Storage'
-            : (_root.startsWith('archive://')
-                ? '📦 [Archive] ${_root.split('/').last}'
-                : (_root.split('/').where((s) => s.isNotEmpty).lastOrNull ?? _root)));
-    final displayName = segments.isEmpty ? rootDisplay : segments.last;
 
     // Back first leaves selection/search/address, then walks up the directory tree.
     // At the top level the platform handles it (exit or tab switch).
@@ -1804,9 +2002,31 @@ class BrowserPageState extends State<BrowserPage> {
             _duplicateEntry(item);
           }
         },
+        const SingleActivator(LogicalKeyboardKey.f2): () {
+          if (_isSelecting && _selectedPaths.length == 1 && _canWrite) {
+            _renameSelected();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.delete, shift: true): () {
+          if (_isSelecting && _canWrite) {
+            _deleteSelected(permanent: true);
+          }
+        },
         const SingleActivator(LogicalKeyboardKey.f5): _load,
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _load,
+        const SingleActivator(LogicalKeyboardKey.keyH, control: true): () {
+          setState(() => _showHidden = !_showHidden);
+          _saveViewPreferences();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyL, control: true): () {
+          _addressController.text = _displayFullPath;
+          setState(() => _isEditingAddress = true);
+        },
+        const SingleActivator(LogicalKeyboardKey.keyL, meta: true): () {
+          _addressController.text = _displayFullPath;
+          setState(() => _isEditingAddress = true);
+        },
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (_isSelecting) {
             _clearSelection();
@@ -1854,9 +2074,26 @@ class BrowserPageState extends State<BrowserPage> {
       },
       child: Scaffold(
       appBar: AppBar(
+        titleSpacing: 4,
+        toolbarHeight: 46,
         leading: _isSelecting
-            ? IconButton(icon: const Icon(Icons.close), onPressed: _clearSelection)
-            : null,
+            ? IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                onPressed: _clearSelection,
+              )
+            : (Navigator.of(context).canPop()
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).pop(),
+                  )
+                : null),
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -1867,7 +2104,10 @@ class BrowserPageState extends State<BrowserPage> {
                   border: InputBorder.none,
                   suffixIcon: _filterQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
+                          icon: const Icon(Icons.clear, size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _filterQuery = '');
@@ -1875,30 +2115,38 @@ class BrowserPageState extends State<BrowserPage> {
                         )
                       : null,
                 ),
-                onChanged: (v) => setState(() => _filterQuery = v),
+                onChanged: _onFilterChanged,
               )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _isSelecting ? _selectedSummary : displayName,
+            : (_isSelecting
+                ? Text(
+                    _selectedSummary,
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                  if (!_isSelecting)
-                    Text(
-                      _currentFullPath,
-                      style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
+                  )
+                : _buildUnifiedAddressBar(segments)),
         actions: [
           if (_isSelecting) ...[
-            IconButton(icon: const Icon(Icons.select_all), tooltip: 'Select All', onPressed: _selectAll),
-            IconButton(icon: const Icon(Icons.swap_horiz), tooltip: 'Invert Selection', onPressed: _invertSelection),
+            IconButton(
+              icon: const Icon(Icons.select_all, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+              tooltip: 'Select All',
+              onPressed: _selectAll,
+            ),
+            IconButton(
+              icon: const Icon(Icons.swap_horiz, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+              tooltip: 'Invert Selection',
+              onPressed: _invertSelection,
+            ),
           ] else ...[
             IconButton(
-              icon: Icon(_isSearching ? Icons.search_off : Icons.search),
+              icon: Icon(_isSearching ? Icons.search_off : Icons.search, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               tooltip: 'Filter',
               onPressed: () {
                 setState(() {
@@ -1912,35 +2160,64 @@ class BrowserPageState extends State<BrowserPage> {
             ),
             if (_canWrite)
               IconButton(
-                icon: const Icon(Icons.cloud_upload_outlined),
+                icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 tooltip: 'Upload Files',
                 onPressed: _uploadFiles,
               ),
             if (_canWrite)
               IconButton(
-                icon: const Icon(Icons.create_new_folder),
+                icon: const Icon(Icons.create_new_folder, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 tooltip: 'New Folder',
                 onPressed: _createFolder,
               ),
             if (_canWrite)
               IconButton(
-                icon: const Icon(Icons.note_add_outlined),
+                icon: const Icon(Icons.note_add_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 tooltip: 'New File',
                 onPressed: _createFile,
               ),
             IconButton(
-              icon: const Icon(Icons.bookmark_add_outlined),
+              icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               tooltip: 'Bookmark Folder',
               onPressed: _bookmarkCurrentFolder,
             ),
             IconButton(
-              icon: Icon(_isGrid ? Icons.view_list : Icons.grid_view),
+              icon: Icon(_isGrid ? Icons.view_list : Icons.grid_view, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               tooltip: _isGrid ? 'List view' : 'Grid view',
-              onPressed: () => setState(() => _isGrid = !_isGrid),
+              onPressed: () {
+                setState(() => _isGrid = !_isGrid);
+                _saveViewPreferences();
+              },
             ),
+            if (Navigator.of(context).canPop())
+              IconButton(
+                icon: const Icon(Icons.home_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                tooltip: 'Home Dashboard',
+                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+              ),
             PopupMenuButton<String>(
               tooltip: 'Options',
-              icon: const Icon(Icons.more_vert),
+              icon: const Icon(Icons.more_vert, size: 18),
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               onSelected: (val) {
                 if (val == 'toggle_hidden') {
                   setState(() => _showHidden = !_showHidden);
@@ -1983,6 +2260,7 @@ class BrowserPageState extends State<BrowserPage> {
                     }
                   });
                 }
+                _saveViewPreferences();
               },
               itemBuilder: (ctx) => [
                 CheckedPopupMenuItem<String>(
@@ -2022,7 +2300,6 @@ class BrowserPageState extends State<BrowserPage> {
       ),
       body: Column(
         children: [
-          _buildPathBar(segments),
           _buildCapabilitiesBar(),
           Expanded(child: _buildBody()),
           if (_isSelecting || _clipboard != null) _buildBottomActionBar(),
@@ -2034,36 +2311,47 @@ class BrowserPageState extends State<BrowserPage> {
     );
   }
 
-  Widget _buildPathBar(List<String> segments) {
+  Widget _buildUnifiedAddressBar(List<String> segments) {
     if (_isEditingAddress) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
+        ),
         child: Row(
           children: [
-            const Icon(Icons.link, size: 20),
-            const SizedBox(width: 8),
+            const Icon(Icons.link, size: 16),
+            const SizedBox(width: 6),
             Expanded(
               child: TextField(
                 controller: _addressController,
                 autofocus: true,
-                style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                 decoration: const InputDecoration(
-                  hintText: 'Enter path to jump (e.g. /, /etc, /home/user)...',
+                  hintText: 'Enter path to jump...',
                   isDense: true,
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  contentPadding: EdgeInsets.symmetric(vertical: 6),
                 ),
                 onSubmitted: _jumpToAddress,
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.arrow_forward, size: 20, color: Colors.blue),
+              icon: const Icon(Icons.arrow_forward, size: 16, color: Colors.blue),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               tooltip: 'Jump',
               onPressed: () => _jumpToAddress(_addressController.text),
             ),
             IconButton(
-              icon: const Icon(Icons.close, size: 20),
+              icon: const Icon(Icons.close, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               tooltip: 'Cancel',
               onPressed: () => setState(() => _isEditingAddress = false),
             ),
@@ -2072,44 +2360,58 @@ class BrowserPageState extends State<BrowserPage> {
       );
     }
 
-    final rootLabel = _root == '/'
-        ? '/'
-        : (_root.startsWith('remote://')
-            ? 'Cloud'
-            : (_root.startsWith('archive://')
-                ? 'Archive'
-                : (_root.split('/').where((s) => s.isNotEmpty).lastOrNull ?? _root)));
+    String rootLabel;
+    if (_root == '/') {
+      rootLabel = '/';
+    } else if (_root.startsWith('remote://')) {
+      final remoteId = _root.substring('remote://'.length);
+      final remote = _findRemote(remoteId);
+      rootLabel = remote != null ? '☁️ ${remote.name}' : 'Remote';
+    } else if (_root.startsWith('archive://')) {
+      rootLabel = 'Archive';
+    } else {
+      rootLabel = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? _root;
+    }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+      ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_upward, size: 18),
+            icon: const Icon(Icons.arrow_upward, size: 16),
             visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(4),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
             tooltip: 'Up one level',
-            onPressed: (_relPath.isNotEmpty || _root.startsWith('archive://') || (_root.startsWith('/') && _root != '/'))
-                ? _navigateUp
-                : null,
+            onPressed: _canNavigateUp ? _navigateUp : null,
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const Icon(Icons.refresh, size: 16),
             visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(4),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
             tooltip: 'Refresh',
             onPressed: _load,
           ),
-          const SizedBox(width: 4),
+          Container(
+            height: 16,
+            width: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+          ),
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
                   InkWell(
+                    borderRadius: BorderRadius.circular(4),
                     onTap: () {
                       if (_relPath.isNotEmpty) {
                         setState(() => _relPath = '');
@@ -2120,10 +2422,11 @@ class BrowserPageState extends State<BrowserPage> {
                       }
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                       child: Text(
                         rootLabel,
                         style: TextStyle(
+                          fontSize: 12,
                           color: _relPath.isEmpty ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                           fontWeight: _relPath.isEmpty ? FontWeight.bold : FontWeight.normal,
                         ),
@@ -2131,8 +2434,9 @@ class BrowserPageState extends State<BrowserPage> {
                     ),
                   ),
                   for (int i = 0; i < segments.length; i++) ...[
-                    const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
+                    const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
                     InkWell(
+                      borderRadius: BorderRadius.circular(4),
                       onTap: () {
                         final next = segments.sublist(0, i + 1).join('/');
                         if (next != _relPath) {
@@ -2144,10 +2448,11 @@ class BrowserPageState extends State<BrowserPage> {
                         }
                       },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         child: Text(
                           segments[i],
                           style: TextStyle(
+                            fontSize: 12,
                             color: i == segments.length - 1 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                             fontWeight: i == segments.length - 1 ? FontWeight.bold : FontWeight.normal,
                           ),
@@ -2160,19 +2465,37 @@ class BrowserPageState extends State<BrowserPage> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 16),
+            icon: const Icon(Icons.edit_outlined, size: 15),
             visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(4),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            tooltip: 'Address bar / Jump',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            tooltip: 'Edit address',
             onPressed: () {
-              _addressController.text = _currentFullPath;
+              _addressController.text = _displayFullPath;
               setState(() => _isEditingAddress = true);
             },
           ),
         ],
       ),
     );
+  }
+
+  /// Bytes of the files currently listed; folders are skipped because their
+  /// size is unknown until they are walked.
+  BigInt get _totalListedBytes {
+    BigInt total = BigInt.zero;
+    for (final e in _filteredAndSortedEntries) {
+      if (!e.isDir && e.size != null) total += e.size!;
+    }
+    return total;
+  }
+
+  String _formatBytes(BigInt bytes) {
+    final b = bytes.toInt();
+    if (b < 1024) return '$b B';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} KB';
+    if (b < 1024 * 1024 * 1024) return '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   Widget _buildCapabilitiesBar() {
@@ -2191,7 +2514,13 @@ class BrowserPageState extends State<BrowserPage> {
           _capChip('mkdir', caps.mkdir),
           _capChip('remove', caps.remove),
           const Spacer(),
-          Text('${_filteredAndSortedEntries.length} items${_hasMore ? ' (more below)' : ''}', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(
+            '${_filteredAndSortedEntries.length} items'
+            '${_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : ''}'
+            '${!_showHidden && _entries.any((e) => e.hidden) ? '  •  hidden files off' : ''}'
+            '${_hasMore ? ' (more below)' : ''}',
+            style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
         ],
       ),
     );
@@ -2213,7 +2542,7 @@ class BrowserPageState extends State<BrowserPage> {
 
   Widget _buildBottomActionBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4, offset: const Offset(0, -2))],
@@ -2232,6 +2561,8 @@ class BrowserPageState extends State<BrowserPage> {
                 _actionButton(Icons.delete, 'Delete', _deleteSelected, color: Colors.red),
                 if (_selectedPaths.length == 1)
                   _actionButton(Icons.edit, 'Rename', _renameSelected),
+                if (_selectedPaths.length == 1)
+                  _actionButton(Icons.info_outline, 'Info', _showSelectedInfo),
                 if (_canArchive)
                   _actionButton(Icons.archive, 'Zip', _compressSelected),
               ],
@@ -2261,13 +2592,13 @@ class BrowserPageState extends State<BrowserPage> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: color),
+            Icon(icon, size: 17, color: color),
             const SizedBox(height: 1),
-            Text(label, style: TextStyle(fontSize: 9, color: color)),
+            Text(label, style: TextStyle(fontSize: 8.5, color: color)),
           ],
         ),
       ),
@@ -2290,7 +2621,19 @@ class BrowserPageState extends State<BrowserPage> {
               const SizedBox(height: 8),
               Text(_error!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 16),
-              FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+              Wrap(
+                spacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+                  if (_canNavigateUp)
+                    OutlinedButton.icon(
+                      onPressed: _navigateUp,
+                      icon: const Icon(Icons.arrow_upward),
+                      label: const Text('Go up'),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -2323,7 +2666,9 @@ class BrowserPageState extends State<BrowserPage> {
                       Text(
                         isFiltered
                             ? 'No files matching "$_filterQuery"'
-                            : 'Directory is empty',
+                            : (_entries.isNotEmpty && !_showHidden)
+                                ? 'Only hidden files here'
+                                : 'Directory is empty',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                       if (isFiltered) ...[
@@ -2338,23 +2683,47 @@ class BrowserPageState extends State<BrowserPage> {
                             });
                           },
                         ),
+                      ] else if (_entries.isNotEmpty && !_showHidden) ...[
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.visibility, size: 16),
+                          label: const Text('Show Hidden Files'),
+                          onPressed: () {
+                            setState(() => _showHidden = true);
+                            _saveViewPreferences();
+                          },
+                        ),
                       ] else if (_canWrite) ...[
                         const SizedBox(height: 16),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.center,
                           children: [
                             FilledButton.tonalIcon(
                               icon: const Icon(Icons.create_new_folder),
                               label: const Text('New Folder'),
                               onPressed: _createFolder,
                             ),
-                            const SizedBox(width: 12),
                             FilledButton.tonalIcon(
                               icon: const Icon(Icons.note_add_outlined),
                               label: const Text('New File'),
                               onPressed: _createFile,
                             ),
+                            if (_canNavigateUp)
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.arrow_upward, size: 16),
+                                label: const Text('Go Up'),
+                                onPressed: _navigateUp,
+                              ),
                           ],
+                        ),
+                      ] else if (_canNavigateUp) ...[
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.arrow_upward, size: 16),
+                          label: const Text('Go Up'),
+                          onPressed: _navigateUp,
                         ),
                       ],
                     ],
@@ -2405,7 +2774,10 @@ class BrowserPageState extends State<BrowserPage> {
             final isSelected = _selectedPaths.contains(path);
 
             return GestureDetector(
-              onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition, item),
+              onSecondaryTapDown: (details) {
+                _lastItemSecondaryTap = DateTime.now();
+                _showContextMenu(context, details.globalPosition, item);
+              },
               child: InkWell(
                 onTap: () => _openEntry(item),
                 onLongPress: () => _showEntryActions(item),
@@ -2430,7 +2802,17 @@ class BrowserPageState extends State<BrowserPage> {
                           children: [
                             Icon(item.icon, size: 28, color: item.iconColor(ctx)),
                             const SizedBox(height: 4),
-                            Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10)),
+                            Text(
+                              item.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
                             const SizedBox(height: 1),
                             Text(item.formattedSize, style: TextStyle(fontSize: 8.5, color: Colors.grey.shade600)),
                           ],
@@ -2490,35 +2872,41 @@ class BrowserPageState extends State<BrowserPage> {
           final isSelected = _selectedPaths.contains(path);
 
           return GestureDetector(
-            onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition, item),
+            onSecondaryTapDown: (details) {
+              _lastItemSecondaryTap = DateTime.now();
+              _showContextMenu(context, details.globalPosition, item);
+            },
             child: ListTile(
               dense: true,
-              visualDensity: VisualDensity.compact,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
               contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
               minVerticalPadding: 0,
-              minLeadingWidth: 24,
+              minLeadingWidth: 20,
+              minTileHeight: 34,
               selected: isSelected,
               leading: _isSelecting
                   ? Checkbox(
                       value: isSelected,
                       onChanged: (_) => _toggleSelect(path),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
                     )
-                  : Icon(item.icon, color: item.iconColor(ctx), size: 20),
+                  : Icon(item.icon, color: item.iconColor(ctx), size: 18),
               title: Text(
                 item.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12.5,
-                  fontWeight: item.isDir ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               subtitle: Text(
                 item.isDir
                     ? item.formattedModified
                     : '${item.formattedSize}  •  ${item.formattedModified}',
-                style: const TextStyle(fontSize: 10),
+                style: const TextStyle(fontSize: 9.5),
               ),
               trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
               onTap: () => _openEntry(item),

@@ -1,13 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../dialogs/folder_picker_dialog.dart';
-import '../rust/api/servers.dart';
-import '../services/file_open_service.dart';
-import '../services/platform_paths.dart';
-import '../services/sharing_service.dart';
 
-class SettingsPage extends StatefulWidget {
+class SettingsPage extends StatelessWidget {
   final ThemeMode currentThemeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
 
@@ -16,365 +10,6 @@ class SettingsPage extends StatefulWidget {
     required this.currentThemeMode,
     required this.onThemeModeChanged,
   });
-
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
-
-class _SettingsPageState extends State<SettingsPage> {
-  bool _serverRunning = false;
-  ServerStatusDto? _serverStatus;
-  bool _starting = false;
-
-  late String _shareRoot;
-  final TextEditingController _portCtrl = TextEditingController(text: '8080');
-  final TextEditingController _pwdCtrl = TextEditingController();
-  bool _readOnly = true;
-  bool _obscurePwd = true;
-
-  Future<void> _pickShareFolder() async {
-    final picked = await FolderPickerDialog.show(
-      context,
-      title: 'Choose shared folder',
-      initialRoot: _shareRoot,
-    );
-    if (picked != null && mounted) {
-      setState(() => _shareRoot = picked.path);
-    }
-  }
-
-  int _cacheSizeBytes = 0;
-  bool _clearingCache = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _shareRoot = PlatformPaths.defaultRoot();
-    _serverRunning = SharingService.instance.isRunning;
-    _serverStatus = SharingService.instance.currentStatus;
-    _updateCacheSize();
-  }
-
-  Future<void> _updateCacheSize() async {
-    final bytes = await FileOpenService.instance.getExportCacheSizeBytes();
-    if (mounted) {
-      setState(() => _cacheSizeBytes = bytes);
-    }
-  }
-
-  Future<void> _clearCache() async {
-    setState(() => _clearingCache = true);
-    await FileOpenService.instance.clearExports();
-    await _updateCacheSize();
-    if (mounted) {
-      setState(() => _clearingCache = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Temporary cache cleared')),
-      );
-    }
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
-  @override
-  void dispose() {
-    _portCtrl.dispose();
-    _pwdCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _toggleServer(bool start) async {
-    if (start) {
-      setState(() => _starting = true);
-      try {
-        final port = int.tryParse(_portCtrl.text.trim());
-        final pwd = _pwdCtrl.text.trim().isEmpty ? null : _pwdCtrl.text.trim();
-
-        final status = await SharingService.instance.startHttp(
-          rootDir: _shareRoot,
-          port: port,
-          password: pwd,
-          readOnly: _readOnly,
-        );
-
-        if (mounted) {
-          setState(() {
-            _serverRunning = true;
-            _serverStatus = status;
-            _starting = false;
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() => _starting = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start server: $e'), backgroundColor: Colors.red),
-          );
-        }
-      }
-    } else {
-      SharingService.instance.stopHttp();
-      setState(() {
-        _serverRunning = false;
-        _serverStatus = null;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings & Sharing'),
-      ),
-      body: ListView(
-        children: [
-          _buildSectionHeader('Appearance'),
-          ListTile(
-            leading: const Icon(Icons.brightness_medium),
-            title: const Text('Theme'),
-            subtitle: Text(_themeModeLabel(widget.currentThemeMode)),
-            trailing: DropdownButton<ThemeMode>(
-              value: widget.currentThemeMode,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
-                DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-                DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-              ],
-              onChanged: (mode) {
-                if (mode != null) widget.onThemeModeChanged(mode);
-              },
-            ),
-          ),
-          const Divider(),
-
-          // LAN HTTP Sharing Card
-          _buildSectionHeader('LAN HTTP Sharing & Web Access'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            elevation: _serverRunning ? 3 : 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: _serverRunning ? Colors.green : Theme.of(context).dividerColor.withValues(alpha: 0.2),
-                width: _serverRunning ? 1.5 : 1,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.wifi_tethering,
-                            size: 28,
-                            color: _serverRunning ? Colors.green : Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Web Sharing Server', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              Text(
-                                _serverRunning ? '🟢 Running on LAN' : '⚪ Stopped',
-                                style: TextStyle(fontSize: 12, color: _serverRunning ? Colors.green : Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      _starting
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Switch(
-                              value: _serverRunning,
-                              onChanged: _toggleServer,
-                            ),
-                    ],
-                  ),
-
-                  if (_serverRunning && _serverStatus != null) ...[
-                    const Divider(height: 24),
-                    Text(
-                      'Access files from any browser on the same Wi-Fi:',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 8),
-                    ..._serverStatus!.addresses.map((ip) {
-                      final url = 'http://$ip:${_serverStatus!.port}';
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            SelectableText(
-                              url,
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.copy, size: 18),
-                              tooltip: 'Copy URL',
-                              onPressed: () {
-                                Clipboard.setData(ClipboardData(text: url));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('URL copied to clipboard')),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ] else ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Share files on your local network without cables. Stream media, download or upload files through any web browser.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.folder_shared, size: 20, color: Colors.blue),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Shared Folder', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                                Text(
-                                  _shareRoot,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
-                                ),
-                              ],
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _serverRunning ? null : _pickShareFolder,
-                            child: const Text('Change'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _portCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(labelText: 'Port', border: OutlineInputBorder(), isDense: true),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _pwdCtrl,
-                            obscureText: _obscurePwd,
-                            decoration: InputDecoration(
-                              labelText: 'Password (Optional)',
-                              border: const OutlineInputBorder(),
-                              isDense: true,
-                              suffixIcon: IconButton(
-                                icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
-                                tooltip: _obscurePwd ? 'Show password' : 'Hide password',
-                                onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      title: const Text('Read Only (disallow web uploads)'),
-                      value: _readOnly,
-                      onChanged: (v) => setState(() => _readOnly = v ?? true),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-
-          const Divider(),
-          _buildSectionHeader('Storage & Cache'),
-          ListTile(
-            leading: const Icon(Icons.cleaning_services),
-            title: const Text('Export & Preview Cache'),
-            subtitle: Text('Temporary files cached when opening with external apps (${_formatSize(_cacheSizeBytes)})'),
-            trailing: _clearingCache
-                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                : OutlinedButton(
-                    onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
-                    child: const Text('Clear'),
-                  ),
-          ),
-
-          const Divider(),
-          _buildSectionHeader('About'),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('File Manager+ Cross-Platform'),
-            subtitle: Text(
-              'v1.0.0 • Flutter 3.47 + Rust Core\n'
-              'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
-            ),
-          ),
-          const ListTile(
-            leading: Icon(Icons.cloud_done),
-            title: Text('Supported Protocols'),
-            subtitle: Text('Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z'),
-          ),
-          const ListTile(
-            leading: Icon(Icons.code),
-            title: Text('Zero C-OpenSSL Dependencies'),
-            subtitle: Text('Pure-Rust rustls networking, Apache OpenDAL unified cloud storage'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
 
   String _themeModeLabel(ThemeMode mode) {
     switch (mode) {
@@ -385,5 +20,130 @@ class _SettingsPageState extends State<SettingsPage> {
       case ThemeMode.dark:
         return 'Dark theme';
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        children: [
+          _buildSectionHeader(context, 'Appearance'),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+            ),
+            child: ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+              minTileHeight: 42,
+              minLeadingWidth: 24,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              leading: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.brightness_medium, size: 16, color: Colors.blue),
+              ),
+              title: const Text('Theme', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              subtitle: Text(_themeModeLabel(currentThemeMode), style: const TextStyle(fontSize: 10)),
+              trailing: DropdownButton<ThemeMode>(
+                value: currentThemeMode,
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(value: ThemeMode.system, child: Text('System', style: TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: ThemeMode.light, child: Text('Light', style: TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark', style: TextStyle(fontSize: 12))),
+                ],
+                onChanged: (mode) {
+                  if (mode != null) onThemeModeChanged(mode);
+                },
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSectionHeader(context, 'About & System'),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+                  minTileHeight: 42,
+                  minLeadingWidth: 24,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  leading: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                  ),
+                  title: const Text('File Manager+ Cross-Platform', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'v1.0.0 • Flutter 3.47 + Rust Core\n'
+                    'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+                  minTileHeight: 40,
+                  minLeadingWidth: 24,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  leading: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.cloud_done, size: 16, color: Colors.green),
+                  ),
+                  title: const Text('Supported Protocols', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
   }
 }

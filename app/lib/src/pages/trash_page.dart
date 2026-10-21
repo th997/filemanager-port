@@ -47,6 +47,16 @@ class _TrashPageState extends State<TrashPage> {
     return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
+  String _deletedAgo(TrashItemDto item) {
+    final then = DateTime.fromMillisecondsSinceEpoch(item.deletedMillis.toInt());
+    final diff = DateTime.now().difference(then);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inHours < 1) return '${diff.inMinutes} min ago';
+    if (diff.inDays < 1) return '${diff.inHours} h ago';
+    if (diff.inDays < 30) return '${diff.inDays} d ago';
+    return '${then.year}-${then.month.toString().padLeft(2, '0')}-${then.day.toString().padLeft(2, '0')}';
+  }
+
   String _displayName(TrashItemDto item) {
     final parts = item.originalPath.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
     return parts.isEmpty ? item.originalPath : parts.last;
@@ -54,7 +64,20 @@ class _TrashPageState extends State<TrashPage> {
 
   Future<void> _restore(TrashItemDto item) async {
     final name = _displayName(item);
-    await StorageService.instance.restoreTrashItem(item.id);
+    try {
+      await StorageService.instance.restoreTrashItem(item.id);
+    } catch (e) {
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not restore "$name": $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+      return;
+    }
     _load();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -81,7 +104,19 @@ class _TrashPageState extends State<TrashPage> {
       ),
     );
     if (confirm == true) {
-      await StorageService.instance.deleteTrashItem(item.id);
+      try {
+        await StorageService.instance.deleteTrashItem(item.id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not delete "$name": $e'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+        return;
+      }
       _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -96,7 +131,10 @@ class _TrashPageState extends State<TrashPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Empty Recycle Bin'),
-        content: const Text('Are you sure you want to permanently delete all items in the recycle bin?'),
+        content: Text(
+          'Permanently delete all ${_items.length} items '
+          '(${_formatSize(_totalSize)})? This cannot be undone.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           FilledButton(
@@ -108,7 +146,19 @@ class _TrashPageState extends State<TrashPage> {
       ),
     );
     if (confirm == true) {
-      await StorageService.instance.clearTrash();
+      try {
+        await StorageService.instance.clearTrash();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not empty recycle bin: $e'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+        return;
+      }
       _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -136,20 +186,36 @@ class _TrashPageState extends State<TrashPage> {
     );
     if (confirm == true) {
       int successCount = 0;
+      final failures = <String>[];
       for (final item in List.of(_items)) {
         try {
           await StorageService.instance.restoreTrashItem(item.id);
           successCount++;
-        } catch (_) {}
+        } catch (_) {
+          failures.add(_displayName(item));
+        }
       }
       _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Restored $successCount of $count items')),
+          SnackBar(
+            content: Text(
+              failures.isEmpty
+                  ? 'Restored $successCount of $count items'
+                  : 'Restored $successCount of $count. Still in trash: '
+                      '${failures.take(3).join(', ')}${failures.length > 3 ? '…' : ''}',
+            ),
+            backgroundColor: failures.isEmpty ? null : Colors.orange.shade800,
+          ),
         );
       }
     }
   }
+
+  /// Bytes held by everything in the bin, so the header answers "how much
+  /// space can I get back?" before deleting anything.
+  BigInt get _totalSize =>
+      _items.fold(BigInt.zero, (sum, item) => sum + item.size);
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +229,13 @@ class _TrashPageState extends State<TrashPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recycle Bin'),
+        title: Text(
+          _items.isEmpty
+              ? 'Recycle Bin'
+              : 'Recycle Bin • ${_items.length} items, ${_formatSize(_totalSize)}',
+          style: const TextStyle(fontSize: 14),
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           if (_items.isNotEmpty) ...[
             IconButton(
@@ -262,7 +334,7 @@ class _TrashPageState extends State<TrashPage> {
                                 ),
                                 title: Text(name.isEmpty ? item.originalPath : name),
                                 subtitle: Text(
-                                  '${_formatSize(item.size)}  •  ${item.originalPath}',
+                                  '${_formatSize(item.size)}  •  deleted ${_deletedAgo(item)}  •  ${item.originalPath}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 11),

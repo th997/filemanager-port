@@ -19,6 +19,7 @@ app/windows/flutter/ephemeral/
 app/android/.gradle/
 app/android/local.properties
 app/android/app/.cxx/
+.idea/
 app/.idea/
 *.iml
 .DS_Store

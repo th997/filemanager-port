@@ -5,6 +5,7 @@ import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart
 
 import '../rust/api/file_manager.dart';
 import '../services/highlight_service.dart';
+import '../services/preferences_service.dart';
 
 enum TextFileMode { preview, code, edit }
 
@@ -35,6 +36,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
   bool _isDirty = false;
   String? _error;
   late TextFileMode _mode;
+  static const _prefFontSize = 'editor.font_size';
+  static const _prefWordWrap = 'editor.word_wrap';
   double _fontSize = 13.0;
   bool _wordWrap = true;
   bool _showFind = false;
@@ -58,6 +61,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
       fontSizeProvider: () => _fontSize,
     );
     _controller.addListener(_updateCursorPosition);
+    final prefs = PreferencesService.instance;
+    _fontSize = double.tryParse(prefs.getString(_prefFontSize) ?? '') ?? _fontSize;
+    _wordWrap = prefs.getBool(_prefWordWrap) ?? _wordWrap;
     _mode = (_isMarkdown || _isHtml) ? TextFileMode.preview : TextFileMode.code;
     _loadFile();
   }
@@ -211,16 +217,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
   Future<void> _save() async {
     if (_loading || _error != null) return;
     setState(() => _saving = true);
+    final savedText = _controller.text;
     try {
       await writeTextFile(
         root: widget.root,
         path: widget.path,
-        content: _controller.text,
+        content: savedText,
       );
+      // Edits made while the write was in flight keep the file dirty.
       if (mounted) {
         setState(() {
           _saving = false;
-          _isDirty = false;
+          _isDirty = _controller.text != savedText;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('File saved successfully')),
@@ -234,6 +242,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
         );
       }
     }
+  }
+
+  /// Font size and wrapping are viewer preferences, not per-file state, so
+  /// they survive closing the file and opening another one.
+  void _saveViewPreferences() {
+    final prefs = PreferencesService.instance;
+    prefs.setString(_prefFontSize, _fontSize.toString());
+    prefs.setBool(_prefWordWrap, _wordWrap);
   }
 
   void _setMode(TextFileMode mode) {
@@ -275,24 +291,33 @@ class _TextEditorPageState extends State<TextEditorPage> {
           canPop: !_isDirty,
           onPopInvokedWithResult: (didPop, _) async {
             if (didPop) return;
-            final discard = await showDialog<bool>(
+            final discard = await showDialog<String>(
               context: context,
               builder: (ctx) => AlertDialog(
                 title: const Text('Unsaved Changes'),
-                content: const Text('You have unsaved changes. Discard them?'),
+                content: const Text('You have unsaved changes. Save them before closing?'),
                 actions: [
                   TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(false),
+                    onPressed: () => Navigator.of(ctx).pop('cancel'),
                     child: const Text('Cancel'),
                   ),
-                  FilledButton(
-                    onPressed: () => Navigator.of(ctx).pop(true),
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop('discard'),
                     child: const Text('Discard'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop('save'),
+                    child: const Text('Save'),
                   ),
                 ],
               ),
             );
-            if (discard == true && context.mounted) {
+            if (discard == 'save') {
+              await _save();
+              if (context.mounted && !_isDirty) {
+                Navigator.of(context).pop();
+              }
+            } else if (discard == 'discard' && context.mounted) {
               Navigator.of(context).pop();
             }
           },
@@ -330,16 +355,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 if (_mode != TextFileMode.preview)
                   PopupMenuButton<String>(
                     tooltip: 'Text Options',
-                    icon: const Icon(Icons.text_fields),
+                    icon: const Icon(Icons.tune),
                     onSelected: (val) {
                       if (val == 'zoom_in') {
                         setState(() => _fontSize = (_fontSize + 1).clamp(9.0, 32.0));
+                        _saveViewPreferences();
                       } else if (val == 'zoom_out') {
                         setState(() => _fontSize = (_fontSize - 1).clamp(9.0, 32.0));
+                        _saveViewPreferences();
                       } else if (val == 'reset_zoom') {
                         setState(() => _fontSize = 13.0);
+                        _saveViewPreferences();
                       } else if (val == 'toggle_wrap') {
                         setState(() => _wordWrap = !_wordWrap);
+                        _saveViewPreferences();
                       } else if (val == 'goto_line') {
                         _showGoToLineDialog();
                       }

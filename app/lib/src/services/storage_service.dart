@@ -83,6 +83,16 @@ class StorageService {
     }
   }
 
+  Future<void> clearHistory() async {
+    ensureInitialized();
+    await meta_api.clearHistory(dbPath: dbPath);
+  }
+
+  Future<void> removeHistoryEntry({required String root, required String path}) async {
+    ensureInitialized();
+    await meta_api.removeHistory(dbPath: dbPath, root: root, path: path);
+  }
+
   Future<void> recordHistory({required String root, required String path}) async {
     ensureInitialized();
     try {

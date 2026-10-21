@@ -54,6 +54,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
   final Set<String> _selectedPaths = {};
   bool _loading = false;
   String? _error;
+  bool _showHidden = false;
   final TextEditingController _filterController = TextEditingController();
   String _filterQuery = '';
 
@@ -78,7 +79,10 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     });
     try {
       final entries = await listDir(root: _root, path: _relPath);
-      final all = entries.map((e) => EntryItem(e)).where((e) => !e.hidden).toList();
+      final all = entries
+          .map((e) => EntryItem(e))
+          .where((e) => _showHidden || !e.hidden)
+          .toList();
       final folders = all.where((e) => e.isDir).toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       final files = all.where((e) => !e.isDir).toList()
@@ -210,6 +214,14 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
+                ),
+                IconButton(
+                  icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off, size: 18),
+                  tooltip: _showHidden ? 'Hide hidden files' : 'Show hidden files',
+                  onPressed: () {
+                    setState(() => _showHidden = !_showHidden);
+                    _load();
+                  },
                 ),
                 if (_files.isNotEmpty)
                   TextButton.icon(

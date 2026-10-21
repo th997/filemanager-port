@@ -238,16 +238,16 @@ class EntryItem {
     if (isDir) return Icons.folder;
     if (isImage) return Icons.image;
     final lower = name.toLowerCase();
-    if (isVideo) return Icons.video_file;
-    if (isAudio) return Icons.audio_file;
+    if (isVideo) return Icons.play_circle_fill;
+    if (isAudio) return Icons.music_note;
     if (isArchive) {
-      return Icons.folder_zip;
+      return Icons.archive;
     }
     if (lower.endsWith('.pdf')) {
-      return Icons.picture_as_pdf;
+      return Icons.menu_book;
     }
     if (isText) {
-      return Icons.description;
+      return Icons.article;
     }
     return Icons.insert_drive_file;
   }
@@ -258,12 +258,9 @@ class EntryItem {
     if (isImage) return Colors.purple;
     final lower = name.toLowerCase();
     if (lower.endsWith('.pdf')) return Colors.red;
-    if (lower.endsWith('.mp4') || lower.endsWith('.mkv')) {
-      return Colors.blue;
-    }
-    if (lower.endsWith('.mp3') || lower.endsWith('.flac')) {
-      return Colors.teal;
-    }
+    if (isVideo) return Colors.deepOrange;
+    if (isAudio) return Colors.teal;
+    if (isText) return Colors.blueGrey;
     return Theme.of(context).colorScheme.onSurfaceVariant;
   }
 }

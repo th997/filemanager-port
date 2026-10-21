@@ -182,7 +182,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: dir.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         // Opendal listers yield the prefix entry itself when it exists; skip it
@@ -193,7 +193,7 @@ impl Vfs for OpendalFs {
         while let Some(item_res) = lister.next().await {
             let item = item_res.map_err(|e| VfsError::Backend {
                 path: dir.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
             let raw_path = item.path().trim_end_matches('/');
@@ -256,7 +256,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: dir.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         // Opendal listers yield the prefix entry itself; it must not consume a
@@ -280,7 +280,7 @@ impl Vfs for OpendalFs {
                 Some(Err(e)) => {
                     return Err(VfsError::Backend {
                         path: dir.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     });
                 }
                 None => return Ok((Vec::new(), false)),
@@ -331,7 +331,7 @@ impl Vfs for OpendalFs {
                 Some(Err(e)) => {
                     return Err(VfsError::Backend {
                         path: dir.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     });
                 }
                 None => break,
@@ -361,14 +361,14 @@ impl Vfs for OpendalFs {
                 let mut lister = self.operator.lister(&op_dir).await.map_err(|e| {
                     VfsError::Backend {
                         path: path.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     }
                 })?;
                 let mut has_children = false;
                 while let Some(item) = lister.next().await {
                     let item = item.map_err(|e| VfsError::Backend {
                         path: path.clone(),
-                        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                        source: std::io::Error::other(e.to_string()),
                     })?;
                     if item.path().trim_end_matches('/') != op_dir.trim_end_matches('/') {
                         has_children = true;
@@ -396,7 +396,7 @@ impl Vfs for OpendalFs {
             Err(e) => {
                 return Err(VfsError::Backend {
                     path: path.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })
             }
         };
@@ -436,7 +436,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         let futures_reader = reader
@@ -444,7 +444,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         Ok(Box::new(futures_reader.compat()))
@@ -465,7 +465,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         let futures_reader = reader
@@ -473,7 +473,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         Ok(Box::new(futures_reader.compat()))
@@ -485,8 +485,8 @@ impl Vfs for OpendalFs {
         mode: WriteMode,
     ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
         let op_path = Self::to_opendal_path(path);
-        if mode == WriteMode::Create {
-            if self.operator.exists(&op_path).await.unwrap_or(false) {
+        if mode == WriteMode::Create
+            && self.operator.exists(&op_path).await.unwrap_or(false) {
                 return Err(VfsError::Backend {
                     path: path.clone(),
                     source: std::io::Error::new(
@@ -495,7 +495,6 @@ impl Vfs for OpendalFs {
                     ),
                 });
             }
-        }
         let writer = if mode == WriteMode::Append {
             self.operator.writer_with(&op_path).append(true).await
         } else {
@@ -503,7 +502,7 @@ impl Vfs for OpendalFs {
         }
         .map_err(|e| VfsError::Backend {
             path: path.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
 
         let futures_writer = writer.into_futures_async_write();
@@ -517,7 +516,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })
     }
 
@@ -528,7 +527,7 @@ impl Vfs for OpendalFs {
             .await
             .map_err(|e| VfsError::Backend {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })
     }
 
@@ -541,16 +540,16 @@ impl Vfs for OpendalFs {
                 // S3 and OSS lack native rename; fallback to server-side copy + delete
                 self.operator.copy(&op_from, &op_to).await.map_err(|e| VfsError::Backend {
                     path: from.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
                 self.operator.delete(&op_from).await.map_err(|e| VfsError::Backend {
                     path: from.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })
             }
             Err(e) => Err(VfsError::Backend {
                 path: from.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             }),
         }
     }

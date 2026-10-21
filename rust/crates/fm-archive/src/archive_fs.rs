@@ -32,7 +32,7 @@ impl ArchiveFs {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
-        let format = ArchiveFormat::from_name(name).ok_or_else(|| VfsError::Unsupported {
+        let format = ArchiveFormat::from_name(name).ok_or(VfsError::Unsupported {
             operation: "unsupported archive format",
         })?;
 
@@ -442,7 +442,7 @@ impl ArchiveFs {
                 )
                 .map_err(|e| VfsError::Backend {
                     path: path.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    source: std::io::Error::other(e.to_string()),
                 })?;
                 Ok(found_bytes)
             }
@@ -538,7 +538,7 @@ fn pump_entry(
             )
             .map_err(|e| VfsError::Backend {
                 path: VfsPath::root(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                source: std::io::Error::other(e.to_string()),
             })?;
         }
     }
