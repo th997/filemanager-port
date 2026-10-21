@@ -130,6 +130,21 @@ class PlatformPaths {
           root: home,
           relPath: 'Documents',
         ),
+        if (Platform.isMacOS) ...[
+          QuickTarget(
+            name: 'Desktop',
+            path: '$home/Desktop',
+            root: home,
+            relPath: 'Desktop',
+          ),
+          if (Directory('/Volumes').existsSync())
+            const QuickTarget(
+              name: 'Volumes',
+              path: '/Volumes',
+              root: '/Volumes',
+              relPath: '',
+            ),
+        ],
         const QuickTarget(
           name: 'Root /',
           path: '/',

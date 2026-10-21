@@ -28,5 +28,15 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>FileManager needs access to your Documents folder to manage files.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>FileManager needs access to your Downloads folder to manage files.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>FileManager needs access to your Desktop folder to manage files.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>FileManager needs access to removable volumes to manage external storage.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>FileManager needs access to network volumes to manage shared files.</string>
 </dict>
 </plist>
