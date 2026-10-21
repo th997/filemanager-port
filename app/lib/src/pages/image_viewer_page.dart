@@ -185,6 +185,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     if (!mounted) return;
 
+    final imagePath = entry.remotePath ?? native;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -198,10 +199,21 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
             _detailRow('Size', _formatSize(stat.size)),
             _detailRow('Modified', stat.modified.toString().split('.').first),
-            _detailRow('Path', entry.remotePath ?? native),
+            _detailRow('Path', imagePath),
           ],
         ),
         actions: [
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Path'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: imagePath));
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Path copied to clipboard')),
+              );
+            },
+          ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Close'),
@@ -331,18 +343,34 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.equal): () => _zoomBy(1.25),
+        const SingleActivator(LogicalKeyboardKey.equal, control: true): () => _zoomBy(1.25),
+        const SingleActivator(LogicalKeyboardKey.equal, meta: true): () => _zoomBy(1.25),
         const SingleActivator(LogicalKeyboardKey.add): () => _zoomBy(1.25),
+        const SingleActivator(LogicalKeyboardKey.add, control: true): () => _zoomBy(1.25),
+        const SingleActivator(LogicalKeyboardKey.add, meta: true): () => _zoomBy(1.25),
         const SingleActivator(LogicalKeyboardKey.minus): () => _zoomBy(0.8),
+        const SingleActivator(LogicalKeyboardKey.minus, control: true): () => _zoomBy(0.8),
+        const SingleActivator(LogicalKeyboardKey.minus, meta: true): () => _zoomBy(0.8),
         const SingleActivator(LogicalKeyboardKey.numpadSubtract): () => _zoomBy(0.8),
+        const SingleActivator(LogicalKeyboardKey.numpadSubtract, control: true): () => _zoomBy(0.8),
         const SingleActivator(LogicalKeyboardKey.digit0): _resetView,
+        const SingleActivator(LogicalKeyboardKey.digit0, control: true): _resetView,
+        const SingleActivator(LogicalKeyboardKey.digit0, meta: true): _resetView,
         const SingleActivator(LogicalKeyboardKey.numpad0): _resetView,
+        const SingleActivator(LogicalKeyboardKey.numpad0, control: true): _resetView,
         const SingleActivator(LogicalKeyboardKey.keyR): () {
           setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
         },
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
           if (!_zoomed) _goTo(_index - 1);
         },
+        const SingleActivator(LogicalKeyboardKey.bracketLeft): () {
+          if (!_zoomed) _goTo(_index - 1);
+        },
         const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+          if (!_zoomed) _goTo(_index + 1);
+        },
+        const SingleActivator(LogicalKeyboardKey.bracketRight): () {
           if (!_zoomed) _goTo(_index + 1);
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
@@ -369,12 +397,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.zoom_in),
-                tooltip: 'Zoom in (+)',
+                tooltip: 'Zoom in (+ / Ctrl+=)',
                 onPressed: () => _zoomBy(1.25),
               ),
               IconButton(
                 icon: const Icon(Icons.zoom_out),
-                tooltip: 'Zoom out (-)',
+                tooltip: 'Zoom out (- / Ctrl+-)',
                 onPressed: () => _zoomBy(0.8),
               ),
               IconButton(
@@ -384,7 +412,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
               IconButton(
                 icon: const Icon(Icons.zoom_out_map),
-                tooltip: 'Reset zoom (0)',
+                tooltip: 'Reset zoom (0 / Ctrl+0)',
                 onPressed: _resetView,
               ),
               IconButton(

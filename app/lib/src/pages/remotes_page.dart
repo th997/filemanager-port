@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
@@ -15,11 +16,43 @@ class RemotesPage extends StatefulWidget {
 class _RemotesPageState extends State<RemotesPage> {
   List<RemoteConfigDto> _remotes = [];
   bool _loading = true;
+  bool _showSearch = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadRemotes();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<RemoteConfigDto> get _visibleRemotes {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return _remotes;
+    return _remotes.where((r) {
+      final sub = r.endpoint ??
+          (r.bucket != null ? r.bucket! : '${r.host ?? ""}:${r.port ?? ""}');
+      return r.name.toLowerCase().contains(q) ||
+          r.kind.toLowerCase().contains(q) ||
+          sub.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  void _copyRemoteUri(RemoteConfigDto r) {
+    final uri = r.endpoint ??
+        (r.bucket != null
+            ? '${r.kind}://${r.bucket}'
+            : '${r.kind}://${r.host ?? ""}:${r.port ?? ""}');
+    Clipboard.setData(ClipboardData(text: uri));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied: $uri')),
+    );
   }
 
   Future<void> _loadRemotes() async {
@@ -156,10 +189,26 @@ class _RemotesPageState extends State<RemotesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final displayedRemotes = _visibleRemotes;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cloud & Remote Storage', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
+          if (_remotes.isNotEmpty)
+            IconButton(
+              icon: Icon(_showSearch ? Icons.search_off : Icons.search, size: 20),
+              tooltip: _showSearch ? 'Close Search' : 'Search Remotes',
+              onPressed: () {
+                setState(() {
+                  _showSearch = !_showSearch;
+                  if (!_showSearch) {
+                    _searchQuery = '';
+                    _searchController.clear();
+                  }
+                });
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.add, size: 22),
             tooltip: 'Add Connection',
@@ -174,123 +223,187 @@ class _RemotesPageState extends State<RemotesPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadRemotes,
-              child: _remotes.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.cloud_queue, size: 56, color: Colors.grey.shade400),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No remote connections configured',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: _addRemote,
-                              icon: const Icon(Icons.add, size: 18),
-                              label: const Text('Add Remote Storage'),
-                            ),
-                          ],
-                        ),
+          : Column(
+              children: [
+                if (_showSearch)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Filter remote connections...',
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 16),
+                                onPressed: () {
+                                  setState(() {
+                                    _searchQuery = '';
+                                    _searchController.clear();
+                                  });
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: _remotes.length + 1,
-                      itemBuilder: (ctx, i) {
-                        if (i == _remotes.length) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Center(
-                              child: OutlinedButton.icon(
-                                onPressed: _addRemote,
-                                icon: const Icon(Icons.add, size: 18),
-                                label: const Text('Add Another Remote'),
-                              ),
-                            ),
-                          );
-                        }
-
-                        final r = _remotes[i];
-                        final (icon, color) = _remoteVisuals(r.kind);
-                        final sub = r.endpoint ??
-                            (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}');
-
-                        return Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.symmetric(vertical: 2),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-                          ),
-                          child: ListTile(
-                            dense: true,
-                            visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                            minTileHeight: 40,
-                            minLeadingWidth: 24,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                            leading: Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: color.withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(icon, size: 16, color: color),
-                            ),
-                            title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
-                            subtitle: Text(
-                              '${r.kind.toUpperCase()} • $sub',
-                              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.network_check, size: 16),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                  tooltip: 'Test Connection',
-                                  onPressed: () => _testRemote(r),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined, size: 16),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                  tooltip: 'Edit',
-                                  onPressed: () => _editRemote(r),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                  tooltip: 'Delete',
-                                  onPressed: () => _deleteRemote(r),
-                                ),
-                                const Icon(Icons.chevron_right, size: 16),
-                              ],
-                            ),
-                            onTap: () => _openRemote(r),
-                          ),
-                        );
-                      },
+                      onChanged: (v) => setState(() => _searchQuery = v),
                     ),
+                  ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _loadRemotes,
+                    child: _remotes.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.cloud_queue, size: 56, color: Colors.grey.shade400),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'No remote connections configured',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  FilledButton.icon(
+                                    onPressed: _addRemote,
+                                    icon: const Icon(Icons.add, size: 18),
+                                    label: const Text('Add Remote Storage'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : displayedRemotes.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.search_off, size: 56, color: Colors.grey.shade400),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'No matching connections',
+                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Nothing matches "$_searchQuery".',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                itemCount: displayedRemotes.length + 1,
+                                itemBuilder: (ctx, i) {
+                                  if (i == displayedRemotes.length) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      child: Center(
+                                        child: OutlinedButton.icon(
+                                          onPressed: _addRemote,
+                                          icon: const Icon(Icons.add, size: 18),
+                                          label: const Text('Add Another Remote'),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  final r = displayedRemotes[i];
+                                  final (icon, color) = _remoteVisuals(r.kind);
+                                  final sub = r.endpoint ??
+                                      (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}');
+
+                                  return Card(
+                                    elevation: 0,
+                                    margin: const EdgeInsets.symmetric(vertical: 2),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+                                    ),
+                                    child: ListTile(
+                                      dense: true,
+                                      visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+                                      minTileHeight: 40,
+                                      minLeadingWidth: 24,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                      leading: Container(
+                                        width: 30,
+                                        height: 30,
+                                        decoration: BoxDecoration(
+                                          color: color.withValues(alpha: 0.15),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(icon, size: 16, color: color),
+                                      ),
+                                      title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                      subtitle: Text(
+                                        '${r.kind.toUpperCase()} • $sub',
+                                        style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.copy_outlined, size: 15),
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.all(4),
+                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                            tooltip: 'Copy Connection URI',
+                                            onPressed: () => _copyRemoteUri(r),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.network_check, size: 16),
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.all(4),
+                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                            tooltip: 'Test Connection',
+                                            onPressed: () => _testRemote(r),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.edit_outlined, size: 16),
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.all(4),
+                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                            tooltip: 'Edit',
+                                            onPressed: () => _editRemote(r),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.all(4),
+                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                            tooltip: 'Delete',
+                                            onPressed: () => _deleteRemote(r),
+                                          ),
+                                          const Icon(Icons.chevron_right, size: 16),
+                                        ],
+                                      ),
+                                      onTap: () => _openRemote(r),
+                                      onLongPress: () => _copyRemoteUri(r),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ),
+              ],
             ),
     );
   }

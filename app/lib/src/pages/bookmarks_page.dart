@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
@@ -64,6 +65,14 @@ class _BookmarksPageState extends State<BookmarksPage> {
       }
     }
     return root;
+  }
+
+  void _copyBookmarkPath(BookmarkDto b) {
+    final full = '${_rootLabel(b.root)}${b.path}';
+    Clipboard.setData(ClipboardData(text: full));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied path: $full')),
+    );
   }
 
   void _openBookmark(BookmarkDto bm) {
@@ -158,7 +167,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
       appBar: AppBar(
         title: const Text('Bookmarks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
-          if (_bookmarks.length > 5)
+          if (_bookmarks.isNotEmpty)
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search, size: 20),
               tooltip: _showSearch ? 'Close Search' : 'Search Bookmarks',
@@ -193,6 +202,17 @@ class _BookmarksPageState extends State<BookmarksPage> {
                         hintText: 'Filter bookmarks...',
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 18),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 16),
+                                onPressed: () {
+                                  setState(() {
+                                    _searchQuery = '';
+                                    _searchController.clear();
+                                  });
+                                },
+                              )
+                            : null,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v),
@@ -264,6 +284,14 @@ class _BookmarksPageState extends State<BookmarksPage> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
+                                  icon: const Icon(Icons.copy_outlined, size: 15),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.all(4),
+                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                  tooltip: 'Copy Path',
+                                  onPressed: () => _copyBookmarkPath(b),
+                                ),
+                                IconButton(
                                   icon: const Icon(Icons.edit_outlined, size: 16),
                                   visualDensity: VisualDensity.compact,
                                   padding: const EdgeInsets.all(4),
@@ -283,6 +311,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                               ],
                             ),
                             onTap: () => _openBookmark(b),
+                            onLongPress: () => _copyBookmarkPath(b),
                           ),
                         );
                       },

@@ -28,7 +28,16 @@ jobs:
         run: flutter analyze
       - name: Build Linux
         working-directory: app
-        run: flutter build linux --debug
+        run: flutter build linux --release
+      - name: Package Linux
+        run: |
+          cd app/build/linux/x64/release/bundle
+          tar -czf "${{ github.workspace }}/filemanager-linux-x64.tar.gz" *
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-linux-x64
+          path: filemanager-linux-x64.tar.gz
 
   android:
     runs-on: ubuntu-latest
@@ -48,7 +57,12 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - name: Build APK
         working-directory: app
-        run: flutter build apk --debug
+        run: flutter build apk --release
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-android-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
 
   windows:
     runs-on: windows-latest
@@ -87,9 +101,20 @@ jobs:
           channel: stable
           cache: true
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build macOS
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build macOS Release
         working-directory: app
-        run: flutter build macos --debug
+        run: flutter build macos --release
+      - name: Package macOS Application
+        run: |
+          cd app/build/macos/Build/Products/Release
+          zip -r -y "${{ github.workspace }}/filemanager-macos.zip" filemanager.app
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-macos
+          path: filemanager-macos.zip
       - name: Build iOS (unsigned)
         working-directory: app
         run: flutter build ios --debug --no-codesign

@@ -85,6 +85,41 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     }
   }
 
+  Future<void> _emptyTrash() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Empty Recycle Bin'),
+        content: Text('Permanently delete all $_trashCount items? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Empty All'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      try {
+        await StorageService.instance.clearTrash();
+        await _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Recycle bin emptied')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not empty trash: $e'), backgroundColor: Colors.red.shade700),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _pickShareFolder() async {
     final picked = await FolderPickerDialog.show(
       context,
@@ -190,7 +225,21 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
               ),
               title: const Text('Recycle Bin', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
               subtitle: Text('$_trashCount items in trash', style: const TextStyle(fontSize: 10)),
-              trailing: const Icon(Icons.chevron_right, size: 16),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_trashCount > 0)
+                    IconButton(
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18, color: Colors.redAccent),
+                      tooltip: 'Empty Recycle Bin',
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: _emptyTrash,
+                    ),
+                  const Icon(Icons.chevron_right, size: 16),
+                ],
+              ),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const TrashPage()),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
@@ -67,7 +68,37 @@ class _RecentPageState extends State<RecentPage> {
     return root;
   }
 
-  /// Long-press removes a single stale location instead of wiping the list.
+  void _copyHistoryPath(HistoryDto h) {
+    final rootLabel = _rootLabel(h.root);
+    final full = h.path.isEmpty ? rootLabel : '$rootLabel/${h.path}';
+    Clipboard.setData(ClipboardData(text: full));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Copied path: $full')),
+    );
+  }
+
+  Future<void> _bookmarkHistory(HistoryDto h, String title) async {
+    try {
+      await StorageService.instance.addBookmark(
+        name: title,
+        root: h.root,
+        path: h.path,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Bookmarked "$title"')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to bookmark: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Removes a single location from recent history.
   Future<void> _removeEntry(HistoryDto h, String title) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -271,19 +302,43 @@ class _RecentPageState extends State<RecentPage> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  trailing: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
                                         _relativeTime(h.visitedMillis.toInt()),
                                         style: TextStyle(fontSize: 9.5, color: Colors.grey.shade500),
                                       ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        icon: const Icon(Icons.copy_outlined, size: 15),
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                        tooltip: 'Copy Path',
+                                        onPressed: () => _copyHistoryPath(h),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                        tooltip: 'Bookmark Location',
+                                        onPressed: () => _bookmarkHistory(h, title),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                        tooltip: 'Remove',
+                                        onPressed: () => _removeEntry(h, title),
+                                      ),
                                       const Icon(Icons.chevron_right, size: 16),
                                     ],
                                   ),
                                   onTap: () => _openHistory(h),
-                                  onLongPress: () => _removeEntry(h, title),
+                                  onLongPress: () => _copyHistoryPath(h),
                                 ),
                               );
                             },

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
@@ -389,16 +390,49 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _testSuccess ? Colors.green.shade50 : Colors.red.shade50,
+                      color: _testSuccess
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : Colors.red.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: _testSuccess ? Colors.green : Colors.red),
-                    ),
-                    child: Text(
-                      _testResult!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _testSuccess ? Colors.green.shade900 : Colors.red.shade900,
+                      border: Border.all(
+                        color: _testSuccess
+                            ? Colors.green.withValues(alpha: 0.4)
+                            : Colors.red.withValues(alpha: 0.4),
                       ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          _testSuccess ? Icons.check_circle_outline : Icons.error_outline,
+                          size: 16,
+                          color: _testSuccess ? Colors.green : Colors.redAccent,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SelectableText(
+                            _testResult!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _testSuccess ? Colors.green : Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                        if (!_testSuccess)
+                          IconButton(
+                            icon: const Icon(Icons.copy, size: 14),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                            tooltip: 'Copy Error',
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _testResult!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Error copied to clipboard')),
+                              );
+                            },
+                          ),
+                      ],
                     ),
                   ),
                 ],

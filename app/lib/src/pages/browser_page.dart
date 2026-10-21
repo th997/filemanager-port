@@ -1230,6 +1230,16 @@ class BrowserPageState extends State<BrowserPage> {
           ),
         ),
         const PopupMenuItem(
+          value: 'invert_selection',
+          child: Row(
+            children: [
+              Icon(Icons.swap_horiz, size: 18),
+              SizedBox(width: 8),
+              Text('Invert Selection'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
           value: 'copy_path',
           child: Row(
             children: [
@@ -1262,6 +1272,9 @@ class BrowserPageState extends State<BrowserPage> {
       case 'select_all':
         setState(() => _isSelecting = true);
         _selectAll();
+        break;
+      case 'invert_selection':
+        _invertSelection();
         break;
       case 'copy_path':
         Clipboard.setData(ClipboardData(text: _displayFullPath));
@@ -1946,6 +1959,10 @@ class BrowserPageState extends State<BrowserPage> {
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyA, control: true): _selectAll,
         const SingleActivator(LogicalKeyboardKey.keyA, meta: true): _selectAll,
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true, shift: true): _invertSelection,
+        const SingleActivator(LogicalKeyboardKey.keyA, meta: true, shift: true): _invertSelection,
+        const SingleActivator(LogicalKeyboardKey.keyI, control: true): _invertSelection,
+        const SingleActivator(LogicalKeyboardKey.keyI, meta: true): _invertSelection,
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
           setState(() => _isSearching = true);
           _searchFocusNode.requestFocus();
@@ -2082,6 +2099,7 @@ class BrowserPageState extends State<BrowserPage> {
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.all(4),
                 constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                tooltip: 'Cancel selection (Esc)',
                 onPressed: _clearSelection,
               )
             : (Navigator.of(context).canPop()
@@ -2103,15 +2121,35 @@ class BrowserPageState extends State<BrowserPage> {
                   hintText: 'Filter files...',
                   border: InputBorder.none,
                   suffixIcon: _filterQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _filterQuery = '');
-                          },
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _filterQuery = '');
+                              },
+                            ),
+                          ],
                         )
                       : null,
                 ),
@@ -2130,7 +2168,7 @@ class BrowserPageState extends State<BrowserPage> {
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.all(4),
               constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: 'Select All',
+              tooltip: 'Select All (Ctrl+A)',
               onPressed: _selectAll,
             ),
             IconButton(
@@ -2138,7 +2176,7 @@ class BrowserPageState extends State<BrowserPage> {
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.all(4),
               constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: 'Invert Selection',
+              tooltip: 'Invert Selection (Ctrl+Shift+A)',
               onPressed: _invertSelection,
             ),
           ] else ...[
@@ -2515,7 +2553,9 @@ class BrowserPageState extends State<BrowserPage> {
           _capChip('remove', caps.remove),
           const Spacer(),
           Text(
-            '${_filteredAndSortedEntries.length} items'
+            _filterQuery.isNotEmpty
+                ? '${_filteredAndSortedEntries.length} of ${_entries.where((e) => _showHidden || !e.hidden).length} items'
+                : '${_filteredAndSortedEntries.length} items'
             '${_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : ''}'
             '${!_showHidden && _entries.any((e) => e.hidden) ? '  •  hidden files off' : ''}'
             '${_hasMore ? ' (more below)' : ''}',

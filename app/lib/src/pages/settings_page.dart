@@ -98,7 +98,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                   title: const Text('File Manager+ Cross-Platform', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                   subtitle: Text(
-                    'v1.0.0 • Flutter 3.47 + Rust Core\n'
+                    'v1.0.3 • Flutter 3.47 + Rust Core\n'
                     'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
                     style: const TextStyle(fontSize: 10),
                   ),

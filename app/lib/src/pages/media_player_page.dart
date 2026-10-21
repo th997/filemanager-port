@@ -34,6 +34,7 @@ class MediaPlayerPage extends StatefulWidget {
 }
 
 class _MediaPlayerPageState extends State<MediaPlayerPage> {
+  final GlobalKey<VideoState> _videoKey = GlobalKey<VideoState>();
   late final Player _player;
   late final VideoController _controller;
   StreamSubscription<String>? _errorSub;
@@ -252,6 +253,12 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
         const SingleActivator(LogicalKeyboardKey.keyM): () {
           _toggleMute();
         },
+        const SingleActivator(LogicalKeyboardKey.keyF): () {
+          _videoKey.currentState?.toggleFullscreen();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyJ): () => _seekRelative(-10),
+        const SingleActivator(LogicalKeyboardKey.keyL): () => _seekRelative(10),
+        const SingleActivator(LogicalKeyboardKey.keyK): () => _player.playOrPause(),
       },
       child: Focus(
         autofocus: true,
@@ -310,6 +317,13 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                     });
                   },
                 ),
+                IconButton(
+                  icon: const Icon(Icons.fullscreen),
+                  tooltip: 'Fullscreen (F)',
+                  onPressed: () {
+                    _videoKey.currentState?.toggleFullscreen();
+                  },
+                ),
               ],
             ),
       body: _error != null
@@ -358,6 +372,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                         onHorizontalDragUpdate: _onHorizontalDragUpdate,
                         onHorizontalDragEnd: _onHorizontalDragEnd,
                         child: Video(
+                          key: _videoKey,
                           controller: _controller,
                           fill: Colors.black,
                           controls: AdaptiveVideoControls,

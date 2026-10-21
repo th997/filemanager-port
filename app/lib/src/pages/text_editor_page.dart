@@ -43,6 +43,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   bool _showFind = false;
   final TextEditingController _findController = TextEditingController();
   final FocusNode _findFocusNode = FocusNode();
+  final UndoHistoryController _undoController = UndoHistoryController();
   final List<int> _matchIndices = [];
   int _currentMatchIndex = 0;
   int _cursorLine = 1;
@@ -74,6 +75,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _controller.dispose();
     _findController.dispose();
     _findFocusNode.dispose();
+    _undoController.dispose();
     super.dispose();
   }
 
@@ -252,6 +254,21 @@ class _TextEditorPageState extends State<TextEditorPage> {
     prefs.setBool(_prefWordWrap, _wordWrap);
   }
 
+  void _zoomIn() {
+    setState(() => _fontSize = (_fontSize + 1).clamp(9.0, 32.0));
+    _saveViewPreferences();
+  }
+
+  void _zoomOut() {
+    setState(() => _fontSize = (_fontSize - 1).clamp(9.0, 32.0));
+    _saveViewPreferences();
+  }
+
+  void _resetZoom() {
+    setState(() => _fontSize = 13.0);
+    _saveViewPreferences();
+  }
+
   void _setMode(TextFileMode mode) {
     if (mode == TextFileMode.preview && !_isMarkdown && !_isHtml) return;
     setState(() => _mode = mode);
@@ -279,6 +296,46 @@ class _TextEditorPageState extends State<TextEditorPage> {
         },
         const SingleActivator(LogicalKeyboardKey.keyG, control: true): _showGoToLineDialog,
         const SingleActivator(LogicalKeyboardKey.keyG, meta: true): _showGoToLineDialog,
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
+          if (_mode == TextFileMode.edit && _undoController.value.canUndo) {
+            _undoController.undo();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+          if (_mode == TextFileMode.edit && _undoController.value.canUndo) {
+            _undoController.undo();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
+          if (_mode == TextFileMode.edit && _undoController.value.canRedo) {
+            _undoController.redo();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyY, meta: true): () {
+          if (_mode == TextFileMode.edit && _undoController.value.canRedo) {
+            _undoController.redo();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): () {
+          if (_mode == TextFileMode.edit && _undoController.value.canRedo) {
+            _undoController.redo();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true): () {
+          if (_mode == TextFileMode.edit && _undoController.value.canRedo) {
+            _undoController.redo();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.equal, control: true): _zoomIn,
+        const SingleActivator(LogicalKeyboardKey.equal, meta: true): _zoomIn,
+        const SingleActivator(LogicalKeyboardKey.add, control: true): _zoomIn,
+        const SingleActivator(LogicalKeyboardKey.add, meta: true): _zoomIn,
+        const SingleActivator(LogicalKeyboardKey.minus, control: true): _zoomOut,
+        const SingleActivator(LogicalKeyboardKey.minus, meta: true): _zoomOut,
+        const SingleActivator(LogicalKeyboardKey.numpadSubtract, control: true): _zoomOut,
+        const SingleActivator(LogicalKeyboardKey.digit0, control: true): _resetZoom,
+        const SingleActivator(LogicalKeyboardKey.digit0, meta: true): _resetZoom,
+        const SingleActivator(LogicalKeyboardKey.numpad0, control: true): _resetZoom,
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (_showFind) {
             setState(() => _showFind = false);
@@ -371,9 +428,24 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         _saveViewPreferences();
                       } else if (val == 'goto_line') {
                         _showGoToLineDialog();
+                      } else if (val == 'copy_all') {
+                        Clipboard.setData(ClipboardData(text: _controller.text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('All text copied to clipboard')),
+                        );
                       }
                     },
                     itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: 'copy_all',
+                        child: Row(
+                          children: [
+                            Icon(Icons.copy, size: 20),
+                            SizedBox(width: 8),
+                            Text('Copy All Text'),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: 'goto_line',
                         child: Row(
@@ -391,7 +463,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           children: [
                             const Icon(Icons.zoom_in, size: 20),
                             const SizedBox(width: 8),
-                            Text('Larger (${_fontSize.toInt() + 1}pt)'),
+                            Text('Larger (Ctrl+=) (${_fontSize.toInt() + 1}pt)'),
                           ],
                         ),
                       ),
@@ -401,10 +473,21 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           children: [
                             const Icon(Icons.zoom_out, size: 20),
                             const SizedBox(width: 8),
-                            Text('Smaller (${_fontSize.toInt() - 1}pt)'),
+                            Text('Smaller (Ctrl+-) (${_fontSize.toInt() - 1}pt)'),
                           ],
                         ),
                       ),
+                      if (_fontSize != 13.0)
+                        const PopupMenuItem(
+                          value: 'reset_zoom',
+                          child: Row(
+                            children: [
+                              Icon(Icons.restart_alt, size: 20),
+                              SizedBox(width: 8),
+                              Text('Reset Size (Ctrl+0) (13pt)'),
+                            ],
+                          ),
+                        ),
                       const PopupMenuDivider(),
                       CheckedPopupMenuItem(
                         value: 'toggle_wrap',
@@ -412,6 +495,27 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         child: const Text('Word Wrap'),
                       ),
                     ],
+                  ),
+                if (_mode == TextFileMode.edit)
+                  ValueListenableBuilder<UndoHistoryValue>(
+                    valueListenable: _undoController,
+                    builder: (context, value, _) {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.undo),
+                            tooltip: 'Undo (Ctrl+Z)',
+                            onPressed: value.canUndo ? _undoController.undo : null,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.redo),
+                            tooltip: 'Redo (Ctrl+Y)',
+                            onPressed: value.canRedo ? _undoController.redo : null,
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 if (_mode == TextFileMode.edit && _saving)
                   const Center(
@@ -475,10 +579,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
             child: TextField(
               controller: _findController,
               focusNode: _findFocusNode,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Find in file...',
                 isDense: true,
                 border: InputBorder.none,
+                suffixIcon: _findController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        tooltip: 'Clear',
+                        onPressed: () {
+                          _findController.clear();
+                          _updateMatches();
+                        },
+                      )
+                    : null,
               ),
               onChanged: (_) => _updateMatches(),
               onSubmitted: (_) => _nextMatch(),
@@ -575,6 +689,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           color: background,
           child: TextField(
             controller: _controller,
+            undoController: _undoController,
             maxLines: null,
             expands: true,
             keyboardType: TextInputType.multiline,

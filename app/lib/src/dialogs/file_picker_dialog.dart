@@ -295,8 +295,16 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                                   for (final folder in displayedFolders)
                                     ListTile(
                                       dense: true,
-                                      leading: const Icon(Icons.folder, color: Colors.amber),
-                                      title: Text(folder.name),
+                                      leading: Icon(
+                                        folder.hidden ? Icons.folder_outlined : Icons.folder,
+                                        color: folder.hidden ? Colors.grey : Colors.amber,
+                                      ),
+                                      title: Text(
+                                        folder.name,
+                                        style: folder.hidden
+                                            ? TextStyle(color: Theme.of(context).colorScheme.outline)
+                                            : null,
+                                      ),
                                       trailing: const Icon(Icons.chevron_right, size: 16),
                                       onTap: () => _openFolder(folder.name),
                                     ),
@@ -310,16 +318,34 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                                             value: _selectedPaths.contains(_fullPath(file)),
                                             onChanged: (_) => _toggleSelect(file),
                                           ),
-                                          Icon(file.icon, color: file.iconColor(context), size: 22),
+                                          Icon(
+                                            file.icon,
+                                            color: file.hidden ? Colors.grey : file.iconColor(context),
+                                            size: 22,
+                                          ),
                                         ],
                                       ),
-                                      title: Text(file.name),
+                                      title: Text(
+                                        file.name,
+                                        style: file.hidden
+                                            ? TextStyle(color: Theme.of(context).colorScheme.outline)
+                                            : null,
+                                      ),
                                       subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
                                       onTap: () => _toggleSelect(file),
                                     ),
                                 ],
                               );
                             }(),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Text(
+                '${_folders.length} folder${_folders.length == 1 ? "" : "s"}, ${_files.length} file${_files.length == 1 ? "" : "s"}'
+                '${_selectedPaths.isNotEmpty ? " • ${_selectedPaths.length} selected" : ""}',
+                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
             ),
           ],
         ),

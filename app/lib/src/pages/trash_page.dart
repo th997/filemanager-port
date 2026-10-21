@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../services/storage_service.dart';
 
@@ -60,6 +61,102 @@ class _TrashPageState extends State<TrashPage> {
   String _displayName(TrashItemDto item) {
     final parts = item.originalPath.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
     return parts.isEmpty ? item.originalPath : parts.last;
+  }
+
+  void _showItemDetails(TrashItemDto item) {
+    final name = _displayName(item);
+    final then = DateTime.fromMillisecondsSinceEpoch(item.deletedMillis.toInt());
+    final dateStr = '${then.year}-${then.month.toString().padLeft(2, '0')}-${then.day.toString().padLeft(2, '0')} '
+        '${then.hour.toString().padLeft(2, '0')}:${then.minute.toString().padLeft(2, '0')}:${then.second.toString().padLeft(2, '0')}';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recycled Item Details'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _detailRow('Name', name),
+              _detailRow('Type', item.isDir ? 'Folder' : 'File'),
+              _detailRow('Size', '${_formatSize(item.size)} (${item.size} bytes)'),
+              _detailRow('Deleted', '$dateStr (${_deletedAgo(item)})'),
+              const SizedBox(height: 6),
+              const Text('Original Path:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        item.originalPath,
+                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 16),
+                      tooltip: 'Copy path',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: item.originalPath));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Path copied to clipboard')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text('Restore'),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _restore(item);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _restore(TrashItemDto item) async {
@@ -354,6 +451,7 @@ class _TrashPageState extends State<TrashPage> {
                                     ),
                                   ],
                                 ),
+                                onTap: () => _showItemDetails(item),
                               );
                             },
                           ),

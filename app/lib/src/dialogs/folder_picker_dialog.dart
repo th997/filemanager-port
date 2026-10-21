@@ -58,6 +58,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   List<EntryItem> _folders = const [];
   bool _loading = false;
   String? _error;
+  bool _showHidden = false;
   final TextEditingController _filterController = TextEditingController();
   String _filterQuery = '';
 
@@ -84,7 +85,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       final entries = await listDir(root: _root, path: _relPath);
       final folders = entries
           .map((e) => EntryItem(e))
-          .where((e) => e.isDir && !e.hidden)
+          .where((e) => e.isDir && (_showHidden || !e.hidden))
           .toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       if (mounted) {
@@ -235,6 +236,14 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                   ),
                 ),
                 IconButton(
+                  icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off, size: 18),
+                  tooltip: _showHidden ? 'Hide hidden folders' : 'Show hidden folders',
+                  onPressed: () {
+                    setState(() => _showHidden = !_showHidden);
+                    _load();
+                  },
+                ),
+                IconButton(
                   icon: const Icon(Icons.create_new_folder_outlined),
                   tooltip: 'New Folder',
                   onPressed: _createNewFolder,
@@ -318,13 +327,19 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                                 itemCount: filtered.length,
                                 itemBuilder: (context, index) {
                                   final folder = filtered[index];
+                                  final isHidden = folder.hidden;
                                   return ListTile(
                                     dense: true,
-                                    leading: const Icon(Icons.folder, size: 20),
+                                    leading: Icon(
+                                      isHidden ? Icons.folder_outlined : Icons.folder,
+                                      size: 20,
+                                      color: isHidden ? Colors.grey : Colors.amber,
+                                    ),
                                     title: Text(
                                       folder.name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
+                                      style: isHidden ? TextStyle(color: Theme.of(context).colorScheme.outline) : null,
                                     ),
                                     onTap: () => _open(folder.name),
                                   );
