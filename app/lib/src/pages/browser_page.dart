@@ -22,11 +22,13 @@ import 'text_editor_page.dart';
 
 enum SortField { name, size, modified, type }
 
+final _digitRunPattern = RegExp(r'\d+|\D+');
+
 /// Name order that puts `file2` before `file10`, as file managers do.
 /// Digit runs compare numerically; everything else compares case-insensitively.
 int _naturalCompare(String a, String b) {
-  final ra = RegExp(r'\d+|\D+').allMatches(a.toLowerCase());
-  final rb = RegExp(r'\d+|\D+').allMatches(b.toLowerCase());
+  final ra = _digitRunPattern.allMatches(a.toLowerCase());
+  final rb = _digitRunPattern.allMatches(b.toLowerCase());
   final ia = ra.iterator;
   final ib = rb.iterator;
   while (true) {
@@ -1684,7 +1686,7 @@ class BrowserPageState extends State<BrowserPage> {
       );
       // A cancelled move may have already removed some sources, so the
       // clipboard is only cleared once the move actually finished.
-      if (cb.isCut && completed == true) {
+      if (cb.isCut && completed == true && mounted) {
         setState(() => _clipboard = null);
       }
       if (mounted) _load(refresh: true);

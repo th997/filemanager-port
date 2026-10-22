@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::Mutex;
 
-use crate::pipe_writer::pipe_writer;
+use crate::pipe_writer::{pipe_writer, signaling_reader};
 use crate::RemoteConfig;
 
 struct SmbSession {
@@ -110,29 +110,40 @@ impl SmbFs {
             None => size.saturating_sub(offset),
         };
 
-        let (mut writer, out) = tokio::io::duplex(256 * 1024);
-        tokio::spawn(async move {
+        // The signaling reader turns a mid-transfer read failure into a
+        // read error on the caller's side; the old loop broke on any error
+        // and shut the pipe down cleanly, so a truncated download looked
+        // exactly like a complete one.
+        signaling_reader(move |mut writer| async move {
             let mut pos = offset;
             let mut left = remaining;
+            let mut failure: Option<String> = None;
             while left > 0 {
                 let want = left.min(256 * 1024);
                 match reader.read_at(pos, want).await {
                     Ok(chunk) if !chunk.is_empty() => {
                         if writer.write_all(&chunk).await.is_err() {
+                            // Reader went away; not a transfer failure.
                             break;
                         }
                         let n = chunk.len() as u64;
                         pos += n;
                         left -= n;
                     }
-                    _ => break,
+                    Ok(_) => break, // empty chunk: end of file
+                    Err(e) => {
+                        failure = Some(format!("SMB read failed mid-transfer: {e}"));
+                        break;
+                    }
                 }
             }
             let _ = reader.close().await;
             let _ = writer.shutdown().await;
-        });
-
-        Box::new(out)
+            match failure {
+                Some(msg) => Err(msg),
+                None => Ok(()),
+            }
+        })
     }
 
     async fn get_share_tree(
@@ -419,12 +430,21 @@ impl Vfs for SmbFs {
                     .await
             }
             WriteMode::Append => {
-                let offset = session
-                    .client
-                    .stat(&mut tree, &subpath)
-                    .await
-                    .map(|s| s.size)
-                    .unwrap_or(0);
+                let offset = match session.client.stat(&mut tree, &subpath).await {
+                    Ok(s) => s.size,
+                    // Appending to a file that does not exist yet
+                    // legitimately starts at offset 0...
+                    Err(e) if e.kind() == smb2::ErrorKind::NotFound => 0,
+                    // ...but any other failure must not: degrading it to 0
+                    // rewound the writer and overwrote the start of the
+                    // existing file.
+                    Err(e) => {
+                        return Err(VfsError::Backend {
+                            path: path.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })
+                    }
+                };
                 session
                     .client
                     .create_file_writer_at(&tree, &subpath, offset)
@@ -586,6 +606,7 @@ mod tests {
             key_secret: None,
             private_key: None,
             path_style: false,
+            host_key_fingerprint: None,
         })
     }
 

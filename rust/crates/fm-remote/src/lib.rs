@@ -67,6 +67,13 @@ pub struct RemoteConfig {
     pub key_secret: Option<String>,
     pub private_key: Option<String>,
     pub path_style: bool,
+    /// Pinned SSH host key fingerprint in OpenSSH form (`SHA256:...`).
+    /// When set, SFTP connections are rejected if the server presents a
+    /// different key. When unset, the first key seen is pinned for the
+    /// lifetime of the backend instance (trust on first use); the FFI
+    /// layer persists it here so later launches verify from the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_key_fingerprint: Option<String>,
 }
 
 impl RemoteConfig {
@@ -214,6 +221,7 @@ mod tests {
                 key_secret: None,
                 private_key: None,
                 path_style: false,
+                host_key_fingerprint: None,
             };
             assert!(config.create_vfs().is_ok(), "create_vfs should succeed for {kind:?}");
         }

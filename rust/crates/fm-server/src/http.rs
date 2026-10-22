@@ -1,8 +1,10 @@
 //! Axum-based HTTP local network sharing server with web UI and media streaming.
 
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{Path as AxumPath, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{Html, Response};
+use base64::Engine as _;
 use axum::routing::get;
 use axum::{body::Body, Json, Router};
 use serde::{Deserialize, Serialize};
@@ -65,6 +67,7 @@ pub async fn start_http_share(
         .route("/api/list", get(handle_list_root))
         .route("/api/list/{*subpath}", get(handle_list_sub))
         .route("/download/{*subpath}", get(handle_download))
+        .layer(middleware::from_fn_with_state(state.clone(), require_auth))
         .with_state(state);
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -108,6 +111,30 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
 
     if let Some(auth_val) = headers.get(header::AUTHORIZATION) {
         if let Ok(auth_str) = auth_val.to_str() {
+            // HTTP Basic: base64("user:password"). The share has no
+            // username concept, so only the part after the first ':' is
+            // checked. Browsers send this automatically once the user has
+            // answered the 401 challenge, which is what makes the web UI
+            // usable with a password set.
+            if let Some(basic) = auth_str
+                .strip_prefix("Basic ")
+                .or_else(|| auth_str.strip_prefix("basic "))
+            {
+                if let Ok(decoded) =
+                    base64::engine::general_purpose::STANDARD.decode(basic.trim())
+                {
+                    if let Ok(credentials) = std::str::from_utf8(&decoded) {
+                        let password = credentials
+                            .split_once(':')
+                            .map(|(_, p)| p)
+                            .unwrap_or(credentials);
+                        if check_eq(password) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
             let token = auth_str
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_str.strip_prefix("bearer "))
@@ -119,6 +146,34 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
     }
 
     false
+}
+
+/// Gate every route (including the index page, which used to be served
+/// without any check) behind `check_auth`, answering failures with a
+/// `WWW-Authenticate` challenge so browsers prompt for the share password
+/// and then resend it as Basic credentials on the page's own requests.
+async fn require_auth(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if check_auth(&headers, &query, &state) {
+        next.run(request).await
+    } else {
+        unauthorized_response()
+    }
+}
+
+fn unauthorized_response() -> Response {
+    let mut response = Response::new(Body::from("unauthorized"));
+    *response.status_mut() = StatusCode::UNAUTHORIZED;
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        header::HeaderValue::from_static("Basic realm=\"fm-share\""),
+    );
+    response
 }
 
 async fn handle_index() -> Html<&'static str> {

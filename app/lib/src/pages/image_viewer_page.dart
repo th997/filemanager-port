@@ -330,9 +330,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         child: Text('Image file not found locally', style: TextStyle(color: Colors.white70)),
       );
     }
+    // Decode at display size: a full-resolution decode of a 24 MP photo
+    // costs ~96 MB, and the PageView keeps neighbouring pages resident.
+    final display = MediaQuery.of(context).size;
+    final pixelRatio = MediaQuery.of(context).devicePixelRatio;
     return Image.file(
       file,
       fit: BoxFit.contain,
+      cacheWidth: (display.width * pixelRatio).round(),
+      cacheHeight: (display.height * pixelRatio).round(),
       errorBuilder: (ctx, err, stack) => const Center(
         child: Text('Failed to load image', style: TextStyle(color: Colors.white70)),
       ),

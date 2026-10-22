@@ -11,16 +11,47 @@ use tokio::sync::Mutex;
 
 use crate::RemoteConfig;
 
-struct SshHandler;
+/// Shared host key pin. Seeded from the saved configuration; when empty,
+/// the first key presented is recorded into it (trust on first use) and
+/// every later connection — including reconnects of a cached session —
+/// must present the same key.
+type HostKeyPin = Arc<std::sync::Mutex<Option<String>>>;
+
+fn host_key_fingerprint(key: &russh::keys::PublicKeyOrCertificate) -> String {
+    match key {
+        russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => {
+            key.fingerprint(russh::keys::HashAlg::Sha256).to_string()
+        }
+        russh::keys::PublicKeyOrCertificate::Certificate(cert) => cert
+            .public_key()
+            .fingerprint(russh::keys::HashAlg::Sha256)
+            .to_string(),
+    }
+}
+
+struct SshHandler {
+    pin: HostKeyPin,
+}
 
 impl russh::client::Handler for SshHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKeyOrCertificate,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        // This used to accept every key unconditionally, so anyone able to
+        // intercept the connection could harvest the password or key
+        // passphrase. Now the presented key must match the pin.
+        let fingerprint = host_key_fingerprint(server_public_key);
+        let mut pin = self.pin.lock().unwrap_or_else(|e| e.into_inner());
+        match pin.as_deref() {
+            Some(expected) => Ok(expected == fingerprint),
+            None => {
+                *pin = Some(fingerprint);
+                Ok(true)
+            }
+        }
     }
 }
 
@@ -61,6 +92,7 @@ impl SftpConnection {
 pub struct SftpFs {
     config: RemoteConfig,
     session: Mutex<Option<Arc<SftpConnection>>>,
+    host_key_pin: HostKeyPin,
     capabilities: Capabilities,
 }
 
@@ -69,6 +101,9 @@ impl SftpFs {
         Self {
             config: config.clone(),
             session: Mutex::new(None),
+            host_key_pin: Arc::new(std::sync::Mutex::new(
+                config.host_key_fingerprint.clone(),
+            )),
             capabilities: Capabilities {
                 read: true,
                 write: true,
@@ -82,7 +117,20 @@ impl SftpFs {
         }
     }
 
-    pub async fn connect_session(config: &RemoteConfig) -> Result<Arc<SftpConnection>, VfsError> {
+    /// The host key fingerprint this backend trusts: the configured pin,
+    /// or the key recorded on first connect. The FFI layer persists it
+    /// into the saved configuration so verification survives restarts.
+    pub fn observed_host_key_fingerprint(&self) -> Option<String> {
+        self.host_key_pin
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub async fn connect_session(
+        config: &RemoteConfig,
+        pin: &HostKeyPin,
+    ) -> Result<Arc<SftpConnection>, VfsError> {
         let host = config.host.as_deref().unwrap_or("127.0.0.1");
         let port = config.port.unwrap_or(22);
 
@@ -94,7 +142,7 @@ impl SftpFs {
             ..Default::default()
         };
 
-        let handler = SshHandler;
+        let handler = SshHandler { pin: pin.clone() };
         let mut session = russh::client::connect(Arc::new(ssh_config), (host, port), handler)
             .await
             .map_err(|e| VfsError::Connection {
@@ -103,16 +151,37 @@ impl SftpFs {
 
         let username = config.username.as_deref().unwrap_or("root");
         let mut auth_ok = false;
+        // Why the key attempt failed, kept for the final error message.
+        // Password auth below may still succeed (the password doubles as the
+        // key passphrase), so this is only reported when every method failed —
+        // but then the user can tell "bad passphrase" from "server refused".
+        let mut key_failure: Option<String> = None;
 
         if let Some(priv_key_str) = &config.private_key {
             let passphrase = config.password.as_deref();
-            if let Ok(key) = russh::keys::decode_secret_key(priv_key_str, passphrase) {
-                let rsa_hash = session.best_supported_rsa_hash().await.ok().flatten().flatten();
-                let key_with_alg = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
-                if let Ok(res) = session.authenticate_publickey(username, key_with_alg).await {
-                    if res.success() {
-                        auth_ok = true;
+            match russh::keys::decode_secret_key(priv_key_str, passphrase) {
+                Ok(key) => {
+                    let rsa_hash = session.best_supported_rsa_hash().await.ok().flatten().flatten();
+                    let key_with_alg =
+                        russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+                    match session.authenticate_publickey(username, key_with_alg).await {
+                        Ok(res) => {
+                            if res.success() {
+                                auth_ok = true;
+                            } else {
+                                key_failure =
+                                    Some("the server rejected the private key".to_string());
+                            }
+                        }
+                        Err(e) => {
+                            key_failure = Some(format!("publickey authentication error: {e}"));
+                        }
                     }
+                }
+                Err(e) => {
+                    key_failure = Some(format!(
+                        "failed to decode the private key (wrong passphrase or unsupported format): {e}"
+                    ));
                 }
             }
         }
@@ -132,9 +201,12 @@ impl SftpFs {
         }
 
         if !auth_ok {
-            return Err(VfsError::Connection {
-                message: format!("SSH authentication failed for user '{username}' on {host}:{port}"),
-            });
+            let mut message =
+                format!("SSH authentication failed for user '{username}' on {host}:{port}");
+            if let Some(reason) = &key_failure {
+                message.push_str(&format!("; private key attempt failed: {reason}"));
+            }
+            return Err(VfsError::Connection { message });
         }
 
         let channel = session.channel_open_session().await.map_err(|e| VfsError::Connection {
@@ -171,7 +243,7 @@ impl SftpFs {
             *guard = None;
         }
 
-        let s = Self::connect_session(&self.config).await?;
+        let s = Self::connect_session(&self.config, &self.host_key_pin).await?;
         *guard = Some(s.clone());
         Ok(s)
     }

@@ -23,7 +23,7 @@ fn finish(
     cancel: &CancellationToken,
     result: Result<(), String>,
 ) {
-    let mut p = progress.lock().unwrap();
+    let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
     match result {
         Ok(()) => {
             if p.state != TaskState::Cancelled {
@@ -149,7 +149,7 @@ pub async fn start_copy_task(
                 total += total_bytes(src_vfs.as_ref(), &VfsPath::from_slash_path(src)).await;
             }
             {
-                let mut p = progress.lock().unwrap();
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
                 p.total = Some(total);
             }
 
@@ -252,7 +252,7 @@ pub async fn start_move_task(
                         ));
                     }
                     if src_vfs.capabilities().rename && src_vfs.rename(&src_p, &dst_p).await.is_ok() {
-                        let mut p = progress.lock().unwrap();
+                        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
                         p.completed += 1;
                         continue;
                     }

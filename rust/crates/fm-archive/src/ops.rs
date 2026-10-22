@@ -44,10 +44,7 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
                 source: e,
             })?;
             let mut archive = tar::Archive::new(file);
-            archive.unpack(destination_dir).map_err(|e| VfsError::Backend {
-                path: fm_core::VfsPath::root(),
-                source: e,
-            })?;
+            extract_tar(&mut archive, destination_dir)?;
         }
         ArchiveFormat::TarGz => {
             let file = File::open(archive_path).map_err(|e| VfsError::Backend {
@@ -56,10 +53,7 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
             })?;
             let gz = flate2::read::GzDecoder::new(file);
             let mut archive = tar::Archive::new(gz);
-            archive.unpack(destination_dir).map_err(|e| VfsError::Backend {
-                path: fm_core::VfsPath::root(),
-                source: e,
-            })?;
+            extract_tar(&mut archive, destination_dir)?;
         }
         ArchiveFormat::SevenZip => {
             // sevenz-rust joins entry names onto the destination without
@@ -94,6 +88,26 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
         }
     }
 
+    Ok(())
+}
+
+/// Extract a tar stream entry by entry with `unpack_in`, which validates
+/// link targets as well as entry paths. Plain `Archive::unpack` only checks
+/// the entry path itself, so an archive containing a symlink entry followed
+/// by a file beneath it writes outside the destination.
+fn extract_tar<R: std::io::Read>(
+    archive: &mut tar::Archive<R>,
+    destination_dir: &Path,
+) -> VfsResult<()> {
+    let backend = |e: std::io::Error| VfsError::Backend {
+        path: fm_core::VfsPath::root(),
+        source: e,
+    };
+    let entries = archive.entries().map_err(backend)?;
+    for entry in entries {
+        let mut entry = entry.map_err(backend)?;
+        entry.unpack_in(destination_dir).map_err(backend)?;
+    }
     Ok(())
 }
 

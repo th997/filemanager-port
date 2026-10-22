@@ -142,6 +142,7 @@ pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsEr
     let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| VfsError::Connection {
             message: format!("failed to build HTTP client: {e}"),
@@ -194,6 +195,7 @@ pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(),
     let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| VfsError::Connection {
             message: format!("failed to build HTTP client: {e}"),
@@ -243,6 +245,7 @@ pub async fn delete_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(),
     let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| VfsError::Connection {
             message: format!("failed to build HTTP client: {e}"),
@@ -309,6 +312,7 @@ pub async fn list_oss_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsE
     let date_str = now.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
 
     let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| VfsError::Connection {
             message: format!("failed to build HTTP client: {e}"),

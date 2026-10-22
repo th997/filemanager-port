@@ -122,7 +122,12 @@ impl OpendalFs {
             builder = builder.endpoint(endpoint);
         } else if let Some(host) = &config.host {
             let port = config.port.unwrap_or(443);
-            let scheme = if port == 443 { "https" } else { "http" };
+            // Only the standard plain-HTTP port implies http. Every other
+            // port defaults to https: inferring http from "not 443" silently
+            // downgraded TLS servers on custom ports (8443 etc.) to plaintext,
+            // credentials included. Plain HTTP on a nonstandard port can still
+            // be configured through the full `endpoint` URL.
+            let scheme = if port == 80 { "http" } else { "https" };
             builder = builder.endpoint(&format!("{scheme}://{host}:{port}"));
         }
         if let Some(user) = &config.username {
@@ -489,8 +494,17 @@ impl Vfs for OpendalFs {
         mode: WriteMode,
     ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
         let op_path = Self::to_opendal_path(path);
-        if mode == WriteMode::Create
-            && self.operator.exists(&op_path).await.unwrap_or(false) {
+        if mode == WriteMode::Create {
+            // A failed existence check must not degrade to "does not exist":
+            // exclusive create would then overwrite a live object whenever
+            // the check itself fails (network error, missing permission).
+            let exists = self.operator.exists(&op_path).await.map_err(|e| {
+                VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                }
+            })?;
+            if exists {
                 return Err(VfsError::Backend {
                     path: path.clone(),
                     source: std::io::Error::new(
@@ -499,6 +513,7 @@ impl Vfs for OpendalFs {
                     ),
                 });
             }
+        }
         let writer = if mode == WriteMode::Append {
             self.operator.writer_with(&op_path).append(true).await
         } else {

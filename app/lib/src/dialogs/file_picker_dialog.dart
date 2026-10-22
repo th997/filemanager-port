@@ -290,10 +290,15 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                                 );
                               }
 
-                              return ListView(
-                                children: [
-                                  for (final folder in displayedFolders)
-                                    ListTile(
+                              // Builder, not a children list: a folder with
+                              // thousands of files otherwise builds every
+                              // tile (and checkbox) up front.
+                              return ListView.builder(
+                                itemCount: displayedFolders.length + displayedFiles.length,
+                                itemBuilder: (context, index) {
+                                  if (index < displayedFolders.length) {
+                                    final folder = displayedFolders[index];
+                                    return ListTile(
                                       dense: true,
                                       leading: Icon(
                                         folder.hidden ? Icons.folder_outlined : Icons.folder,
@@ -307,34 +312,35 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                                       ),
                                       trailing: const Icon(Icons.chevron_right, size: 16),
                                       onTap: () => _openFolder(folder.name),
+                                    );
+                                  }
+                                  final file = displayedFiles[index - displayedFolders.length];
+                                  return ListTile(
+                                    dense: true,
+                                    leading: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Checkbox(
+                                          value: _selectedPaths.contains(_fullPath(file)),
+                                          onChanged: (_) => _toggleSelect(file),
+                                        ),
+                                        Icon(
+                                          file.icon,
+                                          color: file.hidden ? Colors.grey : file.iconColor(context),
+                                          size: 22,
+                                        ),
+                                      ],
                                     ),
-                                  for (final file in displayedFiles)
-                                    ListTile(
-                                      dense: true,
-                                      leading: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Checkbox(
-                                            value: _selectedPaths.contains(_fullPath(file)),
-                                            onChanged: (_) => _toggleSelect(file),
-                                          ),
-                                          Icon(
-                                            file.icon,
-                                            color: file.hidden ? Colors.grey : file.iconColor(context),
-                                            size: 22,
-                                          ),
-                                        ],
-                                      ),
-                                      title: Text(
-                                        file.name,
-                                        style: file.hidden
-                                            ? TextStyle(color: Theme.of(context).colorScheme.outline)
-                                            : null,
-                                      ),
-                                      subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
-                                      onTap: () => _toggleSelect(file),
+                                    title: Text(
+                                      file.name,
+                                      style: file.hidden
+                                          ? TextStyle(color: Theme.of(context).colorScheme.outline)
+                                          : null,
                                     ),
-                                ],
+                                    subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
+                                    onTap: () => _toggleSelect(file),
+                                  );
+                                },
                               );
                             }(),
             ),

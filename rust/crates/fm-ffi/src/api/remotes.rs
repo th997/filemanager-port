@@ -67,6 +67,9 @@ impl From<RemoteConfigDto> for RemoteConfig {
             key_secret: d.secret_access_key,
             private_key: None,
             path_style: d.path_style,
+            // Managed by the connection layer, never by the UI: save_remote
+            // re-attaches the stored pin when a remote is edited.
+            host_key_fingerprint: None,
         }
     }
 }
@@ -114,7 +117,21 @@ pub async fn list_remotes(db_path: String) -> Result<Vec<RemoteConfigDto>, Strin
 pub async fn save_remote(db_path: String, config: RemoteConfigDto) -> Result<(), String> {
     let db = Database::open(Path::new(&db_path), Path::new(&db_path).parent().unwrap_or(Path::new(".")))
         .map_err(|e| e.to_string())?;
-    let cfg: RemoteConfig = config.into();
+    let mut cfg: RemoteConfig = config.into();
+    // The host key pin is managed by the connection layer and never shown
+    // in the UI; re-attach the stored one so editing a remote does not
+    // silently drop its server verification.
+    if cfg.host_key_fingerprint.is_none() {
+        if let Ok(records) = db.list_remotes() {
+            if let Some(existing) = records.iter().find(|r| r.id == cfg.id) {
+                if let Ok(stored) =
+                    serde_json::from_str::<RemoteConfig>(&existing.config_json)
+                {
+                    cfg.host_key_fingerprint = stored.host_key_fingerprint;
+                }
+            }
+        }
+    }
     let json = serde_json::to_string(&cfg).map_err(|e| e.to_string())?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

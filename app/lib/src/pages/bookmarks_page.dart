@@ -75,7 +75,9 @@ class _BookmarksPageState extends State<BookmarksPage> {
   }
 
   void _copyBookmarkPath(BookmarkDto b) {
-    final full = '${_rootLabel(b.root)}${b.path}';
+    final full = b.path.isEmpty
+        ? _rootLabel(b.root)
+        : '${_rootLabel(b.root)}/${b.path}';
     Clipboard.setData(ClipboardData(text: full));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Copied path: $full')),
@@ -280,7 +282,9 @@ class _BookmarksPageState extends State<BookmarksPage> {
                             ),
                             title: Text(b.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
                             subtitle: Text(
-                              '${_rootLabel(b.root)}${b.path}',
+                              b.path.isEmpty
+                                  ? _rootLabel(b.root)
+                                  : '${_rootLabel(b.root)}/${b.path}',
                               style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

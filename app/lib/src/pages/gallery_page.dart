@@ -112,11 +112,12 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     for (final dir in PlatformPaths.galleryDirs()) {
       _collect(Directory(dir), 0, found);
     }
-    found.sort((a, b) {
-      final ta = a.statSync().modified;
-      final tb = b.statSync().modified;
-      return tb.compareTo(ta);
-    });
+    // Stat each file once up front: statSync inside the sort comparator
+    // cost two syscalls per comparison (thousands on a large roll).
+    final mtimes = <File, DateTime>{
+      for (final f in found) f: f.statSync().modified,
+    };
+    found.sort((a, b) => mtimes[b]!.compareTo(mtimes[a]!));
     return found
         .map((f) => _Photo.file(f.path.split(Platform.pathSeparator).last, f))
         .toList();
@@ -270,7 +271,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: thumb != null
-                ? _AssetThumb(asset: thumb)
+                ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
                 : Image.file(
                     photo.file!,
                     fit: BoxFit.cover,
@@ -298,7 +299,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 class _AssetThumb extends StatefulWidget {
   final AssetEntity asset;
 
-  const _AssetThumb({required this.asset});
+  const _AssetThumb({super.key, required this.asset});
 
   @override
   State<_AssetThumb> createState() => _AssetThumbState();

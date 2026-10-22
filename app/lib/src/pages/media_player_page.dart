@@ -41,6 +41,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   StreamSubscription<double>? _volumeSub;
   String? _error;
   bool _opened = false;
+  bool _startedStream = false;
   bool _isLooping = false;
   static const _prefVolume = 'player.volume';
   static const _prefLoop = 'player.loop';
@@ -127,6 +128,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
       } else {
         final base = (await startMediaStream(root: widget.root))
             .replaceFirst(RegExp(r'/$'), '');
+        _startedStream = true;
         final encoded = widget.path
             .split('/')
             .where((segment) => segment.isNotEmpty)
@@ -200,6 +202,12 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     _volumeSub?.cancel();
     _player.stop();
     _player.dispose();
+    if (_startedStream) {
+      // The loopback stream server started for this root would otherwise
+      // keep running (and holding its port) for the rest of the app's
+      // lifetime, accumulating one server per played remote file.
+      stopMediaStreams();
+    }
     super.dispose();
   }
 

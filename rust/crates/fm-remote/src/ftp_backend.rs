@@ -12,11 +12,25 @@ use suppaftp::tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use suppaftp::tokio_rustls::TlsConnector as RustlsTlsConnector;
 use suppaftp::types::FileType;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
 
-use crate::pipe_writer::{drain_pipe, pipe_writer};
+use crate::pipe_writer::{drain_pipe, pipe_writer, signaling_reader};
 use crate::RemoteConfig;
+
+/// Bound on connecting and on every control-channel operation. Nothing in
+/// this backend set a timeout before, so a server that accepted the TCP
+/// connection and then went silent parked the caller (and the client
+/// mutex) forever.
+const FTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Whether an FTP failure means the control connection itself is dead
+/// (as opposed to the server refusing a command). Only these justify
+/// discarding the cached connection and retrying on a fresh one.
+fn is_connection_error(e: &suppaftp::FtpError) -> bool {
+    matches!(e, suppaftp::FtpError::ConnectionError(_))
+}
 
 pub enum FtpClient {
     Plain(AsyncFtpStream),
@@ -38,6 +52,67 @@ macro_rules! with_client {
     };
 }
 
+/// Run a control-channel operation against the cached client under a
+/// timeout, as a `Result<_, suppaftp::FtpError>`.
+///
+/// The body is a future expression over `$ftp` (no `.await`): the timeout
+/// is applied inside each match arm because the plain and TLS streams
+/// produce different future types. On a connection-class failure or a
+/// timeout the cached client is discarded and the operation retried
+/// exactly once on a fresh connection: FTP servers routinely drop idle
+/// control connections, and the previous behaviour reused the dead
+/// connection forever, so one server-side idle timeout broke the remote
+/// until app restart. The caller guarantees the guard already holds a
+/// connected client.
+macro_rules! cached_op {
+    ($guard:expr, $config:expr, $ftp:ident => $body:expr) => {{
+        let mut retried = false;
+        loop {
+            let attempt = {
+                let client = $guard
+                    .as_mut()
+                    .expect("cached operation requires an established connection");
+                match client {
+                    FtpClient::Plain(ref mut $ftp) => {
+                        tokio::time::timeout(FTP_TIMEOUT, $body).await
+                    }
+                    FtpClient::Tls(ref mut $ftp) => {
+                        tokio::time::timeout(FTP_TIMEOUT, $body).await
+                    }
+                }
+            };
+            match attempt {
+                Ok(Ok(value)) => break Ok::<_, suppaftp::FtpError>(value),
+                Ok(Err(e)) => {
+                    if retried || !is_connection_error(&e) {
+                        break Err(e);
+                    }
+                }
+                Err(_) => {
+                    if retried {
+                        break Err(suppaftp::FtpError::ConnectionError(
+                            std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "FTP operation timed out",
+                            ),
+                        ));
+                    }
+                }
+            }
+            retried = true;
+            *$guard = None;
+            match FtpFs::connect_client($config).await {
+                Ok(client) => *$guard = Some(client),
+                Err(e) => {
+                    break Err(suppaftp::FtpError::ConnectionError(
+                        std::io::Error::other(e.to_string()),
+                    ));
+                }
+            }
+        }
+    }};
+}
+
 impl FtpFs {
     pub fn new(config: &RemoteConfig) -> Self {
         Self {
@@ -57,6 +132,18 @@ impl FtpFs {
     }
 
     pub async fn connect_client(config: &RemoteConfig) -> Result<FtpClient, VfsError> {
+        tokio::time::timeout(FTP_TIMEOUT, Self::connect_client_inner(config))
+            .await
+            .map_err(|_| VfsError::Connection {
+                message: format!(
+                    "FTP connection to {}:{} timed out",
+                    config.host.as_deref().unwrap_or("127.0.0.1"),
+                    config.port.unwrap_or(21)
+                ),
+            })?
+    }
+
+    async fn connect_client_inner(config: &RemoteConfig) -> Result<FtpClient, VfsError> {
         let host = config.host.as_deref().unwrap_or("127.0.0.1");
         let port = config.port.unwrap_or(21);
         let addr = format!("{host}:{port}");
@@ -129,22 +216,23 @@ impl FtpFs {
         path: &VfsPath,
     ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
         let client = Self::connect_client(config).await?;
-        let (writer, out) = tokio::io::duplex(256 * 1024);
 
         // Issue REST/RETR before returning so the caller sees connection
         // failures; the body of the transfer then runs in the background.
-        match client {
+        // The signaling reader surfaces a mid-transfer read failure as a
+        // read error on the caller's side instead of a clean EOF.
+        let out = match client {
             FtpClient::Plain(mut ftp) => {
                 let stream = start_download(&mut ftp, &ftp_path, offset, path).await?;
-                tokio::spawn(pump_download(ftp, stream, length, writer));
+                signaling_reader(move |writer| pump_download(ftp, stream, length, writer))
             }
             FtpClient::Tls(mut ftp) => {
                 let stream = start_download(&mut ftp, &ftp_path, offset, path).await?;
-                tokio::spawn(pump_download(ftp, stream, length, writer));
+                signaling_reader(move |writer| pump_download(ftp, stream, length, writer))
             }
-        }
+        };
 
-        Ok(Box::new(out))
+        Ok(out)
     }
 
     fn resolve_path(&self, path: &VfsPath) -> String {
@@ -193,18 +281,24 @@ where
 }
 
 /// Copy at most `length` bytes of the download into `writer`, then finalize.
+///
+/// A failed read is returned as `Err` so the signaling reader can report
+/// it; the previous version broke the loop on any error and shut the pipe
+/// down cleanly, so a truncated download looked complete to the caller.
 async fn pump_download<T>(
     ftp: ImplAsyncFtpStream<T>,
     mut stream: TransferStream<T>,
     length: Option<u64>,
     mut writer: tokio::io::DuplexStream,
-) where
+) -> Result<(), String>
+where
     T: TokioTlsStream + Send + 'static,
 {
     // Keep the control connection alive until the transfer finishes.
     let _ftp = ftp;
     let mut left = length.unwrap_or(u64::MAX);
     let mut buf = vec![0u8; 64 * 1024];
+    let mut failure: Option<String> = None;
     while left > 0 {
         let want = left.min(buf.len() as u64) as usize;
         match stream.read(&mut buf[..want]).await {
@@ -216,11 +310,18 @@ async fn pump_download<T>(
                 }
                 left -= n as u64;
             }
-            Err(_) => break,
+            Err(e) => {
+                failure = Some(format!("FTP download failed mid-transfer: {e}"));
+                break;
+            }
         }
     }
     let _ = stream.finish().await;
     let _ = writer.shutdown().await;
+    match failure {
+        Some(msg) => Err(msg),
+        None => Ok(()),
+    }
 }
 
 async fn upload(
@@ -266,10 +367,8 @@ impl Vfs for FtpFs {
         }
 
         let ftp_path = self.resolve_path(dir);
-        let lines = with_client!(guard.as_mut().unwrap(), ftp =>
-            ftp.list(Some(&ftp_path)).await
-        )
-        .map_err(|e| Self::ftp_error(dir, e))?;
+        let lines = cached_op!(guard, &self.config, ftp => ftp.list(Some(&ftp_path)))
+            .map_err(|e| Self::ftp_error(dir, e))?;
 
         let mut entries = Vec::new();
         for line in lines {
@@ -305,19 +404,16 @@ impl Vfs for FtpFs {
 
         let ftp_path = self.resolve_path(path);
         let name = path.name().unwrap_or("").to_string();
-        let mut size = with_client!(guard.as_mut().unwrap(), ftp =>
-            ftp.size(&ftp_path).await.ok()
-        )
-        .map(|s| s as u64);
+        let mut size = cached_op!(guard, &self.config, ftp => ftp.size(&ftp_path))
+            .ok()
+            .map(|s| s as u64);
 
         // Some servers reject SIZE; fall back to the parent listing before
         // concluding this is a directory.
         if size.is_none() {
             let parent = ftp_path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
             let parent = if parent.is_empty() { "/" } else { parent };
-            let lines = with_client!(guard.as_mut().unwrap(), ftp =>
-                ftp.list(Some(parent)).await
-            );
+            let lines = cached_op!(guard, &self.config, ftp => ftp.list(Some(parent)));
             if let Ok(lines) = lines {
                 for line in lines {
                     if let Ok(f) = ListParser::parse_posix(&line)
@@ -385,7 +481,7 @@ impl Vfs for FtpFs {
         }
 
         let ftp_path = self.resolve_path(path);
-        with_client!(guard.as_mut().unwrap(), ftp => ftp.mkdir(&ftp_path).await)
+        cached_op!(guard, &self.config, ftp => ftp.mkdir(&ftp_path))
             .map_err(|e| Self::ftp_error(path, e))?;
         Ok(())
     }
@@ -397,7 +493,7 @@ impl Vfs for FtpFs {
         }
 
         let ftp_path = self.resolve_path(path);
-        let removed = with_client!(guard.as_mut().unwrap(), ftp => {
+        let removed = cached_op!(guard, &self.config, ftp => async {
             if ftp.rm(&ftp_path).await.is_err() {
                 ftp.rmdir(&ftp_path).await
             } else {
@@ -416,7 +512,7 @@ impl Vfs for FtpFs {
 
         let from_p = self.resolve_path(from);
         let to_p = self.resolve_path(to);
-        with_client!(guard.as_mut().unwrap(), ftp => ftp.rename(&from_p, &to_p).await)
+        cached_op!(guard, &self.config, ftp => ftp.rename(&from_p, &to_p))
             .map_err(|e| Self::ftp_error(from, e))?;
         Ok(())
     }

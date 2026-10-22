@@ -64,6 +64,29 @@ impl VfsRegistry {
 
         let config: RemoteConfig =
             serde_json::from_str(&record.config_json).map_err(|e| e.to_string())?;
+
+        if config.kind == fm_core::LocationKind::Sftp && config.host_key_fingerprint.is_none() {
+            // Trust on first use, persisted: connect once in the
+            // background and write the observed host key fingerprint
+            // into the saved config, so future launches verify the key
+            // from the first packet (and this session's reconnects are
+            // already pinned by the backend itself).
+            let fs = Arc::new(fm_remote::SftpFs::new(&config));
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let fs_clone = fs.clone();
+                let db_path = db_p.clone();
+                let remote_id = record.id.clone();
+                handle.spawn(async move {
+                    if fs_clone.list(&VfsPath::root()).await.is_ok() {
+                        if let Some(fingerprint) = fs_clone.observed_host_key_fingerprint() {
+                            pin_host_key(&db_path, &remote_id, &fingerprint);
+                        }
+                    }
+                });
+            }
+            return Ok(fs as Arc<dyn Vfs>);
+        }
+
         let boxed_vfs = config.create_vfs().map_err(|e| e.to_string())?;
         Ok(Arc::from(boxed_vfs))
     }
@@ -140,4 +163,35 @@ impl VfsRegistry {
     pub fn invalidate(&self, root: &str) {
         self.cached.write().remove(root);
     }
+}
+
+/// Store a first-seen SFTP host key fingerprint in the remote's saved
+/// config. Best-effort: any failure (db gone, record gone, a pin already
+/// stored) leaves the config untouched.
+fn pin_host_key(db_path: &str, remote_id: &str, fingerprint: &str) {
+    let parent = Path::new(db_path).parent().unwrap_or(Path::new("."));
+    let Ok(db) = Database::open(Path::new(db_path), parent) else {
+        return;
+    };
+    let Ok(records) = db.list_remotes() else {
+        return;
+    };
+    let Some(record) = records.into_iter().find(|r| r.id == remote_id) else {
+        return;
+    };
+    let Ok(mut cfg) = serde_json::from_str::<RemoteConfig>(&record.config_json) else {
+        return;
+    };
+    if cfg.host_key_fingerprint.is_some() {
+        return;
+    }
+    cfg.host_key_fingerprint = Some(fingerprint.to_string());
+    let Ok(json) = serde_json::to_string(&cfg) else {
+        return;
+    };
+    let updated = fm_index::RemoteRecord {
+        config_json: json,
+        ..record
+    };
+    let _ = db.save_remote(&updated);
 }

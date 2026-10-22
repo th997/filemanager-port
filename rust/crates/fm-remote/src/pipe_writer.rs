@@ -9,7 +9,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 
 pub(crate) struct PipeWriter {
     tx: Option<DuplexStream>,
@@ -100,6 +100,62 @@ where
         tx: Some(tx),
         result: Some(done_rx),
         done: false,
+    })
+}
+
+/// Read side of a one-shot download pipe: the mirror of [`PipeWriter`].
+///
+/// The producer task pushes bytes into the pipe and returns a final
+/// result. When the pipe reaches EOF the reader reports that result
+/// first: an `Err` is delivered as a read error instead of a clean EOF,
+/// so a transfer that failed halfway cannot masquerade as a complete
+/// file to the caller's copy loop.
+pub(crate) struct SignalingReader {
+    rx: DuplexStream,
+    result: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+}
+
+impl AsyncRead for SignalingReader {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.rx).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) if buf.filled().is_empty() => match this.result.take() {
+                Some(mut result_rx) => match Pin::new(&mut result_rx).poll(cx) {
+                    Poll::Ready(Ok(Ok(()))) => Poll::Ready(Ok(())),
+                    Poll::Ready(Ok(Err(e))) => Poll::Ready(Err(io::Error::other(e))),
+                    Poll::Ready(Err(_)) => Poll::Ready(Err(io::Error::other(
+                        "download task ended unexpectedly",
+                    ))),
+                    Poll::Pending => {
+                        this.result = Some(result_rx);
+                        Poll::Pending
+                    }
+                },
+                None => Poll::Ready(Ok(())),
+            },
+            other => other,
+        }
+    }
+}
+
+/// Spawn `producer`, handing it the write half of an in-memory pipe.
+pub(crate) fn signaling_reader<F, Fut>(producer: F) -> Box<dyn AsyncRead + Send + Unpin>
+where
+    F: FnOnce(DuplexStream) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), String>> + Send + 'static,
+{
+    let (tx, rx) = tokio::io::duplex(256 * 1024);
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let _ = done_tx.send(producer(tx).await);
+    });
+    Box::new(SignalingReader {
+        rx,
+        result: Some(done_rx),
     })
 }
 

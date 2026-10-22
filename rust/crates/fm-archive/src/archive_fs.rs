@@ -131,43 +131,45 @@ impl ArchiveFs {
         Ok(())
     }
 
+    fn collect_tar_entries<R: std::io::Read>(
+        archive: &mut tar::Archive<R>,
+    ) -> VfsResult<Vec<(usize, String, bool, u64)>> {
+        let backend_err = |e: std::io::Error| VfsError::Backend {
+            path: VfsPath::root(),
+            source: e,
+        };
+        let entries = archive.entries().map_err(backend_err)?;
+        let mut found = Vec::new();
+        for (idx, entry_res) in entries.enumerate() {
+            let entry = entry_res.map_err(backend_err)?;
+            // Only an entry whose path cannot be decoded at all is skipped;
+            // the archive around it is still readable.
+            if let Ok(path) = entry.path() {
+                let path_str = path.to_string_lossy().to_string();
+                let is_dir = entry.header().entry_type().is_dir();
+                let size = entry.header().size().unwrap_or(0);
+                found.push((idx, path_str, is_dir, size));
+            }
+        }
+        Ok(found)
+    }
+
     fn build_tar_index(&mut self, is_gz: bool) -> VfsResult<()> {
         let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
             path: VfsPath::root(),
             source: e,
         })?;
 
-        let mut entries_found = Vec::new();
-        if is_gz {
+        // Read errors must propagate: swallowing them here made a truncated
+        // or corrupt tar open successfully as an "empty" archive.
+        let entries_found = if is_gz {
             let gz = flate2::read::GzDecoder::new(file);
             let mut archive = tar::Archive::new(gz);
-            if let Ok(entries) = archive.entries() {
-                for (idx, entry_res) in entries.enumerate() {
-                    if let Ok(entry) = entry_res {
-                        if let Ok(path) = entry.path() {
-                            let path_str = path.to_string_lossy().to_string();
-                            let is_dir = entry.header().entry_type().is_dir();
-                            let size = entry.header().size().unwrap_or(0);
-                            entries_found.push((idx, path_str, is_dir, size));
-                        }
-                    }
-                }
-            }
+            Self::collect_tar_entries(&mut archive)?
         } else {
             let mut archive = tar::Archive::new(file);
-            if let Ok(entries) = archive.entries() {
-                for (idx, entry_res) in entries.enumerate() {
-                    if let Ok(entry) = entry_res {
-                        if let Ok(path) = entry.path() {
-                            let path_str = path.to_string_lossy().to_string();
-                            let is_dir = entry.header().entry_type().is_dir();
-                            let size = entry.header().size().unwrap_or(0);
-                            entries_found.push((idx, path_str, is_dir, size));
-                        }
-                    }
-                }
-            }
-        }
+            Self::collect_tar_entries(&mut archive)?
+        };
 
         for (idx, raw_name, is_dir, size) in entries_found {
             let vfs_path = VfsPath::from_slash_path(&raw_name);
@@ -379,7 +381,7 @@ impl ArchiveFs {
                     path: path.clone(),
                     source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
                 })?;
-                let mut buf = Vec::with_capacity(info.size as usize);
+                let mut buf = Vec::with_capacity(prealloc_for_declared_size(info.size));
                 entry.read_to_end(&mut buf).map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
@@ -397,7 +399,7 @@ impl ArchiveFs {
                     source: e,
                 })?;
                 if let Some(Ok(mut entry)) = entries.nth(info.index) {
-                    let mut buf = Vec::with_capacity(info.size as usize);
+                    let mut buf = Vec::with_capacity(prealloc_for_declared_size(info.size));
                     entry.read_to_end(&mut buf).map_err(|e| VfsError::Backend {
                         path: path.clone(),
                         source: e,
@@ -419,7 +421,7 @@ impl ArchiveFs {
                     source: e,
                 })?;
                 if let Some(Ok(mut entry)) = entries.nth(info.index) {
-                    let mut buf = Vec::with_capacity(info.size as usize);
+                    let mut buf = Vec::with_capacity(prealloc_for_declared_size(info.size));
                     entry.read_to_end(&mut buf).map_err(|e| VfsError::Backend {
                         path: path.clone(),
                         source: e,
@@ -436,9 +438,15 @@ impl ArchiveFs {
                     &self.archive_path,
                     "",
                     |entry, reader, _dest| {
-                        if entry.name() == target_name {
-                            let _ = reader.read_to_end(&mut found_bytes);
-                            Ok(false) // stop search
+                        // The index normalised entry names to '/' when it
+                        // was built; raw names here may still use '\\'
+                        // (Windows-created archives) and would never match,
+                        // silently returning empty content.
+                        if entry.name().replace('\\', "/") == target_name {
+                            match reader.read_to_end(&mut found_bytes) {
+                                Ok(_) => Ok(false), // stop search
+                                Err(e) => Err(sevenz_rust::Error::io(e)),
+                            }
                         } else {
                             Ok(true)
                         }
@@ -452,6 +460,15 @@ impl ArchiveFs {
             }
         }
     }
+}
+
+/// Initial buffer capacity for reading an entry. The declared size comes
+/// from the archive's own headers and is untrusted: a forged entry can
+/// declare terabytes and abort the process trying to allocate it. Cap the
+/// preallocation and let `read_to_end` grow the buffer to the real size.
+fn prealloc_for_declared_size(declared: u64) -> usize {
+    const MAX_PREALLOC: u64 = 4 * 1024 * 1024;
+    declared.min(MAX_PREALLOC) as usize
 }
 
 /// Copy one entry's bytes into `sink`, skipping `offset` bytes first.
@@ -530,7 +547,7 @@ fn pump_entry(
                 archive_path,
                 "",
                 |entry, reader, _dest| {
-                    if entry.name() != target_name {
+                    if entry.name().replace('\\', "/") != target_name {
                         return Ok(true);
                     }
                     let result = copy_from(reader, sink);

@@ -33,22 +33,22 @@ impl TaskManager {
             progress: progress.clone(),
             cancel: cancel.clone(),
         };
-        self.tasks.write().unwrap().insert(id.to_string(), handle);
+        self.tasks.write().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), handle);
         (progress, cancel)
     }
 
     pub fn get_progress(&self, id: &str) -> Option<TaskProgress> {
         self.tasks
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get(id)
-            .map(|h| h.progress.lock().unwrap().clone())
+            .map(|h| h.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     pub fn cancel(&self, id: &str) -> bool {
-        if let Some(handle) = self.tasks.read().unwrap().get(id) {
+        if let Some(handle) = self.tasks.read().unwrap_or_else(|e| e.into_inner()).get(id) {
             handle.cancel.cancel();
-            handle.progress.lock().unwrap().state = TaskState::Cancelled;
+            handle.progress.lock().unwrap_or_else(|e| e.into_inner()).state = TaskState::Cancelled;
             true
         } else {
             false
@@ -58,9 +58,9 @@ impl TaskManager {
     pub fn list_active(&self) -> Vec<(String, TaskProgress)> {
         self.tasks
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
-            .map(|(id, h)| (id.clone(), h.progress.lock().unwrap().clone()))
+            .map(|(id, h)| (id.clone(), h.progress.lock().unwrap_or_else(|e| e.into_inner()).clone()))
             .collect()
     }
 }
@@ -71,7 +71,10 @@ pub async fn total_bytes(vfs: &dyn Vfs, path: &VfsPath) -> u64 {
         Ok(stat) => stat,
         Err(_) => return 0,
     };
-    if stat.kind != EntryKind::Dir {
+    if stat.kind != EntryKind::Dir || stat.is_symlink {
+        // A symlinked directory is a leaf for sizing: following it would
+        // count the target tree as well — possibly the same tree again when
+        // the link points back into an ancestor.
         return stat.size.unwrap_or(0);
     }
     let children = match vfs.list(path).await {
@@ -100,13 +103,34 @@ pub async fn copy_recursive(
 
     let stat = src_vfs.stat(src_path).await?;
     {
-        let mut p = progress.lock().unwrap();
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
         p.state = TaskState::Running;
         p.current = Some(src_path.clone());
     }
 
+    if stat.is_symlink && stat.kind == EntryKind::Dir {
+        // Never recurse through a symlink: the target may live outside the
+        // tree being copied or point back into it, nesting without bound.
+        // There is no cross-VFS primitive to reproduce the link itself, so
+        // the linked tree is skipped.
+        return Ok(());
+    }
+
     if stat.kind == EntryKind::Dir {
-        let _ = dst_vfs.mkdir(dst_path).await;
+        if let Err(e) = dst_vfs.mkdir(dst_path).await {
+            // An already-existing directory is fine; any other failure
+            // (permission, read-only backend, a file in the way) is real
+            // and must surface instead of burying itself under a stream
+            // of misleading per-file errors.
+            let already_dir = dst_vfs
+                .stat(dst_path)
+                .await
+                .map(|s| s.kind == EntryKind::Dir)
+                .unwrap_or(false);
+            if !already_dir {
+                return Err(e);
+            }
+        }
         let children = src_vfs.list(src_path).await?;
         for child in children {
             if cancel.is_cancelled() {
@@ -134,8 +158,58 @@ async fn copy_single_file(
     progress: &Arc<Mutex<TaskProgress>>,
     cancel: &CancellationToken,
 ) -> VfsResult<()> {
+    // Stream into a sibling temp file and rename it over the destination
+    // only once the copy is complete. Writing in place with Truncate meant
+    // a cancelled or failed copy both destroyed the previous version and
+    // left a truncated file behind.
+    let dst_name = dst_path.name().unwrap_or("file");
+    let tmp_path = dst_path
+        .parent()
+        .unwrap_or_else(VfsPath::root)
+        .join(format!(".{dst_name}.fm-part"));
+
+    if let Err(e) =
+        stream_into(src_vfs, src_path, dst_vfs, &tmp_path, progress, cancel).await
+    {
+        let _ = dst_vfs.remove(&tmp_path).await;
+        return Err(e);
+    }
+
+    match dst_vfs.rename(&tmp_path, dst_path).await {
+        Ok(()) => Ok(()),
+        Err(first_err) => {
+            // Some backends refuse to rename onto an existing file; retry
+            // once after removing it — but never remove a directory to
+            // make room for a file.
+            let dst_is_file = dst_vfs
+                .stat(dst_path)
+                .await
+                .map(|s| s.kind != EntryKind::Dir)
+                .unwrap_or(false);
+            if !dst_is_file {
+                let _ = dst_vfs.remove(&tmp_path).await;
+                return Err(first_err);
+            }
+            let _ = dst_vfs.remove(dst_path).await;
+            if dst_vfs.rename(&tmp_path, dst_path).await.is_err() {
+                let _ = dst_vfs.remove(&tmp_path).await;
+                return Err(first_err);
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn stream_into(
+    src_vfs: &dyn Vfs,
+    src_path: &VfsPath,
+    dst_vfs: &dyn Vfs,
+    tmp_path: &VfsPath,
+    progress: &Arc<Mutex<TaskProgress>>,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
     let mut reader = src_vfs.open_read(src_path).await?;
-    let mut writer = dst_vfs.open_write(dst_path, WriteMode::Truncate).await?;
+    let mut writer = dst_vfs.open_write(tmp_path, WriteMode::Truncate).await?;
 
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -153,18 +227,23 @@ async fn copy_single_file(
             .write_all(&buf[..n])
             .await
             .map_err(|e| VfsError::Backend {
-                path: dst_path.clone(),
+                path: tmp_path.clone(),
                 source: e,
             })?;
 
-        let mut p = progress.lock().unwrap();
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
         p.completed += n as u64;
     }
     writer.flush().await.map_err(|e| VfsError::Backend {
-        path: dst_path.clone(),
+        path: tmp_path.clone(),
         source: e,
     })?;
-    let _ = writer.shutdown().await;
+    // Propagate shutdown errors: remote upload writers report their final
+    // result here, and ignoring it could publish an incomplete file.
+    writer.shutdown().await.map_err(|e| VfsError::Backend {
+        path: tmp_path.clone(),
+        source: e,
+    })?;
 
     Ok(())
 }
@@ -181,13 +260,16 @@ pub async fn delete_recursive(
     }
 
     {
-        let mut p = progress.lock().unwrap();
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
         p.state = TaskState::Running;
         p.current = Some(path.clone());
     }
 
     let stat = vfs.stat(path).await?;
-    if stat.kind == EntryKind::Dir {
+    // A symlinked directory is removed as a link, never traversed: the
+    // entries under it belong to the link target, which may be anywhere —
+    // including outside the tree the user selected for deletion.
+    if stat.kind == EntryKind::Dir && !stat.is_symlink {
         let children = vfs.list(path).await?;
         for child in children {
             if cancel.is_cancelled() {
@@ -198,7 +280,7 @@ pub async fn delete_recursive(
     }
 
     vfs.remove(path).await?;
-    let mut p = progress.lock().unwrap();
+    let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
     p.completed += 1;
     Ok(())
 }

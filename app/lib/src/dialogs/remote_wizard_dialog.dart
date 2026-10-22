@@ -165,11 +165,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     final config = _buildConfig();
     final oldId = widget.initialConfig?.id;
     try {
+      // Save the new record first: deleting the old one before the save
+      // meant a failed save (DB error, validation) destroyed the existing
+      // connection for good.
+      await StorageService.instance.saveRemote(config);
       if (oldId != null && oldId != config.id) {
         await StorageService.instance.deleteRemote(oldId);
         invalidateRoot(root: 'remote://$oldId');
       }
-      await StorageService.instance.saveRemote(config);
     } catch (e) {
       if (mounted) {
         setState(() => _testResult = 'Could not save: $e');

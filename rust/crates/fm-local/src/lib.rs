@@ -31,12 +31,12 @@ impl LocalFs {
         &self.root
     }
 
-    /// Resolve a backend path under the root.
+    /// Join a backend path under the root, lexically.
     ///
     /// Segments are already decoded components, so joining is direct. A
     /// component of `..` or `.` would escape the root; reject it rather than
     /// silently normalising.
-    fn resolve(&self, path: &VfsPath) -> VfsResult<PathBuf> {
+    fn join_lexical(&self, path: &VfsPath) -> VfsResult<PathBuf> {
         let mut native = self.root.clone();
         for segment in path.segments() {
             // A segment is one path component. Anything containing a separator
@@ -59,6 +59,63 @@ impl LocalFs {
             native.push(segment);
         }
         Ok(native)
+    }
+
+    /// Resolve a backend path under the root.
+    ///
+    /// On top of the lexical checks, the real location must stay inside
+    /// the root: a symlink planted inside the root (synced in, extracted
+    /// from an archive, ...) otherwise lets reads, writes and recursive
+    /// deletes walk straight out of the granted directory. The deepest
+    /// existing ancestor is canonicalised and compared; anything below it
+    /// is made of already-validated plain names and cannot escape.
+    fn resolve(&self, path: &VfsPath) -> VfsResult<PathBuf> {
+        let native = self.join_lexical(path)?;
+        self.check_contained(path, &native, true)?;
+        Ok(native)
+    }
+
+    /// Like `resolve`, but the final component itself may be a symlink.
+    /// Operations that act on the directory entry — stat, remove, rename —
+    /// must be able to see and manipulate links themselves, so only the
+    /// parent chain is required to stay inside the root.
+    fn resolve_parent(&self, path: &VfsPath) -> VfsResult<PathBuf> {
+        let native = self.join_lexical(path)?;
+        self.check_contained(path, &native, false)?;
+        Ok(native)
+    }
+
+    fn check_contained(
+        &self,
+        path: &VfsPath,
+        native: &Path,
+        include_final: bool,
+    ) -> VfsResult<()> {
+        // Without a canonical root there is nothing to verify against —
+        // e.g. the root does not exist yet, in which case nothing inside
+        // it can be a planted symlink either.
+        let Ok(canonical_root) = self.root.canonicalize() else {
+            return Ok(());
+        };
+        let mut existing = if include_final || path.is_root() {
+            native.to_path_buf()
+        } else {
+            native
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| native.to_path_buf())
+        };
+        while !existing.exists() {
+            if !existing.pop() {
+                return Ok(());
+            }
+        }
+        if let Ok(canonical) = existing.canonicalize() {
+            if !canonical.starts_with(&canonical_root) {
+                return Err(VfsError::PermissionDenied { path: path.clone() });
+            }
+        }
+        Ok(())
     }
 
     fn io_error(&self, path: &VfsPath, source: std::io::Error) -> VfsError {
@@ -174,7 +231,7 @@ impl Vfs for LocalFs {
     }
 
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
-        let native = self.resolve(path)?;
+        let native = self.resolve_parent(path)?;
         let metadata = tokio::fs::metadata(&native)
             .await
             .map_err(|error| self.io_error(path, error))?;
@@ -264,7 +321,7 @@ impl Vfs for LocalFs {
                 operation: "remove",
             });
         }
-        let native = self.resolve(path)?;
+        let native = self.resolve_parent(path)?;
         let metadata = tokio::fs::symlink_metadata(&native)
             .await
             .map_err(|error| self.io_error(path, error))?;
@@ -295,8 +352,8 @@ impl Vfs for LocalFs {
                 operation: "rename",
             });
         }
-        let from_native = self.resolve(from)?;
-        let to_native = self.resolve(to)?;
+        let from_native = self.resolve_parent(from)?;
+        let to_native = self.resolve_parent(to)?;
         tokio::fs::rename(&from_native, &to_native)
             .await
             .map_err(|error| self.io_error(from, error))
