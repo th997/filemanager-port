@@ -253,6 +253,47 @@ impl SftpFs {
         *self.session.lock().await = None;
     }
 
+    /// Per-operation ceiling. russh-sftp requests wait for a response
+    /// with no built-in deadline, so a server whose SSH transport stays
+    /// alive (keepalives answered) while its SFTP subsystem wedges
+    /// would hang every operation forever — FTP got a timeout macro
+    /// for exactly this; SFTP was missing its equivalent.
+    const OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+    async fn session_timed(&self) -> VfsResult<Arc<SftpConnection>> {
+        tokio::time::timeout(Self::CONNECT_TIMEOUT, self.get_session())
+            .await
+            .map_err(|_| VfsError::Connection {
+                message: format!(
+                    "SFTP connection timed out after {}s",
+                    Self::CONNECT_TIMEOUT.as_secs()
+                ),
+            })?
+    }
+
+    async fn op_timed<T, F, Fut>(&self, op: &F, session: Arc<SftpConnection>) -> VfsResult<T>
+    where
+        F: Fn(Arc<SftpConnection>) -> Fut,
+        Fut: std::future::Future<Output = VfsResult<T>>,
+    {
+        match tokio::time::timeout(Self::OP_TIMEOUT, op(session)).await {
+            Ok(result) => result,
+            Err(_elapsed) => {
+                // The session's protocol state is unknowable after a
+                // mid-request timeout (a late reply may still arrive);
+                // drop it so the next operation reconnects cleanly.
+                self.drop_session().await;
+                Err(VfsError::Connection {
+                    message: format!(
+                        "SFTP operation timed out after {}s — the server stopped responding",
+                        Self::OP_TIMEOUT.as_secs()
+                    ),
+                })
+            }
+        }
+    }
+
     /// Run one SFTP operation, reconnecting once if the transport died
     /// between the liveness check and the request.
     async fn run<T, F, Fut>(&self, op: F) -> VfsResult<T>
@@ -260,12 +301,12 @@ impl SftpFs {
         F: Fn(Arc<SftpConnection>) -> Fut,
         Fut: std::future::Future<Output = VfsResult<T>>,
     {
-        let session = self.get_session().await?;
-        match op(session).await {
+        let session = self.session_timed().await?;
+        match self.op_timed(&op, session).await {
             Err(error) if is_closed_error(&error) => {
                 self.drop_session().await;
-                let session = self.get_session().await?;
-                op(session).await
+                let session = self.session_timed().await?;
+                self.op_timed(&op, session).await
             }
             result => result,
         }

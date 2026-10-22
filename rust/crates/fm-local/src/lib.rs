@@ -13,6 +13,24 @@ pub struct LocalFs {
 }
 
 impl LocalFs {
+    /// Reject special files (FIFOs, sockets, devices) before opening:
+    /// `File::open` on a FIFO blocks until a writer appears, which in
+    /// an async app means an operation that never returns. Only
+    /// regular files may be opened for reading. (A `/dev/null`-style
+    /// char device would "work", but nothing a file manager does with
+    /// one is meaningful.)
+    async fn ensure_regular_file(&self, path: &VfsPath, native: &Path) -> VfsResult<()> {
+        let metadata = tokio::fs::metadata(native)
+            .await
+            .map_err(|error| self.io_error(path, error))?;
+        if !metadata.is_file() {
+            return Err(VfsError::Unsupported {
+                operation: "open a special file (device, pipe or socket)",
+            });
+        }
+        Ok(())
+    }
+
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
@@ -243,8 +261,10 @@ impl Vfs for LocalFs {
         Ok(entry_from_metadata(path.clone(), name, &metadata, is_symlink))
     }
 
+
     async fn open_read(&self, path: &VfsPath) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
         let native = self.resolve(path)?;
+        self.ensure_regular_file(path, &native).await?;
         let file = tokio::fs::File::open(&native)
             .await
             .map_err(|error| self.io_error(path, error))?;
@@ -260,6 +280,7 @@ impl Vfs for LocalFs {
         use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
         let native = self.resolve(path)?;
+        self.ensure_regular_file(path, &native).await?;
         let mut file = tokio::fs::File::open(&native)
             .await
             .map_err(|error| self.io_error(path, error))?;

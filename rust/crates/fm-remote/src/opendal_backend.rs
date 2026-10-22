@@ -19,6 +19,29 @@ fn ensure_http_transport() {
     ONCE.call_once(opendal::install_default);
 }
 
+
+/// Ceiling for one OpenDAL operation. The operator is built without a
+/// timeout layer, and the reqwest transport underneath has no default
+/// request deadline: a WebDAV/S3 server that accepts the connection
+/// but never answers would hang the operation (and the UI waiting on
+/// it) forever. Other backends all have timeouts — FTP wraps every
+/// call, SMB sets a response timeout — this closes the same hole here.
+const OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+async fn timed<T>(
+    op_name: &'static str,
+    fut: impl std::future::Future<Output = VfsResult<T>>,
+) -> VfsResult<T> {
+    tokio::time::timeout(OP_TIMEOUT, fut).await.map_err(|_| {
+        VfsError::Connection {
+            message: format!(
+                "{op_name} timed out after {}s — the server stopped responding",
+                OP_TIMEOUT.as_secs()
+            ),
+        }
+    })?
+}
+
 pub struct OpendalFs {
     operator: Operator,
     kind: LocationKind,
@@ -180,6 +203,59 @@ impl Vfs for OpendalFs {
     }
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
+        timed("list", self.list_impl(dir)).await
+    }
+
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        timed("list", self.list_paged_impl(dir, page, page_size)).await
+    }
+
+    async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
+        timed("stat", self.stat_impl(path)).await
+    }
+
+    async fn open_read(&self, path: &VfsPath) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
+        timed("open", self.open_read_impl(path)).await
+    }
+
+    async fn open_read_range(
+        &self,
+        path: &VfsPath,
+        offset: u64,
+        length: Option<u64>,
+    ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
+        timed("open", self.open_read_range_impl(path, offset, length)).await
+    }
+
+    async fn open_write(
+        &self,
+        path: &VfsPath,
+        mode: WriteMode,
+    ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
+        timed("open for writing", self.open_write_impl(path, mode)).await
+    }
+
+    async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
+        timed("create directory", self.mkdir_impl(path)).await
+    }
+
+    async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
+        timed("delete", self.remove_impl(path)).await
+    }
+
+    async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
+        timed("rename", self.rename_impl(from, to)).await
+    }
+
+}
+
+impl OpendalFs {
+    async fn list_impl(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
         let op_dir = Self::to_opendal_dir_path(dir);
         let mut lister = self
             .operator
@@ -249,7 +325,7 @@ impl Vfs for OpendalFs {
         Ok(entries)
     }
 
-    async fn list_paged(
+    async fn list_paged_impl(
         &self,
         dir: &VfsPath,
         page: u32,
@@ -356,7 +432,7 @@ impl Vfs for OpendalFs {
         Ok((entries, has_more))
     }
 
-    async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
+    async fn stat_impl(&self, path: &VfsPath) -> VfsResult<Entry> {
         let op_path = Self::to_opendal_path(path);
         let meta = match self.operator.stat(&op_path).await {
             Ok(meta) => meta,
@@ -437,7 +513,7 @@ impl Vfs for OpendalFs {
         })
     }
 
-    async fn open_read(&self, path: &VfsPath) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
+    async fn open_read_impl(&self, path: &VfsPath) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
         let op_path = Self::to_opendal_path(path);
         let reader = self
             .operator
@@ -459,7 +535,7 @@ impl Vfs for OpendalFs {
         Ok(Box::new(futures_reader.compat()))
     }
 
-    async fn open_read_range(
+    async fn open_read_range_impl(
         &self,
         path: &VfsPath,
         offset: u64,
@@ -488,7 +564,7 @@ impl Vfs for OpendalFs {
         Ok(Box::new(futures_reader.compat()))
     }
 
-    async fn open_write(
+    async fn open_write_impl(
         &self,
         path: &VfsPath,
         mode: WriteMode,
@@ -528,7 +604,7 @@ impl Vfs for OpendalFs {
         Ok(Box::new(futures_writer.compat_write()))
     }
 
-    async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
+    async fn mkdir_impl(&self, path: &VfsPath) -> VfsResult<()> {
         let op_dir = Self::to_opendal_dir_path(path);
         self.operator
             .create_dir(&op_dir)
@@ -539,7 +615,7 @@ impl Vfs for OpendalFs {
             })
     }
 
-    async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
+    async fn remove_impl(&self, path: &VfsPath) -> VfsResult<()> {
         let op_path = Self::to_opendal_path(path);
         self.operator
             .delete(&op_path)
@@ -550,7 +626,7 @@ impl Vfs for OpendalFs {
             })
     }
 
-    async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
+    async fn rename_impl(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
         let op_from = Self::to_opendal_path(from);
         let op_to = Self::to_opendal_path(to);
         match self.operator.rename(&op_from, &op_to).await {

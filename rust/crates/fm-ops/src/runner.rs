@@ -99,6 +99,19 @@ impl TaskManager {
 
     /// Drop a task from the registry (the task centre's dismiss action).
     pub fn remove(&self, id: &str) -> bool {
+        // Dismissing a task that is still running cancels it first:
+        // otherwise the worker keeps going invisibly after its
+        // progress UI is gone, holding connections and file handles.
+        if let Some(handle) = self.find(id) {
+            let terminal = handle
+                .progress
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_terminal();
+            if !terminal {
+                handle.cancel.cancel();
+            }
+        }
         let mut tasks = self.tasks.write().unwrap_or_else(|e| e.into_inner());
         let before = tasks.len();
         tasks.retain(|(existing, _)| existing != id);
