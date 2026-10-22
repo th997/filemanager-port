@@ -188,9 +188,23 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     Size? dimensions;
     Uint8List? bytes;
     try {
-      bytes = await file.readAsBytes();
-      final image = await decodeImageFromList(bytes);
-      dimensions = Size(image.width.toDouble(), image.height.toDouble());
+      if (stat.size <= 32 * 1024 * 1024) {
+        bytes = await file.readAsBytes();
+        final image = await decodeImageFromList(bytes);
+        dimensions = Size(image.width.toDouble(), image.height.toDouble());
+      } else {
+        // Details probe only: fully decoding a huge image just to
+        // learn its dimensions duplicates the displayed bitmap in
+        // memory (a 200 MP photo is ~800 MB decoded) and can OOM the
+        // app. Read just the head — enough for the EXIF block, which
+        // lives at the start of the file.
+        final raf = await file.open();
+        try {
+          bytes = await raf.read(256 * 1024);
+        } finally {
+          await raf.close();
+        }
+      }
     } catch (_) {}
 
     // EXIF: the real capture date and camera, instead of letting the

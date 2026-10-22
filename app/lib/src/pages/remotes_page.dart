@@ -88,7 +88,12 @@ class _RemotesPageState extends State<RemotesPage> {
     }
     bool ok;
     try {
-      ok = await StorageService.instance.testConnection(remote);
+      // Bounded: a host whose packets are silently dropped by a
+      // firewall otherwise keeps the dot on "checking" for the whole
+      // OS TCP timeout (~2 minutes), which reads as the app hanging.
+      ok = await StorageService.instance
+          .testConnection(remote)
+          .timeout(const Duration(seconds: 8), onTimeout: () => false);
     } catch (_) {
       ok = false;
     }

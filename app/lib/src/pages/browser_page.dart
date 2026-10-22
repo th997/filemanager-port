@@ -2787,14 +2787,41 @@ class BrowserPageState extends State<BrowserPage> {
   /// before paging. Sorting locally used to order only the pages fetched so
   /// far, so "largest file" in a big folder was just the largest of the
   /// first hundred.
+  // Memoized: this getter is consulted many times per build (list,
+  // grid, counts, menus), and on a huge directory each uncached pass
+  // lowercases every file name again — the main source of typing jank
+  // in big folders. The key covers every input the filter reads:
+  // entries are only ever replaced wholesale or appended to, never
+  // mutated in place.
+  List<EntryItem>? _filteredCache;
+  Object? _filteredCacheEntries;
+  int _filteredCacheLength = -1;
+  String _filteredCacheQuery = '';
+  bool _filteredCacheShowHidden = false;
+
   List<EntryItem> get _filteredAndSortedEntries {
-    return _entries.where((e) {
+    final cached = _filteredCache;
+    if (cached != null &&
+        identical(_filteredCacheEntries, _entries) &&
+        _filteredCacheLength == _entries.length &&
+        _filteredCacheQuery == _filterQuery &&
+        _filteredCacheShowHidden == _showHidden) {
+      return cached;
+    }
+    final query = _filterQuery.toLowerCase();
+    final result = _entries.where((e) {
       if (!_showHidden && e.hidden) return false;
-      if (_filterQuery.isNotEmpty && !e.name.toLowerCase().contains(_filterQuery.toLowerCase())) {
+      if (query.isNotEmpty && !e.name.toLowerCase().contains(query)) {
         return false;
       }
       return true;
     }).toList();
+    _filteredCache = result;
+    _filteredCacheEntries = _entries;
+    _filteredCacheLength = _entries.length;
+    _filteredCacheQuery = _filterQuery;
+    _filteredCacheShowHidden = _showHidden;
+    return result;
   }
 
   @override
