@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -155,6 +156,19 @@ class BrowserPageState extends State<BrowserPage> {
 
   // Multi-selection state
   bool _isSelecting = false;
+
+  /// Anchor index (into the visible list) for Shift+click range selection.
+  int? _selectionAnchor;
+
+  /// Rubber-band (lasso) selection state, grid view only: mouse drag on
+  /// the grid background selects every tile the rectangle covers.
+  Offset? _lassoStart;
+  Rect? _lassoRect;
+  Set<String> _lassoBase = {};
+  double _gridWidth = 0;
+
+  /// Set while a tile drag (stage H) is in flight so the lasso stands down.
+  bool _itemDragActive = false;
   final Set<String> _selectedPaths = <String>{};
 
   String get _selectedSummary {
@@ -394,6 +408,7 @@ class BrowserPageState extends State<BrowserPage> {
       // A refresh keeps the current list on screen; swapping it for a spinner
       // would drop the scroll offset and flash the whole page.
       if (!refresh) _loading = true;
+      if (!refresh) _selectionAnchor = null;
       // Navigating (a non-refresh load) leaves search behind: the results
       // belonged to the folder the user just left.
       if (!refresh && _isSearching) {
@@ -1601,6 +1616,114 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
+  /// Tile tap with desktop selection semantics: Ctrl/Cmd toggles one
+  /// item, Shift extends from the anchor, plain tap keeps the classic
+  /// behaviour (open, or toggle while selecting).
+  void _handleTileTap(EntryItem item, int index) {
+    final kb = HardwareKeyboard.instance;
+    if (kb.isShiftPressed && _selectionAnchor != null) {
+      _selectRange(_selectionAnchor!, index);
+      return;
+    }
+    if (kb.isControlPressed || kb.isMetaPressed) {
+      if (!_isSelecting) setState(() => _isSelecting = true);
+      _toggleSelect(_fullEntryPath(item));
+      _selectionAnchor = index;
+      return;
+    }
+    _selectionAnchor = index;
+    _openEntry(item);
+  }
+
+  void _lassoDown(PointerDownEvent e) {
+    if (e.kind != PointerDeviceKind.mouse || e.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    _lassoStart = e.localPosition;
+    _lassoRect = null;
+    final kb = HardwareKeyboard.instance;
+    _lassoBase = (kb.isControlPressed || kb.isMetaPressed)
+        ? {..._selectedPaths}
+        : {};
+  }
+
+  void _lassoMove(PointerMoveEvent e) {
+    final start = _lassoStart;
+    if (start == null || _itemDragActive) return;
+    final rect = Rect.fromPoints(start, e.localPosition);
+    if (_lassoRect == null && rect.longestSide < 8) return;
+    setState(() => _lassoRect = rect);
+    _applyLasso(rect);
+  }
+
+  void _lassoEnd() {
+    _lassoStart = null;
+    if (_lassoRect != null) setState(() => _lassoRect = null);
+  }
+
+  /// Maps the lasso rectangle (viewport coordinates) through the grid
+  /// delegate's math and selects every tile it intersects. The delegate
+  /// is SliverGridDelegateWithMaxCrossAxisExtent(88, spacing 6, ratio
+  /// 0.85) with 8px padding — keep these numbers in sync with _buildBody.
+  void _applyLasso(Rect viewportRect) {
+    final list = _filteredAndSortedEntries;
+    if (_gridWidth <= 0 || list.isEmpty) return;
+    const pad = 8.0;
+    const spacing = 6.0;
+    final crossExtent = _gridWidth - pad * 2;
+    var count = (crossExtent / (88.0 + spacing)).ceil();
+    if (count < 1) count = 1;
+    final childCross = (crossExtent - spacing * (count - 1)) / count;
+    final childMain = childCross / 0.85;
+    final colStride = childCross + spacing;
+    final rowStride = childMain + spacing;
+    final offset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final r = Rect.fromLTRB(
+      viewportRect.left,
+      viewportRect.top + offset,
+      viewportRect.right,
+      viewportRect.bottom + offset,
+    );
+    final picked = <String>{};
+    final firstRow = ((r.top - pad) / rowStride).floor().clamp(0, 1 << 30);
+    final lastRow = ((r.bottom - pad) / rowStride).floor().clamp(0, 1 << 30);
+    final firstCol = ((r.left - pad) / colStride).floor().clamp(0, count - 1);
+    final lastCol = ((r.right - pad) / colStride).floor().clamp(0, count - 1);
+    for (var row = firstRow; row <= lastRow; row++) {
+      for (var col = firstCol; col <= lastCol; col++) {
+        final cell = Rect.fromLTWH(
+          pad + col * colStride,
+          pad + row * rowStride,
+          childCross,
+          childMain,
+        );
+        if (!cell.overlaps(r)) continue;
+        final idx = row * count + col;
+        if (idx < 0 || idx >= list.length) continue;
+        picked.add(_fullEntryPath(list[idx]));
+      }
+    }
+    setState(() {
+      _selectedPaths
+        ..clear()
+        ..addAll(_lassoBase)
+        ..addAll(picked);
+      _isSelecting = _selectedPaths.isNotEmpty;
+    });
+  }
+
+  void _selectRange(int a, int b) {
+    final list = _filteredAndSortedEntries;
+    final lo = a < b ? a : b;
+    final hi = a < b ? b : a;
+    setState(() {
+      _isSelecting = true;
+      for (var i = lo; i <= hi && i < list.length; i++) {
+        _selectedPaths.add(_fullEntryPath(list[i]));
+      }
+    });
+  }
+
   void _toggleSelect(String path) {
     setState(() {
       if (_selectedPaths.contains(path)) {
@@ -1905,17 +2028,37 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _paste() async {
     final cb = _clipboard;
     if (cb == null) return;
+    await _transfer(
+      srcRoot: cb.srcRoot,
+      paths: cb.paths,
+      isCut: cb.isCut,
+      destRel: _relPath,
+      onCutCompleted: () {
+        if (mounted) setState(() => _clipboard = null);
+      },
+    );
+  }
 
+  /// Shared transfer engine for paste and drag & drop: conflict prompt,
+  /// progress dialog, retry. [destRel] is the destination folder inside
+  /// the current root.
+  Future<void> _transfer({
+    required String srcRoot,
+    required List<String> paths,
+    required bool isCut,
+    required String destRel,
+    VoidCallback? onCutCompleted,
+  }) async {
     // Detect name clashes in the destination first and let the user decide
-    // once for the whole paste. The task used to overwrite silently, which
-    // destroyed the existing files. Items pasted back into their own folder
-    // are excluded: the Rust side renames those automatically.
+    // once for the whole batch. Overwriting silently would destroy the
+    // existing files. Items dropped back into their own folder are
+    // excluded: the Rust side renames those automatically.
     var policy = 'overwrite';
     final conflicts = <String>[];
-    for (final p in cb.paths) {
+    for (final p in paths) {
       final name = p.split('/').last;
-      final dstPath = _relPath.isEmpty ? name : '$_relPath/$name';
-      if (cb.srcRoot == _root && p == dstPath) continue;
+      final dstPath = destRel.isEmpty ? name : '$destRel/$name';
+      if (srcRoot == _root && p == dstPath) continue;
       try {
         await statEntry(root: _root, path: dstPath);
         conflicts.add(name);
@@ -1958,19 +2101,19 @@ class BrowserPageState extends State<BrowserPage> {
       policy = choice;
     }
 
-    Future<String> startTask() => cb.isCut
+    Future<String> startTask() => isCut
         ? TaskService.instance.move(
-            srcRoot: cb.srcRoot,
-            srcPaths: cb.paths,
+            srcRoot: srcRoot,
+            srcPaths: paths,
             dstRoot: _root,
-            dstDir: _relPath,
+            dstDir: destRel,
             conflictPolicy: policy,
           )
         : TaskService.instance.copy(
-            srcRoot: cb.srcRoot,
-            srcPaths: cb.paths,
+            srcRoot: srcRoot,
+            srcPaths: paths,
             dstRoot: _root,
-            dstDir: _relPath,
+            dstDir: destRel,
             conflictPolicy: policy,
           );
 
@@ -1981,18 +2124,146 @@ class BrowserPageState extends State<BrowserPage> {
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        cb.isCut ? 'Moving Files…' : 'Copying Files…',
+        isCut ? 'Moving Files…' : 'Copying Files…',
         onRetry: startTask,
       );
-      // A cancelled move may have already removed some sources, so the
+      // A cancelled move may have already removed some sources, so a cut
       // clipboard is only cleared once the move actually finished.
-      if (cb.isCut && completed == true && mounted) {
-        setState(() => _clipboard = null);
-      }
+      if (isCut && completed == true) onCutCompleted?.call();
       if (mounted) _load(refresh: true);
     } catch (e) {
-      _showError('${cb.isCut ? 'Move' : 'Copy'} failed: $e');
+      _showError('${isCut ? 'Move' : 'Copy'} failed: $e');
     }
+  }
+
+  /// Files dropped in from the OS (Finder/Explorer): each file's parent
+  /// folder becomes a source root and the normal copy pipeline takes
+  /// over, conflict prompt included.
+  Future<void> _handleExternalDrop(DropDoneDetails details) async {
+    final files = details.files;
+    if (files.isEmpty || !_canWrite) return;
+    final byParent = <String, List<String>>{};
+    for (final f in files) {
+      final full = f.path.replaceAll('\\', '/');
+      final idx = full.lastIndexOf('/');
+      if (idx < 0) continue;
+      final parent = idx == 0 ? '/' : full.substring(0, idx);
+      byParent.putIfAbsent(parent, () => []).add(full.substring(idx + 1));
+    }
+    for (final entry in byParent.entries) {
+      await _transfer(
+        srcRoot: entry.key,
+        paths: entry.value,
+        isCut: false,
+        destRel: _relPath,
+      );
+      if (!mounted) return;
+    }
+  }
+
+  Widget _withDropTarget(Widget child) {
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      return child;
+    }
+    return DropTarget(
+      onDragDone: _handleExternalDrop,
+      child: child,
+    );
+  }
+
+  /// Drag & drop landing: same root moves, cross-root copies — the
+  /// convention desktop file managers use.
+  Future<void> _acceptDrop(
+    ({String root, List<String> paths}) data,
+    String destRel,
+  ) async {
+    final isCut = data.root == _root;
+    // Dropping a folder onto itself or into its own subtree can only fail.
+    final safe = data.paths.where((p) {
+      if (!isCut) return true;
+      return destRel != p && !destRel.startsWith('$p/');
+    }).toList();
+    if (safe.isEmpty) return;
+    await _transfer(
+      srcRoot: data.root,
+      paths: safe,
+      isCut: isCut,
+      destRel: destRel,
+    );
+  }
+
+  /// Wraps a tile so it can be dragged (desktop builds) and, for folders,
+  /// receive drops. Touch builds keep the long-press menu instead: an
+  /// immediate Draggable would fight it and the scroll gesture.
+  Widget _draggableTile({
+    required EntryItem item,
+    required String path,
+    required Widget child,
+  }) {
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      return child;
+    }
+    final data = (
+      root: _root,
+      paths: _selectedPaths.contains(path)
+          ? _selectedPaths.toList()
+          : [path],
+    );
+    Widget draggable = Draggable<({String root, List<String> paths})>(
+      data: data,
+      onDragStarted: () => _itemDragActive = true,
+      onDragEnd: (_) => _itemDragActive = false,
+      onDraggableCanceled: (_, _) => _itemDragActive = false,
+      feedback: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(item.icon, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                data.paths.length > 1
+                    ? '${data.paths.length} items'
+                    : item.name,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.4, child: child),
+      child: child,
+    );
+    if (item.isDir || item.isArchive) {
+      draggable = DragTarget<({String root, List<String> paths})>(
+        onWillAcceptWithDetails: (details) {
+          final d = details.data;
+          if (d.paths.contains(path)) return false;
+          if (d.root == _root &&
+              d.paths.any((p) => path.startsWith('$p/'))) {
+            return false;
+          }
+          return true;
+        },
+        onAcceptWithDetails: (details) => _acceptDrop(details.data, path),
+        builder: (ctx, candidate, rejected) => Container(
+          decoration: candidate.isNotEmpty
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(ctx).colorScheme.primary,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                )
+              : null,
+          child: draggable,
+        ),
+      );
+    }
+    return draggable;
   }
 
   Future<void> _duplicateEntry(EntryItem item) async {
@@ -2487,7 +2758,7 @@ class BrowserPageState extends State<BrowserPage> {
     final canNavigateUp = _isSelecting || _isSearching || _isEditingAddress || _relPath.isNotEmpty ||
         _root.startsWith('archive://') || (_root.startsWith('/') && _root != '/');
 
-    return CallbackShortcuts(
+    return _withDropTarget(CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyA, control: true): _selectAll,
         const SingleActivator(LogicalKeyboardKey.keyA, meta: true): _selectAll,
@@ -2687,6 +2958,7 @@ class BrowserPageState extends State<BrowserPage> {
         ],
       ),
       ),
+    ),
     ),
     ),
     ),
@@ -3061,7 +3333,9 @@ class BrowserPageState extends State<BrowserPage> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  InkWell(
+                  DragTarget<({String root, List<String> paths})>(
+                    onAcceptWithDetails: (d) => _acceptDrop(d.data, ''),
+                    builder: (ctx, candidate, rejected) => InkWell(
                     borderRadius: BorderRadius.circular(4),
                     onTap: () {
                       if (_relPath.isNotEmpty) {
@@ -3084,10 +3358,14 @@ class BrowserPageState extends State<BrowserPage> {
                         ),
                       ),
                     ),
+                    ),
                   ),
                   for (int i = 0; i < segments.length; i++) ...[
                     const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
-                    InkWell(
+                    DragTarget<({String root, List<String> paths})>(
+                      onAcceptWithDetails: (d) =>
+                          _acceptDrop(d.data, segments.sublist(0, i + 1).join('/')),
+                      builder: (ctx, candidate, rejected) => InkWell(
                       borderRadius: BorderRadius.circular(4),
                       onTap: () {
                         final next = segments.sublist(0, i + 1).join('/');
@@ -3110,6 +3388,7 @@ class BrowserPageState extends State<BrowserPage> {
                             fontWeight: i == segments.length - 1 ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
+                      ),
                       ),
                     ),
                   ],
@@ -3414,7 +3693,12 @@ class BrowserPageState extends State<BrowserPage> {
           onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
                 // Tap empty space to leave selection mode, like the platform file managers.
                 onTap: _isSelecting ? _clearSelection : null,
-          child: GridView.builder(
+          child: LayoutBuilder(
+            builder: (ctx, constraints) {
+              _gridWidth = constraints.maxWidth;
+              return Stack(
+                children: [
+                  GridView.builder(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(8),
@@ -3445,13 +3729,16 @@ class BrowserPageState extends State<BrowserPage> {
             final path = _fullEntryPath(item);
             final isSelected = _selectedPaths.contains(path);
 
-            return GestureDetector(
+            return _draggableTile(
+              item: item,
+              path: path,
+              child: GestureDetector(
               onSecondaryTapDown: (details) {
                 _lastItemSecondaryTap = DateTime.now();
                 _showContextMenu(context, details.globalPosition, item);
               },
               child: InkWell(
-                onTap: () => _openEntry(item),
+                onTap: () => _handleTileTap(item, i),
                 onLongPress: () => _showEntryActions(item),
                 borderRadius: BorderRadius.circular(6),
                 child: Container(
@@ -3518,9 +3805,35 @@ class BrowserPageState extends State<BrowserPage> {
                   ),
                 ),
               ),
+              ),
             );
           },
-        ),
+                  ),
+                  Positioned.fill(
+                    child: Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: _lassoDown,
+                      onPointerMove: _lassoMove,
+                      onPointerUp: (_) => _lassoEnd(),
+                      onPointerCancel: (_) => _lassoEnd(),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  if (_lassoRect != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: _LassoPainter(
+                            _lassoRect!,
+                            Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
       ),
       );
     }
@@ -3560,7 +3873,10 @@ class BrowserPageState extends State<BrowserPage> {
           final path = _fullEntryPath(item);
           final isSelected = _selectedPaths.contains(path);
 
-          return GestureDetector(
+          return _draggableTile(
+            item: item,
+            path: path,
+            child: GestureDetector(
             onSecondaryTapDown: (details) {
               _lastItemSecondaryTap = DateTime.now();
               _showContextMenu(context, details.globalPosition, item);
@@ -3616,8 +3932,9 @@ class BrowserPageState extends State<BrowserPage> {
                 style: const TextStyle(fontSize: 9.5),
               ),
               trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
-              onTap: () => _openEntry(item),
+              onTap: () => _handleTileTap(item, i),
               onLongPress: () => _showEntryActions(item),
+            ),
             ),
           );
         },
@@ -3625,4 +3942,32 @@ class BrowserPageState extends State<BrowserPage> {
     ),
     );
   }
+}
+
+/// The rubber-band rectangle drawn over the grid during lasso selection.
+class _LassoPainter extends CustomPainter {
+  final Rect rect;
+  final Color color;
+
+  const _LassoPainter(this.rect, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = color.withValues(alpha: 0.15)
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LassoPainter old) => old.rect != rect || old.color != color;
 }
