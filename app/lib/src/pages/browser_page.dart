@@ -52,10 +52,20 @@ class BrowserPage extends StatefulWidget {
   final String initialRoot;
   final String initialPath;
 
+  /// True when hosted inside the split view: no route back button, no
+  /// PopScope interception, no nested split.
+  final bool embedded;
+
+  /// Reports the current location whenever it changes (used by the
+  /// split host to restore the left pane's location on exit).
+  final void Function(String root, String path)? onLocationChanged;
+
   const BrowserPage({
     super.key,
     required this.initialRoot,
     this.initialPath = '',
+    this.embedded = false,
+    this.onLocationChanged,
   });
 
   @override
@@ -290,6 +300,43 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
+  /// Split view (dual pane): both panes are full BrowserPages hosted by
+  /// this one; exiting returns to the left pane's last location.
+  bool _splitActive = false;
+  Widget? _splitPaneA;
+  Widget? _splitPaneB;
+  (String, String)? _splitReturn;
+
+  void _toggleSplit() {
+    if (_splitActive) {
+      setState(() {
+        _splitActive = false;
+        _splitPaneA = null;
+        _splitPaneB = null;
+      });
+      final ret = _splitReturn;
+      _splitReturn = null;
+      if (ret != null && (ret.$1 != _root || ret.$2 != _relPath)) {
+        navigateTo(ret.$1, ret.$2);
+      }
+    } else {
+      setState(() {
+        _splitPaneA = BrowserPage(
+          embedded: true,
+          initialRoot: _root,
+          initialPath: _relPath,
+          onLocationChanged: (r, p) => _splitReturn = (r, p),
+        );
+        _splitPaneB = BrowserPage(
+          embedded: true,
+          initialRoot: _root,
+          initialPath: _relPath,
+        );
+        _splitActive = true;
+      });
+    }
+  }
+
   /// Back/forward history within the current root. A root switch starts
   /// a fresh history, like opening a new window in a desktop manager.
   final List<String> _backStack = [];
@@ -402,6 +449,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// [refresh] keeps the scroll offset so a pull-to-refresh or a post-action
   /// reload does not throw the user back to the top of a long folder.
   Future<void> _load({bool refresh = false}) async {
+    widget.onLocationChanged?.call(_root, _relPath);
     final loadingFor = '$_root\u0000$_relPath';
     _loadingFor = loadingFor;
     setState(() {
@@ -2751,6 +2799,35 @@ class BrowserPageState extends State<BrowserPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_splitActive) {
+      return Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 40,
+          leading: IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Exit split view',
+            onPressed: _toggleSplit,
+          ),
+          title: const Text('Split view', style: TextStyle(fontSize: 14)),
+        ),
+        body: LayoutBuilder(
+          builder: (ctx, constraints) {
+            final panes = <Widget>[
+              Expanded(child: _splitPaneA!),
+              if (constraints.maxWidth >= 720)
+                const VerticalDivider(width: 1)
+              else
+                const Divider(height: 1),
+              Expanded(child: _splitPaneB!),
+            ];
+            return constraints.maxWidth >= 720
+                ? Row(children: panes)
+                : Column(children: panes);
+          },
+        ),
+      );
+    }
+
     final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
 
     // Back first leaves selection/search/address, then walks up the directory tree.
@@ -2904,9 +2981,9 @@ class BrowserPageState extends State<BrowserPage> {
         child: Focus(
         autofocus: true,
         child: PopScope(
-      canPop: !canNavigateUp,
+      canPop: widget.embedded || !canNavigateUp,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
+        if (didPop || widget.embedded) return;
         if (_isSelecting) {
           _clearSelection();
         } else if (_isSearching) {
@@ -2936,7 +3013,7 @@ class BrowserPageState extends State<BrowserPage> {
                 tooltip: 'Cancel selection (Esc)',
                 onPressed: _clearSelection,
               )
-            : (Navigator.of(context).canPop()
+            : (!widget.embedded && Navigator.of(context).canPop()
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back, size: 18),
                     visualDensity: VisualDensity.compact,
@@ -3084,6 +3161,8 @@ class BrowserPageState extends State<BrowserPage> {
             });
           },
         ),
+        if (!widget.embedded)
+          action(Icons.vertical_split, 'Split view', _toggleSplit),
         action(
           _isGrid ? Icons.view_list : Icons.grid_view,
           _isGrid ? 'List view' : 'Grid view',
@@ -3759,7 +3838,7 @@ class BrowserPageState extends State<BrowserPage> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if (item.isImage)
+                            if (item.isImage || item.isVideo)
                               EntryThumbnail(
                                 root: _root,
                                 relPath: _fullEntryPath(item),
@@ -3899,7 +3978,7 @@ class BrowserPageState extends State<BrowserPage> {
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (item.isImage)
+                        if (item.isImage || item.isVideo)
                           EntryThumbnail(
                             root: _root,
                             relPath: path,

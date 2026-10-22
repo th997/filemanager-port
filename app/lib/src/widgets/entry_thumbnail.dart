@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
+import '../services/video_thumbnail_service.dart';
 
 /// Thumbnail for an image entry in the browser grid/list.
 ///
@@ -68,7 +69,36 @@ class EntryThumbnail extends StatelessWidget {
         color: item.iconColor(context),
       ),
     );
-    if (!item.isImage || item.isDir) return fallback;
+    if (item.isDir) return fallback;
+
+    if (item.isVideo) {
+      return FutureBuilder<File?>(
+        future:
+            VideoThumbnailService.instance.thumbnail(root: root, path: relPath),
+        builder: (ctx, snap) {
+          if (!snap.hasData) return fallback;
+          final img = _image(snap.data!, fallback);
+          if (size < 40) return img;
+          return Stack(
+            children: [
+              img,
+              Positioned(
+                right: 2,
+                bottom: 2,
+                child: Icon(
+                  Icons.play_circle_fill,
+                  size: 14,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  shadows: const [Shadow(blurRadius: 3, color: Colors.black54)],
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    if (!item.isImage) return fallback;
 
     if (isNativeRoot(root)) {
       return _image(File(joinNative(root, relPath)), fallback);
