@@ -10,6 +10,7 @@ import '../dialogs/task_progress_dialog.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../rust/api/remotes.dart';
+import '../services/error_text.dart';
 import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
 import '../services/permission_service.dart';
@@ -552,6 +553,7 @@ class BrowserPageState extends State<BrowserPage> {
             root: _root,
             path: _fullEntryPath(item),
             fileName: item.name,
+            readOnly: !_canWrite,
           ),
         ),
       ).then((_) => _load(refresh: true));
@@ -710,6 +712,7 @@ class BrowserPageState extends State<BrowserPage> {
             root: root,
             path: path,
             fileName: item.name,
+            readOnly: root.startsWith('archive://'),
           ),
         ),
       );
@@ -826,19 +829,7 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Backend errors arrive as `kind: detail` strings. Turn the common ones
   /// into something a user can act on instead of echoing the Rust wording.
-  String _friendlyError(Object error) {
-    final text = error.toString();
-    if (text.startsWith('path not found:')) {
-      return 'This folder no longer exists. It may have been deleted or renamed.\n($text)';
-    }
-    if (text.startsWith('permission denied:')) {
-      return 'Permission denied. Grant storage access or pick another folder.\n($text)';
-    }
-    if (text.startsWith('connection failed:')) {
-      return 'Cannot reach the server. Check the connection and try again.\n($text)';
-    }
-    return text;
-  }
+  String _friendlyError(Object error) => friendlyErrorText(error);
 
   /// Two layers: the local filter keeps narrowing the loaded pages as you
   /// type (instant, 1+ chars), and a debounced recursive search on the
@@ -2028,6 +2019,9 @@ class BrowserPageState extends State<BrowserPage> {
     if (confirm == 'trash') {
       // Per-item tolerance: one locked file must not strand the rest of
       // the batch halfway with a single opaque error.
+      final beforeIds = (await StorageService.instance.getTrashItems())
+          .map((t) => t.id)
+          .toSet();
       final failures = <String>[];
       for (final p in paths) {
         try {
@@ -2036,6 +2030,11 @@ class BrowserPageState extends State<BrowserPage> {
           failures.add('${p.split('/').last}: $e');
         }
       }
+      final movedPaths = {
+        for (final p in paths)
+          if (!failures.any((f) => f.startsWith('${p.split('/').last}:')))
+            joinNative(_root, p),
+      };
       if (failures.isNotEmpty) {
         _showError(
           'Could not move ${failures.length} of ${paths.length} items to Recycle Bin:\n${failures.take(5).join('\n')}',
@@ -2044,16 +2043,57 @@ class BrowserPageState extends State<BrowserPage> {
       if (!mounted) return;
       _clearSelection();
       _load();
+      if (movedPaths.isNotEmpty) {
+        // Identify the trash entries this batch just created so Undo
+        // restores exactly those — never older items.
+        final newIds = (await StorageService.instance.getTrashItems())
+            .where((t) =>
+                !beforeIds.contains(t.id) &&
+                movedPaths.contains(t.originalPath))
+            .map((t) => t.id)
+            .toList();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Moved ${movedPaths.length} item${movedPaths.length == 1 ? '' : 's'} to Recycle Bin',
+            ),
+            action: newIds.isEmpty
+                ? null
+                : SnackBarAction(
+                    label: 'Undo',
+                    onPressed: () async {
+                      for (final id in newIds) {
+                        try {
+                          await StorageService.instance.restoreTrashItem(id);
+                        } catch (_) {}
+                      }
+                      if (!mounted) return;
+                      _load(refresh: true);
+                    },
+                  ),
+          ),
+        );
+      }
     } else if (confirm == 'permanent') {
       try {
         Future<String> startTask() =>
             TaskService.instance.delete(root: _root, paths: paths);
         final taskId = await startTask();
         if (!mounted) return;
-        await TaskProgressDialog.show(context, taskId, 'Deleting…', onRetry: startTask);
+        final done = await TaskProgressDialog.show(context, taskId, 'Deleting…', onRetry: startTask);
         if (!mounted) return;
         _clearSelection();
         _load(refresh: true);
+        if (done == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Deleted $count item${count == 1 ? '' : 's'}',
+              ),
+            ),
+          );
+        }
       } catch (e) {
         _showError('Delete failed: $e');
       }

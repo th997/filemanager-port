@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
+import '../services/error_text.dart';
 import '../services/storage_service.dart';
 
 class RemoteWizardDialog extends StatefulWidget {
@@ -49,6 +50,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _idManuallyEdited = c != null;
     _nameController.addListener(_onNameChanged);
     _endpointController = TextEditingController(text: c?.endpoint ?? '');
+    _endpointController.addListener(_onEndpointChanged);
     _bucketController = TextEditingController(text: c?.bucket ?? '');
     _regionController = TextEditingController(text: c?.region ?? 'us-east-1');
     _keyIdController = TextEditingController(text: c?.accessKeyId ?? '');
@@ -59,6 +61,38 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _passwordController = TextEditingController(text: c?.password ?? '');
     _rootPathController = TextEditingController(text: c?.rootPath ?? '/');
     _pathStyle = c?.pathStyle ?? false;
+  }
+
+  bool _endpointInsecure = false;
+
+  void _onEndpointChanged() {
+    final insecure =
+        _endpointController.text.trim().toLowerCase().startsWith('http://');
+    if (insecure != _endpointInsecure) {
+      _endpointInsecure = insecure;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _insecureWarning(String message) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber, size: 16, color: Colors.amber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: const TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onNameChanged() {
@@ -85,6 +119,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   void dispose() {
     _nameController.removeListener(_onNameChanged);
     _nameController.dispose();
+    _endpointController.removeListener(_onEndpointChanged);
     _idController.dispose();
     _endpointController.dispose();
     _bucketController.dispose();
@@ -133,7 +168,24 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     );
   }
 
+  String? _portError() {
+    final t = _portController.text.trim();
+    if (t.isEmpty) return null;
+    final p = int.tryParse(t);
+    if (p == null) return 'Port must be a number.';
+    if (p < 1 || p > 65535) return 'Port must be between 1 and 65535.';
+    return null;
+  }
+
   Future<void> _testConnection() async {
+    final portError = _portError();
+    if (portError != null) {
+      setState(() {
+        _testSuccess = false;
+        _testResult = portError;
+      });
+      return;
+    }
     setState(() {
       _testing = true;
       _testResult = null;
@@ -154,7 +206,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
         setState(() {
           _testing = false;
           _testSuccess = false;
-          _testResult = 'Connection failed: $e';
+          _testResult = 'Connection failed: ${friendlyErrorText(e)}';
         });
       }
     }
@@ -336,6 +388,13 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                     ),
                     obscureText: _obscurePassword,
                   ),
+                  if (_endpointInsecure) ...[
+                    const SizedBox(height: 12),
+                    _insecureWarning(
+                      'This URL uses http:// — the password and files travel '
+                      'unencrypted. Use https:// if the server supports it.',
+                    ),
+                  ],
                 ] else ...[
                   Row(
                     children: [
@@ -358,6 +417,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                             border: const OutlineInputBorder(),
                           ),
                           keyboardType: TextInputType.number,
+                          validator: (v) {
+                            final t = (v ?? '').trim();
+                            if (t.isEmpty) return null; // default per protocol
+                            final p = int.tryParse(t);
+                            if (p == null) return 'Numbers only';
+                            if (p < 1 || p > 65535) return 'Use 1–65535';
+                            return null;
+                          },
                         ),
                       ),
                     ],
@@ -386,6 +453,13 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                     controller: _rootPathController,
                     decoration: const InputDecoration(labelText: 'Remote Root Path', border: OutlineInputBorder()),
                   ),
+                  if (_kind == 'ftp') ...[
+                    const SizedBox(height: 12),
+                    _insecureWarning(
+                      'FTP is not encrypted: the password and files travel in '
+                      'plain text. Prefer SFTP when the server offers it.',
+                    ),
+                  ],
                 ],
 
                 if (_testResult != null) ...[

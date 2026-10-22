@@ -18,11 +18,17 @@ class TextEditorPage extends StatefulWidget {
   final String path;
   final String fileName;
 
+  /// True when the containing location cannot be written (archive
+  /// contents, read-only servers): the editor opens view-only instead of
+  /// letting the user type and only failing at save time.
+  final bool readOnly;
+
   const TextEditorPage({
     super.key,
     required this.root,
     required this.path,
     required this.fileName,
+    this.readOnly = false,
   });
 
   @override
@@ -41,8 +47,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
   double _fontSize = 13.0;
   bool _wordWrap = true;
   bool _showFind = false;
+  bool _showReplace = false;
   final TextEditingController _findController = TextEditingController();
+  final TextEditingController _replaceController = TextEditingController();
   final FocusNode _findFocusNode = FocusNode();
+  final FocusNode _replaceFocusNode = FocusNode();
   final UndoHistoryController _undoController = UndoHistoryController();
   final List<int> _matchIndices = [];
   int _currentMatchIndex = 0;
@@ -74,7 +83,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _controller.removeListener(_updateCursorPosition);
     _controller.dispose();
     _findController.dispose();
+    _replaceController.dispose();
     _findFocusNode.dispose();
+    _replaceFocusNode.dispose();
     _undoController.dispose();
     super.dispose();
   }
@@ -182,6 +193,73 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _currentMatchIndex = (_currentMatchIndex - 1 + _matchIndices.length) % _matchIndices.length;
     });
     _selectCurrentMatch();
+  }
+
+  void _ensureEditing() {
+    if (_mode != TextFileMode.edit) _setMode(TextFileMode.edit);
+  }
+
+  /// Replaces the currently selected match. Matching is case-insensitive,
+  /// mirroring find; the replacement text is inserted verbatim.
+  void _replaceCurrent() {
+    if (widget.readOnly) return;
+    _ensureEditing();
+    if (_matchIndices.isEmpty) return;
+    final query = _findController.text;
+    final replacement = _replaceController.text;
+    final idx = _matchIndices[_currentMatchIndex];
+    final text = _controller.text;
+    if (idx < 0 ||
+        idx + query.length > text.length ||
+        text.substring(idx, idx + query.length).toLowerCase() !=
+            query.toLowerCase()) {
+      _updateMatches(); // stale indices — rescan instead of corrupting text
+      return;
+    }
+    _controller.value = _controller.value.copyWith(
+      text: text.replaceRange(idx, idx + query.length, replacement),
+      selection:
+          TextSelection.collapsed(offset: idx + replacement.length),
+    );
+    setState(() => _isDirty = true);
+    _updateMatches();
+  }
+
+  void _replaceAll() {
+    if (widget.readOnly) return;
+    _ensureEditing();
+    final query = _findController.text;
+    if (query.isEmpty) return;
+    final replacement = _replaceController.text;
+    final text = _controller.text;
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final buf = StringBuffer();
+    var start = 0;
+    var count = 0;
+    while (true) {
+      final i = lowerText.indexOf(lowerQuery, start);
+      if (i == -1) break;
+      buf.write(text.substring(start, i));
+      buf.write(replacement);
+      start = i + lowerQuery.length;
+      count++;
+    }
+    if (count == 0) return;
+    buf.write(text.substring(start));
+    _controller.value = _controller.value.copyWith(
+      text: buf.toString(),
+      selection: const TextSelection.collapsed(offset: 0),
+    );
+    setState(() => _isDirty = true);
+    _updateMatches();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Replaced $count occurrence${count == 1 ? '' : 's'}',
+        ),
+      ),
+    );
   }
 
   void _selectCurrentMatch() {
@@ -298,6 +376,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   void _setMode(TextFileMode mode) {
     if (mode == TextFileMode.preview && !_isMarkdown && !_isHtml) return;
+    if (mode == TextFileMode.edit && widget.readOnly) return;
     setState(() => _mode = mode);
   }
 
@@ -323,6 +402,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
         },
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
           setState(() => _showFind = true);
+          _findFocusNode.requestFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyH, control: true): () {
+          if (widget.readOnly) return;
+          setState(() {
+            _showFind = true;
+            _showReplace = true;
+          });
           _findFocusNode.requestFocus();
         },
         const SingleActivator(LogicalKeyboardKey.keyG, control: true): _showGoToLineDialog,
@@ -438,7 +525,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       _mode == TextFileMode.preview ? TextFileMode.code : TextFileMode.preview,
                     ),
                   ),
-                if (_mode != TextFileMode.edit)
+                if (widget.readOnly)
+                  const IconButton(
+                    icon: Icon(Icons.lock_outline),
+                    tooltip: 'Read-only location — this file cannot be edited here',
+                    onPressed: null,
+                  )
+                else if (_mode != TextFileMode.edit)
                   IconButton(
                     icon: const Icon(Icons.edit),
                     tooltip: 'Edit',
@@ -591,6 +684,16 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       )
                     : Column(
                         children: [
+                          if (widget.readOnly)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                              color: Colors.amber.withValues(alpha: 0.15),
+                              child: const Text(
+                                'Read-only location — changes cannot be saved here.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
                           if (_showFind) _buildFindBar(),
                           Expanded(child: _buildContent()),
                           _buildStatusBar(),
@@ -606,8 +709,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          Row(
+            children: [
           const Icon(Icons.search, size: 18),
           const SizedBox(width: 8),
           Expanded(
@@ -653,11 +759,55 @@ class _TextEditorPageState extends State<TextEditorPage> {
             tooltip: 'Next match',
             onPressed: _matchIndices.isEmpty ? null : _nextMatch,
           ),
+          if (!widget.readOnly)
+            IconButton(
+              icon: Icon(
+                _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
+                size: 18,
+              ),
+              tooltip: 'Toggle replace (Ctrl+H)',
+              onPressed: () {
+                setState(() => _showReplace = !_showReplace);
+                if (_showReplace) _replaceFocusNode.requestFocus();
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.close, size: 18),
             tooltip: 'Close find (Esc)',
             onPressed: () => setState(() => _showFind = false),
           ),
+            ],
+          ),
+          if (_showReplace && !widget.readOnly)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.arrow_right_alt, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _replaceController,
+                      focusNode: _replaceFocusNode,
+                      decoration: const InputDecoration(
+                        hintText: 'Replace with...',
+                        isDense: true,
+                        border: InputBorder.none,
+                      ),
+                      onSubmitted: (_) => _replaceCurrent(),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _matchIndices.isEmpty ? null : _replaceCurrent,
+                    child: const Text('Replace'),
+                  ),
+                  TextButton(
+                    onPressed: _matchIndices.isEmpty ? null : _replaceAll,
+                    child: const Text('Replace All'),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -672,9 +822,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final words = chars > 200000
         ? null
         : text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
-    final modeLabel = _mode == TextFileMode.preview
-        ? 'Preview'
-        : (_mode == TextFileMode.code ? 'Read-only' : 'Editing');
+    final modeLabel = widget.readOnly
+        ? 'Read-only location'
+        : _mode == TextFileMode.preview
+            ? 'Preview'
+            : (_mode == TextFileMode.code ? 'Viewing source' : 'Editing');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

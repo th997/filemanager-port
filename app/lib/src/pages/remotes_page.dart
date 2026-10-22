@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
+import '../services/error_text.dart';
 import '../services/storage_service.dart';
 import 'browser_page.dart';
+
+enum _ConnStatus { unknown, checking, online, offline }
 
 class RemotesPage extends StatefulWidget {
   const RemotesPage({super.key});
@@ -15,6 +18,7 @@ class RemotesPage extends StatefulWidget {
 
 class _RemotesPageState extends State<RemotesPage> {
   List<RemoteConfigDto> _remotes = [];
+  final Map<String, _ConnStatus> _status = {};
   bool _loading = true;
   bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
@@ -67,6 +71,40 @@ class _RemotesPageState extends State<RemotesPage> {
         _remotes = rems;
         _loading = false;
       });
+      // Probe reachability in the background so the list shows live
+      // status dots without blocking the page on slow servers.
+      for (final r in rems) {
+        _probeStatus(r);
+      }
+    }
+  }
+
+  Future<void> _probeStatus(RemoteConfigDto remote) async {
+    if (_status[remote.id] == _ConnStatus.checking) return;
+    if (mounted) {
+      setState(() => _status[remote.id] = _ConnStatus.checking);
+    }
+    bool ok;
+    try {
+      ok = await StorageService.instance.testConnection(remote);
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() =>
+        _status[remote.id] = ok ? _ConnStatus.online : _ConnStatus.offline);
+  }
+
+  Color _statusColor(_ConnStatus s) {
+    switch (s) {
+      case _ConnStatus.online:
+        return Colors.green;
+      case _ConnStatus.offline:
+        return Colors.redAccent;
+      case _ConnStatus.checking:
+        return Colors.amber;
+      case _ConnStatus.unknown:
+        return Colors.grey;
     }
   }
 
@@ -155,13 +193,16 @@ class _RemotesPageState extends State<RemotesPage> {
     );
     bool ok;
     String? error;
+    setState(() => _status[remote.id] = _ConnStatus.checking);
     try {
       ok = await StorageService.instance.testConnection(remote);
     } catch (e) {
       ok = false;
-      error = e.toString();
+      error = friendlyErrorText(e);
     }
     if (!mounted) return;
+    setState(() =>
+        _status[remote.id] = ok ? _ConnStatus.online : _ConnStatus.offline);
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -363,14 +404,35 @@ class _RemotesPageState extends State<RemotesPage> {
                                       minTileHeight: 40,
                                       minLeadingWidth: 24,
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                                      leading: Container(
-                                        width: 30,
-                                        height: 30,
-                                        decoration: BoxDecoration(
-                                          color: color.withValues(alpha: 0.15),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(icon, size: 16, color: color),
+                                      leading: Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Container(
+                                            width: 30,
+                                            height: 30,
+                                            decoration: BoxDecoration(
+                                              color: color.withValues(alpha: 0.15),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(icon, size: 16, color: color),
+                                          ),
+                                          Positioned(
+                                            right: -1,
+                                            bottom: -1,
+                                            child: Container(
+                                              width: 10,
+                                              height: 10,
+                                              decoration: BoxDecoration(
+                                                color: _statusColor(_status[r.id] ?? _ConnStatus.unknown),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Theme.of(context).cardColor,
+                                                  width: 1.5,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
                                       subtitle: Text(

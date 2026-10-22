@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/preferences_service.dart';
 
@@ -19,6 +20,18 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   ThemeMode get currentThemeMode => widget.currentThemeMode;
+
+  String? _versionLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (!mounted) return;
+      setState(() => _versionLabel =
+          'v${info.version} (build ${info.buildNumber}) • Rust Core');
+    }).catchError((_) {});
+  }
 
   void _setToolbarAtBottom(bool value) {
     PreferencesService.instance.setBool(PreferencesService.prefToolbarBottom, value);
@@ -144,7 +157,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   title: const Text('File Manager+ Cross-Platform', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                   subtitle: Text(
-                    'v1.0.3 • Flutter 3.47 + Rust Core\n'
+                    '${_versionLabel ?? 'Rust Core'}\n'
                     'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
                     style: const TextStyle(fontSize: 10),
                   ),
