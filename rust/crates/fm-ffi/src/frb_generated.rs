@@ -347,9 +347,10 @@ let api_dst_archive_path = <String>::sse_decode(&mut deserializer);deserializer.
 let api_src_paths = <Vec<String>>::sse_decode(&mut deserializer);
 let api_dst_root = <String>::sse_decode(&mut deserializer);
 let api_dst_dir = <String>::sse_decode(&mut deserializer);
-let api_dst_name = <Option<String>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+let api_dst_name = <Option<String>>::sse_decode(&mut deserializer);
+let api_conflict_policy = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::tasks::start_copy_task(api_src_root, api_src_paths, api_dst_root, api_dst_dir, api_dst_name).await?;   std::result::Result::Ok(output_ok)
+                         let output_ok = crate::api::tasks::start_copy_task(api_src_root, api_src_paths, api_dst_root, api_dst_dir, api_dst_name, api_conflict_policy).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
             }fn wire__crate__api__tasks__start_delete_task_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
@@ -400,9 +401,10 @@ let api_read_only = <bool>::sse_decode(&mut deserializer);deserializer.end(); mo
             let api_src_root = <String>::sse_decode(&mut deserializer);
 let api_src_paths = <Vec<String>>::sse_decode(&mut deserializer);
 let api_dst_root = <String>::sse_decode(&mut deserializer);
-let api_dst_dir = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+let api_dst_dir = <String>::sse_decode(&mut deserializer);
+let api_conflict_policy = <String>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::tasks::start_move_task(api_src_root, api_src_paths, api_dst_root, api_dst_dir).await?;   std::result::Result::Ok(output_ok)
+                         let output_ok = crate::api::tasks::start_move_task(api_src_root, api_src_paths, api_dst_root, api_dst_dir, api_conflict_policy).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
             }fn wire__crate__api__file_manager__stat_entry_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
@@ -676,7 +678,8 @@ let mut var_total = <Option<u64>>::sse_decode(deserializer);
 let mut var_fraction = <Option<f32>>::sse_decode(deserializer);
 let mut var_current = <Option<String>>::sse_decode(deserializer);
 let mut var_error = <Option<String>>::sse_decode(deserializer);
-return crate::api::tasks::TaskProgressDto{id: var_id, state: var_state, completed: var_completed, total: var_total, fraction: var_fraction, current: var_current, error: var_error};}
+let mut var_skipped = <u64>::sse_decode(deserializer);
+return crate::api::tasks::TaskProgressDto{id: var_id, state: var_state, completed: var_completed, total: var_total, fraction: var_fraction, current: var_current, error: var_error, skipped: var_skipped};}
                 }
                 
                 impl SseDecode for crate::api::metadata::TrashItemDto {
@@ -933,7 +936,8 @@ self.completed.into_into_dart().into_dart(),
 self.total.into_into_dart().into_dart(),
 self.fraction.into_into_dart().into_dart(),
 self.current.into_into_dart().into_dart(),
-self.error.into_into_dart().into_dart()
+self.error.into_into_dart().into_dart(),
+self.skipped.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1153,7 +1157,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::metadata::TrashItemDto> for c
 <Option<u64>>::sse_encode(self.total, serializer);
 <Option<f32>>::sse_encode(self.fraction, serializer);
 <Option<String>>::sse_encode(self.current, serializer);
-<Option<String>>::sse_encode(self.error, serializer);}
+<Option<String>>::sse_encode(self.error, serializer);
+<u64>::sse_encode(self.skipped, serializer);}
                 }
                 
                 impl SseEncode for crate::api::metadata::TrashItemDto {

@@ -1663,6 +1663,58 @@ class BrowserPageState extends State<BrowserPage> {
     final cb = _clipboard;
     if (cb == null) return;
 
+    // Detect name clashes in the destination first and let the user decide
+    // once for the whole paste. The task used to overwrite silently, which
+    // destroyed the existing files. Items pasted back into their own folder
+    // are excluded: the Rust side renames those automatically.
+    var policy = 'overwrite';
+    final conflicts = <String>[];
+    for (final p in cb.paths) {
+      final name = p.split('/').last;
+      final dstPath = _relPath.isEmpty ? name : '$_relPath/$name';
+      if (cb.srcRoot == _root && p == dstPath) continue;
+      try {
+        await statEntry(root: _root, path: dstPath);
+        conflicts.add(name);
+      } catch (_) {
+        // Missing (or not stat-able): nothing to decide for this item.
+      }
+    }
+    if (conflicts.isNotEmpty) {
+      if (!mounted) return;
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Already exists'),
+          content: Text(
+            conflicts.length == 1
+                ? '"${conflicts.first}" already exists in this folder. What should happen to it?'
+                : '${conflicts.length} items already exist in this folder. What should happen to them?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'skip'),
+              child: const Text('Skip'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'rename'),
+              child: const Text('Keep both'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'overwrite'),
+              child: const Text('Replace'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null) return;
+      policy = choice;
+    }
+
     try {
       final taskId = cb.isCut
           ? await TaskService.instance.move(
@@ -1670,12 +1722,14 @@ class BrowserPageState extends State<BrowserPage> {
               srcPaths: cb.paths,
               dstRoot: _root,
               dstDir: _relPath,
+              conflictPolicy: policy,
             )
           : await TaskService.instance.copy(
               srcRoot: cb.srcRoot,
               srcPaths: cb.paths,
               dstRoot: _root,
               dstDir: _relPath,
+              conflictPolicy: policy,
             );
 
       if (!mounted) return;
@@ -1777,12 +1831,20 @@ class BrowserPageState extends State<BrowserPage> {
     if (!mounted) return;
 
     if (confirm == 'trash') {
-      try {
-        for (final p in paths) {
+      // Per-item tolerance: one locked file must not strand the rest of
+      // the batch halfway with a single opaque error.
+      final failures = <String>[];
+      for (final p in paths) {
+        try {
           await StorageService.instance.moveToTrash(joinNative(_root, p));
+        } catch (e) {
+          failures.add('${p.split('/').last}: $e');
         }
-      } catch (e) {
-        _showError('Could not move to Recycle Bin: $e');
+      }
+      if (failures.isNotEmpty) {
+        _showError(
+          'Could not move ${failures.length} of ${paths.length} items to Recycle Bin:\n${failures.take(5).join('\n')}',
+        );
       }
       if (!mounted) return;
       _clearSelection();

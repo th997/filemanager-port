@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `discard_partial_copy`, `finish`, `from_progress`, `generate_copy_path`, `state_str`, `task_mgr`
+// These functions are ignored because they are not marked as `pub`: `batch_result`, `discard_partial_copy`, `finish`, `from_progress`, `generate_copy_path`, `parse_policy`, `state_str`, `task_mgr`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
 Future<String> startCopyTask({
@@ -16,12 +16,14 @@ Future<String> startCopyTask({
   required String dstRoot,
   required String dstDir,
   String? dstName,
+  required String conflictPolicy,
 }) => RustLib.instance.api.crateApiTasksStartCopyTask(
   srcRoot: srcRoot,
   srcPaths: srcPaths,
   dstRoot: dstRoot,
   dstDir: dstDir,
   dstName: dstName,
+  conflictPolicy: conflictPolicy,
 );
 
 Future<String> startMoveTask({
@@ -29,11 +31,13 @@ Future<String> startMoveTask({
   required List<String> srcPaths,
   required String dstRoot,
   required String dstDir,
+  required String conflictPolicy,
 }) => RustLib.instance.api.crateApiTasksStartMoveTask(
   srcRoot: srcRoot,
   srcPaths: srcPaths,
   dstRoot: dstRoot,
   dstDir: dstDir,
+  conflictPolicy: conflictPolicy,
 );
 
 Future<String> startDeleteTask({
@@ -74,6 +78,7 @@ class TaskProgressDto {
   final double? fraction;
   final String? current;
   final String? error;
+  final BigInt skipped;
 
   const TaskProgressDto({
     required this.id,
@@ -83,6 +88,7 @@ class TaskProgressDto {
     this.fraction,
     this.current,
     this.error,
+    required this.skipped,
   });
 
   @override
@@ -93,7 +99,8 @@ class TaskProgressDto {
       total.hashCode ^
       fraction.hashCode ^
       current.hashCode ^
-      error.hashCode;
+      error.hashCode ^
+      skipped.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -106,5 +113,6 @@ class TaskProgressDto {
           total == other.total &&
           fraction == other.fraction &&
           current == other.current &&
-          error == other.error;
+          error == other.error &&
+          skipped == other.skipped;
 }

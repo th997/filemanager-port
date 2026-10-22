@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
-use crate::{TaskProgress, TaskState};
+use crate::{ConflictPolicy, TaskProgress, TaskState};
 
 pub struct TaskHandle {
     pub progress: Arc<Mutex<TaskProgress>>,
@@ -88,7 +88,32 @@ pub async fn total_bytes(vfs: &dyn Vfs, path: &VfsPath) -> u64 {
     total
 }
 
+/// Pick a free sibling name for `dst_path` using the app's `_copy` scheme
+/// (`name_copy.ext`, then `name_copy_2.ext`, ...). Used by the `Rename`
+/// conflict policy so an incoming file never has to destroy an existing one.
+async fn free_copy_path(dst_vfs: &dyn Vfs, dst_path: &VfsPath) -> VfsPath {
+    let name = dst_path.name().unwrap_or("file");
+    let (stem, ext) = match name.rfind('.') {
+        Some(idx) if idx > 0 => (&name[..idx], &name[idx..]),
+        _ => (name, ""),
+    };
+    let parent = dst_path.parent().unwrap_or_else(VfsPath::root);
+    let mut candidate = format!("{stem}_copy{ext}");
+    let mut count = 2;
+    while dst_vfs.stat(&parent.join(&candidate)).await.is_ok() {
+        candidate = format!("{stem}_copy_{count}{ext}");
+        count += 1;
+        if count > 1000 {
+            break;
+        }
+    }
+    parent.join(candidate)
+}
+
 /// Recursively copy a file or directory from `src_vfs` to `dst_vfs`.
+///
+/// `policy` decides what happens when a file's destination already exists;
+/// directories always merge (their contents are decided per file).
 pub async fn copy_recursive(
     src_vfs: &dyn Vfs,
     src_path: &VfsPath,
@@ -96,6 +121,7 @@ pub async fn copy_recursive(
     dst_path: &VfsPath,
     progress: &Arc<Mutex<TaskProgress>>,
     cancel: &CancellationToken,
+    policy: ConflictPolicy,
 ) -> VfsResult<()> {
     if cancel.is_cancelled() {
         return Err(VfsError::Unsupported { operation: "cancelled" });
@@ -139,12 +165,12 @@ pub async fn copy_recursive(
             let child_src = child.path.clone();
             let child_dst = dst_path.join(child.name.clone());
             Box::pin(copy_recursive(
-                src_vfs, &child_src, dst_vfs, &child_dst, progress, cancel,
+                src_vfs, &child_src, dst_vfs, &child_dst, progress, cancel, policy,
             ))
             .await?;
         }
     } else {
-        copy_single_file(src_vfs, src_path, dst_vfs, dst_path, progress, cancel).await?;
+        copy_single_file(src_vfs, src_path, dst_vfs, dst_path, progress, cancel, policy).await?;
     }
 
     Ok(())
@@ -157,13 +183,40 @@ async fn copy_single_file(
     dst_path: &VfsPath,
     progress: &Arc<Mutex<TaskProgress>>,
     cancel: &CancellationToken,
+    policy: ConflictPolicy,
 ) -> VfsResult<()> {
+    // Resolve a name clash before moving any bytes. Until the policy
+    // existed, an existing destination file was silently replaced.
+    let mut target = dst_path.clone();
+    if let Ok(existing) = dst_vfs.stat(dst_path).await {
+        match policy {
+            ConflictPolicy::Skip => {
+                progress.lock().unwrap_or_else(|e| e.into_inner()).skipped += 1;
+                return Ok(());
+            }
+            ConflictPolicy::Rename => {
+                target = free_copy_path(dst_vfs, dst_path).await;
+            }
+            ConflictPolicy::Overwrite => {
+                if existing.kind == EntryKind::Dir {
+                    return Err(VfsError::Backend {
+                        path: dst_path.clone(),
+                        source: std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            "destination is a directory",
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
     // Stream into a sibling temp file and rename it over the destination
     // only once the copy is complete. Writing in place with Truncate meant
     // a cancelled or failed copy both destroyed the previous version and
     // left a truncated file behind.
-    let dst_name = dst_path.name().unwrap_or("file");
-    let tmp_path = dst_path
+    let dst_name = target.name().unwrap_or("file");
+    let tmp_path = target
         .parent()
         .unwrap_or_else(VfsPath::root)
         .join(format!(".{dst_name}.fm-part"));
@@ -175,14 +228,14 @@ async fn copy_single_file(
         return Err(e);
     }
 
-    match dst_vfs.rename(&tmp_path, dst_path).await {
+    match dst_vfs.rename(&tmp_path, &target).await {
         Ok(()) => Ok(()),
         Err(first_err) => {
             // Some backends refuse to rename onto an existing file; retry
             // once after removing it — but never remove a directory to
             // make room for a file.
             let dst_is_file = dst_vfs
-                .stat(dst_path)
+                .stat(&target)
                 .await
                 .map(|s| s.kind != EntryKind::Dir)
                 .unwrap_or(false);
@@ -190,8 +243,8 @@ async fn copy_single_file(
                 let _ = dst_vfs.remove(&tmp_path).await;
                 return Err(first_err);
             }
-            let _ = dst_vfs.remove(dst_path).await;
-            if dst_vfs.rename(&tmp_path, dst_path).await.is_err() {
+            let _ = dst_vfs.remove(&target).await;
+            if dst_vfs.rename(&tmp_path, &target).await.is_err() {
                 let _ = dst_vfs.remove(&tmp_path).await;
                 return Err(first_err);
             }

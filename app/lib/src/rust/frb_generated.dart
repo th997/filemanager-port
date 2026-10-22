@@ -221,6 +221,7 @@ abstract class RustLibApi extends BaseApi {
     required String dstRoot,
     required String dstDir,
     String? dstName,
+    required String conflictPolicy,
   });
 
   Future<String> crateApiTasksStartDeleteTask({
@@ -247,6 +248,7 @@ abstract class RustLibApi extends BaseApi {
     required List<String> srcPaths,
     required String dstRoot,
     required String dstDir,
+    required String conflictPolicy,
   });
 
   Future<EntryDto> crateApiFileManagerStatEntry({
@@ -1240,6 +1242,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dstRoot,
     required String dstDir,
     String? dstName,
+    required String conflictPolicy,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1250,6 +1253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dstRoot, serializer);
           sse_encode_String(dstDir, serializer);
           sse_encode_opt_String(dstName, serializer);
+          sse_encode_String(conflictPolicy, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1262,7 +1266,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiTasksStartCopyTaskConstMeta,
-        argValues: [srcRoot, srcPaths, dstRoot, dstDir, dstName],
+        argValues: [
+          srcRoot,
+          srcPaths,
+          dstRoot,
+          dstDir,
+          dstName,
+          conflictPolicy,
+        ],
         apiImpl: this,
       ),
     );
@@ -1270,7 +1281,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiTasksStartCopyTaskConstMeta => const TaskConstMeta(
     debugName: "start_copy_task",
-    argNames: ["srcRoot", "srcPaths", "dstRoot", "dstDir", "dstName"],
+    argNames: [
+      "srcRoot",
+      "srcPaths",
+      "dstRoot",
+      "dstDir",
+      "dstName",
+      "conflictPolicy",
+    ],
   );
 
   @override
@@ -1416,6 +1434,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<String> srcPaths,
     required String dstRoot,
     required String dstDir,
+    required String conflictPolicy,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1425,6 +1444,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_String(srcPaths, serializer);
           sse_encode_String(dstRoot, serializer);
           sse_encode_String(dstDir, serializer);
+          sse_encode_String(conflictPolicy, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1437,7 +1457,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiTasksStartMoveTaskConstMeta,
-        argValues: [srcRoot, srcPaths, dstRoot, dstDir],
+        argValues: [srcRoot, srcPaths, dstRoot, dstDir, conflictPolicy],
         apiImpl: this,
       ),
     );
@@ -1445,7 +1465,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiTasksStartMoveTaskConstMeta => const TaskConstMeta(
     debugName: "start_move_task",
-    argNames: ["srcRoot", "srcPaths", "dstRoot", "dstDir"],
+    argNames: ["srcRoot", "srcPaths", "dstRoot", "dstDir", "conflictPolicy"],
   );
 
   @override
@@ -1851,8 +1871,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskProgressDto dco_decode_task_progress_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return TaskProgressDto(
       id: dco_decode_String(arr[0]),
       state: dco_decode_String(arr[1]),
@@ -1861,6 +1881,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fraction: dco_decode_opt_box_autoadd_f_32(arr[4]),
       current: dco_decode_opt_String(arr[5]),
       error: dco_decode_opt_String(arr[6]),
+      skipped: dco_decode_u_64(arr[7]),
     );
   }
 
@@ -2274,6 +2295,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_fraction = sse_decode_opt_box_autoadd_f_32(deserializer);
     var var_current = sse_decode_opt_String(deserializer);
     var var_error = sse_decode_opt_String(deserializer);
+    var var_skipped = sse_decode_u_64(deserializer);
     return TaskProgressDto(
       id: var_id,
       state: var_state,
@@ -2282,6 +2304,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fraction: var_fraction,
       current: var_current,
       error: var_error,
+      skipped: var_skipped,
     );
   }
 
@@ -2656,6 +2679,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_f_32(self.fraction, serializer);
     sse_encode_opt_String(self.current, serializer);
     sse_encode_opt_String(self.error, serializer);
+    sse_encode_u_64(self.skipped, serializer);
   }
 
   @protected

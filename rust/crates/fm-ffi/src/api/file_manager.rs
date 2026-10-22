@@ -146,18 +146,39 @@ pub async fn rename_entry(root: String, from: String, to: String) -> Result<(), 
         .map_err(|e| e.to_string())
 }
 
+/// Upper bound for opening a file in the text editor. The old code read
+/// unboundedly into memory twice over (Rust buffer + Dart string), so a
+/// stray tap on a several-hundred-MB log could OOM the whole app.
+const MAX_TEXT_EDIT_BYTES: u64 = 50 * 1024 * 1024;
+
 pub async fn read_text_file(root: String, path: String) -> Result<String, String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
-    let mut reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
+    let reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
     reader
+        .take(MAX_TEXT_EDIT_BYTES + 1)
         .read_to_end(&mut bytes)
         .await
         .map_err(|e| e.to_string())?;
-    // Text files in the wild are not guaranteed UTF-8; show replacement
-    // characters instead of refusing to open the file.
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    if bytes.len() as u64 > MAX_TEXT_EDIT_BYTES {
+        return Err(
+            "file is too large to open in the text editor (limit 50 MB)".to_string(),
+        );
+    }
+    // Decode as UTF-8 first. If that fails, fall back to GB18030: a large
+    // share of real-world non-UTF-8 text (Windows Notepad saves in Chinese
+    // locales, CSV exports) is GBK-family. The previous lossy decode showed
+    // `�` everywhere — and pressing Save then wrote those replacement
+    // characters back over the original bytes, silently destroying the file.
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(text),
+        Err(e) => {
+            let bytes = e.into_bytes();
+            let (text, _, _) = encoding_rs::GB18030.decode(&bytes);
+            Ok(text.into_owned())
+        }
+    }
 }
 
 /// Drop a cached backend so the next access rebuilds it from stored config.

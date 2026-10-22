@@ -1,7 +1,10 @@
 use crate::registry::VfsRegistry;
 use fm_archive::ops::{create_zip, extract_archive};
 use fm_core::VfsPath;
-use fm_ops::{copy_recursive, delete_recursive, total_bytes, TaskManager, TaskProgress, TaskState};
+use fm_ops::{
+    copy_recursive, delete_recursive, total_bytes, ConflictPolicy, TaskManager, TaskProgress,
+    TaskState,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio_util::sync::CancellationToken;
@@ -90,6 +93,37 @@ async fn generate_copy_path(
     dst_base.join(candidate)
 }
 
+/// Conflict policy names as they cross the FFI boundary. Anything unknown
+/// maps to `overwrite` so older Dart builds keep their historical default.
+fn parse_policy(s: &str) -> ConflictPolicy {
+    match s {
+        "skip" => ConflictPolicy::Skip,
+        "rename" => ConflictPolicy::Rename,
+        _ => ConflictPolicy::Overwrite,
+    }
+}
+
+/// Turn per-item failures into the task result. Batch operations used to
+/// abort on the first failing item, leaving the rest unprocessed and the
+/// user to figure out which files made it; now every item is attempted and
+/// the failures are reported together.
+fn batch_result(failures: Vec<String>, total_items: usize) -> Result<(), String> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+    let shown: Vec<&str> = failures.iter().take(5).map(|f| f.as_str()).collect();
+    let mut msg = format!(
+        "{} of {} items failed:\n{}",
+        failures.len(),
+        total_items,
+        shown.join("\n")
+    );
+    if failures.len() > shown.len() {
+        msg += &format!("\n… and {} more", failures.len() - shown.len());
+    }
+    Err(msg)
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskProgressDto {
     pub id: String,
@@ -99,6 +133,7 @@ pub struct TaskProgressDto {
     pub fraction: Option<f32>,
     pub current: Option<String>,
     pub error: Option<String>,
+    pub skipped: u64,
 }
 
 fn state_str(s: TaskState) -> String {
@@ -122,6 +157,7 @@ impl TaskProgressDto {
             fraction: p.fraction(),
             current: p.current.map(|c| c.to_slash_string()),
             error: p.error,
+            skipped: p.skipped,
         }
     }
 }
@@ -132,6 +168,7 @@ pub async fn start_copy_task(
     dst_root: String,
     dst_dir: String,
     dst_name: Option<String>,
+    conflict_policy: String,
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
@@ -153,7 +190,10 @@ pub async fn start_copy_task(
                 p.total = Some(total);
             }
 
-            let is_batch = src_paths.len() > 1;
+            let policy = parse_policy(&conflict_policy);
+            let total_items = src_paths.len();
+            let is_batch = total_items > 1;
+            let mut failures: Vec<String> = Vec::new();
             for src in src_paths {
                 if cancel.is_cancelled() {
                     break;
@@ -180,10 +220,10 @@ pub async fn start_copy_task(
                         )
                         .await;
                     } else if dst_p.starts_with(&src_p) {
-                        return Err(format!(
-                            "cannot copy {} into itself",
-                            src_p.to_slash_string()
+                        failures.push(format!(
+                            "{file_name}: cannot copy a folder into itself"
                         ));
+                        continue;
                     }
                 }
                 // A destination that existed before the copy is not ours to
@@ -196,16 +236,17 @@ pub async fn start_copy_task(
                     &dst_p,
                     &progress,
                     &cancel,
+                    policy,
                 )
                 .await
                 {
                     if created {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
-                    return Err(e.to_string());
+                    failures.push(format!("{file_name}: {e}"));
                 }
             }
-            Ok::<(), String>(())
+            batch_result(failures, total_items)
         };
 
         let result = run.await;
@@ -223,6 +264,7 @@ pub async fn start_move_task(
     src_paths: Vec<String>,
     dst_root: String,
     dst_dir: String,
+    conflict_policy: String,
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
@@ -234,6 +276,9 @@ pub async fn start_move_task(
             let dst_vfs = VfsRegistry::global().get_or_create(&dst_root).await?;
             let dst_base = VfsPath::from_slash_path(&dst_dir);
 
+            let policy = parse_policy(&conflict_policy);
+            let total_items = src_paths.len();
+            let mut failures: Vec<String> = Vec::new();
             for src in &src_paths {
                 if cancel.is_cancelled() {
                     break;
@@ -246,18 +291,31 @@ pub async fn start_move_task(
                         continue;
                     }
                     if dst_p.starts_with(&src_p) {
-                        return Err(format!(
-                            "cannot move {} into itself",
-                            src_p.to_slash_string()
+                        failures.push(format!(
+                            "{file_name}: cannot move a folder into itself"
                         ));
-                    }
-                    if src_vfs.capabilities().rename && src_vfs.rename(&src_p, &dst_p).await.is_ok() {
-                        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-                        p.completed += 1;
                         continue;
+                    }
+                    // The rename fast path must honour the conflict policy:
+                    // renaming onto an existing name would silently replace
+                    // it on most backends, so only take the shortcut when
+                    // overwriting is allowed or the name is free.
+                    let dst_taken = dst_vfs.stat(&dst_p).await.is_ok();
+                    if !dst_taken || policy == ConflictPolicy::Overwrite {
+                        if src_vfs.capabilities().rename
+                            && src_vfs.rename(&src_p, &dst_p).await.is_ok()
+                        {
+                            let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                            p.completed += 1;
+                            continue;
+                        }
                     }
                 }
                 let created = dst_vfs.stat(&dst_p).await.is_err();
+                let skipped_before = progress
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .skipped;
                 if let Err(e) = copy_recursive(
                     src_vfs.as_ref(),
                     &src_p,
@@ -265,13 +323,26 @@ pub async fn start_move_task(
                     &dst_p,
                     &progress,
                     &cancel,
+                    policy,
                 )
                 .await
                 {
                     if created {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
-                    return Err(e.to_string());
+                    failures.push(format!("{file_name}: {e}"));
+                    continue;
+                }
+
+                // Under the Skip policy a skipped file was never copied, so
+                // its source must stay exactly where it is — deleting it
+                // here would destroy the only copy.
+                let skipped_now = progress
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .skipped;
+                if skipped_now > skipped_before {
+                    continue;
                 }
 
                 if let Err(e) =
@@ -280,10 +351,10 @@ pub async fn start_move_task(
                     if created {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
-                    return Err(e.to_string());
+                    failures.push(format!("{file_name}: copied but source not removed: {e}"));
                 }
             }
-            Ok::<(), String>(())
+            batch_result(failures, total_items)
         };
 
         let result = run.await;
@@ -304,16 +375,21 @@ pub async fn start_delete_task(root: String, paths: Vec<String>) -> Result<Strin
     tokio::spawn(async move {
         let run = async {
             let vfs = VfsRegistry::global().get_or_create(&root).await?;
+            let total_items = paths.len();
+            let mut failures: Vec<String> = Vec::new();
             for p in paths {
                 if cancel.is_cancelled() {
                     break;
                 }
                 let vfs_p = VfsPath::from_slash_path(&p);
-                delete_recursive(vfs.as_ref(), &vfs_p, &progress, &cancel)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                if let Err(e) =
+                    delete_recursive(vfs.as_ref(), &vfs_p, &progress, &cancel).await
+                {
+                    let name = vfs_p.name().unwrap_or("item");
+                    failures.push(format!("{name}: {e}"));
+                }
             }
-            Ok::<(), String>(())
+            batch_result(failures, total_items)
         };
 
         let result = run.await;

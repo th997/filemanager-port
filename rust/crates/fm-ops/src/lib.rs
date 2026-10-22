@@ -10,6 +10,21 @@ use std::fmt;
 pub mod runner;
 pub use runner::{copy_recursive, delete_recursive, total_bytes, TaskHandle, TaskManager};
 
+/// What to do when a copy/move destination already exists.
+///
+/// Until this existed, the answer was hard-coded: files were silently
+/// overwritten and directories silently merged, so pasting a new version
+/// of a document over an old one destroyed the old one without a word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictPolicy {
+    /// Replace the existing destination (the historical behaviour).
+    Overwrite,
+    /// Leave the existing destination alone and skip the source item.
+    Skip,
+    /// Keep both: write the source under a generated `name_copy` name.
+    Rename,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationKind {
     Copy,
@@ -40,6 +55,8 @@ pub struct TaskProgress {
     pub current: Option<VfsPath>,
     /// Why the task failed, when it did.
     pub error: Option<String>,
+    /// Destination items left untouched by the `Skip` conflict policy.
+    pub skipped: u64,
 }
 
 impl TaskProgress {
@@ -50,6 +67,7 @@ impl TaskProgress {
             total: None,
             current: None,
             error: None,
+            skipped: 0,
         }
     }
 
@@ -141,6 +159,7 @@ mod tests {
             &VfsPath::from_slash_path("/file_dest.txt"),
             &progress,
             &cancel,
+            ConflictPolicy::Overwrite,
         )
         .await
         .unwrap();
@@ -160,5 +179,57 @@ mod tests {
         .unwrap();
 
         assert!(!temp2.path().join("file_dest.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn copy_conflict_policies() {
+        use fm_local::LocalFs;
+        use std::sync::{Arc, Mutex};
+        use tokio_util::sync::CancellationToken;
+
+        let src_dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+        std::fs::write(src_dir.path().join("file.txt"), b"new").unwrap();
+        std::fs::write(dst_dir.path().join("file.txt"), b"old").unwrap();
+
+        let src_fs = LocalFs::new(src_dir.path());
+        let dst_fs = LocalFs::new(dst_dir.path());
+        let src = VfsPath::from_slash_path("/file.txt");
+        let dst = VfsPath::from_slash_path("/file.txt");
+        let cancel = CancellationToken::new();
+
+        // Skip: the existing file is untouched and the skip is counted.
+        let progress = Arc::new(Mutex::new(TaskProgress::pending()));
+        copy_recursive(&src_fs, &src, &dst_fs, &dst, &progress, &cancel, ConflictPolicy::Skip)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(dst_dir.path().join("file.txt")).unwrap(), b"old");
+        assert_eq!(progress.lock().unwrap().skipped, 1);
+
+        // Rename: both versions survive, the incoming one under a _copy name.
+        let progress = Arc::new(Mutex::new(TaskProgress::pending()));
+        copy_recursive(&src_fs, &src, &dst_fs, &dst, &progress, &cancel, ConflictPolicy::Rename)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(dst_dir.path().join("file.txt")).unwrap(), b"old");
+        assert_eq!(
+            std::fs::read(dst_dir.path().join("file_copy.txt")).unwrap(),
+            b"new"
+        );
+
+        // Overwrite: the destination is replaced.
+        let progress = Arc::new(Mutex::new(TaskProgress::pending()));
+        copy_recursive(
+            &src_fs,
+            &src,
+            &dst_fs,
+            &dst,
+            &progress,
+            &cancel,
+            ConflictPolicy::Overwrite,
+        )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(dst_dir.path().join("file.txt")).unwrap(), b"new");
     }
 }

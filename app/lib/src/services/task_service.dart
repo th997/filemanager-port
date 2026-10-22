@@ -11,6 +11,7 @@ class TaskService {
     required String dstRoot,
     required String dstDir,
     String? dstName,
+    String conflictPolicy = 'overwrite',
   }) async {
     return await tasks_api.startCopyTask(
       srcRoot: srcRoot,
@@ -18,6 +19,7 @@ class TaskService {
       dstRoot: dstRoot,
       dstDir: dstDir,
       dstName: dstName,
+      conflictPolicy: conflictPolicy,
     );
   }
 
@@ -26,12 +28,14 @@ class TaskService {
     required List<String> srcPaths,
     required String dstRoot,
     required String dstDir,
+    String conflictPolicy = 'overwrite',
   }) async {
     return await tasks_api.startMoveTask(
       srcRoot: srcRoot,
       srcPaths: srcPaths,
       dstRoot: dstRoot,
       dstDir: dstDir,
+      conflictPolicy: conflictPolicy,
     );
   }
 

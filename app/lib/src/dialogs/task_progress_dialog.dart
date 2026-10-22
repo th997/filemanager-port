@@ -157,6 +157,13 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
           ],
+          if (p != null && p.skipped > BigInt.zero) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${p.skipped} skipped (already exists)',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
           if (p?.error != null) ...[
             const SizedBox(height: 8),
             Text(
