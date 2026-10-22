@@ -186,6 +186,30 @@ abstract class AppLocalizations {
   /// Welcome to File Manager
   String get welcomeTitle;
 
+  /// Classic blue
+  String get accentClassicBlue;
+
+  /// Accent color
+  String get accentColor;
+
+  /// Deep teal
+  String get accentDeepTeal;
+
+  /// System dynamic
+  String get accentDynamic;
+
+  /// Forest
+  String get accentForest;
+
+  /// Grape
+  String get accentGrape;
+
+  /// Indigo
+  String get accentIndigo;
+
+  /// Sunset
+  String get accentSunset;
+
 }
 
 class _AppLocalizationsDelegate

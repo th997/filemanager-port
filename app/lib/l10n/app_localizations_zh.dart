@@ -145,4 +145,28 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get welcomeTitle => '欢迎使用文件管理器';
 
+  @override
+  String get accentClassicBlue => '经典蓝';
+
+  @override
+  String get accentColor => '强调色';
+
+  @override
+  String get accentDeepTeal => '深海青';
+
+  @override
+  String get accentDynamic => '系统动态色';
+
+  @override
+  String get accentForest => '森林绿';
+
+  @override
+  String get accentGrape => '葡萄紫';
+
+  @override
+  String get accentIndigo => '靛蓝';
+
+  @override
+  String get accentSunset => '落日橙';
+
 }

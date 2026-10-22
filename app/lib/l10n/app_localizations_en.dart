@@ -145,4 +145,28 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get welcomeTitle => 'Welcome to File Manager';
 
+  @override
+  String get accentClassicBlue => 'Classic blue';
+
+  @override
+  String get accentColor => 'Accent color';
+
+  @override
+  String get accentDeepTeal => 'Deep teal';
+
+  @override
+  String get accentDynamic => 'System dynamic';
+
+  @override
+  String get accentForest => 'Forest';
+
+  @override
+  String get accentGrape => 'Grape';
+
+  @override
+  String get accentIndigo => 'Indigo';
+
+  @override
+  String get accentSunset => 'Sunset';
+
 }

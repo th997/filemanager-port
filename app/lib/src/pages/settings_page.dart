@@ -10,6 +10,8 @@ class SettingsPage extends StatefulWidget {
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final String localeCode;
   final ValueChanged<String> onLocaleChanged;
+  final String accentCode;
+  final ValueChanged<String> onAccentChanged;
 
   const SettingsPage({
     super.key,
@@ -17,6 +19,8 @@ class SettingsPage extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.localeCode,
     required this.onLocaleChanged,
+    required this.accentCode,
+    required this.onAccentChanged,
   });
 
   @override
@@ -53,6 +57,35 @@ class _SettingsPageState extends State<SettingsPage> {
         return l10n.lightTheme;
       case ThemeMode.dark:
         return l10n.darkTheme;
+    }
+  }
+
+  static const Map<String, Color> _accentSeeds = {
+    'deepTeal': Color(0xFF00696D),
+    'classicBlue': Color(0xFF1976D2),
+    'indigo': Color(0xFF3949AB),
+    'forest': Color(0xFF2E7D32),
+    'sunset': Color(0xFFD84315),
+    'grape': Color(0xFF6750A4),
+  };
+
+  String _accentLabel(String code) {
+    final l10n = AppLocalizations.of(context);
+    switch (code) {
+      case 'dynamic':
+        return l10n.accentDynamic;
+      case 'classicBlue':
+        return l10n.accentClassicBlue;
+      case 'indigo':
+        return l10n.accentIndigo;
+      case 'forest':
+        return l10n.accentForest;
+      case 'sunset':
+        return l10n.accentSunset;
+      case 'grape':
+        return l10n.accentGrape;
+      default:
+        return l10n.accentDeepTeal;
     }
   }
 
@@ -117,6 +150,53 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
 
+          const SizedBox(height: 8),
+
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+            ),
+            child: ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+              minTileHeight: 42,
+              minLeadingWidth: 24,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              leading: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: (_accentSeeds[widget.accentCode] ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.palette_outlined,
+                  size: 16,
+                  color: _accentSeeds[widget.accentCode] ?? Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              title: Text(l10n.accentColor, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              subtitle: Text(_accentLabel(widget.accentCode), style: const TextStyle(fontSize: 10)),
+              trailing: DropdownButton<String>(
+                value: widget.accentCode,
+                underline: const SizedBox.shrink(),
+                items: [
+                  DropdownMenuItem(value: 'dynamic', child: Text(l10n.accentDynamic, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: 'deepTeal', child: Text(l10n.accentDeepTeal, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: 'classicBlue', child: Text(l10n.accentClassicBlue, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: 'indigo', child: Text(l10n.accentIndigo, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: 'forest', child: Text(l10n.accentForest, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: 'sunset', child: Text(l10n.accentSunset, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: 'grape', child: Text(l10n.accentGrape, style: const TextStyle(fontSize: 12))),
+                ],
+                onChanged: (code) {
+                  if (code != null) widget.onAccentChanged(code);
+                },
+              ),
+            ),
+          ),
           const SizedBox(height: 8),
 
           Card(

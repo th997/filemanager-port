@@ -23,6 +23,8 @@ class HomePage extends StatefulWidget {
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final String localeCode;
   final ValueChanged<String> onLocaleChanged;
+  final String accentCode;
+  final ValueChanged<String> onAccentChanged;
 
   const HomePage({
     super.key,
@@ -30,6 +32,8 @@ class HomePage extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.localeCode,
     required this.onLocaleChanged,
+    required this.accentCode,
+    required this.onAccentChanged,
   });
 
   @override
@@ -354,7 +358,7 @@ class _HomePageState extends State<HomePage> {
       children: [
         _buildGridCard(
           icon: Icons.photo_library,
-          iconColor: Colors.pink,
+          iconColor: const Color(0xFFD81B60),
           title: AppLocalizations.of(context).gallery,
           subtitle: AppLocalizations.of(context).allPhotos,
           onTap: () {
@@ -401,7 +405,7 @@ class _HomePageState extends State<HomePage> {
         // 1. Remote (S3, OSS, SFTP, WebDAV secondary page)
         _buildGridCard(
           icon: Icons.cloud,
-          iconColor: Colors.blue,
+          iconColor: const Color(0xFF1E88E5),
           title: AppLocalizations.of(context).remote,
           subtitle: _remotes.isEmpty
               ? 'S3, OSS, SFTP, WebDAV...'
@@ -416,7 +420,7 @@ class _HomePageState extends State<HomePage> {
         // 2. Utilities (Recycle bin, Web sharing, Cache secondary page)
         _buildGridCard(
           icon: Icons.build_outlined,
-          iconColor: Colors.purple,
+          iconColor: const Color(0xFF5E35B1),
           title: AppLocalizations.of(context).utilities,
           subtitle: _trashCount > 0 ? '$_trashCount in trash • Web share' : 'Recycle bin, Web share, Cache',
           onTap: () {
@@ -429,7 +433,7 @@ class _HomePageState extends State<HomePage> {
         // 3. Tasks (background transfers & operations)
         _buildGridCard(
           icon: Icons.task_alt,
-          iconColor: Colors.teal,
+          iconColor: const Color(0xFF00897B),
           title: AppLocalizations.of(context).tasks,
           subtitle: _activeTaskCount > 0
               ? '$_activeTaskCount running'
@@ -444,7 +448,7 @@ class _HomePageState extends State<HomePage> {
         // 4. Bookmarks (Saved favorite folders secondary page)
         _buildGridCard(
           icon: Icons.bookmark,
-          iconColor: Colors.amber,
+          iconColor: const Color(0xFFFB8C00),
           title: AppLocalizations.of(context).bookmarks,
           subtitle: _bookmarks.isEmpty
               ? 'Saved folders'
@@ -459,7 +463,7 @@ class _HomePageState extends State<HomePage> {
         // 4. Recent (History secondary page)
         _buildGridCard(
           icon: Icons.history,
-          iconColor: Colors.indigo,
+          iconColor: const Color(0xFF3949AB),
           title: AppLocalizations.of(context).recent,
           subtitle: _history.isEmpty
               ? 'Browsing history'
@@ -474,7 +478,7 @@ class _HomePageState extends State<HomePage> {
         // 5. Settings (Preferences secondary page)
         _buildGridCard(
           icon: Icons.settings,
-          iconColor: Colors.blueGrey,
+          iconColor: const Color(0xFF546E7A),
           title: AppLocalizations.of(context).settings,
           subtitle: AppLocalizations.of(context).settingsCardSubtitle,
           onTap: () {
@@ -485,6 +489,8 @@ class _HomePageState extends State<HomePage> {
                   onThemeModeChanged: widget.onThemeModeChanged,
                   localeCode: widget.localeCode,
                   onLocaleChanged: widget.onLocaleChanged,
+                  accentCode: widget.accentCode,
+                  onAccentChanged: widget.onAccentChanged,
                 ),
               ),
             ).then((_) => _loadMetadata());

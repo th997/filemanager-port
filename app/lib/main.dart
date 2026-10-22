@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 import 'l10n/app_localizations.dart';
@@ -94,6 +95,7 @@ class _FileManagerAppState extends State<FileManagerApp> {
       orElse: () => ThemeMode.system,
     );
     _localeCode = PreferencesService.instance.getString(_localeKey) ?? 'system';
+    _accentCode = PreferencesService.instance.getString(_accentKey) ?? 'deepTeal';
   }
 
   void _updateThemeMode(ThemeMode mode) {
@@ -111,63 +113,87 @@ class _FileManagerAppState extends State<FileManagerApp> {
   Locale? get _locale =>
       _localeCode == 'system' ? null : Locale(_localeCode);
 
+  static const _accentKey = 'app.accent';
+
+  /// Accent seeds. The default moved off the template blue (0xFF1976D2)
+  /// to a deep teal; the classic blue stays one tap away in Settings.
+  static const Map<String, Color> accentSeeds = {
+    'deepTeal': Color(0xFF00696D),
+    'classicBlue': Color(0xFF1976D2),
+    'indigo': Color(0xFF3949AB),
+    'forest': Color(0xFF2E7D32),
+    'sunset': Color(0xFFD84315),
+    'grape': Color(0xFF6750A4),
+  };
+
+  /// 'dynamic' | a key of [accentSeeds]
+  String _accentCode = 'deepTeal';
+
+  void _updateAccent(String code) {
+    PreferencesService.instance.setString(_accentKey, code);
+    setState(() => _accentCode = code);
+  }
+
+  ThemeData _themeData(ColorScheme scheme) {
+    return ThemeData(
+      useMaterial3: true,
+      visualDensity: VisualDensity.compact,
+      colorScheme: scheme,
+      listTileTheme: const ListTileThemeData(
+        dense: true,
+        visualDensity: VisualDensity(horizontal: -2, vertical: -3),
+        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        minVerticalPadding: 0,
+        minTileHeight: 36,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 52,
+        iconTheme: WidgetStateProperty.resolveWith((_) => const IconThemeData(size: 20)),
+        labelTextStyle: WidgetStateProperty.resolveWith((_) => const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: scheme.inverseSurface,
+        contentTextStyle: TextStyle(color: scheme.onInverseSurface, fontSize: 13),
+        actionTextColor: scheme.inversePrimary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    const seedColor = Color(0xFF1976D2);
-
-    return MaterialApp(
-      title: 'File Manager',
-      debugShowCheckedModeBanner: false,
-      locale: _locale,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      themeMode: _themeMode,
-      theme: ThemeData(
-        useMaterial3: true,
-        visualDensity: VisualDensity.compact,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.light,
-        ),
-        listTileTheme: const ListTileThemeData(
-          dense: true,
-          visualDensity: VisualDensity(horizontal: -2, vertical: -3),
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-          minVerticalPadding: 0,
-          minTileHeight: 36,
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          height: 52,
-          iconTheme: WidgetStateProperty.resolveWith((_) => const IconThemeData(size: 20)),
-          labelTextStyle: WidgetStateProperty.resolveWith((_) => const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        visualDensity: VisualDensity.compact,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.dark,
-        ),
-        listTileTheme: const ListTileThemeData(
-          dense: true,
-          visualDensity: VisualDensity(horizontal: -2, vertical: -3),
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-          minVerticalPadding: 0,
-          minTileHeight: 36,
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          height: 52,
-          iconTheme: WidgetStateProperty.resolveWith((_) => const IconThemeData(size: 20)),
-          labelTextStyle: WidgetStateProperty.resolveWith((_) => const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
-        ),
-      ),
-      home: HomePage(
-        themeMode: _themeMode,
-        onThemeModeChanged: _updateThemeMode,
-        localeCode: _localeCode,
-        onLocaleChanged: _updateLocale,
-      ),
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final useDynamic = _accentCode == 'dynamic' &&
+            lightDynamic != null &&
+            darkDynamic != null;
+        final seed = accentSeeds[_accentCode] ?? accentSeeds['deepTeal']!;
+        final lightScheme = useDynamic
+            ? lightDynamic
+            : ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light);
+        final darkScheme = useDynamic
+            ? darkDynamic
+            : ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark);
+        return MaterialApp(
+          title: 'File Manager',
+          debugShowCheckedModeBanner: false,
+          locale: _locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          themeMode: _themeMode,
+          theme: _themeData(lightScheme),
+          darkTheme: _themeData(darkScheme),
+          home: HomePage(
+            themeMode: _themeMode,
+            onThemeModeChanged: _updateThemeMode,
+            localeCode: _localeCode,
+            onLocaleChanged: _updateLocale,
+            accentCode: _accentCode,
+            onAccentChanged: _updateAccent,
+          ),
+        );
+      },
     );
   }
 }
