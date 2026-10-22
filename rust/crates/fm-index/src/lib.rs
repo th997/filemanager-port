@@ -1,6 +1,7 @@
 //! Persistent metadata: bookmarks, history, search index, recycle bin.
 
 pub mod db;
+pub mod secret;
 
 use fm_core::{LocationId, VfsPath};
 pub use db::{Database, RemoteRecord};

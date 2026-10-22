@@ -45,6 +45,9 @@ fn decode_path(stored: &str) -> VfsPath {
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
     trash_dir: PathBuf,
+    /// Directory holding the database file; the credential master key
+    /// fallback file lives here too.
+    data_dir: PathBuf,
 }
 
 impl Database {
@@ -52,10 +55,16 @@ impl Database {
         let conn = Connection::open(db_path.as_ref())?;
         let trash_path = trash_dir.as_ref().to_path_buf();
         let _ = std::fs::create_dir_all(&trash_path);
+        let data_dir = db_path
+            .as_ref()
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
 
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
             trash_dir: trash_path,
+            data_dir,
         };
         db.init_tables()?;
         Ok(db)
@@ -68,6 +77,7 @@ impl Database {
 
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
+            data_dir: trash_path.clone(),
             trash_dir: trash_path,
         };
         db.init_tables()?;
@@ -121,6 +131,10 @@ impl Database {
 
     // Remotes CRUD
     pub fn save_remote(&self, remote: &RemoteRecord) -> Result<(), rusqlite::Error> {
+        // Configs carry credentials: never write them to disk in plain
+        // text (see crate::secret). Legacy rows are upgraded here too —
+        // any save rewrites the row encrypted.
+        let stored = crate::secret::encrypt_config(&remote.config_json, &self.data_dir);
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute(
             "INSERT OR REPLACE INTO remotes (id, kind, display_name, config_json, created_at)
@@ -129,7 +143,7 @@ impl Database {
                 remote.id,
                 remote.kind,
                 remote.display_name,
-                remote.config_json,
+                stored,
                 remote.created_at
             ],
         )?;
@@ -153,7 +167,10 @@ impl Database {
 
         let mut remotes = Vec::new();
         for r in rows {
-            remotes.push(r?);
+            let mut record = r?;
+            record.config_json =
+                crate::secret::decrypt_config(&record.config_json, &self.data_dir);
+            remotes.push(record);
         }
         Ok(remotes)
     }
