@@ -134,6 +134,7 @@ pub struct TaskProgressDto {
     pub current: Option<String>,
     pub error: Option<String>,
     pub skipped: u64,
+    pub label: Option<String>,
 }
 
 fn state_str(s: TaskState) -> String {
@@ -158,6 +159,7 @@ impl TaskProgressDto {
             current: p.current.map(|c| c.to_slash_string()),
             error: p.error,
             skipped: p.skipped,
+            label: p.label,
         }
     }
 }
@@ -172,6 +174,7 @@ pub async fn start_copy_task(
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
+    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Copy".to_string());
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -268,6 +271,7 @@ pub async fn start_move_task(
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
+    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Move".to_string());
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -370,6 +374,7 @@ pub async fn start_move_task(
 pub async fn start_delete_task(root: String, paths: Vec<String>) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
+    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Delete".to_string());
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -409,6 +414,7 @@ pub async fn start_compress_task(
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
+    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Compress".to_string());
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -454,6 +460,7 @@ pub async fn start_compress_task(
 pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
+    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Extract".to_string());
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -490,7 +497,26 @@ pub fn poll_task_progress(task_id: String) -> Option<TaskProgressDto> {
         .map(|p| TaskProgressDto::from_progress(task_id, p))
 }
 
+/// Every registered task, oldest first, finished ones included (until
+/// dismissed or pruned). Backs the task centre: until this existed the only
+/// way to see a task was the modal progress dialog it was started from.
+#[flutter_rust_bridge::frb(sync)]
+pub fn list_tasks() -> Vec<TaskProgressDto> {
+    task_mgr()
+        .list_active()
+        .into_iter()
+        .map(|(id, p)| TaskProgressDto::from_progress(id, p))
+        .collect()
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn cancel_task(task_id: String) -> bool {
     task_mgr().cancel(&task_id)
+}
+
+/// Remove a task from the registry (task centre dismiss). Running tasks
+/// are unaffected — this only drops the record.
+#[flutter_rust_bridge::frb(sync)]
+pub fn dismiss_task(task_id: String) -> bool {
+    task_mgr().remove(&task_id)
 }

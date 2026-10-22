@@ -57,6 +57,9 @@ pub struct TaskProgress {
     pub error: Option<String>,
     /// Destination items left untouched by the `Skip` conflict policy.
     pub skipped: u64,
+    /// Short human label for the operation ("Copy", "Move", ...), set by
+    /// whoever started the task so a task list can say what each row is.
+    pub label: Option<String>,
 }
 
 impl TaskProgress {
@@ -68,6 +71,7 @@ impl TaskProgress {
             current: None,
             error: None,
             skipped: 0,
+            label: None,
         }
     }
 

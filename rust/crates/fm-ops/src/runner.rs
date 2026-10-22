@@ -2,7 +2,6 @@
 
 use fm_core::{EntryKind, VfsPath, WriteMode};
 use fm_vfs::{Vfs, VfsError, VfsResult};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -14,15 +13,21 @@ pub struct TaskHandle {
     pub cancel: CancellationToken,
 }
 
+/// Finished tasks stay in the registry so a task centre can show recent
+/// history; keep at most this many terminal entries so a long session
+/// cannot grow the list without bound.
+const MAX_TERMINAL_TASKS_KEPT: usize = 50;
+
 #[derive(Clone, Default)]
 pub struct TaskManager {
-    tasks: Arc<RwLock<HashMap<String, TaskHandle>>>,
+    // Insertion-ordered: a task list reads oldest → newest.
+    tasks: Arc<RwLock<Vec<(String, TaskHandle)>>>,
 }
 
 impl TaskManager {
     pub fn new() -> Self {
         Self {
-            tasks: Arc::new(RwLock::new(HashMap::new())),
+            tasks: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -33,20 +38,47 @@ impl TaskManager {
             progress: progress.clone(),
             cancel: cancel.clone(),
         };
-        self.tasks.write().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), handle);
+        let mut tasks = self.tasks.write().unwrap_or_else(|e| e.into_inner());
+        tasks.retain(|(existing, _)| existing != id);
+        // Prune the oldest finished tasks beyond the history cap.
+        let mut terminal = tasks
+            .iter()
+            .filter(|(_, h)| {
+                h.progress.lock().unwrap_or_else(|e| e.into_inner()).is_terminal()
+            })
+            .count();
+        while terminal > MAX_TERMINAL_TASKS_KEPT {
+            let Some(pos) = tasks.iter().position(|(_, h)| {
+                h.progress.lock().unwrap_or_else(|e| e.into_inner()).is_terminal()
+            }) else {
+                break;
+            };
+            tasks.remove(pos);
+            terminal -= 1;
+        }
+        tasks.push((id.to_string(), handle));
         (progress, cancel)
     }
 
-    pub fn get_progress(&self, id: &str) -> Option<TaskProgress> {
+    fn find(&self, id: &str) -> Option<TaskHandle> {
         self.tasks
             .read()
             .unwrap_or_else(|e| e.into_inner())
-            .get(id)
+            .iter()
+            .find(|(existing, _)| existing == id)
+            .map(|(_, h)| TaskHandle {
+                progress: h.progress.clone(),
+                cancel: h.cancel.clone(),
+            })
+    }
+
+    pub fn get_progress(&self, id: &str) -> Option<TaskProgress> {
+        self.find(id)
             .map(|h| h.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     pub fn cancel(&self, id: &str) -> bool {
-        if let Some(handle) = self.tasks.read().unwrap_or_else(|e| e.into_inner()).get(id) {
+        if let Some(handle) = self.find(id) {
             handle.cancel.cancel();
             handle.progress.lock().unwrap_or_else(|e| e.into_inner()).state = TaskState::Cancelled;
             true
@@ -55,6 +87,7 @@ impl TaskManager {
         }
     }
 
+    /// All registered tasks in insertion order, finished ones included.
     pub fn list_active(&self) -> Vec<(String, TaskProgress)> {
         self.tasks
             .read()
@@ -62,6 +95,14 @@ impl TaskManager {
             .iter()
             .map(|(id, h)| (id.clone(), h.progress.lock().unwrap_or_else(|e| e.into_inner()).clone()))
             .collect()
+    }
+
+    /// Drop a task from the registry (the task centre's dismiss action).
+    pub fn remove(&self, id: &str) -> bool {
+        let mut tasks = self.tasks.write().unwrap_or_else(|e| e.into_inner());
+        let before = tasks.len();
+        tasks.retain(|(existing, _)| existing != id);
+        tasks.len() != before
     }
 }
 

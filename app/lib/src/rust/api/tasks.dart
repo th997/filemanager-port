@@ -67,8 +67,19 @@ Future<String> startExtractTask({
 TaskProgressDto? pollTaskProgress({required String taskId}) =>
     RustLib.instance.api.crateApiTasksPollTaskProgress(taskId: taskId);
 
+/// Every registered task, oldest first, finished ones included (until
+/// dismissed or pruned). Backs the task centre: until this existed the only
+/// way to see a task was the modal progress dialog it was started from.
+List<TaskProgressDto> listTasks() =>
+    RustLib.instance.api.crateApiTasksListTasks();
+
 bool cancelTask({required String taskId}) =>
     RustLib.instance.api.crateApiTasksCancelTask(taskId: taskId);
+
+/// Remove a task from the registry (task centre dismiss). Running tasks
+/// are unaffected — this only drops the record.
+bool dismissTask({required String taskId}) =>
+    RustLib.instance.api.crateApiTasksDismissTask(taskId: taskId);
 
 class TaskProgressDto {
   final String id;
@@ -79,6 +90,7 @@ class TaskProgressDto {
   final String? current;
   final String? error;
   final BigInt skipped;
+  final String? label;
 
   const TaskProgressDto({
     required this.id,
@@ -89,6 +101,7 @@ class TaskProgressDto {
     this.current,
     this.error,
     required this.skipped,
+    this.label,
   });
 
   @override
@@ -100,7 +113,8 @@ class TaskProgressDto {
       fraction.hashCode ^
       current.hashCode ^
       error.hashCode ^
-      skipped.hashCode;
+      skipped.hashCode ^
+      label.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -114,5 +128,6 @@ class TaskProgressDto {
           fraction == other.fraction &&
           current == other.current &&
           error == other.error &&
-          skipped == other.skipped;
+          skipped == other.skipped &&
+          label == other.label;
 }

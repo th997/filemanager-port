@@ -88,6 +88,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RemoteConfigDto> dco_decode_list_remote_config_dto(dynamic raw);
 
   @protected
+  List<TaskProgressDto> dco_decode_list_task_progress_dto(dynamic raw);
+
+  @protected
   List<TrashItemDto> dco_decode_list_trash_item_dto(dynamic raw);
 
   @protected
@@ -201,6 +204,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RemoteConfigDto> sse_decode_list_remote_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<TaskProgressDto> sse_decode_list_task_progress_dto(
     SseDeserializer deserializer,
   );
 
@@ -343,6 +351,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_remote_config_dto(
     List<RemoteConfigDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_task_progress_dto(
+    List<TaskProgressDto> self,
     SseSerializer serializer,
   );
 

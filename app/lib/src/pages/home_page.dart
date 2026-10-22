@@ -5,12 +5,14 @@ import '../rust/api/remotes.dart';
 import '../services/permission_service.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
+import '../services/task_service.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
 import 'gallery_page.dart';
 import 'recent_page.dart';
 import 'remotes_page.dart';
 import 'settings_page.dart';
+import 'tasks_page.dart';
 import 'utilities_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -32,6 +34,7 @@ class _HomePageState extends State<HomePage> {
   List<BookmarkDto> _bookmarks = [];
   List<HistoryDto> _history = [];
   int _trashCount = 0;
+  int _activeTaskCount = 0;
   bool _hasStorageAccess = true;
 
   @override
@@ -39,6 +42,22 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadMetadata();
     _checkStorageAccess();
+  }
+
+  /// Live count of running tasks for the Tasks card subtitle. Cheap sync
+  /// FFI call; refreshed alongside the other home metadata.
+  void _refreshTaskCount() {
+    try {
+      final active = TaskService.instance
+          .list()
+          .where((t) => t.state == 'pending' || t.state == 'running')
+          .length;
+      if (mounted && active != _activeTaskCount) {
+        setState(() => _activeTaskCount = active);
+      }
+    } catch (_) {
+      // Tasks registry not ready yet (first frames): leave the count at 0.
+    }
   }
 
   Future<void> _checkStorageAccess() async {
@@ -66,6 +85,7 @@ class _HomePageState extends State<HomePage> {
         _trashCount = trash.length;
       });
     }
+    _refreshTaskCount();
   }
 
   void _openTarget(String root, String relPath) {
@@ -328,7 +348,22 @@ class _HomePageState extends State<HomePage> {
           },
         ),
 
-        // 3. Bookmarks (Saved favorite folders secondary page)
+        // 3. Tasks (background transfers & operations)
+        _buildGridCard(
+          icon: Icons.task_alt,
+          iconColor: Colors.teal,
+          title: 'Tasks',
+          subtitle: _activeTaskCount > 0
+              ? '$_activeTaskCount running'
+              : 'Transfers and operations',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TasksPage()),
+            ).then((_) => _loadMetadata());
+          },
+        ),
+
+        // 4. Bookmarks (Saved favorite folders secondary page)
         _buildGridCard(
           icon: Icons.bookmark,
           iconColor: Colors.amber,

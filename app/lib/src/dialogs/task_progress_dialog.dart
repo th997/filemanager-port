@@ -8,19 +8,33 @@ class TaskProgressDialog extends StatefulWidget {
   final String taskId;
   final String title;
 
+  /// Restarts the operation from scratch and returns the new task id.
+  /// When provided, a failed task offers Retry instead of only Close.
+  final Future<String> Function()? onRetry;
+
   const TaskProgressDialog({
     super.key,
     required this.taskId,
     required this.title,
+    this.onRetry,
   });
 
   /// Resolves to `true` only when the task completed; failures and
   /// cancellations resolve to `false` so callers can skip success messages.
-  static Future<bool?> show(BuildContext context, String taskId, String title) {
+  static Future<bool?> show(
+    BuildContext context,
+    String taskId,
+    String title, {
+    Future<String> Function()? onRetry,
+  }) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => TaskProgressDialog(taskId: taskId, title: title),
+      builder: (ctx) => TaskProgressDialog(
+        taskId: taskId,
+        title: title,
+        onRetry: onRetry,
+      ),
     );
   }
 
@@ -32,6 +46,9 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   StreamSubscription<TaskProgressDto>? _sub;
   TaskProgressDto? _latest;
   bool _dismissed = false;
+  late String _taskId;
+  SpeedEstimator _speed = SpeedEstimator();
+  String? _retryError;
 
   void _pop(bool result) {
     if (_dismissed || !mounted) return;
@@ -43,9 +60,15 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   @override
   void initState() {
     super.initState();
-    _sub = TaskService.instance.watch(widget.taskId).listen(
+    _taskId = widget.taskId;
+    _subscribe();
+  }
+
+  void _subscribe() {
+    _sub = TaskService.instance.watch(_taskId).listen(
       (p) {
         if (!mounted) return;
+        _speed.add(p.completed);
         setState(() => _latest = p);
         if (p.state == 'completed') {
           _pop(true);
@@ -62,6 +85,38 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
     );
   }
 
+  /// Dismiss the dialog while the task keeps running on the Rust side.
+  /// The task centre (Home → Tasks) remains as the way to watch or cancel
+  /// it; until this button existed the modal dialog was a cage.
+  void _background() {
+    final messenger = ScaffoldMessenger.of(context);
+    _pop(false);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Running in background — track it under Home → Tasks'),
+      ),
+    );
+  }
+
+  Future<void> _retry() async {
+    final start = widget.onRetry;
+    if (start == null) return;
+    try {
+      final newId = await start();
+      if (!mounted) return;
+      _sub?.cancel();
+      setState(() {
+        _taskId = newId;
+        _latest = null;
+        _retryError = null;
+        _speed = SpeedEstimator();
+      });
+      _subscribe();
+    } catch (e) {
+      if (mounted) setState(() => _retryError = 'Retry failed: $e');
+    }
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
@@ -69,8 +124,17 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   }
 
   void _cancel() {
-    TaskService.instance.cancel(widget.taskId);
+    TaskService.instance.cancel(_taskId);
     _pop(false);
+  }
+
+  String? _speedLine(TaskProgressDto p) {
+    final parts = <String>[];
+    final speed = _speed.speedText();
+    if (speed != null) parts.add(speed);
+    final eta = _speed.etaText(p.completed, p.total);
+    if (eta != null) parts.add(eta);
+    return parts.isEmpty ? null : parts.join(' • ');
   }
 
   String _statusLabel(String state) {
@@ -164,10 +228,17 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
           ],
-          if (p?.error != null) ...[
+          if (state == 'running' && p != null && _speedLine(p) != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _speedLine(p)!,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
+          if (p?.error != null || _retryError != null) ...[
             const SizedBox(height: 8),
             Text(
-              p!.error!,
+              p?.error ?? _retryError!,
               style: const TextStyle(fontSize: 11, color: Colors.red),
             ),
           ],
@@ -175,6 +246,11 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
       ),
       actions: [
         if (state == 'failed') ...[
+          if (widget.onRetry != null)
+            FilledButton(
+              onPressed: _retry,
+              child: const Text('Retry'),
+            ),
           if (p?.error != null)
             TextButton.icon(
               icon: const Icon(Icons.copy, size: 16),
@@ -186,15 +262,20 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
                 );
               },
             ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Close'),
           ),
-        ] else
+        ] else ...[
+          TextButton(
+            onPressed: _background,
+            child: const Text('Background'),
+          ),
           TextButton(
             onPressed: _cancel,
             child: const Text('Cancel'),
           ),
+        ],
       ],
     );
   }

@@ -1,0 +1,262 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../rust/api/tasks.dart';
+import '../services/task_service.dart';
+
+/// Task centre: every copy/move/delete/compress/extract task, live.
+///
+/// Until this page existed, the only window onto a task was the modal
+/// progress dialog it started from — background a transfer and it became
+/// invisible even though the Rust side kept running it.
+class TasksPage extends StatefulWidget {
+  const TasksPage({super.key});
+
+  @override
+  State<TasksPage> createState() => _TasksPageState();
+}
+
+class _TasksPageState extends State<TasksPage> {
+  List<TaskProgressDto> _tasks = const [];
+  Timer? _timer;
+  final Map<String, SpeedEstimator> _speeds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _refresh() {
+    final tasks = TaskService.instance.list();
+    final ids = tasks.map((t) => t.id).toSet();
+    _speeds.removeWhere((id, _) => !ids.contains(id));
+    for (final t in tasks) {
+      if (t.state == 'running') {
+        _speeds.putIfAbsent(t.id, SpeedEstimator.new).add(t.completed);
+      }
+    }
+    if (mounted) setState(() => _tasks = tasks);
+  }
+
+  bool _isTerminal(TaskProgressDto t) =>
+      t.state == 'completed' || t.state == 'failed' || t.state == 'cancelled';
+
+  IconData _iconFor(TaskProgressDto t) {
+    if (t.state == 'completed') return Icons.check_circle_outline;
+    if (t.state == 'failed') return Icons.error_outline;
+    if (t.state == 'cancelled') return Icons.cancel_outlined;
+    switch (t.label) {
+      case 'Copy':
+        return Icons.content_copy;
+      case 'Move':
+        return Icons.drive_file_move_outline;
+      case 'Delete':
+        return Icons.delete_outline;
+      case 'Compress':
+        return Icons.folder_zip_outlined;
+      case 'Extract':
+        return Icons.unarchive_outlined;
+      default:
+        return Icons.sync;
+    }
+  }
+
+  Color _iconColor(TaskProgressDto t) {
+    if (t.state == 'completed') return Colors.green;
+    if (t.state == 'failed') return Colors.red;
+    if (t.state == 'cancelled') return Colors.grey;
+    return Colors.blue;
+  }
+
+  String _statusText(TaskProgressDto t) {
+    switch (t.state) {
+      case 'pending':
+        return 'Waiting…';
+      case 'running':
+        return 'In progress';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return t.state;
+    }
+  }
+
+  String _detailText(TaskProgressDto t) {
+    final parts = <String>[_statusText(t)];
+    final total = t.total;
+    if (total != null) {
+      parts.add('${formatBytes(t.completed)} of ${formatBytes(total)}');
+    } else if (t.state == 'running' || t.state == 'completed') {
+      parts.add('${t.completed} items');
+    }
+    if (t.state == 'running') {
+      final estimator = _speeds[t.id];
+      final speed = estimator?.speedText();
+      if (speed != null) parts.add(speed);
+      final eta = estimator?.etaText(t.completed, t.total);
+      if (eta != null) parts.add(eta);
+    }
+    if (t.skipped > BigInt.zero) {
+      parts.add('${t.skipped} skipped');
+    }
+    return parts.join(' • ');
+  }
+
+  void _clearFinished() {
+    for (final t in _tasks) {
+      if (_isTerminal(t)) TaskService.instance.dismiss(t.id);
+    }
+    _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasTerminal = _tasks.any(_isTerminal);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tasks'),
+        actions: [
+          if (hasTerminal)
+            TextButton(
+              onPressed: _clearFinished,
+              child: const Text('Clear finished'),
+            ),
+        ],
+      ),
+      body: _tasks.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.task_alt, size: 64, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No tasks yet',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Copies, moves and other long operations will appear here.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              itemCount: _tasks.length,
+              itemBuilder: (context, index) {
+                // Registry order is oldest first; show newest on top.
+                final t = _tasks[_tasks.length - 1 - index];
+                return _buildTaskTile(t);
+              },
+            ),
+    );
+  }
+
+  Widget _buildTaskTile(TaskProgressDto t) {
+    final terminal = _isTerminal(t);
+    final fraction = t.fraction;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(_iconFor(t), color: _iconColor(t), size: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            t.label ?? 'Task',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        if (fraction != null && !terminal)
+                          Text(
+                            '${(fraction * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (!terminal) ...[
+                      const SizedBox(height: 6),
+                      if (fraction != null)
+                        LinearProgressIndicator(value: fraction)
+                      else
+                        const LinearProgressIndicator(),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      _detailText(t),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    ),
+                    if (t.current != null && !terminal) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        t.current!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      ),
+                    ],
+                    if (t.error != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        t.error!,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Colors.red),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (!terminal)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  tooltip: 'Cancel task',
+                  onPressed: () {
+                    TaskService.instance.cancel(t.id);
+                    _refresh();
+                  },
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 20),
+                  tooltip: 'Dismiss',
+                  onPressed: () {
+                    TaskService.instance.dismiss(t.id);
+                    _refresh();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

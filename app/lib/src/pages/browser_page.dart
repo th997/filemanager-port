@@ -621,18 +621,20 @@ class BrowserPageState extends State<BrowserPage> {
         item.name,
       );
 
-      final taskId = await TaskService.instance.copy(
-        srcRoot: _root,
-        srcPaths: [_fullEntryPath(item)],
-        dstRoot: destination.root,
-        dstDir: dstDir,
-        dstName: name,
-      );
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: _root,
+            srcPaths: [_fullEntryPath(item)],
+            dstRoot: destination.root,
+            dstDir: dstDir,
+            dstName: name,
+          );
+      final taskId = await startTask();
       if (!mounted) return;
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
         'Downloading ${item.name}',
+        onRetry: startTask,
       );
       if (completed != true || !mounted) return;
 
@@ -1458,17 +1460,19 @@ class BrowserPageState extends State<BrowserPage> {
     if (picked == null || picked.paths.isEmpty || !mounted) return;
 
     try {
-      final taskId = await TaskService.instance.copy(
-        srcRoot: picked.root,
-        srcPaths: picked.paths,
-        dstRoot: _root,
-        dstDir: _relPath,
-      );
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: picked.root,
+            srcPaths: picked.paths,
+            dstRoot: _root,
+            dstDir: _relPath,
+          );
+      final taskId = await startTask();
       if (!mounted) return;
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
         'Uploading ${picked.paths.length} item(s)…',
+        onRetry: startTask,
       );
       if (mounted) _load(refresh: true);
       if (completed == true && mounted) {
@@ -1495,17 +1499,19 @@ class BrowserPageState extends State<BrowserPage> {
     if (dest == null || !mounted) return;
 
     try {
-      final taskId = await TaskService.instance.copy(
-        srcRoot: _root,
-        srcPaths: _selectedPaths.toList(),
-        dstRoot: dest.root,
-        dstDir: dest.relPath,
-      );
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: _root,
+            srcPaths: _selectedPaths.toList(),
+            dstRoot: dest.root,
+            dstDir: dest.relPath,
+          );
+      final taskId = await startTask();
       if (!mounted) return;
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
         'Downloading Files…',
+        onRetry: startTask,
       );
       if (!mounted) return;
       _clearSelection();
@@ -1528,18 +1534,20 @@ class BrowserPageState extends State<BrowserPage> {
     if (dest == null || !mounted) return;
 
     try {
-      final taskId = await TaskService.instance.copy(
-        srcRoot: _root,
-        srcPaths: [_fullEntryPath(item)],
-        dstRoot: dest.root,
-        dstDir: dest.relPath,
-        dstName: item.name,
-      );
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: _root,
+            srcPaths: [_fullEntryPath(item)],
+            dstRoot: dest.root,
+            dstDir: dest.relPath,
+            dstName: item.name,
+          );
+      final taskId = await startTask();
       if (!mounted) return;
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
         'Downloading ${item.name}…',
+        onRetry: startTask,
       );
       if (!mounted) return;
       if (completed == true) {
@@ -1715,28 +1723,31 @@ class BrowserPageState extends State<BrowserPage> {
       policy = choice;
     }
 
+    Future<String> startTask() => cb.isCut
+        ? TaskService.instance.move(
+            srcRoot: cb.srcRoot,
+            srcPaths: cb.paths,
+            dstRoot: _root,
+            dstDir: _relPath,
+            conflictPolicy: policy,
+          )
+        : TaskService.instance.copy(
+            srcRoot: cb.srcRoot,
+            srcPaths: cb.paths,
+            dstRoot: _root,
+            dstDir: _relPath,
+            conflictPolicy: policy,
+          );
+
     try {
-      final taskId = cb.isCut
-          ? await TaskService.instance.move(
-              srcRoot: cb.srcRoot,
-              srcPaths: cb.paths,
-              dstRoot: _root,
-              dstDir: _relPath,
-              conflictPolicy: policy,
-            )
-          : await TaskService.instance.copy(
-              srcRoot: cb.srcRoot,
-              srcPaths: cb.paths,
-              dstRoot: _root,
-              dstDir: _relPath,
-              conflictPolicy: policy,
-            );
+      final taskId = await startTask();
 
       if (!mounted) return;
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
         cb.isCut ? 'Moving Files…' : 'Copying Files…',
+        onRetry: startTask,
       );
       // A cancelled move may have already removed some sources, so the
       // clipboard is only cleared once the move actually finished.
@@ -1771,15 +1782,16 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     try {
-      final taskId = await TaskService.instance.copy(
-        srcRoot: _root,
-        srcPaths: [_fullEntryPath(item)],
-        dstRoot: _root,
-        dstDir: _relPath,
-        dstName: candidate,
-      );
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: _root,
+            srcPaths: [_fullEntryPath(item)],
+            dstRoot: _root,
+            dstDir: _relPath,
+            dstName: candidate,
+          );
+      final taskId = await startTask();
       if (!mounted) return;
-      final completed = await TaskProgressDialog.show(context, taskId, 'Duplicating…');
+      final completed = await TaskProgressDialog.show(context, taskId, 'Duplicating…', onRetry: startTask);
       if (completed == true && mounted) {
         _load(refresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1851,9 +1863,11 @@ class BrowserPageState extends State<BrowserPage> {
       _load();
     } else if (confirm == 'permanent') {
       try {
-        final taskId = await TaskService.instance.delete(root: _root, paths: paths);
+        Future<String> startTask() =>
+            TaskService.instance.delete(root: _root, paths: paths);
+        final taskId = await startTask();
         if (!mounted) return;
-        await TaskProgressDialog.show(context, taskId, 'Deleting…');
+        await TaskProgressDialog.show(context, taskId, 'Deleting…', onRetry: startTask);
         if (!mounted) return;
         _clearSelection();
         _load(refresh: true);
@@ -1970,13 +1984,14 @@ class BrowserPageState extends State<BrowserPage> {
     if (zipName != null && zipName.isNotEmpty) {
       final dstPath = joinNative(_root, _relPath.isEmpty ? zipName : '$_relPath/$zipName');
       try {
-        final taskId = await TaskService.instance.compress(
-          srcRoot: _root,
-          srcPaths: _selectedPaths.toList(),
-          dstArchivePath: dstPath,
-        );
+        Future<String> startTask() => TaskService.instance.compress(
+              srcRoot: _root,
+              srcPaths: _selectedPaths.toList(),
+              dstArchivePath: dstPath,
+            );
+        final taskId = await startTask();
         if (!mounted) return;
-        await TaskProgressDialog.show(context, taskId, 'Compressing…');
+        await TaskProgressDialog.show(context, taskId, 'Compressing…', onRetry: startTask);
         if (!mounted) return;
         _clearSelection();
         _load(refresh: true);
@@ -1990,12 +2005,13 @@ class BrowserPageState extends State<BrowserPage> {
     final fullArchive = joinNative(_root, _fullEntryPath(item));
     final targetDir = joinNative(_root, _relPath);
     try {
-      final taskId = await TaskService.instance.extract(
-        archivePath: fullArchive,
-        dstDir: targetDir,
-      );
+      Future<String> startTask() => TaskService.instance.extract(
+            archivePath: fullArchive,
+            dstDir: targetDir,
+          );
+      final taskId = await startTask();
       if (!mounted) return;
-      await TaskProgressDialog.show(context, taskId, 'Extracting Archive…');
+      await TaskProgressDialog.show(context, taskId, 'Extracting Archive…', onRetry: startTask);
       if (mounted) _load(refresh: true);
     } catch (e) {
       _showError('Extract failed: $e');
