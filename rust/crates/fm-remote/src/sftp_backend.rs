@@ -352,24 +352,84 @@ impl Vfs for SftpFs {
             })
             .await?;
 
-        let mut entries = Vec::new();
+        // SFTP READDIR reports the link itself for symlinks, so a link
+        // to a directory arrives as a non-directory and the app tried
+        // to open it as a file — the long-standing "SFTP symlink won't
+        // open" bug (the local backend got the follow-the-link fix in
+        // its lister; this backend never did, and even hardcoded
+        // is_symlink to false). Resolve link targets with one batched
+        // STAT pass, mirroring the local behaviour.
+        struct RawItem {
+            name: String,
+            is_dir: bool,
+            is_symlink: bool,
+            size: u64,
+            modified: Option<std::time::SystemTime>,
+        }
+        let mut raw_items = Vec::new();
+        let mut link_paths: Vec<String> = Vec::new();
         for item in read_dir {
             let name = item.file_name();
-            let is_dir = item.file_type().is_dir();
-            let child_path = dir.join(&name);
+            let file_type = item.file_type();
             let meta = item.metadata();
-            let size = if is_dir { None } else { Some(meta.len()) };
-            let modified = meta.modified().ok();
-
-            entries.push(Entry {
+            let raw = RawItem {
                 name: name.clone(),
+                is_dir: file_type.is_dir(),
+                is_symlink: file_type.is_symlink(),
+                size: meta.len(),
+                modified: meta.modified().ok(),
+            };
+            if raw.is_symlink {
+                link_paths.push(self.resolve_path(&dir.join(&name)));
+            }
+            raw_items.push(raw);
+        }
+
+        // name -> target is a directory (false on any error: broken
+        // links stay files and surface the server error when opened).
+        let mut link_target_is_dir: std::collections::HashMap<String, bool> =
+            std::collections::HashMap::new();
+        if !link_paths.is_empty() {
+            let paths = link_paths.clone();
+            let resolved = self
+                .run(|session| {
+                    let paths = paths.clone();
+                    async move {
+                        let mut out = Vec::new();
+                        for path in paths {
+                            let is_dir = session
+                                .sftp
+                                .metadata(&path)
+                                .await
+                                .map(|m| m.is_dir())
+                                .unwrap_or(false);
+                            out.push((path, is_dir));
+                        }
+                        Ok(out)
+                    }
+                })
+                .await?;
+            link_target_is_dir = resolved.into_iter().collect();
+        }
+
+        let mut entries = Vec::new();
+        for raw in raw_items {
+            let child_path = dir.join(&raw.name);
+            let target_is_dir = raw.is_symlink
+                && link_target_is_dir
+                    .get(&self.resolve_path(&child_path))
+                    .copied()
+                    .unwrap_or(false);
+            let is_dir = raw.is_dir || target_is_dir;
+            entries.push(Entry {
+                name: raw.name.clone(),
                 path: child_path,
                 kind: if is_dir { EntryKind::Dir } else { EntryKind::File },
-                size,
-                modified,
+                size: if is_dir { None } else { Some(raw.size) },
+                modified: raw.modified,
                 mode: None,
-                hidden: name.starts_with('.'),
-                is_symlink: false,
+                hidden: raw.name.starts_with('.'),
+                is_symlink: raw.is_symlink,
                 mime: None,
             });
         }
@@ -380,18 +440,32 @@ impl Vfs for SftpFs {
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         let sftp_path = self.resolve_path(path);
 
-        let meta = self
+        // LSTAT first: a symlink is reported as itself, then followed
+        // once (STAT) for the target's kind/size. Plain metadata()
+        // alone could never tell the caller the path was a link, so
+        // copy/delete/size flows treated link-to-dir as a real dir.
+        let (meta, is_symlink) = self
             .run(|session| {
                 let sftp_path = sftp_path.clone();
                 async move {
-                session
+                let link_meta = session
                     .sftp
-                    .metadata(&sftp_path)
+                    .symlink_metadata(&sftp_path)
                     .await
                     .map_err(|e| VfsError::Backend {
                         path: path.clone(),
                         source: std::io::Error::other(e.to_string()),
-                    })
+                    })?;
+                if link_meta.file_type().is_symlink() {
+                    match session.sftp.metadata(&sftp_path).await {
+                        Ok(target_meta) => Ok((target_meta, true)),
+                        // Broken link: report the link itself so it can
+                        // still be listed, renamed and deleted.
+                        Err(_) => Ok((link_meta, true)),
+                    }
+                } else {
+                    Ok((link_meta, false))
+                }
                 }
             })
             .await?;
@@ -407,7 +481,7 @@ impl Vfs for SftpFs {
             modified: meta.modified().ok(),
             mode: None,
             hidden: path.name().map(|n| n.starts_with('.')).unwrap_or(false),
-            is_symlink: false,
+            is_symlink,
             mime: None,
         })
     }
@@ -534,15 +608,18 @@ impl Vfs for SftpFs {
         self.run(|session| {
             let sftp_path = sftp_path.clone();
             async move {
+            // LSTAT, not STAT: removing a symlink-to-dir must unlink
+            // the link itself, never rmdir through it (which servers
+            // reject, and would be wrong even if they allowed it).
             let meta = session
                 .sftp
-                .metadata(&sftp_path)
+                .symlink_metadata(&sftp_path)
                 .await
                 .map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: std::io::Error::other(e.to_string()),
                 })?;
-            if meta.is_dir() {
+            if meta.is_dir() && !meta.file_type().is_symlink() {
                 session.sftp.remove_dir(&sftp_path).await
             } else {
                 session.sftp.remove_file(&sftp_path).await
