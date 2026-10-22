@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -691855842;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 823499181;
             
 
 // Section: executor
@@ -213,9 +213,11 @@ let api_path = <String>::sse_decode(&mut deserializer);deserializer.end(); move 
             let api_root = <String>::sse_decode(&mut deserializer);
 let api_path = <String>::sse_decode(&mut deserializer);
 let api_page = <u32>::sse_decode(&mut deserializer);
-let api_page_size = <u32>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+let api_page_size = <u32>::sse_decode(&mut deserializer);
+let api_sort_by = <String>::sse_decode(&mut deserializer);
+let api_sort_ascending = <bool>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::file_manager::list_dir_paged(api_root, api_path, api_page, api_page_size).await?;   std::result::Result::Ok(output_ok)
+                         let output_ok = crate::api::file_manager::list_dir_paged(api_root, api_path, api_page, api_page_size, api_sort_by, api_sort_ascending).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
             }fn wire__crate__api__metadata__list_history_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
@@ -342,6 +344,18 @@ let api_id = <String>::sse_decode(&mut deserializer);deserializer.end(); move |c
 let api_config = <crate::api::remotes::RemoteConfigDto>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
                          let output_ok = crate::api::remotes::save_remote(api_db_path, api_config).await?;   std::result::Result::Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__file_manager__search_entries_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "search_entries", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root = <String>::sse_decode(&mut deserializer);
+let api_path = <String>::sse_decode(&mut deserializer);
+let api_query = <String>::sse_decode(&mut deserializer);
+let api_max_results = <u32>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::file_manager::search_entries(api_root, api_path, api_query, api_max_results).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
             }fn wire__crate__api__tasks__start_compress_task_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
@@ -662,7 +676,8 @@ return crate::api::metadata::HistoryDto{id: var_id, root: var_root, path: var_pa
 let mut var_page = <u32>::sse_decode(deserializer);
 let mut var_pageSize = <u32>::sse_decode(deserializer);
 let mut var_hasMore = <bool>::sse_decode(deserializer);
-return crate::api::file_manager::PagedEntriesDto{entries: var_entries, page: var_page, page_size: var_pageSize, has_more: var_hasMore};}
+let mut var_total = <u32>::sse_decode(deserializer);
+return crate::api::file_manager::PagedEntriesDto{entries: var_entries, page: var_page, page_size: var_pageSize, has_more: var_hasMore, total: var_total};}
                 }
                 
                 impl SseDecode for crate::api::remotes::RemoteConfigDto {
@@ -779,16 +794,17 @@ return crate::api::metadata::TrashItemDto{id: var_id, original_path: var_origina
 29 => wire__crate__api__file_manager__rename_entry_impl(port, ptr, rust_vec_len, data_len),
 30 => wire__crate__api__metadata__restore_trash_item_impl(port, ptr, rust_vec_len, data_len),
 31 => wire__crate__api__remotes__save_remote_impl(port, ptr, rust_vec_len, data_len),
-32 => wire__crate__api__tasks__start_compress_task_impl(port, ptr, rust_vec_len, data_len),
-33 => wire__crate__api__tasks__start_copy_task_impl(port, ptr, rust_vec_len, data_len),
-34 => wire__crate__api__tasks__start_delete_task_impl(port, ptr, rust_vec_len, data_len),
-35 => wire__crate__api__tasks__start_extract_task_impl(port, ptr, rust_vec_len, data_len),
-36 => wire__crate__api__servers__start_lan_http_server_impl(port, ptr, rust_vec_len, data_len),
-37 => wire__crate__api__servers__start_media_stream_impl(port, ptr, rust_vec_len, data_len),
-38 => wire__crate__api__tasks__start_move_task_impl(port, ptr, rust_vec_len, data_len),
-39 => wire__crate__api__file_manager__stat_entry_impl(port, ptr, rust_vec_len, data_len),
-42 => wire__crate__api__remotes__test_remote_connection_impl(port, ptr, rust_vec_len, data_len),
-43 => wire__crate__api__file_manager__write_text_file_impl(port, ptr, rust_vec_len, data_len),
+32 => wire__crate__api__file_manager__search_entries_impl(port, ptr, rust_vec_len, data_len),
+33 => wire__crate__api__tasks__start_compress_task_impl(port, ptr, rust_vec_len, data_len),
+34 => wire__crate__api__tasks__start_copy_task_impl(port, ptr, rust_vec_len, data_len),
+35 => wire__crate__api__tasks__start_delete_task_impl(port, ptr, rust_vec_len, data_len),
+36 => wire__crate__api__tasks__start_extract_task_impl(port, ptr, rust_vec_len, data_len),
+37 => wire__crate__api__servers__start_lan_http_server_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__servers__start_media_stream_impl(port, ptr, rust_vec_len, data_len),
+39 => wire__crate__api__tasks__start_move_task_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__file_manager__stat_entry_impl(port, ptr, rust_vec_len, data_len),
+43 => wire__crate__api__remotes__test_remote_connection_impl(port, ptr, rust_vec_len, data_len),
+44 => wire__crate__api__file_manager__write_text_file_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -808,8 +824,8 @@ return crate::api::metadata::TrashItemDto{id: var_id, original_path: var_origina
 15 => wire__crate__api__file_manager__invalidate_root_impl(ptr, rust_vec_len, data_len),
 21 => wire__crate__api__tasks__list_tasks_impl(ptr, rust_vec_len, data_len),
 24 => wire__crate__api__tasks__poll_task_progress_impl(ptr, rust_vec_len, data_len),
-40 => wire__crate__api__servers__stop_lan_http_server_impl(ptr, rust_vec_len, data_len),
-41 => wire__crate__api__servers__stop_media_streams_impl(ptr, rust_vec_len, data_len),
+41 => wire__crate__api__servers__stop_lan_http_server_impl(ptr, rust_vec_len, data_len),
+42 => wire__crate__api__servers__stop_media_streams_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -899,7 +915,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::metadata::HistoryDto> for cra
                     self.entries.into_into_dart().into_dart(),
 self.page.into_into_dart().into_dart(),
 self.page_size.into_into_dart().into_dart(),
-self.has_more.into_into_dart().into_dart()
+self.has_more.into_into_dart().into_dart(),
+self.total.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -1154,7 +1171,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::metadata::TrashItemDto> for c
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<Vec<crate::api::file_manager::EntryDto>>::sse_encode(self.entries, serializer);
 <u32>::sse_encode(self.page, serializer);
 <u32>::sse_encode(self.page_size, serializer);
-<bool>::sse_encode(self.has_more, serializer);}
+<bool>::sse_encode(self.has_more, serializer);
+<u32>::sse_encode(self.total, serializer);}
                 }
                 
                 impl SseEncode for crate::api::remotes::RemoteConfigDto {

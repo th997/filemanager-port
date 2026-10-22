@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,35 +17,12 @@ import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../widgets/entry_thumbnail.dart';
 import 'image_viewer_page.dart';
 import 'media_player_page.dart';
 import 'text_editor_page.dart';
 
 enum SortField { name, size, modified, type }
-
-final _digitRunPattern = RegExp(r'\d+|\D+');
-
-/// Name order that puts `file2` before `file10`, as file managers do.
-/// Digit runs compare numerically; everything else compares case-insensitively.
-int _naturalCompare(String a, String b) {
-  final ra = _digitRunPattern.allMatches(a.toLowerCase());
-  final rb = _digitRunPattern.allMatches(b.toLowerCase());
-  final ia = ra.iterator;
-  final ib = rb.iterator;
-  while (true) {
-    final hasA = ia.moveNext();
-    final hasB = ib.moveNext();
-    if (!hasA || !hasB) return hasA ? 1 : (hasB ? -1 : 0);
-    final pa = ia.current.group(0)!;
-    final pb = ib.current.group(0)!;
-    final na = int.tryParse(pa);
-    final nb = int.tryParse(pb);
-    final cmp = (na != null && nb != null)
-        ? na.compareTo(nb)
-        : pa.compareTo(pb);
-    if (cmp != 0) return cmp;
-  }
-}
 
 extension SortFieldLabel on SortField {
   String get label => switch (this) {
@@ -124,6 +102,12 @@ class BrowserPageState extends State<BrowserPage> {
   String _filterQuery = '';
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  // Recursive search (Rust side) state: results for the current query,
+  // debounced so a remote folder is not walked on every keystroke.
+  List<EntryItem> _searchResults = [];
+  bool _searchBusy = false;
+  Timer? _searchDebounce;
+  int _searchSeq = 0;
   final FocusNode _searchFocusNode = FocusNode();
 
   // Address bar direct jump state
@@ -202,6 +186,7 @@ class BrowserPageState extends State<BrowserPage> {
   int _currentPage = 1;
   static const int _pageSize = 100;
   bool _hasMore = false;
+  int _totalCount = 0;
   bool _loadingMore = false;
   final ScrollController _scrollController = ScrollController();
 
@@ -228,6 +213,7 @@ class BrowserPageState extends State<BrowserPage> {
   void dispose() {
     PreferencesService.toolbarAtBottom.removeListener(_onToolbarPositionChanged);
     _scrollController.dispose();
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _addressController.dispose();
@@ -261,6 +247,8 @@ class BrowserPageState extends State<BrowserPage> {
         path: _relPath,
         page: nextPage,
         pageSize: _pageSize,
+        sortBy: _sortField.name,
+        sortAscending: _sortAsc,
       );
       if (!mounted) return;
       if (_loadingFor == loadingFor) {
@@ -268,6 +256,7 @@ class BrowserPageState extends State<BrowserPage> {
           _currentPage = nextPage;
           _entries.addAll(paged.entries.map((e) => EntryItem(e)));
           _hasMore = paged.hasMore;
+          _totalCount = paged.total;
           _loadingMore = false;
         });
         if (_filteredAndSortedEntries.isEmpty && _hasMore) {
@@ -294,6 +283,8 @@ class BrowserPageState extends State<BrowserPage> {
       _isSearching = false;
       _filterQuery = '';
       _searchController.clear();
+      _searchResults = [];
+      _searchBusy = false;
       _isEditingAddress = false;
       _currentPage = 1;
       _hasMore = false;
@@ -360,6 +351,15 @@ class BrowserPageState extends State<BrowserPage> {
       // A refresh keeps the current list on screen; swapping it for a spinner
       // would drop the scroll offset and flash the whole page.
       if (!refresh) _loading = true;
+      // Navigating (a non-refresh load) leaves search behind: the results
+      // belonged to the folder the user just left.
+      if (!refresh && _isSearching) {
+        _isSearching = false;
+        _filterQuery = '';
+        _searchResults = [];
+        _searchBusy = false;
+        _searchController.clear();
+      }
       _error = null;
       _currentPage = 1;
       _hasMore = false;
@@ -372,6 +372,8 @@ class BrowserPageState extends State<BrowserPage> {
         path: _relPath,
         page: _currentPage,
         pageSize: _pageSize,
+        sortBy: _sortField.name,
+        sortAscending: _sortAsc,
       );
       final items = paged.entries.map((e) => EntryItem(e)).toList();
 
@@ -382,6 +384,7 @@ class BrowserPageState extends State<BrowserPage> {
         _capabilities = caps;
         _entries = items;
         _hasMore = paged.hasMore;
+        _totalCount = paged.total;
         _loading = false;
       });
       if (!refresh && _scrollController.hasClients) {
@@ -397,15 +400,23 @@ class BrowserPageState extends State<BrowserPage> {
       }
     } catch (e) {
       if (mounted && _loadingFor == loadingFor) {
-        setState(() {
-          _error = _friendlyError(e);
-          // The entries and capabilities belong to the folder that just failed
-          // to load; keeping them makes the bars contradict the error body.
-          _entries = [];
-          _hasMore = false;
-          _capabilities = null;
-          _loading = false;
-        });
+        if (refresh && _entries.isNotEmpty) {
+          // A failed refresh must not nuke a list the user is looking at
+          // (a network blip on a remote folder used to replace the whole
+          // page with an error). Keep the entries; report via snackbar.
+          setState(() => _loading = false);
+          _showError('Refresh failed: ${_friendlyError(e)}');
+        } else {
+          setState(() {
+            _error = _friendlyError(e);
+            // The entries and capabilities belong to the folder that just failed
+            // to load; keeping them makes the bars contradict the error body.
+            _entries = [];
+            _hasMore = false;
+            _capabilities = null;
+            _loading = false;
+          });
+        }
       }
     }
   }
@@ -829,17 +840,158 @@ class BrowserPageState extends State<BrowserPage> {
     return text;
   }
 
-  /// Filtering only searches entries already fetched. Pull the next page when
-  /// the query has no match yet, so a file past the first page is found
-  /// without scrolling to the bottom first.
+  /// Two layers: the local filter keeps narrowing the loaded pages as you
+  /// type (instant, 1+ chars), and a debounced recursive search on the
+  /// Rust side finds matches inside subfolders (2+ chars). The recursive
+  /// results take over the body; the old behaviour — filtering only what
+  /// was already fetched — made files in subfolders unfindable.
   void _onFilterChanged(String value) {
     setState(() => _filterQuery = value);
-    if (value.trim().isNotEmpty &&
-        _filteredAndSortedEntries.isEmpty &&
-        _hasMore &&
-        !_loadingMore) {
-      _loadMore();
+    _searchDebounce?.cancel();
+    final query = value.trim();
+    if (query.length < 2) {
+      setState(() {
+        _searchResults = [];
+        _searchBusy = false;
+      });
+      return;
     }
+    setState(() => _searchBusy = true);
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => _runSearch(query),
+    );
+  }
+
+  Future<void> _runSearch(String query) async {
+    final seq = ++_searchSeq;
+    try {
+      final dtos = await searchEntries(
+        root: _root,
+        path: _relPath,
+        query: query,
+        maxResults: 200,
+      );
+      if (!mounted || seq != _searchSeq) return;
+      setState(() {
+        _searchResults = dtos.map((e) => EntryItem(e)).toList();
+        _searchBusy = false;
+      });
+    } catch (e) {
+      if (!mounted || seq != _searchSeq) return;
+      setState(() => _searchBusy = false);
+      _showError('Search failed: ${_friendlyError(e)}');
+    }
+  }
+
+  /// Reset all search state (used when leaving search or navigating).
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchSeq++;
+    setState(() {
+      _filterQuery = '';
+      _searchResults = [];
+      _searchBusy = false;
+    });
+    _searchController.clear();
+  }
+
+  Widget _buildSearchResults() {
+    if (_searchBusy && _searchResults.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'No results for "${_filterQuery.trim()}"',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Searched this folder and its subfolders.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_searchBusy) const LinearProgressIndicator(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+          child: Text(
+            _searchResults.length >= 200
+                ? 'First 200 results (narrow the search to see more)'
+                : '${_searchResults.length} result${_searchResults.length == 1 ? '' : 's'} in this folder and subfolders',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _searchResults.length,
+            itemBuilder: (ctx, i) {
+              final item = _searchResults[i];
+              return ListTile(
+                leading: Icon(item.icon),
+                title: Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  _searchResultParent(item),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing:
+                    item.isDir ? const Icon(Icons.chevron_right, size: 18) : null,
+                onTap: () => _openSearchResult(item),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Display parent for a search hit: its folder path from the root.
+  String _searchResultParent(EntryItem item) {
+    var p = item.path;
+    if (p.startsWith('/')) p = p.substring(1);
+    final idx = p.lastIndexOf('/');
+    if (idx < 0) return 'Current folder';
+    return p.substring(0, idx);
+  }
+
+  /// Open a search hit: folders navigate straight in; files navigate to
+  /// their folder first (then open), because the open flows are written
+  /// against entries of the current folder.
+  Future<void> _openSearchResult(EntryItem item) async {
+    var p = item.path;
+    if (p.startsWith('/')) p = p.substring(1);
+    if (item.isDir) {
+      setState(() => _relPath = p);
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      _load();
+      return;
+    }
+    final parent = p.contains('/') ? p.substring(0, p.lastIndexOf('/')) : '';
+    setState(() => _relPath = parent);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    await _load();
+    if (!mounted) return;
+    final match = _entries.where((e) => e.name == item.name).firstOrNull;
+    if (match != null) _openEntry(match);
   }
 
   void _showError(String message) {
@@ -1408,7 +1560,38 @@ class BrowserPageState extends State<BrowserPage> {
     });
   }
 
-  void _selectAll() {
+  /// Select all *visible* entries — including the ones not paged in yet.
+  ///
+  /// This used to iterate only the loaded pages, so Ctrl+A in a 1,000-file
+  /// folder selected a silent 100. When more pages exist, fetch the whole
+  /// (server-sorted) folder in one call first; beyond a sanity cap, say so
+  /// instead of pretending everything is selected.
+  Future<void> _selectAll() async {
+    if (_hasMore && _totalCount > 0) {
+      if (_totalCount > 10000) {
+        _showError('Too many items to select all at once ($_totalCount)');
+      } else {
+        try {
+          final paged = await listDirPaged(
+            root: _root,
+            path: _relPath,
+            page: 1,
+            pageSize: _totalCount,
+            sortBy: _sortField.name,
+            sortAscending: _sortAsc,
+          );
+          if (!mounted) return;
+          setState(() {
+            _entries = paged.entries.map((e) => EntryItem(e)).toList();
+            _hasMore = false;
+            _currentPage = 1;
+            _totalCount = paged.total;
+          });
+        } catch (e) {
+          _showError('Could not load all items: ${_friendlyError(e)}');
+        }
+      }
+    }
     setState(() {
       _isSelecting = true;
       for (final e in _filteredAndSortedEntries) {
@@ -2178,45 +2361,20 @@ class BrowserPageState extends State<BrowserPage> {
     );
   }
 
+  /// Visible entries: hidden/filter applied to the loaded pages.
+  ///
+  /// Sorting is NOT done here anymore — the Rust side sorts the full folder
+  /// before paging. Sorting locally used to order only the pages fetched so
+  /// far, so "largest file" in a big folder was just the largest of the
+  /// first hundred.
   List<EntryItem> get _filteredAndSortedEntries {
-    var list = _entries.where((e) {
+    return _entries.where((e) {
       if (!_showHidden && e.hidden) return false;
       if (_filterQuery.isNotEmpty && !e.name.toLowerCase().contains(_filterQuery.toLowerCase())) {
         return false;
       }
       return true;
     }).toList();
-
-    list.sort((a, b) {
-      if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
-      int cmp = 0;
-      switch (_sortField) {
-        case SortField.name:
-          cmp = _naturalCompare(a.name, b.name);
-          break;
-        case SortField.size:
-          final sa = a.size ?? BigInt.zero;
-          final sb = b.size ?? BigInt.zero;
-          cmp = sa.compareTo(sb);
-          break;
-        case SortField.modified:
-          final ma = a.modified ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final mb = b.modified ?? DateTime.fromMillisecondsSinceEpoch(0);
-          cmp = ma.compareTo(mb);
-          break;
-        case SortField.type:
-          final extA = a.isDir ? '' : (a.name.contains('.') ? a.name.split('.').last.toLowerCase() : '');
-          final extB = b.isDir ? '' : (b.name.contains('.') ? b.name.split('.').last.toLowerCase() : '');
-          cmp = extA.compareTo(extB);
-          if (cmp == 0) {
-            cmp = _naturalCompare(a.name, b.name);
-          }
-          break;
-      }
-      return _sortAsc ? cmp : -cmp;
-    });
-
-    return list;
   }
 
   @override
@@ -2338,6 +2496,8 @@ class BrowserPageState extends State<BrowserPage> {
               _isSearching = false;
               _filterQuery = '';
               _searchController.clear();
+              _searchResults = [];
+              _searchBusy = false;
             });
           } else if (_isEditingAddress) {
             setState(() => _isEditingAddress = false);
@@ -2371,6 +2531,8 @@ class BrowserPageState extends State<BrowserPage> {
             _isSearching = false;
             _filterQuery = '';
             _searchController.clear();
+            _searchResults = [];
+            _searchBusy = false;
           });
         } else if (_isEditingAddress) {
           setState(() => _isEditingAddress = false);
@@ -2458,7 +2620,7 @@ class BrowserPageState extends State<BrowserPage> {
             focusNode: _searchFocusNode,
             autofocus: true,
             decoration: InputDecoration(
-              hintText: 'Filter files...',
+              hintText: 'Search files & subfolders…',
               border: InputBorder.none,
               suffixIcon: _filterQuery.isNotEmpty
                   ? Row(
@@ -2471,7 +2633,7 @@ class BrowserPageState extends State<BrowserPage> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
+                            _filterQuery.trim().length >= 2 ? '${_searchResults.length} found' : '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -2484,10 +2646,7 @@ class BrowserPageState extends State<BrowserPage> {
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _filterQuery = '');
-                          },
+                          onPressed: _clearSearch,
                         ),
                       ],
                     )
@@ -2527,13 +2686,15 @@ class BrowserPageState extends State<BrowserPage> {
       ] else ...[
         action(
           _isSearching ? Icons.search_off : Icons.search,
-          'Filter',
+          'Search',
           () {
             setState(() {
               _isSearching = !_isSearching;
               if (!_isSearching) {
                 _filterQuery = '';
                 _searchController.clear();
+                _searchResults = [];
+                _searchBusy = false;
               }
             });
           },
@@ -2567,6 +2728,9 @@ class BrowserPageState extends State<BrowserPage> {
               }
             });
             _saveViewPreferences();
+            // Sorting happens on the Rust side now: refetch page one in
+            // the new order instead of reshuffling the loaded subset.
+            _load();
           },
           itemBuilder: (ctx) => [
             for (final field in SortField.values)
@@ -3005,6 +3169,12 @@ class BrowserPageState extends State<BrowserPage> {
       );
     }
 
+    // Recursive search results take over the body while a 2+ character
+    // query is active.
+    if (_isSearching && _filterQuery.trim().length >= 2) {
+      return _buildSearchResults();
+    }
+
     final list = _filteredAndSortedEntries;
     if (list.isEmpty) {
       final isFiltered = _filterQuery.isNotEmpty;
@@ -3171,7 +3341,15 @@ class BrowserPageState extends State<BrowserPage> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(item.icon, size: 28, color: item.iconColor(ctx)),
+                            if (item.isImage)
+                              EntryThumbnail(
+                                root: _root,
+                                relPath: _fullEntryPath(item),
+                                item: item,
+                                size: 52,
+                              )
+                            else
+                              Icon(item.icon, size: 28, color: item.iconColor(ctx)),
                             const SizedBox(height: 4),
                             Text(
                               item.name,
@@ -3274,7 +3452,15 @@ class BrowserPageState extends State<BrowserPage> {
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(item.icon, color: item.iconColor(ctx), size: 18),
+                        if (item.isImage)
+                          EntryThumbnail(
+                            root: _root,
+                            relPath: path,
+                            item: item,
+                            size: 28,
+                          )
+                        else
+                          Icon(item.icon, color: item.iconColor(ctx), size: 18),
                         if (item.isSymlink)
                           Padding(
                             padding: const EdgeInsets.only(left: 2),

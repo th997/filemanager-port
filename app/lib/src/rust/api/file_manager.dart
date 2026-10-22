@@ -7,6 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `extension_of`, `natural_compare`, `sort_dtos`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 void initDatabase({required String dbPath}) =>
@@ -23,11 +24,33 @@ Future<PagedEntriesDto> listDirPaged({
   required String path,
   required int page,
   required int pageSize,
+  required String sortBy,
+  required bool sortAscending,
 }) => RustLib.instance.api.crateApiFileManagerListDirPaged(
   root: root,
   path: path,
   page: page,
   pageSize: pageSize,
+  sortBy: sortBy,
+  sortAscending: sortAscending,
+);
+
+/// Recursive name search under `path`. Added because the UI's "search"
+/// was really a filter over whichever pages had been fetched — it never
+/// looked inside subfolders. Safety bounds keep a pathological tree (a
+/// huge NAS share) from running away: result cap, visited-dir cap, depth
+/// cap. Symlinked directories are not descended into, like everywhere
+/// else in the app; unreadable subfolders are skipped, not fatal.
+Future<List<EntryDto>> searchEntries({
+  required String root,
+  required String path,
+  required String query,
+  required int maxResults,
+}) => RustLib.instance.api.crateApiFileManagerSearchEntries(
+  root: root,
+  path: path,
+  query: query,
+  maxResults: maxResults,
 );
 
 Future<EntryDto> statEntry({required String root, required String path}) =>
@@ -180,16 +203,25 @@ class PagedEntriesDto {
   final int pageSize;
   final bool hasMore;
 
+  /// Total entries in the folder (all pages), so the UI can show real
+  /// counts and fetch everything at once when the user selects all.
+  final int total;
+
   const PagedEntriesDto({
     required this.entries,
     required this.page,
     required this.pageSize,
     required this.hasMore,
+    required this.total,
   });
 
   @override
   int get hashCode =>
-      entries.hashCode ^ page.hashCode ^ pageSize.hashCode ^ hasMore.hashCode;
+      entries.hashCode ^
+      page.hashCode ^
+      pageSize.hashCode ^
+      hasMore.hashCode ^
+      total.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -199,5 +231,6 @@ class PagedEntriesDto {
           entries == other.entries &&
           page == other.page &&
           pageSize == other.pageSize &&
-          hasMore == other.hasMore;
+          hasMore == other.hasMore &&
+          total == other.total;
 }
