@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:window_manager/window_manager.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
 import 'src/services/permission_service.dart';
@@ -16,10 +17,55 @@ Future<void> main() async {
   StorageService.instance.ensureInitialized();
   await PreferencesService.instance.load();
   PreferencesService.instance.syncToolbarAtBottom();
+  if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+    await _initDesktopWindow();
+  }
   if (Platform.isAndroid && !await PermissionService.instance.hasStorageAccess()) {
     await PermissionService.instance.requestStorageAccess();
   }
   runApp(const FileManagerApp());
+}
+
+/// Persists window bounds on move/resize so the next launch restores
+/// them. Kept as a single shared instance registered with window_manager.
+class _WindowBoundsSaver with WindowListener {
+  Future<void> _save() async {
+    try {
+      final bounds = await windowManager.getBounds();
+      final prefs = PreferencesService.instance;
+      prefs.setString('window.x', bounds.left.toString());
+      prefs.setString('window.y', bounds.top.toString());
+      prefs.setString('window.width', bounds.width.toString());
+      prefs.setString('window.height', bounds.height.toString());
+    } catch (_) {}
+  }
+
+  @override
+  void onWindowMoved() => _save();
+
+  @override
+  void onWindowResized() => _save();
+}
+
+final _windowBoundsSaver = _WindowBoundsSaver();
+
+Future<void> _initDesktopWindow() async {
+  await windowManager.ensureInitialized();
+  await windowManager.setMinimumSize(const Size(800, 500));
+  final prefs = PreferencesService.instance;
+  double? read(String key) => double.tryParse(prefs.getString(key) ?? '');
+  final w = read('window.width');
+  final h = read('window.height');
+  final x = read('window.x');
+  final y = read('window.y');
+  if (w != null && h != null && w >= 800 && h >= 500) {
+    await windowManager.setBounds(
+      Rect.fromLTWH(x ?? 0, y ?? 0, w, h),
+      animate: false,
+    );
+    if (x == null || y == null) await windowManager.center();
+  }
+  windowManager.addListener(_windowBoundsSaver);
 }
 
 class FileManagerApp extends StatefulWidget {

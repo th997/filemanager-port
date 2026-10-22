@@ -82,6 +82,15 @@ Future<String> readTextFile({required String root, required String path}) =>
 void invalidateRoot({required String root}) =>
     RustLib.instance.api.crateApiFileManagerInvalidateRoot(root: root);
 
+/// Size in bytes of the downloaded remote-archive cache.
+BigInt archiveCacheSize() =>
+    RustLib.instance.api.crateApiFileManagerArchiveCacheSize();
+
+/// Deletes all cached remote archives; open archive views are dropped
+/// and re-download on next access.
+void clearArchiveCache() =>
+    RustLib.instance.api.crateApiFileManagerClearArchiveCache();
+
 Future<void> writeTextFile({
   required String root,
   required String path,

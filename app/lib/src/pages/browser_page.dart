@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
@@ -275,10 +276,51 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
+  /// Back/forward history within the current root. A root switch starts
+  /// a fresh history, like opening a new window in a desktop manager.
+  final List<String> _backStack = [];
+  final List<String> _forwardStack = [];
+
+  void _pushHistory() {
+    if (_backStack.isEmpty || _backStack.last != _relPath) {
+      _backStack.add(_relPath);
+      if (_backStack.length > 100) _backStack.removeAt(0);
+    }
+    _forwardStack.clear();
+  }
+
+  void _goBack() {
+    if (_backStack.isEmpty) return;
+    _forwardStack.add(_relPath);
+    final target = _backStack.removeLast();
+    setState(() {
+      _relPath = target;
+      _isSelecting = false;
+      _selectedPaths.clear();
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    _load();
+  }
+
+  void _goForward() {
+    if (_forwardStack.isEmpty) return;
+    _backStack.add(_relPath);
+    final target = _forwardStack.removeLast();
+    setState(() {
+      _relPath = target;
+      _isSelecting = false;
+      _selectedPaths.clear();
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    _load();
+  }
+
   void navigateTo(String root, String relPath) {
     setState(() {
       _root = root;
       _relPath = relPath;
+      _backStack.clear();
+      _forwardStack.clear();
       _isSelecting = false;
       _selectedPaths.clear();
       _isSearching = false;
@@ -439,6 +481,7 @@ class BrowserPageState extends State<BrowserPage> {
       final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
       if (segments.isNotEmpty) {
         segments.removeLast();
+        _pushHistory();
         setState(() {
           _relPath = segments.join('/');
           _isSelecting = false;
@@ -520,6 +563,7 @@ class BrowserPageState extends State<BrowserPage> {
 
     if (item.isDir) {
       final next = _fullEntryPath(item);
+      _pushHistory();
       setState(() {
         _relPath = next;
         _isSelecting = false;
@@ -561,6 +605,20 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     if (item.isMedia) {
+      // The playlist is the folder's media files in the order currently
+      // on screen (same filter + sort), so Next matches what the user
+      // sees. Only loaded entries are included.
+      final mediaEntries =
+          _filteredAndSortedEntries.where((e) => e.isMedia).toList();
+      final tracks = mediaEntries
+          .map((e) => MediaTrack(
+                path: _fullEntryPath(e),
+                fileName: e.name,
+                isAudio: e.isAudio,
+              ))
+          .toList();
+      final startIndex =
+          mediaEntries.indexWhere((e) => e.name == item.name);
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => MediaPlayerPage(
@@ -568,6 +626,8 @@ class BrowserPageState extends State<BrowserPage> {
             path: _fullEntryPath(item),
             fileName: item.name,
             isAudio: item.isAudio,
+            playlist: tracks,
+            startIndex: startIndex < 0 ? 0 : startIndex,
           ),
         ),
       );
@@ -970,6 +1030,7 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _openSearchResult(EntryItem item) async {
     var p = item.path;
     if (p.startsWith('/')) p = p.substring(1);
+    _pushHistory();
     if (item.isDir) {
       setState(() => _relPath = p);
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
@@ -2554,11 +2615,22 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): _navigateUp,
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): _goBack,
+        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): _goForward,
         // Enter opens the single selected entry, like every desktop file list.
         const SingleActivator(LogicalKeyboardKey.enter): _openSelected,
         const SingleActivator(LogicalKeyboardKey.numpadEnter): _openSelected,
       },
-      child: Focus(
+      child: Listener(
+        // Mouse back/forward side buttons, like a desktop file manager.
+        onPointerDown: (event) {
+          if (event.buttons == kBackMouseButton) {
+            _goBack();
+          } else if (event.buttons == kForwardMouseButton) {
+            _goForward();
+          }
+        },
+        child: Focus(
         autofocus: true,
         child: PopScope(
       canPop: !canNavigateUp,
@@ -2615,6 +2687,7 @@ class BrowserPageState extends State<BrowserPage> {
         ],
       ),
       ),
+    ),
     ),
     ),
     );
@@ -2943,6 +3016,22 @@ class BrowserPageState extends State<BrowserPage> {
       child: Row(
         children: [
           IconButton(
+            icon: const Icon(Icons.arrow_back, size: 16),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            tooltip: 'Back (Alt+←)',
+            onPressed: _backStack.isEmpty ? null : _goBack,
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward, size: 16),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            tooltip: 'Forward (Alt+→)',
+            onPressed: _forwardStack.isEmpty ? null : _goForward,
+          ),
+          IconButton(
             icon: const Icon(Icons.arrow_upward, size: 16),
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
@@ -2976,6 +3065,7 @@ class BrowserPageState extends State<BrowserPage> {
                     borderRadius: BorderRadius.circular(4),
                     onTap: () {
                       if (_relPath.isNotEmpty) {
+                        _pushHistory();
                         setState(() => _relPath = '');
                         if (_scrollController.hasClients) {
                           _scrollController.jumpTo(0);
@@ -3002,6 +3092,7 @@ class BrowserPageState extends State<BrowserPage> {
                       onTap: () {
                         final next = segments.sublist(0, i + 1).join('/');
                         if (next != _relPath) {
+                          _pushHistory();
                           setState(() => _relPath = next);
                           if (_scrollController.hasClients) {
                             _scrollController.jumpTo(0);

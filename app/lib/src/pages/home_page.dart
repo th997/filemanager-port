@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/permission_service.dart';
+import '../services/preferences_service.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
@@ -36,12 +37,79 @@ class _HomePageState extends State<HomePage> {
   int _trashCount = 0;
   int _activeTaskCount = 0;
   bool _hasStorageAccess = true;
+  bool _welcomeDismissed = false;
+
+  static const _prefWelcomeDismissed = 'home.welcome_dismissed';
 
   @override
   void initState() {
     super.initState();
+    _welcomeDismissed =
+        PreferencesService.instance.getBool(_prefWelcomeDismissed) ?? false;
     _loadMetadata();
     _checkStorageAccess();
+  }
+
+  /// First-run guidance: shown only while there is nothing configured
+  /// yet — no connections, no bookmarks, no history — and until dismissed.
+  bool get _showWelcome =>
+      !_welcomeDismissed &&
+      _remotes.isEmpty &&
+      _bookmarks.isEmpty &&
+      _history.isEmpty;
+
+  Widget _buildWelcomeBanner() {
+    return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.waving_hand_outlined, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Welcome to File Manager',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Browse local folders right away, or connect a server — SFTP, WebDAV, S3, SMB and more — to manage files anywhere.',
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                  const SizedBox(height: 6),
+                  FilledButton.tonal(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RemotesPage()),
+                      ).then((_) => _loadMetadata());
+                    },
+                    child: const Text('Connect a server'),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 16),
+              tooltip: 'Dismiss',
+              onPressed: () {
+                PreferencesService.instance.setBool(_prefWelcomeDismissed, true);
+                setState(() => _welcomeDismissed = true);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Live count of running tasks for the Tasks card subtitle. Cheap sync
@@ -120,6 +188,10 @@ class _HomePageState extends State<HomePage> {
           children: [
             if (!_hasStorageAccess) ...[
               _buildPermissionBanner(),
+              const SizedBox(height: 8),
+            ],
+            if (_showWelcome) ...[
+              _buildWelcomeBanner(),
               const SizedBox(height: 8),
             ],
             _sectionHeader('Local Storage'),

@@ -356,6 +356,19 @@ pub fn invalidate_root(root: String) {
     VfsRegistry::global().invalidate(&root);
 }
 
+/// Size in bytes of the downloaded remote-archive cache.
+#[flutter_rust_bridge::frb(sync)]
+pub fn archive_cache_size() -> u64 {
+    VfsRegistry::global().archive_cache_size()
+}
+
+/// Deletes all cached remote archives; open archive views are dropped
+/// and re-download on next access.
+#[flutter_rust_bridge::frb(sync)]
+pub fn clear_archive_cache() {
+    VfsRegistry::global().clear_archive_cache();
+}
+
 pub async fn write_text_file(root: String, path: String, content: String) -> Result<(), String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);

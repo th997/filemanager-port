@@ -163,6 +163,38 @@ impl VfsRegistry {
     pub fn invalidate(&self, root: &str) {
         self.cached.write().remove(root);
     }
+
+    /// Bytes held by the downloaded remote-archive cache
+    /// (`temp_dir/fm_archive_cache`). A missing directory counts as zero.
+    pub fn archive_cache_size(&self) -> u64 {
+        let dir = std::env::temp_dir().join("fm_archive_cache");
+        let mut total = 0u64;
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if meta.is_file() {
+                        total += meta.len();
+                    }
+                }
+            }
+        }
+        total
+    }
+
+    /// Deletes every cached remote archive and drops cached archive VFS
+    /// instances, so the next open re-downloads instead of reading a
+    /// path that no longer exists.
+    pub fn clear_archive_cache(&self) {
+        self.cached
+            .write()
+            .retain(|root, _| !root.starts_with("archive://"));
+        let dir = std::env::temp_dir().join("fm_archive_cache");
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
 }
 
 /// Store a first-seen SFTP host key fingerprint in the remote's saved

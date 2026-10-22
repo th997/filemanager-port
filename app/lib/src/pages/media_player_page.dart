@@ -15,11 +15,30 @@ import '../services/preferences_service.dart';
 /// Native files are opened directly. Anything else is served over a loopback
 /// HTTP endpoint with Range support, so seeking works without downloading the
 /// whole file first.
+/// One playable item in a [MediaPlayerPage] session. All tracks share
+/// the page's root; only the path differs.
+class MediaTrack {
+  final String path;
+  final String fileName;
+  final bool isAudio;
+
+  const MediaTrack({
+    required this.path,
+    required this.fileName,
+    required this.isAudio,
+  });
+}
+
 class MediaPlayerPage extends StatefulWidget {
   final String root;
   final String path;
   final String fileName;
   final bool isAudio;
+
+  /// Sibling media files from the folder the user opened, in display
+  /// order. Empty means single-file playback (the fields above).
+  final List<MediaTrack> playlist;
+  final int startIndex;
 
   const MediaPlayerPage({
     super.key,
@@ -27,6 +46,8 @@ class MediaPlayerPage extends StatefulWidget {
     required this.path,
     required this.fileName,
     required this.isAudio,
+    this.playlist = const [],
+    this.startIndex = 0,
   });
 
   @override
@@ -46,8 +67,19 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   static const _prefVolume = 'player.volume';
   static const _prefLoop = 'player.loop';
   static const _prefResumePrefix = 'player.resume.';
+  late int _index;
+  bool _switching = false;
+  StreamSubscription<bool>? _completedSub;
+
+  MediaTrack get _track => widget.playlist.isEmpty
+      ? MediaTrack(path: widget.path, fileName: widget.fileName, isAudio: widget.isAudio)
+      : widget.playlist[_index.clamp(0, widget.playlist.length - 1)];
+  bool get _hasPrev => widget.playlist.length > 1 && _index > 0;
+  bool get _hasNext =>
+      widget.playlist.length > 1 && _index < widget.playlist.length - 1;
+
   /// Where playback was when the page closed, keyed by the opened file.
-  String get _resumeKey => '$_prefResumePrefix${widget.root}|${widget.path}';
+  String get _resumeKey => '$_prefResumePrefix${widget.root}|${_track.path}';
   bool _resumeApplied = false;
   StreamSubscription<Duration>? _resumeSub;
   double _volume = 100.0;
@@ -84,7 +116,75 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     _errorSub = _player.stream.error.listen((message) {
       if (mounted) setState(() => _error = message);
     });
+    _index = widget.playlist.isEmpty
+        ? 0
+        : widget.startIndex.clamp(0, widget.playlist.length - 1);
+    _completedSub = _player.stream.completed.listen((completed) {
+      // Auto-advance only on a natural finish: not while looping a
+      // single track and not while a manual track switch is mid-open.
+      if (completed && !_isLooping && !_switching && _hasNext) {
+        _openTrack(_index + 1);
+      }
+    });
     _open();
+  }
+
+  /// Switches playback to another track in the playlist, saving the
+  /// outgoing track's resume position first.
+  Future<void> _openTrack(int index) async {
+    if (index < 0 || index >= widget.playlist.length) return;
+    _saveResumePosition();
+    _resumeSub?.cancel();
+    _resumeSub = null;
+    _resumeApplied = false;
+    _switching = true;
+    setState(() {
+      _index = index;
+      _error = null;
+      _opened = false;
+    });
+    try {
+      await _open();
+    } finally {
+      _switching = false;
+    }
+  }
+
+  void _showPlaylist() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: widget.playlist.length,
+          itemBuilder: (_, i) {
+            final t = widget.playlist[i];
+            final current = i == _index;
+            return ListTile(
+              dense: true,
+              leading: Icon(
+                current
+                    ? Icons.play_circle_fill
+                    : (t.isAudio ? Icons.music_note : Icons.movie_outlined),
+                color: current ? Colors.blueAccent : null,
+              ),
+              title: Text(
+                t.fileName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: current ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                if (i != _index) _openTrack(i);
+              },
+            );
+          },
+        ),
+      ),
+    );
   }
 
   void _toggleMute() {
@@ -122,14 +222,14 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   Future<void> _open() async {
     try {
       final String uri;
-      final native = joinNative(widget.root, widget.path);
+      final native = joinNative(widget.root, _track.path);
       if (isNativeRoot(widget.root) && File(native).existsSync()) {
         uri = Uri.file(native).toString();
       } else {
         final base = (await startMediaStream(root: widget.root))
             .replaceFirst(RegExp(r'/$'), '');
         _startedStream = true;
-        final encoded = widget.path
+        final encoded = _track.path
             .split('/')
             .where((segment) => segment.isNotEmpty)
             .map(Uri.encodeComponent)
@@ -198,6 +298,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   void dispose() {
     _saveResumePosition();
     _resumeSub?.cancel();
+    _completedSub?.cancel();
     _errorSub?.cancel();
     _volumeSub?.cancel();
     _player.stop();
@@ -287,6 +388,12 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
         const SingleActivator(LogicalKeyboardKey.keyF): () {
           _videoKey.currentState?.toggleFullscreen();
         },
+        const SingleActivator(LogicalKeyboardKey.keyN): () {
+          if (_hasNext) _openTrack(_index + 1);
+        },
+        const SingleActivator(LogicalKeyboardKey.keyP): () {
+          if (_hasPrev) _openTrack(_index - 1);
+        },
         const SingleActivator(LogicalKeyboardKey.keyJ): () => _seekRelative(-10),
         const SingleActivator(LogicalKeyboardKey.keyL): () => _seekRelative(10),
         const SingleActivator(LogicalKeyboardKey.keyK): () => _player.playOrPause(),
@@ -312,8 +419,25 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
               ),
               backgroundColor: Colors.black87,
               foregroundColor: Colors.white,
-              title: Text(widget.fileName, overflow: TextOverflow.ellipsis),
+              title: Text(_track.fileName, overflow: TextOverflow.ellipsis),
               actions: [
+                if (widget.playlist.length > 1) ...[
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous),
+                    tooltip: 'Previous (P)',
+                    onPressed: _hasPrev ? () => _openTrack(_index - 1) : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next),
+                    tooltip: 'Next (N)',
+                    onPressed: _hasNext ? () => _openTrack(_index + 1) : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.queue_music),
+                    tooltip: 'Playlist (${_index + 1}/${widget.playlist.length})',
+                    onPressed: _showPlaylist,
+                  ),
+                ],
                 IconButton(
                   icon: const Icon(Icons.replay_10),
                   tooltip: 'Rewind 10s (←)',
@@ -406,7 +530,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                         controls: AdaptiveVideoControls,
                       ),
                     ),
-                    if (widget.isAudio)
+                    if (_track.isAudio)
                       Positioned(
                         top: 24,
                         left: 0,
@@ -419,7 +543,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                                   color: Colors.white.withValues(alpha: 0.25)),
                               const SizedBox(height: 8),
                               Text(
-                                widget.fileName,
+                                _track.fileName,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                     color: Colors.white70, fontSize: 13),

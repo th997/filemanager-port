@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:exif/exif.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -184,11 +186,49 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     final stat = file.statSync();
     Size? dimensions;
+    Uint8List? bytes;
     try {
-      final bytes = await file.readAsBytes();
+      bytes = await file.readAsBytes();
       final image = await decodeImageFromList(bytes);
       dimensions = Size(image.width.toDouble(), image.height.toDouble());
     } catch (_) {}
+
+    // EXIF: the real capture date and camera, instead of letting the
+    // file's Modified time pose as when the photo was taken. The parser
+    // simply finds no tags for formats without EXIF (PNG, WebP).
+    String? dateTaken;
+    String? camera;
+    String? gpsText;
+    if (bytes != null) {
+      try {
+        final tags = await readExifFromBytes(bytes);
+        final dt = tags['EXIF DateTimeOriginal']?.printable.trim();
+        if (dt != null && dt.length >= 19) {
+          dateTaken =
+              '${dt.substring(0, 4)}-${dt.substring(5, 7)}-${dt.substring(8, 19)}';
+        }
+        final make = tags['Image Make']?.printable.trim();
+        final model = tags['Image Model']?.printable.trim();
+        if (model != null && model.isNotEmpty) {
+          camera = (make != null &&
+                  make.isNotEmpty &&
+                  !model.toLowerCase().startsWith(make.toLowerCase()))
+              ? '$make $model'
+              : model;
+        }
+        final lat = _gpsCoordinate(
+          tags['GPS GPSLatitude'],
+          tags['GPS GPSLatitudeRef']?.printable.trim(),
+        );
+        final lon = _gpsCoordinate(
+          tags['GPS GPSLongitude'],
+          tags['GPS GPSLongitudeRef']?.printable.trim(),
+        );
+        if (lat != null && lon != null) {
+          gpsText = '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
+        }
+      } catch (_) {}
+    }
 
     if (!mounted) return;
 
@@ -204,6 +244,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             _detailRow('Name', entry.name),
             if (dimensions != null)
               _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
+            if (dateTaken != null) _detailRow('Date taken', dateTaken),
+            if (camera != null) _detailRow('Camera', camera),
+            if (gpsText != null) _detailRow('Location', gpsText),
             _detailRow('Size', _formatSize(stat.size)),
             _detailRow('Modified', stat.modified.toString().split('.').first),
             _detailRow('Path', imagePath),
@@ -228,6 +271,27 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         ],
       ),
     );
+  }
+
+  /// EXIF GPS coordinates are stored as degree/minute/second rationals;
+  /// the ref ('N'/'S', 'E'/'W') carries the sign.
+  double? _gpsCoordinate(IfdTag? tag, String? ref) {
+    if (tag == null || ref == null) return null;
+    try {
+      final parts = tag.values.toList();
+      if (parts.length < 3) return null;
+      double val(dynamic r) {
+        final n = (r.numerator as num).toDouble();
+        final d = (r.denominator as num).toDouble();
+        return d == 0 ? 0 : n / d;
+      }
+
+      var result = val(parts[0]) + val(parts[1]) / 60 + val(parts[2]) / 3600;
+      if (ref == 'S' || ref == 'W') result = -result;
+      return result;
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _detailRow(String label, String value) {

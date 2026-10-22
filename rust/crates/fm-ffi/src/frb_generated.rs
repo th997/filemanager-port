@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 823499181;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 101615950;
             
 
 // Section: executor
@@ -60,6 +60,14 @@ let api_path = <String>::sse_decode(&mut deserializer);deserializer.end(); move 
                          let output_ok = crate::api::metadata::add_bookmark(api_db_path, api_name, api_root, api_path).await?;   std::result::Result::Ok(output_ok)
                     })().await)
                 } })
+            }fn wire__crate__api__file_manager__archive_cache_size_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "archive_cache_size", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+                transform_result_sse::<_, ()>((move || {
+                     let output_ok = Ok::<_, ()>(crate::api::file_manager::archive_cache_size())?;   std::result::Result::Ok(output_ok)
+                })()) })
             }fn wire__crate__api__tasks__cancel_task_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "cancel_task", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -67,6 +75,14 @@ let api_path = <String>::sse_decode(&mut deserializer);deserializer.end(); move 
             let api_task_id = <String>::sse_decode(&mut deserializer);deserializer.end();
                 transform_result_sse::<_, ()>((move || {
                      let output_ok = Ok::<_, ()>(crate::api::tasks::cancel_task(api_task_id))?;   std::result::Result::Ok(output_ok)
+                })()) })
+            }fn wire__crate__api__file_manager__clear_archive_cache_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "clear_archive_cache", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+                transform_result_sse::<_, ()>((move || {
+                     let output_ok = Ok::<_, ()>({ crate::api::file_manager::clear_archive_cache(); })?;   std::result::Result::Ok(output_ok)
                 })()) })
             }fn wire__crate__api__metadata__clear_history_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "clear_history", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
@@ -771,40 +787,40 @@ return crate::api::metadata::TrashItemDto{id: var_id, original_path: var_origina
                     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
                     match func_id {
                         1 => wire__crate__api__metadata__add_bookmark_impl(port, ptr, rust_vec_len, data_len),
-3 => wire__crate__api__metadata__clear_history_impl(port, ptr, rust_vec_len, data_len),
-4 => wire__crate__api__metadata__clear_trash_impl(port, ptr, rust_vec_len, data_len),
-5 => wire__crate__api__file_manager__create_dir_impl(port, ptr, rust_vec_len, data_len),
-6 => wire__crate__api__metadata__delete_bookmark_impl(port, ptr, rust_vec_len, data_len),
-7 => wire__crate__api__remotes__delete_remote_impl(port, ptr, rust_vec_len, data_len),
-8 => wire__crate__api__metadata__delete_trash_item_impl(port, ptr, rust_vec_len, data_len),
-10 => wire__crate__api__file_manager__export_to_native_impl(port, ptr, rust_vec_len, data_len),
-11 => wire__crate__api__file_manager__get_capabilities_impl(port, ptr, rust_vec_len, data_len),
-13 => wire__crate__api__file_manager__init_app_impl(port, ptr, rust_vec_len, data_len),
-16 => wire__crate__api__metadata__list_bookmarks_impl(port, ptr, rust_vec_len, data_len),
-17 => wire__crate__api__file_manager__list_dir_impl(port, ptr, rust_vec_len, data_len),
-18 => wire__crate__api__file_manager__list_dir_paged_impl(port, ptr, rust_vec_len, data_len),
-19 => wire__crate__api__metadata__list_history_impl(port, ptr, rust_vec_len, data_len),
-20 => wire__crate__api__remotes__list_remotes_impl(port, ptr, rust_vec_len, data_len),
-22 => wire__crate__api__metadata__list_trash_impl(port, ptr, rust_vec_len, data_len),
-23 => wire__crate__api__metadata__move_to_trash_impl(port, ptr, rust_vec_len, data_len),
-25 => wire__crate__api__file_manager__read_text_file_impl(port, ptr, rust_vec_len, data_len),
-26 => wire__crate__api__metadata__record_history_impl(port, ptr, rust_vec_len, data_len),
-27 => wire__crate__api__file_manager__remove_entry_impl(port, ptr, rust_vec_len, data_len),
-28 => wire__crate__api__metadata__remove_history_impl(port, ptr, rust_vec_len, data_len),
-29 => wire__crate__api__file_manager__rename_entry_impl(port, ptr, rust_vec_len, data_len),
-30 => wire__crate__api__metadata__restore_trash_item_impl(port, ptr, rust_vec_len, data_len),
-31 => wire__crate__api__remotes__save_remote_impl(port, ptr, rust_vec_len, data_len),
-32 => wire__crate__api__file_manager__search_entries_impl(port, ptr, rust_vec_len, data_len),
-33 => wire__crate__api__tasks__start_compress_task_impl(port, ptr, rust_vec_len, data_len),
-34 => wire__crate__api__tasks__start_copy_task_impl(port, ptr, rust_vec_len, data_len),
-35 => wire__crate__api__tasks__start_delete_task_impl(port, ptr, rust_vec_len, data_len),
-36 => wire__crate__api__tasks__start_extract_task_impl(port, ptr, rust_vec_len, data_len),
-37 => wire__crate__api__servers__start_lan_http_server_impl(port, ptr, rust_vec_len, data_len),
-38 => wire__crate__api__servers__start_media_stream_impl(port, ptr, rust_vec_len, data_len),
-39 => wire__crate__api__tasks__start_move_task_impl(port, ptr, rust_vec_len, data_len),
-40 => wire__crate__api__file_manager__stat_entry_impl(port, ptr, rust_vec_len, data_len),
-43 => wire__crate__api__remotes__test_remote_connection_impl(port, ptr, rust_vec_len, data_len),
-44 => wire__crate__api__file_manager__write_text_file_impl(port, ptr, rust_vec_len, data_len),
+5 => wire__crate__api__metadata__clear_history_impl(port, ptr, rust_vec_len, data_len),
+6 => wire__crate__api__metadata__clear_trash_impl(port, ptr, rust_vec_len, data_len),
+7 => wire__crate__api__file_manager__create_dir_impl(port, ptr, rust_vec_len, data_len),
+8 => wire__crate__api__metadata__delete_bookmark_impl(port, ptr, rust_vec_len, data_len),
+9 => wire__crate__api__remotes__delete_remote_impl(port, ptr, rust_vec_len, data_len),
+10 => wire__crate__api__metadata__delete_trash_item_impl(port, ptr, rust_vec_len, data_len),
+12 => wire__crate__api__file_manager__export_to_native_impl(port, ptr, rust_vec_len, data_len),
+13 => wire__crate__api__file_manager__get_capabilities_impl(port, ptr, rust_vec_len, data_len),
+15 => wire__crate__api__file_manager__init_app_impl(port, ptr, rust_vec_len, data_len),
+18 => wire__crate__api__metadata__list_bookmarks_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__file_manager__list_dir_impl(port, ptr, rust_vec_len, data_len),
+20 => wire__crate__api__file_manager__list_dir_paged_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__metadata__list_history_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__remotes__list_remotes_impl(port, ptr, rust_vec_len, data_len),
+24 => wire__crate__api__metadata__list_trash_impl(port, ptr, rust_vec_len, data_len),
+25 => wire__crate__api__metadata__move_to_trash_impl(port, ptr, rust_vec_len, data_len),
+27 => wire__crate__api__file_manager__read_text_file_impl(port, ptr, rust_vec_len, data_len),
+28 => wire__crate__api__metadata__record_history_impl(port, ptr, rust_vec_len, data_len),
+29 => wire__crate__api__file_manager__remove_entry_impl(port, ptr, rust_vec_len, data_len),
+30 => wire__crate__api__metadata__remove_history_impl(port, ptr, rust_vec_len, data_len),
+31 => wire__crate__api__file_manager__rename_entry_impl(port, ptr, rust_vec_len, data_len),
+32 => wire__crate__api__metadata__restore_trash_item_impl(port, ptr, rust_vec_len, data_len),
+33 => wire__crate__api__remotes__save_remote_impl(port, ptr, rust_vec_len, data_len),
+34 => wire__crate__api__file_manager__search_entries_impl(port, ptr, rust_vec_len, data_len),
+35 => wire__crate__api__tasks__start_compress_task_impl(port, ptr, rust_vec_len, data_len),
+36 => wire__crate__api__tasks__start_copy_task_impl(port, ptr, rust_vec_len, data_len),
+37 => wire__crate__api__tasks__start_delete_task_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__tasks__start_extract_task_impl(port, ptr, rust_vec_len, data_len),
+39 => wire__crate__api__servers__start_lan_http_server_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__servers__start_media_stream_impl(port, ptr, rust_vec_len, data_len),
+41 => wire__crate__api__tasks__start_move_task_impl(port, ptr, rust_vec_len, data_len),
+42 => wire__crate__api__file_manager__stat_entry_impl(port, ptr, rust_vec_len, data_len),
+45 => wire__crate__api__remotes__test_remote_connection_impl(port, ptr, rust_vec_len, data_len),
+46 => wire__crate__api__file_manager__write_text_file_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -817,15 +833,17 @@ return crate::api::metadata::TrashItemDto{id: var_id, original_path: var_origina
                 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
                     match func_id {
-                        2 => wire__crate__api__tasks__cancel_task_impl(ptr, rust_vec_len, data_len),
-9 => wire__crate__api__tasks__dismiss_task_impl(ptr, rust_vec_len, data_len),
-12 => wire__crate__api__servers__get_lan_ip_list_impl(ptr, rust_vec_len, data_len),
-14 => wire__crate__api__file_manager__init_database_impl(ptr, rust_vec_len, data_len),
-15 => wire__crate__api__file_manager__invalidate_root_impl(ptr, rust_vec_len, data_len),
-21 => wire__crate__api__tasks__list_tasks_impl(ptr, rust_vec_len, data_len),
-24 => wire__crate__api__tasks__poll_task_progress_impl(ptr, rust_vec_len, data_len),
-41 => wire__crate__api__servers__stop_lan_http_server_impl(ptr, rust_vec_len, data_len),
-42 => wire__crate__api__servers__stop_media_streams_impl(ptr, rust_vec_len, data_len),
+                        2 => wire__crate__api__file_manager__archive_cache_size_impl(ptr, rust_vec_len, data_len),
+3 => wire__crate__api__tasks__cancel_task_impl(ptr, rust_vec_len, data_len),
+4 => wire__crate__api__file_manager__clear_archive_cache_impl(ptr, rust_vec_len, data_len),
+11 => wire__crate__api__tasks__dismiss_task_impl(ptr, rust_vec_len, data_len),
+14 => wire__crate__api__servers__get_lan_ip_list_impl(ptr, rust_vec_len, data_len),
+16 => wire__crate__api__file_manager__init_database_impl(ptr, rust_vec_len, data_len),
+17 => wire__crate__api__file_manager__invalidate_root_impl(ptr, rust_vec_len, data_len),
+23 => wire__crate__api__tasks__list_tasks_impl(ptr, rust_vec_len, data_len),
+26 => wire__crate__api__tasks__poll_task_progress_impl(ptr, rust_vec_len, data_len),
+43 => wire__crate__api__servers__stop_lan_http_server_impl(ptr, rust_vec_len, data_len),
+44 => wire__crate__api__servers__stop_media_streams_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }

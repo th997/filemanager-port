@@ -18,8 +18,13 @@ class _Photo {
   final File? file;
   final AssetEntity? asset;
 
-  const _Photo.file(this.name, File this.file) : asset = null;
-  const _Photo.asset(this.name, AssetEntity this.asset) : file = null;
+  /// Capture date (library assets) or modification time (files); drives
+  /// the month grouping in the grid.
+  final DateTime? takenAt;
+
+  const _Photo.file(this.name, File this.file, {this.takenAt}) : asset = null;
+  const _Photo.asset(this.name, AssetEntity this.asset, {this.takenAt})
+      : file = null;
 
   Future<File?> resolve() async => file ?? await asset?.file;
 }
@@ -48,16 +53,32 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   /// a jump to Settings instead of a dead end.
   bool _permissionDenied = false;
 
+  /// System-library paging: the album can hold tens of thousands of
+  /// assets, so it is loaded a page at a time while scrolling. The old
+  /// code fetched 5,000 up front and silently showed nothing beyond.
+  static const int _pageSize = 200;
+  AssetPathEntity? _albumPath;
+  int _albumTotal = 0;
+  bool _loadingMore = false;
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >
+          _scrollController.position.maxScrollExtent - 800) {
+        _loadMore();
+      }
+    });
     _scan();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -73,6 +94,8 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       _loading = true;
       _notice = null;
       _permissionDenied = false;
+      _albumPath = null;
+      _albumTotal = 0;
     });
     final found = Platform.isIOS || Platform.isAndroid
         ? await _loadSystemAlbum()
@@ -103,8 +126,41 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       ),
     );
     if (paths.isEmpty) return [];
-    final assets = await paths.first.getAssetListRange(start: 0, end: 5000);
-    return assets.map((a) => _Photo.asset(a.title ?? a.id, a)).toList();
+    _albumPath = paths.first;
+    _albumTotal = await paths.first.assetCountAsync;
+    final end = _albumTotal < _pageSize ? _albumTotal : _pageSize;
+    final assets = await paths.first.getAssetListRange(start: 0, end: end);
+    return assets
+        .map((a) => _Photo.asset(a.title ?? a.id, a, takenAt: a.createDateTime))
+        .toList();
+  }
+
+  Future<void> _loadMore() async {
+    final path = _albumPath;
+    if (path == null || _loadingMore || _photos.length >= _albumTotal) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    final start = _photos.length;
+    final end = start + _pageSize < _albumTotal
+        ? start + _pageSize
+        : _albumTotal;
+    List<AssetEntity> assets;
+    try {
+      assets = await path.getAssetListRange(start: start, end: end);
+    } catch (_) {
+      assets = [];
+    }
+    if (!mounted) return;
+    setState(() {
+      _photos = [
+        ..._photos,
+        ...assets.map(
+          (a) => _Photo.asset(a.title ?? a.id, a, takenAt: a.createDateTime),
+        ),
+      ];
+      _loadingMore = false;
+    });
   }
 
   List<_Photo> _scanFolders() {
@@ -119,7 +175,11 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     };
     found.sort((a, b) => mtimes[b]!.compareTo(mtimes[a]!));
     return found
-        .map((f) => _Photo.file(f.path.split(Platform.pathSeparator).last, f))
+        .map((f) => _Photo.file(
+              f.path.split(Platform.pathSeparator).last,
+              f,
+              takenAt: mtimes[f],
+            ))
         .toList();
   }
 
@@ -200,7 +260,9 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _loading ? 'Photos' : 'Photos (${_photos.length})',
+          _loading
+              ? 'Photos'
+              : 'Photos (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         actions: [
@@ -254,35 +316,93 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     }
     return RefreshIndicator(
       onRefresh: _scan,
-      child: GridView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(4),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 110,
-        mainAxisSpacing: 4,
-        crossAxisSpacing: 4,
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: _buildSlivers(),
       ),
-      itemCount: _photos.length,
-      itemBuilder: (ctx, i) {
-        final photo = _photos[i];
-        final thumb = photo.asset;
-        return GestureDetector(
-          onTap: () => _open(i),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: thumb != null
-                ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
-                : Image.file(
-                    photo.file!,
-                    fit: BoxFit.cover,
-                    // Decode at thumbnail size; full-size decode of a photo
-                    // roll would exhaust memory.
-                    cacheWidth: 220,
-                    errorBuilder: (_, _, _) => _brokenThumb(),
-                  ),
+    );
+  }
+
+  static const _monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  String _monthLabel(DateTime? d) =>
+      d == null ? 'Unknown date' : '${_monthNames[d.month - 1]} ${d.year}';
+
+  /// Month-grouped grid: photos are newest-first, so equal labels are
+  /// contiguous and each group becomes a header + one SliverGrid.
+  List<Widget> _buildSlivers() {
+    final slivers = <Widget>[];
+    var i = 0;
+    while (i < _photos.length) {
+      final label = _monthLabel(_photos[i].takenAt);
+      var j = i;
+      while (j < _photos.length && _monthLabel(_photos[j].takenAt) == label) {
+        j++;
+      }
+      final slice = _photos.sublist(i, j);
+      final startIndex = i;
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
           ),
-        );
-      },
+        ),
+      );
+      slivers.add(
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 110,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (ctx, k) => _buildTile(slice[k], startIndex + k),
+              childCount: slice.length,
+            ),
+          ),
+        ),
+      );
+      i = j;
+    }
+    if (_loadingMore) {
+      slivers.add(
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      );
+    }
+    return slivers;
+  }
+
+  Widget _buildTile(_Photo photo, int index) {
+    final thumb = photo.asset;
+    return GestureDetector(
+      onTap: () => _open(index),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: thumb != null
+            ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
+            : Image.file(
+                photo.file!,
+                fit: BoxFit.cover,
+                // Decode at thumbnail size; full-size decode of a photo
+                // roll would exhaust memory.
+                cacheWidth: 220,
+                errorBuilder: (_, _, _) => _brokenThumb(),
+              ),
       ),
     );
   }

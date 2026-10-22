@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../dialogs/folder_picker_dialog.dart';
+import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/servers.dart';
 import '../services/file_open_service.dart';
 import '../services/platform_paths.dart';
@@ -18,6 +19,7 @@ class UtilitiesPage extends StatefulWidget {
 class _UtilitiesPageState extends State<UtilitiesPage> {
   int _trashCount = 0;
   int _cacheSizeBytes = 0;
+  int _archiveCacheBytes = 0;
   bool _clearingCache = false;
 
   bool _serverRunning = false;
@@ -49,11 +51,38 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   Future<void> _loadData() async {
     final trash = await StorageService.instance.getTrashItems();
     final cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
+    int archiveBytes = 0;
+    try {
+      archiveBytes = fm_api.archiveCacheSize().toInt();
+    } catch (_) {}
     if (mounted) {
       setState(() {
         _trashCount = trash.length;
         _cacheSizeBytes = cacheBytes;
+        _archiveCacheBytes = archiveBytes;
       });
+    }
+  }
+
+  Future<void> _clearArchiveCache() async {
+    try {
+      fm_api.clearArchiveCache();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not clear archive cache: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() => _archiveCacheBytes = 0);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Archive cache cleared')),
+      );
     }
   }
 
@@ -481,6 +510,34 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
                       child: const Text('Clear', style: TextStyle(fontSize: 11)),
                     ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+              minTileHeight: 40,
+              leading: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.archive_outlined, size: 18, color: Colors.deepPurple),
+              ),
+              title: const Text('Remote Archive Cache', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                'Archives downloaded from remote servers for browsing (${_formatSize(_archiveCacheBytes)})',
+                style: const TextStyle(fontSize: 10),
+              ),
+              trailing: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                onPressed: _archiveCacheBytes > 0 ? _clearArchiveCache : null,
+                child: const Text('Clear', style: TextStyle(fontSize: 11)),
+              ),
             ),
           ),
         ],
