@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
-class SettingsPage extends StatelessWidget {
+import '../services/preferences_service.dart';
+
+class SettingsPage extends StatefulWidget {
   final ThemeMode currentThemeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
 
@@ -10,6 +12,19 @@ class SettingsPage extends StatelessWidget {
     required this.currentThemeMode,
     required this.onThemeModeChanged,
   });
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  ThemeMode get currentThemeMode => widget.currentThemeMode;
+
+  void _setToolbarAtBottom(bool value) {
+    PreferencesService.instance.setBool(PreferencesService.prefToolbarBottom, value);
+    PreferencesService.toolbarAtBottom.value = value;
+    setState(() {});
+  }
 
   String _themeModeLabel(ThemeMode mode) {
     switch (mode) {
@@ -64,9 +79,40 @@ class SettingsPage extends StatelessWidget {
                   DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark', style: TextStyle(fontSize: 12))),
                 ],
                 onChanged: (mode) {
-                  if (mode != null) onThemeModeChanged(mode);
+                  if (mode != null) widget.onThemeModeChanged(mode);
                 },
               ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSectionHeader(context, 'Browser'),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+            ),
+            child: SwitchListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+              minTileHeight: 42,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              secondary: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.vertical_align_bottom, size: 16, color: Colors.teal),
+              ),
+              title: const Text('Toolbar at bottom', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Move the address bar and icons below the file list',
+                  style: TextStyle(fontSize: 10)),
+              value: PreferencesService.toolbarAtBottom.value,
+              onChanged: _setToolbarAtBottom,
             ),
           ),
 

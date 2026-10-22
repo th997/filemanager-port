@@ -506,6 +506,7 @@ impl Vfs for MultiBucketFs {
                     modified: None,
                     mode: None,
                     hidden: false,
+                    is_symlink: false,
                     mime: None,
                 })
                 .collect();
@@ -561,6 +562,7 @@ impl Vfs for MultiBucketFs {
                 modified: None,
                 mode: None,
                 hidden: false,
+                is_symlink: false,
                 mime: None,
             })
         } else if path.segments().len() == 1 {
@@ -573,6 +575,7 @@ impl Vfs for MultiBucketFs {
                 modified: None,
                 mode: None,
                 hidden: false,
+                is_symlink: false,
                 mime: None,
             })
         } else {

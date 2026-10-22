@@ -44,15 +44,22 @@ class _BookmarksPageState extends State<BookmarksPage> {
     }
   }
 
+  /// Sorted by name so the list is predictable between visits; the backend
+  /// returns them in creation order.
   List<BookmarkDto> get _visibleBookmarks {
-    if (_searchQuery.trim().isEmpty) return _bookmarks;
-    final query = _searchQuery.toLowerCase();
-    return _bookmarks
-        .where((b) =>
-            b.name.toLowerCase().contains(query) ||
-            b.path.toLowerCase().contains(query) ||
-            _rootLabel(b.root).toLowerCase().contains(query))
-        .toList();
+    final query = _searchQuery.trim().toLowerCase();
+    final list = query.isEmpty
+        ? [..._bookmarks]
+        : _bookmarks
+            .where((b) =>
+                b.name.toLowerCase().contains(query) ||
+                b.path.toLowerCase().contains(query) ||
+                _rootLabel(b.root).toLowerCase().contains(query))
+            .toList();
+    list.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return list;
   }
 
   /// Root shown in the subtitle: remote ids mean nothing to a user, so show
@@ -127,19 +134,8 @@ class _BookmarksPageState extends State<BookmarksPage> {
     }
   }
 
+  /// Removes without a confirmation dialog; the snackbar carries the undo.
   Future<void> _deleteBookmark(BookmarkDto bm) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Bookmark'),
-        content: Text('Remove "${bm.name}" from bookmarks?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Remove')),
-        ],
-      ),
-    );
-    if (confirm != true) return;
     await StorageService.instance.deleteBookmark(bm.id);
     await _loadBookmarks();
     if (!mounted) return;
@@ -222,7 +218,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
                   child: RefreshIndicator(
               onRefresh: _loadBookmarks,
               child: _visibleBookmarks.isEmpty
-                  ? Center(
+                  ? LayoutBuilder(
+                      builder: (context, constraints) => SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                          child: Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Column(
@@ -237,7 +238,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                             const SizedBox(height: 6),
                             Text(
                               _searchQuery.isEmpty
-                                  ? 'In the file browser, tap the bookmark icon on any folder to add it here for quick access.'
+                                  ? 'In the file browser, long-press a folder (or right-click it) and choose "Bookmark This Folder".'
                                   : 'Nothing matches "$_searchQuery".',
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
@@ -245,8 +246,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
                           ],
                         ),
                       ),
+                          ),
+                        ),
+                      ),
                     )
                   : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       itemCount: _visibleBookmarks.length,
                       itemBuilder: (ctx, i) {

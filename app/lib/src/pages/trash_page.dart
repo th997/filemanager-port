@@ -419,17 +419,25 @@ class _TrashPageState extends State<TrashPage> {
                           )
                         : ListView.builder(
                             physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(vertical: 4),
                             itemCount: displayedItems.length,
                             itemBuilder: (ctx, i) {
                               final item = displayedItems[i];
                               final name = _displayName(item);
 
                               return ListTile(
+                                dense: true,
+                                visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+                                minTileHeight: 40,
                                 leading: Icon(
                                   item.isDir ? Icons.folder : Icons.insert_drive_file,
+                                  size: 20,
                                   color: item.isDir ? Colors.amber : Colors.blue,
                                 ),
-                                title: Text(name.isEmpty ? item.originalPath : name),
+                                title: Text(
+                                  name.isEmpty ? item.originalPath : name,
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                ),
                                 subtitle: Text(
                                   '${_formatSize(item.size)}  •  deleted ${_deletedAgo(item)}  •  ${item.originalPath}',
                                   maxLines: 1,
@@ -440,12 +448,18 @@ class _TrashPageState extends State<TrashPage> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.restore, color: Colors.green),
+                                      icon: const Icon(Icons.restore, color: Colors.green, size: 18),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                                       tooltip: 'Restore',
                                       onPressed: () => _restore(item),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                      icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                                       tooltip: 'Delete Permanently',
                                       onPressed: () => _delete(item),
                                     ),

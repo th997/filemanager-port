@@ -10,6 +10,7 @@ rust/crates/*/Cargo.lock
 **/.flutter-plugins-dependencies
 **/.packages
 app/build/
+app/ios/build/
 app/ios/Pods/
 app/ios/.symlinks/
 app/macos/Pods/

@@ -16,11 +16,16 @@ class ImageViewerEntry {
   final String? root;
   final String? remotePath;
 
+  /// Resolves a native path on demand, for entries whose bytes live in a
+  /// system library (the photo album) rather than on a browsable path.
+  final Future<String?> Function()? resolvePath;
+
   const ImageViewerEntry({
     required this.name,
     this.localPath,
     this.root,
     this.remotePath,
+    this.resolvePath,
   });
 
   bool get isLocal => localPath != null;
@@ -54,6 +59,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   int _quarterTurns = 0;
   bool _zoomed = false;
   Offset _lastDoubleTapPosition = Offset.zero;
+  /// Accumulated downward drag on the current image, used to close on swipe.
+  double _dismissDrag = 0;
 
   /// Cache path per entry index, filled in lazily for remote images.
   final Map<int, String> _localPaths = {};
@@ -257,6 +264,14 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       _localPaths[index] = entry.localPath!;
       return Future.value(entry.localPath!);
     }
+    final resolver = entry.resolvePath;
+    if (resolver != null) {
+      return resolver().then((path) {
+        if (path == null) throw StateError('Cannot read ${entry.name}');
+        _localPaths[index] = path;
+        return path;
+      });
+    }
     return FileOpenService.instance
         .nativePath(entry.root!, entry.remotePath!)
         .then((path) {
@@ -446,10 +461,25 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     onDoubleTapDown: (details) =>
                         _lastDoubleTapPosition = details.localPosition,
                     onDoubleTap: () => _toggleZoom(_lastDoubleTapPosition),
+                    // Swipe down to close, the usual gallery gesture. Zoomed
+                    // images keep the drag so panning still works.
+                    onVerticalDragUpdate: (details) {
+                      if (!_zoomed && details.delta.dy > 0) _dismissDrag += details.delta.dy;
+                    },
+                    onVerticalDragEnd: (_) {
+                      final dragged = _dismissDrag;
+                      _dismissDrag = 0;
+                      if (!_zoomed && dragged > 120) {
+                        Navigator.of(context).maybePop();
+                      }
+                    },
                     child: InteractiveViewer(
                       transformationController: _transformationController,
                       minScale: 0.2,
                       maxScale: 6.0,
+                      // At fit scale there is nothing to pan, and the viewer's
+                      // own pan recognizer would eat the swipe-down-to-close.
+                      panEnabled: _zoomed,
                       child: RotatedBox(
                         quarterTurns: _quarterTurns,
                         child: _buildImageAt(i, interactive: true),
@@ -458,6 +488,36 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   );
                 },
               ),
+              // A long file name truncates the app bar title, so the position
+              // in the set gets its own chip.
+              if (multiple && !_zoomed)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 12,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_index + 1} / ${_entries.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (multiple && !_zoomed) ...[
                 Positioned(
                   left: 8,

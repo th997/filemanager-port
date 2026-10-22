@@ -138,6 +138,7 @@ class EntryDto {
   final BigInt? size;
   final PlatformInt64? modifiedMillis;
   final bool hidden;
+  final bool isSymlink;
 
   const EntryDto({
     required this.name,
@@ -146,6 +147,7 @@ class EntryDto {
     this.size,
     this.modifiedMillis,
     required this.hidden,
+    required this.isSymlink,
   });
 
   @override
@@ -155,7 +157,8 @@ class EntryDto {
       isDir.hashCode ^
       size.hashCode ^
       modifiedMillis.hashCode ^
-      hidden.hashCode;
+      hidden.hashCode ^
+      isSymlink.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -167,7 +170,8 @@ class EntryDto {
           isDir == other.isDir &&
           size == other.size &&
           modifiedMillis == other.modifiedMillis &&
-          hidden == other.hidden;
+          hidden == other.hidden &&
+          isSymlink == other.isSymlink;
 }
 
 class PagedEntriesDto {

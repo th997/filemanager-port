@@ -230,6 +230,7 @@ impl Vfs for OpendalFs {
                 modified,
                 mode: None,
                 hidden,
+                is_symlink: false,
                 mime: None,
             });
         }
@@ -325,6 +326,7 @@ impl Vfs for OpendalFs {
                         modified,
                         mode: None,
                         hidden,
+                        is_symlink: false,
                         mime: None,
                     });
                 }
@@ -387,6 +389,7 @@ impl Vfs for OpendalFs {
                     modified: None,
                     mode: None,
                     hidden: name.starts_with('.'),
+                    is_symlink: false,
                     mime: None,
                 });
             }
@@ -424,6 +427,7 @@ impl Vfs for OpendalFs {
             modified,
             mode: None,
             hidden,
+            is_symlink: false,
             mime: None,
         })
     }

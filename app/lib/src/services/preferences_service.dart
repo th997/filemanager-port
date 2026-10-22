@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'platform_paths.dart';
 
 /// Small persisted key/value store for UI preferences.
@@ -10,6 +12,11 @@ import 'platform_paths.dart';
 class PreferencesService {
   static final PreferencesService instance = PreferencesService._();
   PreferencesService._();
+
+  /// Live copy of the "toolbar at bottom" setting so an open browser page
+  /// follows the switch without being recreated.
+  static final ValueNotifier<bool> toolbarAtBottom = ValueNotifier<bool>(false);
+  static const String prefToolbarBottom = 'browser.toolbar_bottom';
 
   Map<String, String> _values = {};
   bool _loaded = false;
@@ -31,6 +38,11 @@ class PreferencesService {
     }
   }
 
+  /// Loads [toolbarAtBottom] once preferences are available.
+  void syncToolbarAtBottom() {
+    toolbarAtBottom.value = getBool(prefToolbarBottom) ?? false;
+  }
+
   String? getString(String key) => _values[key];
 
   bool? getBool(String key) {
@@ -45,6 +57,11 @@ class PreferencesService {
   }
 
   void setBool(String key, bool value) => setString(key, value.toString());
+
+  /// Drops a key entirely, so a stale value cannot be read back as a default.
+  void remove(String key) {
+    if (_values.remove(key) != null) _persist();
+  }
 
   void _persist() {
     final file = _file;

@@ -7,6 +7,7 @@ import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
+import 'gallery_page.dart';
 import 'recent_page.dart';
 import 'remotes_page.dart';
 import 'settings_page.dart';
@@ -252,7 +253,19 @@ class _HomePageState extends State<HomePage> {
   Widget _buildLocalStorageGrid() {
     final targets = PlatformPaths.quickTargets();
     return _buildSectionGrid(
-      children: targets.map((t) {
+      children: [
+        _buildGridCard(
+          icon: Icons.photo_library,
+          iconColor: Colors.pink,
+          title: 'Gallery',
+          subtitle: 'All photos',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const GalleryPage()),
+            );
+          },
+        ),
+        ...targets.map((t) {
         IconData icon = Icons.folder;
         Color iconColor = Colors.blue;
         if (t.name.contains('Download')) {
@@ -279,7 +292,8 @@ class _HomePageState extends State<HomePage> {
           subtitle: t.path,
           onTap: () => _openTarget(t.root, t.relPath),
         );
-      }).toList(),
+        }),
+      ],
     );
   }
 

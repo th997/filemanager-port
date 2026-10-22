@@ -106,6 +106,7 @@ impl ArchiveFs {
                 modified: None,
                 mode: None,
                 hidden,
+                is_symlink: false,
                 mime: None,
             };
 
@@ -192,6 +193,7 @@ impl ArchiveFs {
                 modified: None,
                 mode: None,
                 hidden,
+                is_symlink: false,
                 mime: None,
             };
 
@@ -250,6 +252,7 @@ impl ArchiveFs {
                 modified: None,
                 mode: None,
                 hidden,
+                is_symlink: false,
                 mime: None,
             };
 
@@ -297,6 +300,7 @@ impl ArchiveFs {
                 modified: None,
                 mode: None,
                 hidden: name.starts_with('.'),
+                is_symlink: false,
                 mime: None,
             };
             self.dir_entries.entry(dir).or_default();
@@ -571,6 +575,7 @@ impl Vfs for ArchiveFs {
                 modified: None,
                 mode: None,
                 hidden: false,
+                is_symlink: false,
                 mime: None,
             });
         }

@@ -75,7 +75,12 @@ impl LocalFs {
     }
 }
 
-fn entry_from_metadata(path: VfsPath, name: String, metadata: &std::fs::Metadata) -> Entry {
+fn entry_from_metadata(
+    path: VfsPath,
+    name: String,
+    metadata: &std::fs::Metadata,
+    is_symlink: bool,
+) -> Entry {
     let kind = if metadata.is_dir() {
         EntryKind::Dir
     } else if metadata.is_file() {
@@ -98,6 +103,7 @@ fn entry_from_metadata(path: VfsPath, name: String, metadata: &std::fs::Metadata
         modified: metadata.modified().ok(),
         mode: mode_of(metadata),
         hidden,
+        is_symlink,
         mime: None,
     }
 }
@@ -141,14 +147,23 @@ impl Vfs for LocalFs {
             // does not follow links, which made every link look like a plain
             // file the UI could not open. Broken links fall back to link
             // metadata and stay `EntryKind::Symlink`.
-            let metadata = match tokio::fs::metadata(item.path()).await {
-                Ok(metadata) => metadata,
-                Err(_) => match tokio::fs::symlink_metadata(item.path()).await {
-                    Ok(meta) => meta,
+            let (metadata, is_symlink) =
+                match tokio::fs::symlink_metadata(item.path()).await {
+                    Ok(link_meta) => {
+                        let is_link = link_meta.file_type().is_symlink();
+                        // Follow the link so it lists and opens like its
+                        // target, but remember that it is a link so the UI
+                        // can mark it. Broken links keep the link metadata.
+                        let resolved = if is_link {
+                            tokio::fs::metadata(item.path()).await.ok()
+                        } else {
+                            None
+                        };
+                        (resolved.unwrap_or(link_meta), is_link)
+                    }
                     Err(_) => continue,
-                },
-            };
-            entries.push(entry_from_metadata(child, name, &metadata));
+                };
+            entries.push(entry_from_metadata(child, name, &metadata, is_symlink));
         }
         entries.sort_by(|a, b| {
             let a_dir = a.kind == EntryKind::Dir;
@@ -164,7 +179,11 @@ impl Vfs for LocalFs {
             .await
             .map_err(|error| self.io_error(path, error))?;
         let name = path.name().unwrap_or("").to_owned();
-        Ok(entry_from_metadata(path.clone(), name, &metadata))
+        let is_symlink = tokio::fs::symlink_metadata(&native)
+            .await
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
+        Ok(entry_from_metadata(path.clone(), name, &metadata, is_symlink))
     }
 
     async fn open_read(&self, path: &VfsPath) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
@@ -389,4 +408,5 @@ mod tests {
             .unwrap();
         assert_eq!(buf, "data");
     }
+
 }

@@ -22,6 +22,37 @@ import 'text_editor_page.dart';
 
 enum SortField { name, size, modified, type }
 
+/// Name order that puts `file2` before `file10`, as file managers do.
+/// Digit runs compare numerically; everything else compares case-insensitively.
+int _naturalCompare(String a, String b) {
+  final ra = RegExp(r'\d+|\D+').allMatches(a.toLowerCase());
+  final rb = RegExp(r'\d+|\D+').allMatches(b.toLowerCase());
+  final ia = ra.iterator;
+  final ib = rb.iterator;
+  while (true) {
+    final hasA = ia.moveNext();
+    final hasB = ib.moveNext();
+    if (!hasA || !hasB) return hasA ? 1 : (hasB ? -1 : 0);
+    final pa = ia.current.group(0)!;
+    final pb = ib.current.group(0)!;
+    final na = int.tryParse(pa);
+    final nb = int.tryParse(pb);
+    final cmp = (na != null && nb != null)
+        ? na.compareTo(nb)
+        : pa.compareTo(pb);
+    if (cmp != 0) return cmp;
+  }
+}
+
+extension SortFieldLabel on SortField {
+  String get label => switch (this) {
+        SortField.name => 'Name',
+        SortField.size => 'Size',
+        SortField.modified => 'Date',
+        SortField.type => 'Type',
+      };
+}
+
 class ClipboardState {
   final String srcRoot;
   final List<String> paths;
@@ -162,7 +193,7 @@ class BrowserPageState extends State<BrowserPage> {
       }
       return '$count selected ($sizeStr)';
     }
-    return '$count selected';
+    return count == 0 ? 'Select items' : '$count selected';
   }
 
   // Pagination state
@@ -182,12 +213,18 @@ class BrowserPageState extends State<BrowserPage> {
     _relPath = widget.initialPath;
     _loadViewPreferences();
     _scrollController.addListener(_onScroll);
+    PreferencesService.toolbarAtBottom.addListener(_onToolbarPositionChanged);
     _loadRemotesMetadata();
     _load();
   }
 
+  void _onToolbarPositionChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    PreferencesService.toolbarAtBottom.removeListener(_onToolbarPositionChanged);
     _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -312,11 +349,15 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
-  Future<void> _load() async {
+  /// [refresh] keeps the scroll offset so a pull-to-refresh or a post-action
+  /// reload does not throw the user back to the top of a long folder.
+  Future<void> _load({bool refresh = false}) async {
     final loadingFor = '$_root\u0000$_relPath';
     _loadingFor = loadingFor;
     setState(() {
-      _loading = true;
+      // A refresh keeps the current list on screen; swapping it for a spinner
+      // would drop the scroll offset and flash the whole page.
+      if (!refresh) _loading = true;
       _error = null;
       _currentPage = 1;
       _hasMore = false;
@@ -341,7 +382,7 @@ class BrowserPageState extends State<BrowserPage> {
         _hasMore = paged.hasMore;
         _loading = false;
       });
-      if (_scrollController.hasClients) {
+      if (!refresh && _scrollController.hasClients) {
         _scrollController.jumpTo(0);
       }
       StorageService.instance.recordHistory(root: _root, path: _relPath);
@@ -500,7 +541,7 @@ class BrowserPageState extends State<BrowserPage> {
             fileName: item.name,
           ),
         ),
-      ).then((_) => _load());
+      ).then((_) => _load(refresh: true));
       return;
     }
 
@@ -838,6 +879,11 @@ class BrowserPageState extends State<BrowserPage> {
               title: const Text('Copy'),
               onTap: () => Navigator.of(ctx).pop('copy'),
             ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Copy Path'),
+              onTap: () => Navigator.of(ctx).pop('copy_path'),
+            ),
             if (_canWrite)
               ListTile(
                 leading: const Icon(Icons.cut),
@@ -860,6 +906,12 @@ class BrowserPageState extends State<BrowserPage> {
                 leading: const Icon(Icons.archive),
                 title: const Text('Compress to ZIP'),
                 onTap: () => Navigator.of(ctx).pop('compress'),
+              ),
+            if (item.isDir)
+              ListTile(
+                leading: const Icon(Icons.bookmark_add_outlined),
+                title: const Text('Bookmark This Folder'),
+                onTap: () => Navigator.of(ctx).pop('bookmark'),
               ),
             if (!item.isDir)
               ListTile(
@@ -898,6 +950,9 @@ class BrowserPageState extends State<BrowserPage> {
     switch (action) {
       case 'open':
         _openEntry(item);
+        break;
+      case 'copy_path':
+        _copyEntryPath(item);
         break;
       case 'open_with':
         _openWithSystem(item);
@@ -951,6 +1006,9 @@ class BrowserPageState extends State<BrowserPage> {
         break;
       case 'delete':
         _deleteSingle(item);
+        break;
+      case 'bookmark':
+        _bookmarkFolder(item);
         break;
       case 'info':
         _showFileInfo(item);
@@ -1059,6 +1117,16 @@ class BrowserPageState extends State<BrowserPage> {
             ),
           ),
         const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'copy_path',
+          child: Row(
+            children: [
+              Icon(Icons.link, size: 18),
+              SizedBox(width: 8),
+              Text('Copy Path'),
+            ],
+          ),
+        ),
         if (item.isArchive && _canArchive)
           const PopupMenuItem(
             value: 'extract',
@@ -1078,6 +1146,17 @@ class BrowserPageState extends State<BrowserPage> {
                 Icon(Icons.archive, size: 18),
                 SizedBox(width: 8),
                 Text('Compress to ZIP'),
+              ],
+            ),
+          ),
+        if (item.isDir)
+          const PopupMenuItem(
+            value: 'bookmark',
+            child: Row(
+              children: [
+                Icon(Icons.bookmark_add_outlined, size: 18),
+                SizedBox(width: 8),
+                Text('Bookmark This Folder'),
               ],
             ),
           ),
@@ -1104,6 +1183,9 @@ class BrowserPageState extends State<BrowserPage> {
         break;
       case 'download':
         _downloadSingle(item);
+        break;
+      case 'bookmark':
+        _bookmarkFolder(item);
         break;
       case 'copy':
         setState(() {
@@ -1143,10 +1225,23 @@ class BrowserPageState extends State<BrowserPage> {
         });
         _compressSelected();
         break;
+      case 'copy_path':
+        _copyEntryPath(item);
+        break;
       case 'info':
         _showFileInfo(item);
         break;
     }
+  }
+
+  void _copyEntryPath(EntryItem item) {
+    final path = _fullEntryPath(item);
+    final full = isNativeRoot(_root) ? joinNative(_root, path) : '$_root/$path';
+    Clipboard.setData(ClipboardData(text: full));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Path copied to clipboard')),
+    );
   }
 
   /// Desktop right-click context menu on empty space.
@@ -1240,6 +1335,16 @@ class BrowserPageState extends State<BrowserPage> {
           ),
         ),
         const PopupMenuItem(
+          value: 'bookmark',
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_add_outlined, size: 18),
+              SizedBox(width: 8),
+              Text('Bookmark This Folder'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
           value: 'copy_path',
           child: Row(
             children: [
@@ -1267,7 +1372,7 @@ class BrowserPageState extends State<BrowserPage> {
         _paste();
         break;
       case 'refresh':
-        _load();
+        _load(refresh: true);
         break;
       case 'select_all':
         setState(() => _isSelecting = true);
@@ -1275,6 +1380,9 @@ class BrowserPageState extends State<BrowserPage> {
         break;
       case 'invert_selection':
         _invertSelection();
+        break;
+      case 'bookmark':
+        _bookmarkCurrentFolder();
         break;
       case 'copy_path':
         Clipboard.setData(ClipboardData(text: _displayFullPath));
@@ -1323,6 +1431,15 @@ class BrowserPageState extends State<BrowserPage> {
     });
   }
 
+  void _openSelected() {
+    if (_selectedPaths.length != 1) return;
+    final path = _selectedPaths.first;
+    final item = _entries.where((e) => _fullEntryPath(e) == path).firstOrNull;
+    if (item == null) return;
+    _clearSelection();
+    _openEntry(item);
+  }
+
   void _clearSelection() {
     setState(() {
       _selectedPaths.clear();
@@ -1351,7 +1468,7 @@ class BrowserPageState extends State<BrowserPage> {
         taskId,
         'Uploading ${picked.paths.length} item(s)…',
       );
-      if (mounted) _load();
+      if (mounted) _load(refresh: true);
       if (completed == true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Uploaded ${picked.paths.length} item(s)')),
@@ -1461,7 +1578,7 @@ class BrowserPageState extends State<BrowserPage> {
       final target = _relPath.isEmpty ? name : '$_relPath/$name';
       try {
         await createDir(root: _root, path: target);
-        _load();
+        _load(refresh: true);
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to create folder: $e')));
@@ -1502,10 +1619,20 @@ class BrowserPageState extends State<BrowserPage> {
       final target = _relPath.isEmpty ? name : '$_relPath/$name';
       try {
         await writeTextFile(root: _root, path: target, content: '');
-        _load();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Created "$name"')));
-        }
+        _load(refresh: true);
+        if (!mounted) return;
+        // A file that was just created is almost always meant to be written
+        // in, so open it rather than making the user find it in the list.
+        final createdName = name;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => TextEditorPage(
+              root: _root,
+              path: target,
+              fileName: createdName,
+            ),
+          ),
+        ).then((_) => _load(refresh: true));
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1560,7 +1687,7 @@ class BrowserPageState extends State<BrowserPage> {
       if (cb.isCut && completed == true) {
         setState(() => _clipboard = null);
       }
-      if (mounted) _load();
+      if (mounted) _load(refresh: true);
     } catch (e) {
       _showError('${cb.isCut ? 'Move' : 'Copy'} failed: $e');
     }
@@ -1598,7 +1725,7 @@ class BrowserPageState extends State<BrowserPage> {
       if (!mounted) return;
       final completed = await TaskProgressDialog.show(context, taskId, 'Duplicating…');
       if (completed == true && mounted) {
-        _load();
+        _load(refresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Created "$candidate"')),
         );
@@ -1665,7 +1792,7 @@ class BrowserPageState extends State<BrowserPage> {
         await TaskProgressDialog.show(context, taskId, 'Deleting…');
         if (!mounted) return;
         _clearSelection();
-        _load();
+        _load(refresh: true);
       } catch (e) {
         _showError('Delete failed: $e');
       }
@@ -1733,7 +1860,7 @@ class BrowserPageState extends State<BrowserPage> {
         await renameEntry(root: _root, from: oldPath, to: newPath);
         if (!mounted) return;
         _clearSelection();
-        _load();
+        _load(refresh: true);
       } catch (e) {
         _showError('Rename failed: $e');
       }
@@ -1788,7 +1915,7 @@ class BrowserPageState extends State<BrowserPage> {
         await TaskProgressDialog.show(context, taskId, 'Compressing…');
         if (!mounted) return;
         _clearSelection();
-        _load();
+        _load(refresh: true);
       } catch (e) {
         _showError('Compress failed: $e');
       }
@@ -1805,17 +1932,26 @@ class BrowserPageState extends State<BrowserPage> {
       );
       if (!mounted) return;
       await TaskProgressDialog.show(context, taskId, 'Extracting Archive…');
-      if (mounted) _load();
+      if (mounted) _load(refresh: true);
     } catch (e) {
       _showError('Extract failed: $e');
     }
   }
 
-  Future<void> _bookmarkCurrentFolder() async {
-    final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-    final name = segments.isEmpty ? (_root.split('/').last.isEmpty ? 'Root' : _root.split('/').last) : segments.last;
+  Future<void> _bookmarkCurrentFolder() =>
+      _addBookmark(root: _root, path: _relPath);
+
+  /// Bookmarks a folder row from the context menus.
+  Future<void> _bookmarkFolder(EntryItem item) =>
+      _addBookmark(root: _root, path: _fullEntryPath(item));
+
+  Future<void> _addBookmark({required String root, required String path}) async {
+    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    final name = segments.isEmpty
+        ? (root.split('/').last.isEmpty ? 'Root' : root.split('/').last)
+        : segments.last;
     final bookmarks = await StorageService.instance.getBookmarks();
-    final exists = bookmarks.any((b) => b.root == _root && b.path == _relPath);
+    final exists = bookmarks.any((b) => b.root == root && b.path == path);
     if (exists) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1824,7 +1960,7 @@ class BrowserPageState extends State<BrowserPage> {
       }
       return;
     }
-    await StorageService.instance.addBookmark(name: name, root: _root, path: _relPath);
+    await StorageService.instance.addBookmark(name: name, root: root, path: path);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Bookmarked "$name"')),
@@ -1832,8 +1968,64 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
-  void _showFileInfo(EntryItem item) {
+  /// Walks a folder to total its files. Bounded so a huge tree cannot freeze
+  /// the dialog; the count is marked approximate when the cap is hit.
+  Future<String> _measureDirectory(String path) async {
+    var total = 0;
+    var count = 0;
+    var capped = false;
+    Future<void> walk(Directory dir, int depth) async {
+      if (capped || depth > 12) return;
+      List<FileSystemEntity> items;
+      try {
+        items = await dir.list(followLinks: false).toList();
+      } catch (_) {
+        return;
+      }
+      for (final entity in items) {
+        if (capped) return;
+        if (entity is File) {
+          try {
+            total += await entity.length();
+          } catch (_) {}
+          if (++count >= 20000) {
+            capped = true;
+            return;
+          }
+        } else if (entity is Directory) {
+          await walk(entity, depth + 1);
+        }
+      }
+    }
+
+    try {
+      await walk(Directory(path), 0);
+    } catch (_) {
+      return 'Directory';
+    }
+    if (count == 0) return 'Directory (empty)';
+    final size = EntryItem(
+      EntryDto(
+        name: '',
+        path: '',
+        isDir: false,
+        hidden: false,
+        isSymlink: false,
+        size: BigInt.from(total),
+      ),
+    ).formattedSize;
+    return '$size${capped ? '+' : ''} ($count${capped ? '+' : ''} files)';
+  }
+
+  Future<void> _showFileInfo(EntryItem item) async {
     final path = _fullEntryPath(item);
+    // Directories report no size from the backend; measure them on demand so
+    // Properties is not just "Directory" for every folder.
+    String? dirSize;
+    if (item.isDir && isNativeRoot(_root)) {
+      dirSize = await _measureDirectory(joinNative(_root, path));
+      if (!mounted) return;
+    }
     final fullPath = isNativeRoot(_root)
         ? joinNative(_root, path)
         : '$_root/$path';
@@ -1858,12 +2050,13 @@ class BrowserPageState extends State<BrowserPage> {
             _infoRow(
               'Size',
               item.isDir
-                  ? 'Directory'
+                  ? (dirSize ?? 'Directory')
                   : '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
             ),
             _infoRow('Modified', item.formattedModified),
             _infoRow('Type', item.isDir ? 'Directory' : (item.isArchive ? 'Archive' : 'File')),
             _infoRow('Hidden', item.hidden ? 'Yes' : 'No'),
+            if (item.isSymlink) _infoRow('Symlink', 'Yes'),
           ],
         ),
         actions: [
@@ -1919,7 +2112,7 @@ class BrowserPageState extends State<BrowserPage> {
       int cmp = 0;
       switch (_sortField) {
         case SortField.name:
-          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          cmp = _naturalCompare(a.name, b.name);
           break;
         case SortField.size:
           final sa = a.size ?? BigInt.zero;
@@ -1936,7 +2129,7 @@ class BrowserPageState extends State<BrowserPage> {
           final extB = b.isDir ? '' : (b.name.contains('.') ? b.name.split('.').last.toLowerCase() : '');
           cmp = extA.compareTo(extB);
           if (cmp == 0) {
-            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            cmp = _naturalCompare(a.name, b.name);
           }
           break;
       }
@@ -1968,6 +2161,11 @@ class BrowserPageState extends State<BrowserPage> {
           _searchFocusNode.requestFocus();
         },
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
+          setState(() => _isSearching = true);
+          _searchFocusNode.requestFocus();
+        },
+        // `/` is the muscle-memory filter key in most file managers.
+        const SingleActivator(LogicalKeyboardKey.slash): () {
           setState(() => _isSearching = true);
           _searchFocusNode.requestFocus();
         },
@@ -2029,6 +2227,14 @@ class BrowserPageState extends State<BrowserPage> {
             _deleteSelected(permanent: true);
           }
         },
+        const SingleActivator(LogicalKeyboardKey.keyG, control: true): () {
+          setState(() => _isGrid = !_isGrid);
+          _saveViewPreferences();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
+          setState(() => _isGrid = !_isGrid);
+          _saveViewPreferences();
+        },
         const SingleActivator(LogicalKeyboardKey.f5): _load,
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _load,
@@ -2068,6 +2274,9 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): _navigateUp,
+        // Enter opens the single selected entry, like every desktop file list.
+        const SingleActivator(LogicalKeyboardKey.enter): _openSelected,
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): _openSelected,
       },
       child: Focus(
         autofocus: true,
@@ -2090,9 +2299,9 @@ class BrowserPageState extends State<BrowserPage> {
         }
       },
       child: Scaffold(
-      appBar: AppBar(
+      appBar: PreferencesService.toolbarAtBottom.value ? null : AppBar(
         titleSpacing: 4,
-        toolbarHeight: 46,
+        toolbarHeight: MediaQuery.sizeOf(context).width < 600 ? 40 : 46,
         leading: _isSelecting
             ? IconButton(
                 icon: const Icon(Icons.close, size: 18),
@@ -2112,230 +2321,10 @@ class BrowserPageState extends State<BrowserPage> {
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 : null),
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Filter files...',
-                  border: InputBorder.none,
-                  suffixIcon: _filterQuery.isNotEmpty
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _filterQuery = '');
-                              },
-                            ),
-                          ],
-                        )
-                      : null,
-                ),
-                onChanged: _onFilterChanged,
-              )
-            : (_isSelecting
-                ? Text(
-                    _selectedSummary,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                  )
-                : _buildUnifiedAddressBar(segments)),
-        actions: [
-          if (_isSelecting) ...[
-            IconButton(
-              icon: const Icon(Icons.select_all, size: 18),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: 'Select All (Ctrl+A)',
-              onPressed: _selectAll,
-            ),
-            IconButton(
-              icon: const Icon(Icons.swap_horiz, size: 18),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: 'Invert Selection (Ctrl+Shift+A)',
-              onPressed: _invertSelection,
-            ),
-          ] else ...[
-            IconButton(
-              icon: Icon(_isSearching ? Icons.search_off : Icons.search, size: 18),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: 'Filter',
-              onPressed: () {
-                setState(() {
-                  _isSearching = !_isSearching;
-                  if (!_isSearching) {
-                    _filterQuery = '';
-                    _searchController.clear();
-                  }
-                });
-              },
-            ),
-            if (_canWrite)
-              IconButton(
-                icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                tooltip: 'Upload Files',
-                onPressed: _uploadFiles,
-              ),
-            if (_canWrite)
-              IconButton(
-                icon: const Icon(Icons.create_new_folder, size: 18),
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                tooltip: 'New Folder',
-                onPressed: _createFolder,
-              ),
-            if (_canWrite)
-              IconButton(
-                icon: const Icon(Icons.note_add_outlined, size: 18),
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                tooltip: 'New File',
-                onPressed: _createFile,
-              ),
-            IconButton(
-              icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: 'Bookmark Folder',
-              onPressed: _bookmarkCurrentFolder,
-            ),
-            IconButton(
-              icon: Icon(_isGrid ? Icons.view_list : Icons.grid_view, size: 18),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              tooltip: _isGrid ? 'List view' : 'Grid view',
-              onPressed: () {
-                setState(() => _isGrid = !_isGrid);
-                _saveViewPreferences();
-              },
-            ),
-            if (Navigator.of(context).canPop())
-              IconButton(
-                icon: const Icon(Icons.home_outlined, size: 18),
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                tooltip: 'Home Dashboard',
-                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-              ),
-            PopupMenuButton<String>(
-              tooltip: 'Options',
-              icon: const Icon(Icons.more_vert, size: 18),
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              onSelected: (val) {
-                if (val == 'toggle_hidden') {
-                  setState(() => _showHidden = !_showHidden);
-                } else if (val == 'select') {
-                  setState(() => _isSelecting = true);
-                } else if (val == 'sort_name') {
-                  setState(() {
-                    if (_sortField == SortField.name) {
-                      _sortAsc = !_sortAsc;
-                    } else {
-                      _sortField = SortField.name;
-                      _sortAsc = true;
-                    }
-                  });
-                } else if (val == 'sort_size') {
-                  setState(() {
-                    if (_sortField == SortField.size) {
-                      _sortAsc = !_sortAsc;
-                    } else {
-                      _sortField = SortField.size;
-                      _sortAsc = false;
-                    }
-                  });
-                } else if (val == 'sort_date') {
-                  setState(() {
-                    if (_sortField == SortField.modified) {
-                      _sortAsc = !_sortAsc;
-                    } else {
-                      _sortField = SortField.modified;
-                      _sortAsc = false;
-                    }
-                  });
-                } else if (val == 'sort_type') {
-                  setState(() {
-                    if (_sortField == SortField.type) {
-                      _sortAsc = !_sortAsc;
-                    } else {
-                      _sortField = SortField.type;
-                      _sortAsc = true;
-                    }
-                  });
-                }
-                _saveViewPreferences();
-              },
-              itemBuilder: (ctx) => [
-                CheckedPopupMenuItem<String>(
-                  value: 'toggle_hidden',
-                  checked: _showHidden,
-                  child: const Text('Show hidden files'),
-                ),
-                PopupMenuItem<String>(
-                  value: 'select',
-                  child: const Text('Select items'),
-                ),
-                const PopupMenuDivider(),
-                CheckedPopupMenuItem<String>(
-                  value: 'sort_name',
-                  checked: _sortField == SortField.name,
-                  child: Text('Sort by Name ${_sortField == SortField.name ? (_sortAsc ? '(A → Z)' : '(Z → A)') : ''}'),
-                ),
-                CheckedPopupMenuItem<String>(
-                  value: 'sort_type',
-                  checked: _sortField == SortField.type,
-                  child: Text('Sort by Type ${_sortField == SortField.type ? (_sortAsc ? '(A → Z)' : '(Z → A)') : ''}'),
-                ),
-                CheckedPopupMenuItem<String>(
-                  value: 'sort_size',
-                  checked: _sortField == SortField.size,
-                  child: Text('Sort by Size ${_sortField == SortField.size ? (_sortAsc ? '(Smallest)' : '(Largest)') : ''}'),
-                ),
-                CheckedPopupMenuItem<String>(
-                  value: 'sort_date',
-                  checked: _sortField == SortField.modified,
-                  child: Text('Sort by Date ${_sortField == SortField.modified ? (_sortAsc ? '(Oldest)' : '(Newest)') : ''}'),
-                ),
-              ],
-            ),
-          ],
-        ],
+        title: _toolbarContent(segments),
       ),
+      bottomNavigationBar:
+          PreferencesService.toolbarAtBottom.value ? _buildBottomToolbar(segments) : null,
       body: Column(
         children: [
           _buildCapabilitiesBar(),
@@ -2346,6 +2335,246 @@ class BrowserPageState extends State<BrowserPage> {
       ),
     ),
     ),
+    );
+  }
+
+  Widget _toolbarContent(List<String> segments) {
+    // Icons sit flush right; the address bar stays pinned left at a fixed
+    // width so the two regions do not trade space as the window resizes.
+    final actions = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(mainAxisSize: MainAxisSize.min, children: _toolbarActions()),
+    );
+    // The search field and the selection summary need the whole bar.
+    if (_isSearching || _isSelecting) {
+      return Row(
+        children: [
+          Expanded(child: _buildToolbarTitle(segments)),
+          actions,
+        ],
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The address bar keeps a stable width; the icon row scrolls once the
+        // window is too narrow to fit every action.
+        final addressWidth = (constraints.maxWidth * 0.45).clamp(150.0, 320.0);
+        return Row(
+          children: [
+            SizedBox(width: addressWidth, child: _buildToolbarTitle(segments)),
+            Expanded(
+              child: Align(alignment: Alignment.centerRight, child: actions),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildToolbarTitle(List<String> segments) {
+    return _isSearching
+        ? TextField(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Filter files...',
+              border: InputBorder.none,
+              suffixIcon: _filterQuery.isNotEmpty
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _filterQuery = '');
+                          },
+                        ),
+                      ],
+                    )
+                  : null,
+            ),
+            onChanged: _onFilterChanged,
+          )
+        : (_isSelecting
+            ? Text(
+                _selectedSummary,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              )
+            : _buildUnifiedAddressBar(segments));
+  }
+
+  List<Widget> _toolbarActions() {
+    // Phones get a tighter bar so more icons fit before scrolling.
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    Widget action(IconData icon, String tooltip, VoidCallback onPressed) {
+      // `shrinkWrap` drops the 48px Material tap-target box, which otherwise
+      // leaves a wide gap between neighbouring icons.
+      return IconButton(
+        icon: Icon(icon, size: compact ? 18 : 20),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: BoxConstraints.tightFor(width: compact ? 28 : 30, height: compact ? 28 : 30),
+        style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        tooltip: tooltip,
+        onPressed: onPressed,
+      );
+    }
+
+    return [
+      if (_isSelecting) ...[
+        action(Icons.select_all, 'Select All (Ctrl+A)', _selectAll),
+        action(Icons.swap_horiz, 'Invert Selection (Ctrl+Shift+A)', _invertSelection),
+      ] else ...[
+        action(
+          _isSearching ? Icons.search_off : Icons.search,
+          'Filter',
+          () {
+            setState(() {
+              _isSearching = !_isSearching;
+              if (!_isSearching) {
+                _filterQuery = '';
+                _searchController.clear();
+              }
+            });
+          },
+        ),
+        action(
+          _isGrid ? Icons.view_list : Icons.grid_view,
+          _isGrid ? 'List view' : 'Grid view',
+          () {
+            setState(() => _isGrid = !_isGrid);
+            _saveViewPreferences();
+          },
+        ),
+        // Sorting lives one tap from the list instead of two menus deep.
+        PopupMenuButton<SortField>(
+          tooltip: 'Sort',
+          icon: Icon(Icons.sort, size: compact ? 18 : 20),
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(width: compact ? 28 : 30, height: compact ? 28 : 30),
+          onSelected: (field) {
+            setState(() {
+              if (_sortField == field) {
+                _sortAsc = !_sortAsc;
+              } else {
+                _sortField = field;
+                _sortAsc = field == SortField.name || field == SortField.type;
+              }
+            });
+            _saveViewPreferences();
+          },
+          itemBuilder: (ctx) => [
+            for (final field in SortField.values)
+              CheckedPopupMenuItem<SortField>(
+                value: field,
+                checked: _sortField == field,
+                child: Text(
+                  '${field.label}'
+                  '${_sortField == field ? (_sortAsc ? '  ↑' : '  ↓') : ''}',
+                ),
+              ),
+          ],
+        ),
+        if (Navigator.of(context).canPop())
+          action(
+            Icons.home_outlined,
+            'Home Dashboard',
+            () => Navigator.of(context).popUntil((route) => route.isFirst),
+          ),
+        PopupMenuButton<String>(
+          tooltip: 'Options',
+          icon: Icon(Icons.more_vert, size: compact ? 18 : 20),
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(width: compact ? 28 : 30, height: compact ? 28 : 30),
+          onSelected: (val) {
+            if (val == 'toggle_hidden') {
+              setState(() => _showHidden = !_showHidden);
+            } else if (val == 'select') {
+              setState(() => _isSelecting = true);
+            }
+            _saveViewPreferences();
+          },
+          itemBuilder: (ctx) => [
+            CheckedPopupMenuItem<String>(
+              value: 'toggle_hidden',
+              checked: _showHidden,
+              child: const Text('Show hidden files'),
+            ),
+            PopupMenuItem<String>(
+              value: 'select',
+              child: const Text('Select items'),
+            ),
+          ],
+        ),
+      ],
+    ];
+  }
+
+  /// Same bar under the list when the user pins the toolbar to the bottom.
+  ///
+  /// A plain [AppBar] misbehaves down here: it reserves top-only padding and
+  /// assumes it owns the whole width, so the address bar and the icon strip
+  /// overlap the home indicator. A [Material] row inside [SafeArea] keeps the
+  /// same content without those assumptions.
+  PreferredSizeWidget _buildBottomToolbar(List<String> segments) {
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    return PreferredSize(
+      preferredSize: Size.fromHeight(compact ? 40 : 46),
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        elevation: 3,
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: compact ? 40 : 46,
+            child: Row(
+              children: [
+                const SizedBox(width: 4),
+                if (_isSelecting)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                    tooltip: 'Cancel selection (Esc)',
+                    onPressed: _clearSelection,
+                  )
+                else if (Navigator.of(context).canPop())
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                Expanded(child: _toolbarContent(segments)),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2444,7 +2673,10 @@ class BrowserPageState extends State<BrowserPage> {
             color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
           ),
           Expanded(
+            // Reversed so a deep path opens scrolled to the current folder
+            // instead of the drive root; the crumb order still reads normally.
             child: SingleChildScrollView(
+              reverse: true,
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
@@ -2539,18 +2771,23 @@ class BrowserPageState extends State<BrowserPage> {
   Widget _buildCapabilitiesBar() {
     final caps = _capabilities;
     if (caps == null) return const SizedBox.shrink();
+    // On a phone the capability chips take more room than the item count they
+    // sit next to, so the row keeps only the counts there.
+    final showCaps = MediaQuery.sizeOf(context).width >= 600;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
       child: Row(
         children: [
-          Text('Capabilities: ', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          _capChip('read', caps.read),
-          _capChip('write', caps.write),
-          _capChip('rename', caps.rename),
-          _capChip('copy', caps.copy),
-          _capChip('mkdir', caps.mkdir),
-          _capChip('remove', caps.remove),
+          if (showCaps) ...[
+            Text('Capabilities: ', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            _capChip('read', caps.read),
+            _capChip('write', caps.write),
+            _capChip('rename', caps.rename),
+            _capChip('copy', caps.copy),
+            _capChip('mkdir', caps.mkdir),
+            _capChip('remove', caps.remove),
+          ],
           const Spacer(),
           Text(
             _filterQuery.isNotEmpty
@@ -2684,7 +2921,7 @@ class BrowserPageState extends State<BrowserPage> {
     if (list.isEmpty) {
       final isFiltered = _filterQuery.isNotEmpty;
       return RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: () async => _load(refresh: true),
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -2693,6 +2930,9 @@ class BrowserPageState extends State<BrowserPage> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
+                onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
+                // Tap empty space to leave selection mode, like the platform file managers.
+                onTap: _isSelecting ? _clearSelection : null,
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -2778,10 +3018,13 @@ class BrowserPageState extends State<BrowserPage> {
 
     if (_isGrid) {
       return RefreshIndicator(
-        onRefresh: () async => _load(),
+        onRefresh: () async => _load(refresh: true),
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
+          onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
+                // Tap empty space to leave selection mode, like the platform file managers.
+                onTap: _isSelecting ? _clearSelection : null,
           child: GridView.builder(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
@@ -2858,6 +3101,12 @@ class BrowserPageState extends State<BrowserPage> {
                           ],
                         ),
                       ),
+                      if (item.isSymlink)
+                        Positioned(
+                          top: 2,
+                          left: 2,
+                          child: Icon(Icons.link, size: 11, color: Colors.grey.shade600),
+                        ),
                       if (_isSelecting)
                         Positioned(
                           top: 0,
@@ -2880,10 +3129,13 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     return RefreshIndicator(
-      onRefresh: () async => _load(),
+      onRefresh: () async => _load(refresh: true),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
+        onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
+                // Tap empty space to leave selection mode, like the platform file managers.
+                onTap: _isSelecting ? _clearSelection : null,
         child: ListView.builder(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
@@ -2931,7 +3183,17 @@ class BrowserPageState extends State<BrowserPage> {
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                     )
-                  : Icon(item.icon, color: item.iconColor(ctx), size: 18),
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(item.icon, color: item.iconColor(ctx), size: 18),
+                        if (item.isSymlink)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 2),
+                            child: Icon(Icons.link, size: 11, color: Colors.grey.shade600),
+                          ),
+                      ],
+                    ),
               title: Text(
                 item.name,
                 maxLines: 1,

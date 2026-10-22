@@ -216,6 +216,33 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
   }
 
+  /// Re-reads the file, confirming first if there are edits to lose.
+  Future<void> _reload() async {
+    if (_isDirty) {
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Reload File'),
+          content: const Text(
+            'Discard unsaved changes and reload the file from disk?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Reload'),
+            ),
+          ],
+        ),
+      );
+      if (discard != true) return;
+    }
+    await _loadFile();
+  }
+
   Future<void> _save() async {
     if (_loading || _error != null) return;
     setState(() => _saving = true);
@@ -286,6 +313,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
           if (_isDirty && _error == null) _save();
         },
+        // The file may have changed on disk (another editor, a sync client);
+        // reloading is the only way to see it without leaving the page.
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): _reload,
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _reload,
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
           setState(() => _showFind = true);
           _findFocusNode.requestFocus();
@@ -339,6 +370,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (_showFind) {
             setState(() => _showFind = false);
+          } else if (_mode == TextFileMode.edit) {
+            // Leave the editor without leaving the file; the dirty guard still
+            // runs on the way out.
+            _setMode(canPreview ? TextFileMode.preview : TextFileMode.code);
           }
         },
       },
@@ -632,6 +667,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final text = _controller.text;
     final lines = text.isEmpty ? 1 : text.split('\n').length;
     final chars = text.length;
+    // Counting words on every cursor move is wasted work on a large file, so
+    // the count is skipped past a size where it would stall typing.
+    final words = chars > 200000
+        ? null
+        : text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
     final modeLabel = _mode == TextFileMode.preview
         ? 'Preview'
         : (_mode == TextFileMode.code ? 'Read-only' : 'Editing');
@@ -658,7 +698,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
           ],
           const Spacer(),
           Text(
-            'Ln $_cursorLine, Col $_cursorCol  •  Lines: $lines  •  Chars: $chars  •  ${_fontSize.toInt()}pt${_wordWrap ? '  •  Wrap' : ''}',
+            'Ln $_cursorLine, Col $_cursorCol  •  Lines: $lines  •  '
+            '${words == null ? '' : 'Words: $words  •  '}Chars: $chars  •  '
+            '${_fontSize.toInt()}pt${_wordWrap ? '  •  Wrap' : ''}',
             style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ],

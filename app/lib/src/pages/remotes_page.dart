@@ -32,16 +32,21 @@ class _RemotesPageState extends State<RemotesPage> {
     super.dispose();
   }
 
+  /// Alphabetical, so a saved connection does not drift around the list as
+  /// new ones are added.
   List<RemoteConfigDto> get _visibleRemotes {
     final q = _searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return _remotes;
-    return _remotes.where((r) {
-      final sub = r.endpoint ??
-          (r.bucket != null ? r.bucket! : '${r.host ?? ""}:${r.port ?? ""}');
-      return r.name.toLowerCase().contains(q) ||
-          r.kind.toLowerCase().contains(q) ||
-          sub.toLowerCase().contains(q);
-    }).toList();
+    final list = q.isEmpty
+        ? [..._remotes]
+        : _remotes.where((r) {
+            final sub = r.endpoint ??
+                (r.bucket != null ? r.bucket! : '${r.host ?? ""}:${r.port ?? ""}');
+            return r.name.toLowerCase().contains(q) ||
+                r.kind.toLowerCase().contains(q) ||
+                sub.toLowerCase().contains(q);
+          }).toList();
+    list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return list;
   }
 
   void _copyRemoteUri(RemoteConfigDto r) {
@@ -255,7 +260,12 @@ class _RemotesPageState extends State<RemotesPage> {
                   child: RefreshIndicator(
                     onRefresh: _loadRemotes,
                     child: _remotes.isEmpty
-                        ? Center(
+                        ? LayoutBuilder(
+                            builder: (context, constraints) => SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                child: Center(
                             child: Padding(
                               padding: const EdgeInsets.all(24),
                               child: Column(
@@ -282,9 +292,17 @@ class _RemotesPageState extends State<RemotesPage> {
                                 ],
                               ),
                             ),
+                                ),
+                              ),
+                            ),
                           )
                         : displayedRemotes.isEmpty
-                            ? Center(
+                            ? LayoutBuilder(
+                                builder: (context, constraints) => SingleChildScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                    child: Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(24),
                                   child: Column(
@@ -305,8 +323,12 @@ class _RemotesPageState extends State<RemotesPage> {
                                     ],
                                   ),
                                 ),
+                                    ),
+                                  ),
+                                ),
                               )
                             : ListView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 itemCount: displayedRemotes.length + 1,
                                 itemBuilder: (ctx, i) {

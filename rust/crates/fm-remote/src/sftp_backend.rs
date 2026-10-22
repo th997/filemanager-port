@@ -256,6 +256,7 @@ impl Vfs for SftpFs {
                 modified,
                 mode: None,
                 hidden: name.starts_with('.'),
+                is_symlink: false,
                 mime: None,
             });
         }
@@ -293,6 +294,7 @@ impl Vfs for SftpFs {
             modified: meta.modified().ok(),
             mode: None,
             hidden: path.name().map(|n| n.starts_with('.')).unwrap_or(false),
+            is_symlink: false,
             mime: None,
         })
     }

@@ -4,6 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
 import 'src/services/permission_service.dart';
+import 'src/services/platform_paths.dart';
 import 'src/services/preferences_service.dart';
 import 'src/services/storage_service.dart';
 
@@ -11,8 +12,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   await RustLib.init();
+  await PlatformPaths.init();
   StorageService.instance.ensureInitialized();
   await PreferencesService.instance.load();
+  PreferencesService.instance.syncToolbarAtBottom();
   if (Platform.isAndroid && !await PermissionService.instance.hasStorageAccess()) {
     await PermissionService.instance.requestStorageAccess();
   }

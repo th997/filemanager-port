@@ -497,7 +497,8 @@ let mut var_isDir = <bool>::sse_decode(deserializer);
 let mut var_size = <Option<u64>>::sse_decode(deserializer);
 let mut var_modifiedMillis = <Option<i64>>::sse_decode(deserializer);
 let mut var_hidden = <bool>::sse_decode(deserializer);
-return crate::api::file_manager::EntryDto{name: var_name, path: var_path, is_dir: var_isDir, size: var_size, modified_millis: var_modifiedMillis, hidden: var_hidden};}
+let mut var_isSymlink = <bool>::sse_decode(deserializer);
+return crate::api::file_manager::EntryDto{name: var_name, path: var_path, is_dir: var_isDir, size: var_size, modified_millis: var_modifiedMillis, hidden: var_hidden, is_symlink: var_isSymlink};}
                 }
                 
                 impl SseDecode for f32 {
@@ -833,7 +834,8 @@ self.path.into_into_dart().into_dart(),
 self.is_dir.into_into_dart().into_dart(),
 self.size.into_into_dart().into_dart(),
 self.modified_millis.into_into_dart().into_dart(),
-self.hidden.into_into_dart().into_dart()
+self.hidden.into_into_dart().into_dart(),
+self.is_symlink.into_into_dart().into_dart()
                 ].into_dart()
                 }
             }
@@ -997,7 +999,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::metadata::TrashItemDto> for c
 <bool>::sse_encode(self.is_dir, serializer);
 <Option<u64>>::sse_encode(self.size, serializer);
 <Option<i64>>::sse_encode(self.modified_millis, serializer);
-<bool>::sse_encode(self.hidden, serializer);}
+<bool>::sse_encode(self.hidden, serializer);
+<bool>::sse_encode(self.is_symlink, serializer);}
                 }
                 
                 impl SseEncode for f32 {

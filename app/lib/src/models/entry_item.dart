@@ -11,6 +11,7 @@ class EntryItem {
   bool get isDir => dto.isDir;
   BigInt? get size => dto.size;
   bool get hidden => dto.hidden;
+  bool get isSymlink => dto.isSymlink;
 
   DateTime? get modified {
     final millis = dto.modifiedMillis;

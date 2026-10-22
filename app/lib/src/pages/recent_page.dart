@@ -99,21 +99,34 @@ class _RecentPageState extends State<RecentPage> {
   }
 
   /// Removes a single location from recent history.
+  ///
+  /// No confirmation dialog: a stray tap costs one entry, and the snackbar
+  /// offers an undo.
   Future<void> _removeEntry(HistoryDto h, String title) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove from History'),
-        content: Text('Remove "$title" from recent locations?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Remove')),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+    final index = _history.indexOf(h);
     await StorageService.instance.removeHistoryEntry(root: h.root, path: h.path);
     await _loadHistory();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Removed "$title"'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            // Re-record the visit, then put it back where it was in the list.
+            await StorageService.instance.recordHistory(root: h.root, path: h.path);
+            await _loadHistory();
+            if (!mounted) return;
+            setState(() {
+              if (index >= 0 && index < _history.length) {
+                final restored = _history.removeAt(_history.length - 1);
+                _history.insert(index, restored);
+              }
+            });
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _clearHistory() async {

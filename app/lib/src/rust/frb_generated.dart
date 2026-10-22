@@ -1678,8 +1678,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   EntryDto dco_decode_entry_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return EntryDto(
       name: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
@@ -1687,6 +1687,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       size: dco_decode_opt_box_autoadd_u_64(arr[3]),
       modifiedMillis: dco_decode_opt_box_autoadd_i_64(arr[4]),
       hidden: dco_decode_bool(arr[5]),
+      isSymlink: dco_decode_bool(arr[6]),
     );
   }
 
@@ -2008,6 +2009,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_size = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_modifiedMillis = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_hidden = sse_decode_bool(deserializer);
+    var var_isSymlink = sse_decode_bool(deserializer);
     return EntryDto(
       name: var_name,
       path: var_path,
@@ -2015,6 +2017,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       size: var_size,
       modifiedMillis: var_modifiedMillis,
       hidden: var_hidden,
+      isSymlink: var_isSymlink,
     );
   }
 
@@ -2425,6 +2428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_64(self.size, serializer);
     sse_encode_opt_box_autoadd_i_64(self.modifiedMillis, serializer);
     sse_encode_bool(self.hidden, serializer);
+    sse_encode_bool(self.isSymlink, serializer);
   }
 
   @protected

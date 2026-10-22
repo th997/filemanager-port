@@ -194,6 +194,7 @@ impl Vfs for SmbFs {
                         modified: None,
                         mode: None,
                         hidden: s.name.ends_with('$'),
+                        is_symlink: false,
                         mime: None,
                     })
                     .collect();
@@ -233,6 +234,7 @@ impl Vfs for SmbFs {
                         modified: item.modified.to_system_time(),
                         mode: None,
                         hidden: item.name.starts_with('.'),
+                        is_symlink: false,
                         mime: None,
                     });
                 }
@@ -265,6 +267,7 @@ impl Vfs for SmbFs {
                 modified: None,
                 mode: None,
                 hidden: false,
+                is_symlink: false,
                 mime: None,
             }),
             Some(share) => {
@@ -277,6 +280,7 @@ impl Vfs for SmbFs {
                         modified: None,
                         mode: None,
                         hidden: false,
+                        is_symlink: false,
                         mime: None,
                     });
                 }
@@ -307,6 +311,7 @@ impl Vfs for SmbFs {
                     modified: info.modified.to_system_time(),
                     mode: None,
                     hidden: path.name().map(|n| n.starts_with('.')).unwrap_or(false),
+                    is_symlink: false,
                     mime: None,
                 })
             }

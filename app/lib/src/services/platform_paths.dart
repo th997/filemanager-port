@@ -1,7 +1,27 @@
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 class PlatformPaths {
+  static String? _iosDocuments;
+  static String? _iosSupport;
+
+  /// iOS only: resolve the app sandbox directories before anything else runs.
+  ///
+  /// `$HOME` inside an iOS sandbox is not a browsable location, so the
+  /// environment-based fallbacks used on desktop do not work there.
+  static Future<void> init() async {
+    if (!Platform.isIOS) return;
+    try {
+      _iosDocuments = (await getApplicationDocumentsDirectory()).path;
+      _iosSupport = (await getApplicationSupportDirectory()).path;
+    } catch (_) {}
+  }
+
   static String defaultRoot() {
+    if (Platform.isIOS) {
+      return _iosDocuments ?? _iosSupport ?? '/';
+    }
     if (Platform.isAndroid) {
       final sdcard = Directory('/storage/emulated/0');
       if (sdcard.existsSync()) {
@@ -17,7 +37,11 @@ class PlatformPaths {
 
   static String appDataDir() {
     String dir;
-    if (Platform.isAndroid) {
+    if (Platform.isIOS) {
+      // Application Support is not exposed in the Files app, which is where
+      // the database and preferences belong.
+      dir = _iosSupport ?? _iosDocuments ?? Directory.systemTemp.path;
+    } else if (Platform.isAndroid) {
       dir = '/storage/emulated/0/.filemanager';
     } else if (Platform.isWindows) {
       final appData = Platform.environment['APPDATA'] ?? Platform.environment['USERPROFILE'] ?? 'C:\\';
@@ -39,8 +63,42 @@ class PlatformPaths {
     return '${appDataDir()}/filemanager.db';
   }
 
+  /// Folders that commonly hold photos, newest-first scanning happens in the
+  /// gallery page. Only existing directories are returned.
+  static List<String> galleryDirs() {
+    final home = Platform.environment['HOME'] ?? '';
+    final candidates = <String>[];
+    if (Platform.isIOS) {
+      if (_iosDocuments != null) candidates.add(_iosDocuments!);
+    } else if (Platform.isAndroid) {
+      candidates.addAll([
+        '/storage/emulated/0/DCIM',
+        '/storage/emulated/0/Pictures',
+        '/storage/emulated/0/Download',
+      ]);
+    } else if (Platform.isWindows) {
+      final user = Platform.environment['USERPROFILE'] ?? '';
+      candidates.addAll(['$user\\Pictures', '$user\\Downloads', '$user\\Desktop']);
+    } else {
+      candidates.addAll(['$home/Pictures', '$home/Downloads', '$home/Desktop']);
+    }
+    return candidates.where((p) => p.isNotEmpty && Directory(p).existsSync()).toList();
+  }
+
   static List<QuickTarget> quickTargets() {
     final targets = <QuickTarget>[];
+    if (Platform.isIOS) {
+      final docs = _iosDocuments;
+      if (docs != null) {
+        targets.add(QuickTarget(
+          name: 'Documents',
+          path: docs,
+          root: docs,
+          relPath: '',
+        ));
+      }
+      return targets;
+    }
     if (Platform.isAndroid) {
       targets.addAll([
         const QuickTarget(

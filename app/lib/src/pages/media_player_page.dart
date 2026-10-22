@@ -43,11 +43,14 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   bool _opened = false;
   bool _isLooping = false;
   static const _prefVolume = 'player.volume';
+  static const _prefLoop = 'player.loop';
+  static const _prefResumePrefix = 'player.resume.';
+  /// Where playback was when the page closed, keyed by the opened file.
+  String get _resumeKey => '$_prefResumePrefix${widget.root}|${widget.path}';
+  bool _resumeApplied = false;
+  StreamSubscription<Duration>? _resumeSub;
   double _volume = 100.0;
   double _lastNonZeroVolume = 100.0;
-  /// Non-null while a horizontal drag is scrubbing; shown as an overlay.
-  Duration? _dragSeekTarget;
-  double? _dragSeekMs;
 
   @override
   void initState() {
@@ -70,6 +73,10 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
       _volume = savedVolume.clamp(0.0, 100.0);
       _player.setVolume(_volume);
     }
+    // Loop is a preference too: someone who loops one clip usually keeps
+    // looping the next one.
+    _isLooping = PreferencesService.instance.getBool(_prefLoop) ?? false;
+    if (_isLooping) _player.setPlaylistMode(PlaylistMode.single);
     _volumeSub = _player.stream.volume.listen((vol) {
       if (mounted) setState(() => _volume = vol);
     });
@@ -110,34 +117,6 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     _player.seek(target);
   }
 
-  /// Horizontal drag on the video seeks proportionally to the gesture width:
-  /// the whole timeline is covered by a drag across the full screen.
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    final duration = _player.state.duration;
-    if (duration <= Duration.zero) return;
-    final width = MediaQuery.sizeOf(context).width;
-    if (width <= 0) return;
-    final deltaMs = duration.inMilliseconds * details.delta.dx / width;
-    _dragSeekMs = (_dragSeekMs ?? _player.state.position.inMilliseconds) + deltaMs;
-    final clamped = _dragSeekMs!.clamp(0, duration.inMilliseconds).toDouble();
-    setState(() => _dragSeekTarget = Duration(milliseconds: clamped.round()));
-  }
-
-  void _onHorizontalDragEnd(DragEndDetails details) {
-    final target = _dragSeekTarget;
-    if (target != null) _player.seek(target);
-    setState(() {
-      _dragSeekMs = null;
-      _dragSeekTarget = null;
-    });
-  }
-
-  String _formatDuration(Duration d) {
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
-  }
 
   Future<void> _open() async {
     try {
@@ -157,9 +136,47 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
       }
       await _player.open(Media(uri));
       if (mounted) setState(() => _opened = true);
+      _applyResume();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  /// Continues where the file was left off, unless it was near the start or
+  /// already finished. Audio books and long videos are the reason this exists.
+  ///
+  /// The duration is often still unknown right after `open`, so the seek waits
+  /// for the first non-zero duration before deciding whether the saved spot is
+  /// past the end.
+  void _applyResume() {
+    if (_resumeApplied) return;
+    _resumeApplied = true;
+    final saved = int.tryParse(
+      PreferencesService.instance.getString(_resumeKey) ?? '',
+    );
+    if (saved == null || saved < 5000) return;
+    _resumeSub = _player.stream.duration.listen((duration) {
+      if (duration <= Duration.zero) return;
+      _resumeSub?.cancel();
+      _resumeSub = null;
+      if (saved > duration.inMilliseconds * 0.95) return;
+      _player.seek(Duration(milliseconds: saved));
+    });
+  }
+
+  void _saveResumePosition() {
+    final position = _player.state.position;
+    final duration = _player.state.duration;
+    if (duration <= Duration.zero) return;
+    if (position < const Duration(seconds: 5) ||
+        position > duration * 0.95) {
+      PreferencesService.instance.remove(_resumeKey);
+      return;
+    }
+    PreferencesService.instance.setString(
+      _resumeKey,
+      position.inMilliseconds.toString(),
+    );
   }
 
   /// Reopens the same source after a playback error, e.g. once the network
@@ -177,6 +194,8 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
 
   @override
   void dispose() {
+    _saveResumePosition();
+    _resumeSub?.cancel();
     _errorSub?.cancel();
     _volumeSub?.cancel();
     _player.stop();
@@ -192,6 +211,10 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     // be mounted at the same time, and one widget instance cannot be.
     Widget speedButton() => _SpeedButton(player: _player);
     final mobileNormal = kDefaultMaterialVideoControlsThemeData.copyWith(
+      // Not enabled by default in non-fullscreen. The page used to wrap the
+      // video in its own drag handler, but the controls' recognizer is deeper
+      // in the tree and always won the gesture arena, so it never fired.
+      seekGesture: true,
       bottomButtonBar: [
         ...kDefaultMaterialVideoControlsThemeData.bottomButtonBar,
         speedButton(),
@@ -314,6 +337,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                       _player.setPlaylistMode(
                         _isLooping ? PlaylistMode.single : PlaylistMode.none,
                       );
+                      PreferencesService.instance.setBool(_prefLoop, _isLooping);
                     });
                   },
                 ),
@@ -367,44 +391,13 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
               : Stack(
                   children: [
                     _withSpeedControls(
-                      GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onHorizontalDragUpdate: _onHorizontalDragUpdate,
-                        onHorizontalDragEnd: _onHorizontalDragEnd,
-                        child: Video(
-                          key: _videoKey,
-                          controller: _controller,
-                          fill: Colors.black,
-                          controls: AdaptiveVideoControls,
-                        ),
+                      Video(
+                        key: _videoKey,
+                        controller: _controller,
+                        fill: Colors.black,
+                        controls: AdaptiveVideoControls,
                       ),
                     ),
-                    if (_dragSeekTarget != null)
-                      Positioned(
-                        top: 16,
-                        left: 0,
-                        right: 0,
-                        child: IgnorePointer(
-                          child: Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '${_formatDuration(_dragSeekTarget!)} / '
-                                '${_formatDuration(_player.state.duration)}',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     if (widget.isAudio)
                       Positioned(
                         top: 24,

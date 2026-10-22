@@ -149,6 +149,9 @@ pub struct Entry {
     pub modified: Option<SystemTime>,
     pub mode: Option<u32>,
     pub hidden: bool,
+    /// True when the entry itself is a symbolic link, even if the link
+    /// resolves to a file or directory. Broken links stay `EntryKind::Symlink`.
+    pub is_symlink: bool,
     pub mime: Option<String>,
 }
 

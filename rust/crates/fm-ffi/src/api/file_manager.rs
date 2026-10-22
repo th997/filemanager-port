@@ -38,6 +38,7 @@ pub struct EntryDto {
     pub size: Option<u64>,
     pub modified_millis: Option<i64>,
     pub hidden: bool,
+    pub is_symlink: bool,
 }
 
 impl From<Entry> for EntryDto {
@@ -52,6 +53,7 @@ impl From<Entry> for EntryDto {
                 .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|duration| duration.as_millis() as i64),
             hidden: entry.hidden,
+            is_symlink: entry.is_symlink,
         }
     }
 }

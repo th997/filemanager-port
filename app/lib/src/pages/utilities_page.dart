@@ -199,7 +199,10 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           ),
         ],
       ),
-      body: ListView(
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         children: [
           // 1. Recycle Bin Card
@@ -481,6 +484,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
