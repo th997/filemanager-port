@@ -2471,7 +2471,12 @@ class BrowserPageState extends State<BrowserPage> {
           tooltip: 'Sort',
           icon: Icon(Icons.sort, size: compact ? 18 : 20),
           padding: EdgeInsets.zero,
-          constraints: BoxConstraints.tightFor(width: compact ? 28 : 30, height: compact ? 28 : 30),
+          // `constraints` here sizes the *menu*, not the button; a tight box
+          // collapsed the popup to the icon's footprint and clipped every row.
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            fixedSize: Size.square(compact ? 28 : 30),
+          ),
           onSelected: (field) {
             setState(() {
               if (_sortField == field) {
@@ -2505,7 +2510,10 @@ class BrowserPageState extends State<BrowserPage> {
           tooltip: 'Options',
           icon: Icon(Icons.more_vert, size: compact ? 18 : 20),
           padding: EdgeInsets.zero,
-          constraints: BoxConstraints.tightFor(width: compact ? 28 : 30, height: compact ? 28 : 30),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            fixedSize: Size.square(compact ? 28 : 30),
+          ),
           onSelected: (val) {
             if (val == 'toggle_hidden') {
               setState(() => _showHidden = !_showHidden);
