@@ -176,7 +176,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot read image details: $e'), backgroundColor: Colors.red.shade700),
+        SnackBar(content: Text('Cannot read image details: $e'), backgroundColor: Theme.of(context).colorScheme.error),
       );
       return;
     }
@@ -416,7 +416,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot share image: $e'), backgroundColor: Colors.red.shade700),
+        SnackBar(content: Text('Cannot share image: $e'), backgroundColor: Theme.of(context).colorScheme.error),
       );
     }
   }

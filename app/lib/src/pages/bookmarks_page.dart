@@ -243,7 +243,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                                   ? 'In the file browser, long-press a folder (or right-click it) and choose "Bookmark This Folder".'
                                   : 'Nothing matches "$_searchQuery".',
                               textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
                           ],
                         ),
@@ -285,7 +285,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                               b.path.isEmpty
                                   ? _rootLabel(b.root)
                                   : '${_rootLabel(b.root)}/${b.path}',
-                              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                              style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),

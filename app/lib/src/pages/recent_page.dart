@@ -92,7 +92,7 @@ class _RecentPageState extends State<RecentPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to bookmark: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Failed to bookmark: $e'), backgroundColor: Theme.of(context).colorScheme.error),
         );
       }
     }
@@ -267,7 +267,7 @@ class _RecentPageState extends State<RecentPage> {
                                               ? 'Directories and files you browse will show up here.'
                                               : 'Nothing matches "$_searchQuery".',
                                           textAlign: TextAlign.center,
-                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         ),
                                       ],
                                     ),
@@ -311,7 +311,7 @@ class _RecentPageState extends State<RecentPage> {
                                   title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
                                   subtitle: Text(
                                     sub,
-                                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -320,7 +320,7 @@ class _RecentPageState extends State<RecentPage> {
                                     children: [
                                       Text(
                                         _relativeTime(h.visitedMillis.toInt()),
-                                        style: TextStyle(fontSize: 9.5, color: Colors.grey.shade500),
+                                        style: TextStyle(fontSize: 9.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       ),
                                       const SizedBox(width: 4),
                                       IconButton(

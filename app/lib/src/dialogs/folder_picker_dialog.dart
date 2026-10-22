@@ -174,7 +174,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to create folder: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }

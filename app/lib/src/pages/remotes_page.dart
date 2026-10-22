@@ -4,6 +4,7 @@ import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
 import '../../l10n/app_localizations.dart';
+import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
 import '../services/storage_service.dart';
 import 'browser_page.dart';
@@ -97,15 +98,16 @@ class _RemotesPageState extends State<RemotesPage> {
   }
 
   Color _statusColor(_ConnStatus s) {
+    final scheme = Theme.of(context).colorScheme;
     switch (s) {
       case _ConnStatus.online:
-        return Colors.green;
+        return scheme.success;
       case _ConnStatus.offline:
-        return Colors.redAccent;
+        return scheme.error;
       case _ConnStatus.checking:
-        return Colors.amber;
+        return scheme.warning;
       case _ConnStatus.unknown:
-        return Colors.grey;
+        return scheme.onSurfaceVariant;
     }
   }
 
@@ -172,7 +174,7 @@ class _RemotesPageState extends State<RemotesPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Could not delete "${remote.name}": $e'),
-              backgroundColor: Colors.red.shade700,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
@@ -210,7 +212,7 @@ class _RemotesPageState extends State<RemotesPage> {
         content: Text(
           ok ? 'Connected to "${remote.name}"' : 'Cannot reach "${remote.name}"${error == null ? '' : ': $error'}',
         ),
-        backgroundColor: ok ? Colors.green.shade700 : Colors.red.shade700,
+        backgroundColor: ok ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.error,
       ),
     );
   }
@@ -323,7 +325,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                   Text(
                                     'Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                   ),
                                   const SizedBox(height: 16),
                                   FilledButton.icon(
@@ -360,7 +362,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                       Text(
                                         'Nothing matches "$_searchQuery".',
                                         textAlign: TextAlign.center,
-                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       ),
                                     ],
                                   ),
@@ -438,7 +440,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                       title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
                                       subtitle: Text(
                                         '${r.kind.toUpperCase()} • $sub',
-                                        style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                                        style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),

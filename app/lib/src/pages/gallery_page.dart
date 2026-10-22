@@ -218,7 +218,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot open photo: $e'), backgroundColor: Colors.red.shade700),
+          SnackBar(content: Text('Cannot open photo: $e'), backgroundColor: Theme.of(context).colorScheme.error),
         );
       }
       return;
@@ -291,7 +291,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               Text(
                 _notice ?? 'No photos found',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               if (_permissionDenied) ...[
                 const SizedBox(height: 16),
@@ -306,7 +306,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                 Text(
                   PlatformPaths.galleryDirs().join('\n'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
             ],

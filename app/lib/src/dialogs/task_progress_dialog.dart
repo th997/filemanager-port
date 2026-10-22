@@ -211,35 +211,35 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
               p!.current!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
           if (p != null) ...[
             const SizedBox(height: 4),
             Text(
               _processedLabel(p),
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
           if (p != null && p.skipped > BigInt.zero) ...[
             const SizedBox(height: 4),
             Text(
               '${p.skipped} skipped (already exists)',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
           if (state == 'running' && p != null && _speedLine(p) != null) ...[
             const SizedBox(height: 4),
             Text(
               _speedLine(p)!,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
           if (p?.error != null || _retryError != null) ...[
             const SizedBox(height: 8),
             Text(
               p?.error ?? _retryError!,
-              style: const TextStyle(fontSize: 11, color: Colors.red),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.error),
             ),
           ],
         ],

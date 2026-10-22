@@ -4,6 +4,7 @@ import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/permission_service.dart';
 import '../services/preferences_service.dart';
+import '../services/semantic_colors.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
@@ -237,7 +238,7 @@ class _HomePageState extends State<HomePage> {
             style: FilledButton.styleFrom(
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 10),
-              backgroundColor: Colors.orange.shade800,
+              backgroundColor: Theme.of(context).colorScheme.warning,
             ),
             onPressed: _requestStorageAccess,
             child: const Text('Grant', style: TextStyle(fontSize: 11)),
@@ -330,7 +331,7 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 1),
                         Text(
                           subtitle,
-                          style: TextStyle(fontSize: 9, color: Colors.grey.shade600),
+                          style: TextStyle(fontSize: 9, color: Theme.of(context).colorScheme.onSurfaceVariant),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                         ),

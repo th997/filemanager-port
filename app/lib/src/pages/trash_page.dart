@@ -169,7 +169,7 @@ class _TrashPageState extends State<TrashPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not restore "$name": $e'),
-            backgroundColor: Colors.red.shade700,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -193,7 +193,7 @@ class _TrashPageState extends State<TrashPage> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Delete'),
           ),
@@ -208,7 +208,7 @@ class _TrashPageState extends State<TrashPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Could not delete "$name": $e'),
-              backgroundColor: Colors.red.shade700,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
@@ -235,7 +235,7 @@ class _TrashPageState extends State<TrashPage> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Empty All'),
           ),
@@ -250,7 +250,7 @@ class _TrashPageState extends State<TrashPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Could not empty recycle bin: $e'),
-              backgroundColor: Colors.red.shade700,
+              backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
@@ -409,7 +409,7 @@ class _TrashPageState extends State<TrashPage> {
                                       const SizedBox(height: 12),
                                       Text(
                                         _items.isEmpty ? 'Recycle Bin is empty' : 'No matching items in trash',
-                                        style: TextStyle(color: Colors.grey.shade600),
+                                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       ),
                                     ],
                                   ),

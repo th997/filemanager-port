@@ -254,14 +254,23 @@ class EntryItem {
   }
 
   Color iconColor(BuildContext context) {
-    if (isDir) return Theme.of(context).colorScheme.primary;
-    if (isArchive) return Colors.amber.shade800;
-    if (isImage) return Colors.purple;
+    final scheme = Theme.of(context).colorScheme;
+    if (isDir) return scheme.primary;
+    // File-type hues, in a light and a dark variant: the mid-tone palette
+    // colors that read well on white (purple, blue-grey, amber 800) sink
+    // into dark surfaces, so dark mode gets the 200/300-level tints.
+    final dark = scheme.brightness == Brightness.dark;
+    if (isArchive) {
+      return dark ? const Color(0xFFFFB74D) : Colors.amber.shade800;
+    }
+    if (isImage) return dark ? const Color(0xFFCE93D8) : Colors.purple;
     final lower = name.toLowerCase();
-    if (lower.endsWith('.pdf')) return Colors.red;
-    if (isVideo) return Colors.deepOrange;
-    if (isAudio) return Colors.teal;
-    if (isText) return Colors.blueGrey;
-    return Theme.of(context).colorScheme.onSurfaceVariant;
+    if (lower.endsWith('.pdf')) {
+      return dark ? const Color(0xFFEF9A9A) : Colors.red;
+    }
+    if (isVideo) return dark ? const Color(0xFFFFAB91) : Colors.deepOrange;
+    if (isAudio) return dark ? const Color(0xFF80CBC4) : Colors.teal;
+    if (isText) return dark ? const Color(0xFFB0BEC5) : Colors.blueGrey;
+    return scheme.onSurfaceVariant;
   }
 }

@@ -158,7 +158,7 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
             const SizedBox(height: 14),
             Text(
               'This file cannot be previewed while streaming, so it has to be downloaded first.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 14),
             const Text(

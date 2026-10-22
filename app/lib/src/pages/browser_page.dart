@@ -1047,7 +1047,7 @@ class BrowserPageState extends State<BrowserPage> {
             _searchResults.length >= 200
                 ? 'First 200 results (narrow the search to see more)'
                 : '${_searchResults.length} result${_searchResults.length == 1 ? '' : 's'} in this folder and subfolders',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
         Expanded(
@@ -1112,7 +1112,7 @@ class BrowserPageState extends State<BrowserPage> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+      SnackBar(content: Text(message), backgroundColor: Theme.of(context).colorScheme.error),
     );
   }
 
@@ -2052,7 +2052,7 @@ class BrowserPageState extends State<BrowserPage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to create file: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text('Failed to create file: $e'), backgroundColor: Theme.of(context).colorScheme.error),
           );
         }
       }
@@ -2387,7 +2387,7 @@ class BrowserPageState extends State<BrowserPage> {
               child: const Text('Recycle Bin'),
             ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop('permanent'),
             child: const Text('Permanent Delete'),
           ),
@@ -3696,7 +3696,7 @@ class BrowserPageState extends State<BrowserPage> {
                             : (_entries.isNotEmpty && !_showHidden)
                                 ? 'Only hidden files here'
                                 : 'Directory is empty',
-                        style: TextStyle(color: Colors.grey.shade600),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       if (isFiltered) ...[
                         const SizedBox(height: 12),
@@ -3860,7 +3860,7 @@ class BrowserPageState extends State<BrowserPage> {
                               ),
                             ),
                             const SizedBox(height: 1),
-                            Text(item.formattedSize, style: TextStyle(fontSize: 8.5, color: Colors.grey.shade600)),
+                            Text(item.formattedSize, style: TextStyle(fontSize: 8.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                           ],
                         ),
                       ),

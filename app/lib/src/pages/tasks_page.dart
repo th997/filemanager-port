@@ -150,7 +150,7 @@ class _TasksPageState extends State<TasksPage> {
                   const SizedBox(height: 8),
                   Text(
                     'Copies, moves and other long operations will appear here.',
-                    style: TextStyle(color: Colors.grey.shade600),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -214,7 +214,7 @@ class _TasksPageState extends State<TasksPage> {
                     const SizedBox(height: 6),
                     Text(
                       _detailText(t),
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     if (t.current != null && !terminal) ...[
                       const SizedBox(height: 2),
@@ -222,7 +222,7 @@ class _TasksPageState extends State<TasksPage> {
                         t.current!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                     if (t.error != null) ...[

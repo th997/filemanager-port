@@ -73,7 +73,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not clear archive cache: $e'),
-            backgroundColor: Colors.red.shade700,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -97,7 +97,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not clear cache: $e'),
-            backgroundColor: Colors.red.shade700,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -124,7 +124,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Empty All'),
           ),
@@ -143,7 +143,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not empty trash: $e'), backgroundColor: Colors.red.shade700),
+            SnackBar(content: Text('Could not empty trash: $e'), backgroundColor: Theme.of(context).colorScheme.error),
           );
         }
       }
@@ -169,7 +169,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Port must be a number between 1 and 65535 (got "$portText")'),
-            backgroundColor: Colors.red.shade700,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
         return;
@@ -196,7 +196,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         if (mounted) {
           setState(() => _starting = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start server: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text('Failed to start server: $e'), backgroundColor: Theme.of(context).colorScheme.error),
           );
         }
       }
@@ -379,7 +379,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                     const SizedBox(height: 6),
                     Text(
                       'Share files on your local network without cables. Stream media, download or upload through any web browser.',
-                      style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600),
+                      style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 6),
                     Container(

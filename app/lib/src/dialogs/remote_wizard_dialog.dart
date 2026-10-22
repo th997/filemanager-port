@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
 import '../services/error_text.dart';
+import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
 
 class RemoteWizardDialog extends StatefulWidget {
@@ -78,14 +79,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.12),
+        color: Theme.of(context).colorScheme.warning.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+        border: Border.all(color: Theme.of(context).colorScheme.warning.withValues(alpha: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber, size: 16, color: Colors.amber),
+          Icon(Icons.warning_amber, size: 16, color: Theme.of(context).colorScheme.warning),
           const SizedBox(width: 8),
           Expanded(
             child: Text(message, style: const TextStyle(fontSize: 12)),
@@ -468,13 +469,13 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: _testSuccess
-                          ? Colors.green.withValues(alpha: 0.15)
-                          : Colors.red.withValues(alpha: 0.15),
+                          ? Theme.of(context).colorScheme.success.withValues(alpha: 0.15)
+                          : Theme.of(context).colorScheme.error.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
                         color: _testSuccess
-                            ? Colors.green.withValues(alpha: 0.4)
-                            : Colors.red.withValues(alpha: 0.4),
+                            ? Theme.of(context).colorScheme.success.withValues(alpha: 0.4)
+                            : Theme.of(context).colorScheme.error.withValues(alpha: 0.4),
                       ),
                     ),
                     child: Row(
@@ -483,7 +484,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                         Icon(
                           _testSuccess ? Icons.check_circle_outline : Icons.error_outline,
                           size: 16,
-                          color: _testSuccess ? Colors.green : Colors.redAccent,
+                          color: _testSuccess ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.error,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -491,7 +492,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                             _testResult!,
                             style: TextStyle(
                               fontSize: 12,
-                              color: _testSuccess ? Colors.green : Colors.redAccent,
+                              color: _testSuccess ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.error,
                             ),
                           ),
                         ),
