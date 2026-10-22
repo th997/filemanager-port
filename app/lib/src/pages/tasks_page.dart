@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
+import '../../l10n/app_localizations.dart';
 import '../rust/api/tasks.dart';
 import '../services/task_service.dart';
 
@@ -80,13 +82,13 @@ class _TasksPageState extends State<TasksPage> {
       case 'pending':
         return 'Waiting…';
       case 'running':
-        return 'In progress';
+        return AppLocalizations.of(context).inProgress;
       case 'completed':
-        return 'Completed';
+        return AppLocalizations.of(context).completed;
       case 'failed':
-        return 'Failed';
+        return AppLocalizations.of(context).failed;
       case 'cancelled':
-        return 'Cancelled';
+        return AppLocalizations.of(context).cancelled;
       default:
         return t.state;
     }
@@ -125,12 +127,12 @@ class _TasksPageState extends State<TasksPage> {
     final hasTerminal = _tasks.any(_isTerminal);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tasks'),
+        title: Text(AppLocalizations.of(context).tasks),
         actions: [
           if (hasTerminal)
             TextButton(
               onPressed: _clearFinished,
-              child: const Text('Clear finished'),
+              child: Text(AppLocalizations.of(context).clearFinished),
             ),
         ],
       ),
@@ -142,7 +144,7 @@ class _TasksPageState extends State<TasksPage> {
                   Icon(Icons.task_alt, size: 64, color: Colors.grey.shade400),
                   const SizedBox(height: 16),
                   const Text(
-                    'No tasks yet',
+                    AppLocalizations.of(context).noTasksYet,
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
@@ -238,7 +240,7 @@ class _TasksPageState extends State<TasksPage> {
               if (!terminal)
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
-                  tooltip: 'Cancel task',
+                  tooltip: AppLocalizations.of(context).cancelTask,
                   onPressed: () {
                     TaskService.instance.cancel(t.id);
                     _refresh();
@@ -247,7 +249,7 @@ class _TasksPageState extends State<TasksPage> {
               else
                 IconButton(
                   icon: const Icon(Icons.clear, size: 20),
-                  tooltip: 'Dismiss',
+                  tooltip: AppLocalizations.of(context).dismiss,
                   onPressed: () {
                     TaskService.instance.dismiss(t.id);
                     _refresh();

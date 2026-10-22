@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
+import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
 import 'src/services/permission_service.dart';
@@ -77,8 +78,12 @@ class FileManagerApp extends StatefulWidget {
 
 class _FileManagerAppState extends State<FileManagerApp> {
   static const _themeKey = 'theme_mode';
+  static const _localeKey = 'app.language';
 
   ThemeMode _themeMode = ThemeMode.system;
+
+  /// 'system' | 'en' | 'zh'
+  String _localeCode = 'system';
 
   @override
   void initState() {
@@ -88,6 +93,7 @@ class _FileManagerAppState extends State<FileManagerApp> {
       (mode) => mode.name == saved,
       orElse: () => ThemeMode.system,
     );
+    _localeCode = PreferencesService.instance.getString(_localeKey) ?? 'system';
   }
 
   void _updateThemeMode(ThemeMode mode) {
@@ -97,6 +103,14 @@ class _FileManagerAppState extends State<FileManagerApp> {
     });
   }
 
+  void _updateLocale(String code) {
+    PreferencesService.instance.setString(_localeKey, code);
+    setState(() => _localeCode = code);
+  }
+
+  Locale? get _locale =>
+      _localeCode == 'system' ? null : Locale(_localeCode);
+
   @override
   Widget build(BuildContext context) {
     const seedColor = Color(0xFF1976D2);
@@ -104,6 +118,9 @@ class _FileManagerAppState extends State<FileManagerApp> {
     return MaterialApp(
       title: 'File Manager',
       debugShowCheckedModeBanner: false,
+      locale: _locale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       themeMode: _themeMode,
       theme: ThemeData(
         useMaterial3: true,
@@ -148,6 +165,8 @@ class _FileManagerAppState extends State<FileManagerApp> {
       home: HomePage(
         themeMode: _themeMode,
         onThemeModeChanged: _updateThemeMode,
+        localeCode: _localeCode,
+        onLocaleChanged: _updateLocale,
       ),
     );
   }

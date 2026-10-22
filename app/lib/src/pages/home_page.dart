@@ -7,6 +7,7 @@ import '../services/preferences_service.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../../l10n/app_localizations.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
 import 'gallery_page.dart';
@@ -19,11 +20,15 @@ import 'utilities_page.dart';
 class HomePage extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final String localeCode;
+  final ValueChanged<String> onLocaleChanged;
 
   const HomePage({
     super.key,
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.localeCode,
+    required this.onLocaleChanged,
   });
 
   @override
@@ -77,14 +82,14 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Welcome to File Manager',
+                  Text(
+                    AppLocalizations.of(context).welcomeTitle,
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    'Browse local folders right away, or connect a server — SFTP, WebDAV, S3, SMB and more — to manage files anywhere.',
-                    style: TextStyle(fontSize: 11.5),
+                  Text(
+                    AppLocalizations.of(context).welcomeBody,
+                    style: const TextStyle(fontSize: 11.5),
                   ),
                   const SizedBox(height: 6),
                   FilledButton.tonal(
@@ -93,14 +98,14 @@ class _HomePageState extends State<HomePage> {
                         MaterialPageRoute(builder: (_) => const RemotesPage()),
                       ).then((_) => _loadMetadata());
                     },
-                    child: const Text('Connect a server'),
+                    child: Text(AppLocalizations.of(context).connectServer),
                   ),
                 ],
               ),
             ),
             IconButton(
               icon: const Icon(Icons.close, size: 16),
-              tooltip: 'Dismiss',
+              tooltip: AppLocalizations.of(context).dismiss,
               onPressed: () {
                 PreferencesService.instance.setBool(_prefWelcomeDismissed, true);
                 setState(() => _welcomeDismissed = true);
@@ -171,7 +176,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('File Manager', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context).appTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
@@ -194,12 +199,12 @@ class _HomePageState extends State<HomePage> {
               _buildWelcomeBanner(),
               const SizedBox(height: 8),
             ],
-            _sectionHeader('Local Storage'),
+            _sectionHeader(AppLocalizations.of(context).localStorage),
             _buildLocalStorageGrid(),
 
             const SizedBox(height: 12),
 
-            _sectionHeader('Cloud, Tools & Settings'),
+            _sectionHeader(AppLocalizations.of(context).cloudToolsSettings),
             _buildCategoriesGrid(),
 
             const SizedBox(height: 16),
@@ -349,8 +354,8 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.photo_library,
           iconColor: Colors.pink,
-          title: 'Gallery',
-          subtitle: 'All photos',
+          title: AppLocalizations.of(context).gallery,
+          subtitle: AppLocalizations.of(context).allPhotos,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const GalleryPage()),
@@ -396,7 +401,7 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.cloud,
           iconColor: Colors.blue,
-          title: 'Remote',
+          title: AppLocalizations.of(context).remote,
           subtitle: _remotes.isEmpty
               ? 'S3, OSS, SFTP, WebDAV...'
               : '${_remotes.length} connection${_remotes.length > 1 ? "s" : ""}',
@@ -411,7 +416,7 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.build_outlined,
           iconColor: Colors.purple,
-          title: 'Utilities',
+          title: AppLocalizations.of(context).utilities,
           subtitle: _trashCount > 0 ? '$_trashCount in trash • Web share' : 'Recycle bin, Web share, Cache',
           onTap: () {
             Navigator.of(context).push(
@@ -424,7 +429,7 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.task_alt,
           iconColor: Colors.teal,
-          title: 'Tasks',
+          title: AppLocalizations.of(context).tasks,
           subtitle: _activeTaskCount > 0
               ? '$_activeTaskCount running'
               : 'Transfers and operations',
@@ -439,7 +444,7 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.bookmark,
           iconColor: Colors.amber,
-          title: 'Bookmarks',
+          title: AppLocalizations.of(context).bookmarks,
           subtitle: _bookmarks.isEmpty
               ? 'Saved folders'
               : '${_bookmarks.length} bookmark${_bookmarks.length > 1 ? "s" : ""}',
@@ -454,7 +459,7 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.history,
           iconColor: Colors.indigo,
-          title: 'Recent',
+          title: AppLocalizations.of(context).recent,
           subtitle: _history.isEmpty
               ? 'Browsing history'
               : '${_history.length} location${_history.length > 1 ? "s" : ""}',
@@ -469,14 +474,16 @@ class _HomePageState extends State<HomePage> {
         _buildGridCard(
           icon: Icons.settings,
           iconColor: Colors.blueGrey,
-          title: 'Settings',
-          subtitle: 'Theme, System info, About',
+          title: AppLocalizations.of(context).settings,
+          subtitle: AppLocalizations.of(context).settingsCardSubtitle,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => SettingsPage(
                   currentThemeMode: widget.themeMode,
                   onThemeModeChanged: widget.onThemeModeChanged,
+                  localeCode: widget.localeCode,
+                  onLocaleChanged: widget.onLocaleChanged,
                 ),
               ),
             ).then((_) => _loadMetadata());

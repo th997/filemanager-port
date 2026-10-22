@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../l10n/app_localizations.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/servers.dart';
@@ -219,7 +220,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Utilities', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context).utilities, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
@@ -235,7 +236,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         children: [
           // 1. Recycle Bin Card
-          _buildSectionHeader('Recycle Bin'),
+          _buildSectionHeader(AppLocalizations.of(context).recycleBin),
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -283,7 +284,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           const SizedBox(height: 12),
 
           // 2. LAN HTTP Sharing Card
-          _buildSectionHeader('LAN HTTP Web Sharing'),
+          _buildSectionHeader(AppLocalizations.of(context).lanSharing),
           Card(
             elevation: _serverRunning ? 2 : 0,
             shape: RoundedRectangleBorder(
@@ -475,7 +476,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           const SizedBox(height: 12),
 
           // 3. Cache cleaner
-          _buildSectionHeader('Storage & Cache'),
+          _buildSectionHeader(AppLocalizations.of(context).storageAndCache),
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(

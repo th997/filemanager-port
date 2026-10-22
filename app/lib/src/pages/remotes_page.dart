@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
+import '../../l10n/app_localizations.dart';
 import '../services/error_text.dart';
 import '../services/storage_service.dart';
 import 'browser_page.dart';
@@ -239,7 +240,7 @@ class _RemotesPageState extends State<RemotesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cloud & Remote Storage', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context).cloudRemoteStorage, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
           if (_remotes.isNotEmpty)
             IconButton(

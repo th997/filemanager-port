@@ -2,16 +2,21 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../services/preferences_service.dart';
 
 class SettingsPage extends StatefulWidget {
   final ThemeMode currentThemeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final String localeCode;
+  final ValueChanged<String> onLocaleChanged;
 
   const SettingsPage({
     super.key,
     required this.currentThemeMode,
     required this.onThemeModeChanged,
+    required this.localeCode,
+    required this.onLocaleChanged,
   });
 
   @override
@@ -40,26 +45,40 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _themeModeLabel(ThemeMode mode) {
+    final l10n = AppLocalizations.of(context);
     switch (mode) {
       case ThemeMode.system:
-        return 'Follow system settings';
+        return l10n.followSystemSettings;
       case ThemeMode.light:
-        return 'Light theme';
+        return l10n.lightTheme;
       case ThemeMode.dark:
-        return 'Dark theme';
+        return l10n.darkTheme;
+    }
+  }
+
+  String _languageLabel(String code) {
+    final l10n = AppLocalizations.of(context);
+    switch (code) {
+      case 'en':
+        return 'English';
+      case 'zh':
+        return '中文';
+      default:
+        return l10n.languageSystem;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(l10n.settings, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         children: [
-          _buildSectionHeader(context, 'Appearance'),
+          _buildSectionHeader(context, l10n.appearance),
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -81,15 +100,15 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 child: const Icon(Icons.brightness_medium, size: 16, color: Colors.blue),
               ),
-              title: const Text('Theme', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              title: Text(l10n.theme, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
               subtitle: Text(_themeModeLabel(currentThemeMode), style: const TextStyle(fontSize: 10)),
               trailing: DropdownButton<ThemeMode>(
                 value: currentThemeMode,
                 underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(value: ThemeMode.system, child: Text('System', style: TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: ThemeMode.light, child: Text('Light', style: TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark', style: TextStyle(fontSize: 12))),
+                items: [
+                  DropdownMenuItem(value: ThemeMode.system, child: Text(l10n.themeSystem, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: ThemeMode.light, child: Text(l10n.themeLight, style: const TextStyle(fontSize: 12))),
+                  DropdownMenuItem(value: ThemeMode.dark, child: Text(l10n.themeDark, style: const TextStyle(fontSize: 12))),
                 ],
                 onChanged: (mode) {
                   if (mode != null) widget.onThemeModeChanged(mode);
@@ -98,9 +117,49 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
 
+          const SizedBox(height: 8),
+
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+            ),
+            child: ListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+              minTileHeight: 42,
+              minLeadingWidth: 24,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              leading: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.indigo.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.language, size: 16, color: Colors.indigo),
+              ),
+              title: Text(l10n.language, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              subtitle: Text(_languageLabel(widget.localeCode), style: const TextStyle(fontSize: 10)),
+              trailing: DropdownButton<String>(
+                value: widget.localeCode,
+                underline: const SizedBox.shrink(),
+                items: [
+                  DropdownMenuItem(value: 'system', child: Text(l10n.languageSystem, style: const TextStyle(fontSize: 12))),
+                  const DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(fontSize: 12))),
+                  const DropdownMenuItem(value: 'zh', child: Text('中文', style: TextStyle(fontSize: 12))),
+                ],
+                onChanged: (code) {
+                  if (code != null) widget.onLocaleChanged(code);
+                },
+              ),
+            ),
+          ),
+
           const SizedBox(height: 12),
 
-          _buildSectionHeader(context, 'Browser'),
+          _buildSectionHeader(context, l10n.browserSection),
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -121,9 +180,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 child: const Icon(Icons.vertical_align_bottom, size: 16, color: Colors.teal),
               ),
-              title: const Text('Toolbar at bottom', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Move the address bar and icons below the file list',
-                  style: TextStyle(fontSize: 10)),
+              title: Text(l10n.toolbarAtBottom, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              subtitle: Text(l10n.toolbarAtBottomDesc,
+                  style: const TextStyle(fontSize: 10)),
               value: PreferencesService.toolbarAtBottom.value,
               onChanged: _setToolbarAtBottom,
             ),
@@ -131,7 +190,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: 12),
 
-          _buildSectionHeader(context, 'About & System'),
+          _buildSectionHeader(context, l10n.aboutSection),
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -178,7 +237,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: const Icon(Icons.cloud_done, size: 16, color: Colors.green),
                   ),
-                  title: const Text('Supported Protocols', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  title: Text(l10n.supportedProtocols, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                   subtitle: const Text(
                     'Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z',
                     style: TextStyle(fontSize: 10),
