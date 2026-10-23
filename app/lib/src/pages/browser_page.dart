@@ -3400,6 +3400,11 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     return [
+      // Upload lived only in the empty-space right-click menu, so a full
+      // list (no blank area to click) had no discoverable way in at all.
+      // Phones get it from the overflow menu to keep the icon row narrow.
+      if (_canWrite && !compact)
+        action(Icons.cloud_upload_outlined, isZh ? '上传文件' : 'Upload files', _uploadFiles),
       if (!compact) ...[
         action(
           _isSearching ? Icons.search_off : Icons.search,
@@ -3499,9 +3504,38 @@ class BrowserPageState extends State<BrowserPage> {
           } else if (val == 'toggle_hidden') {
             setState(() => _showHidden = !_showHidden);
             _saveViewPreferences();
+          } else if (val == 'upload') {
+            _uploadFiles();
+          } else if (val == 'new_folder') {
+            _createFolder();
           }
         },
         itemBuilder: (ctx) => [
+          // File-creation actions were only in the empty-space context menu,
+          // which a full list never shows.
+          if (_canWrite) ...[
+            PopupMenuItem<String>(
+              value: 'upload',
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_upload_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(isZh ? '上传文件' : 'Upload files'),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'new_folder',
+              child: Row(
+                children: [
+                  const Icon(Icons.create_new_folder_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(isZh ? '新建文件夹' : 'New folder'),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+          ],
           if (compact) ...[
             PopupMenuItem<String>(
               value: 'search',
