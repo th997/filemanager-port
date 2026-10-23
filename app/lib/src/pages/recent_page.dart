@@ -116,7 +116,20 @@ class _RecentPageState extends State<RecentPage> {
   /// offers an undo.
   Future<void> _removeEntry(HistoryDto h, String title) async {
     final index = _history.indexOf(h);
-    await StorageService.instance.removeHistoryEntry(root: h.root, path: h.path);
+    try {
+      await StorageService.instance.removeHistoryEntry(root: h.root, path: h.path);
+    } catch (e) {
+      // Without this the row stayed put with no explanation and the tap
+      // looked ignored.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not remove "$title": $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
     await _loadHistory();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -161,7 +174,18 @@ class _RecentPageState extends State<RecentPage> {
     if (confirm != true) return;
     // Keep the list so a mis-tap does not cost every recorded location.
     final cleared = List<HistoryDto>.of(_history);
-    await StorageService.instance.clearHistory();
+    try {
+      await StorageService.instance.clearHistory();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not clear history: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
     await _loadHistory();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

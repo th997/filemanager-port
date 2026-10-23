@@ -243,7 +243,13 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                   icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off, size: 18),
                   tooltip: _showHidden ? 'Hide hidden files' : 'Show hidden files',
                   onPressed: () {
-                    setState(() => _showHidden = !_showHidden);
+                    setState(() {
+                      _showHidden = !_showHidden;
+                      if (!_showHidden) {
+                        _selectedPaths.removeWhere((p) =>
+                            _files.any((f) => f.hidden && _fullPath(f) == p));
+                      }
+                    });
                     _load();
                   },
                 ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../dialogs/remote_wizard_dialog.dart';
@@ -208,6 +210,9 @@ class _RemotesPageState extends State<RemotesPage> {
 
   /// Quick reachability check without opening the edit wizard.
   Future<void> _testRemote(RemoteConfigDto remote) async {
+    // Tapping again while a check is in flight started a second connection
+    // whose result could overwrite the first one's.
+    if (_status[remote.id] == _ConnStatus.checking) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Testing "${remote.name}"…'), duration: const Duration(seconds: 2)),
     );
@@ -215,7 +220,15 @@ class _RemotesPageState extends State<RemotesPage> {
     String? error;
     setState(() => _status[remote.id] = _ConnStatus.checking);
     try {
-      ok = await StorageService.instance.testConnection(remote);
+      // A firewalled host sits in the OS TCP timeout for minutes, leaving the
+      // row on "checking" and the button looking dead. Bound it like the
+      // background probe already is.
+      ok = await StorageService.instance
+          .testConnection(remote)
+          .timeout(const Duration(seconds: 8));
+    } on TimeoutException {
+      ok = false;
+      error = 'timed out after 8 seconds';
     } catch (e) {
       ok = false;
       error = friendlyErrorText(e);

@@ -214,7 +214,9 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   void _seekRelative(int seconds) {
     final duration = _player.state.duration;
     final pos = _player.state.position + Duration(seconds: seconds);
-    final target = pos < Duration.zero ? Duration.zero : (pos > duration ? duration : pos);
+    final target = pos < Duration.zero
+        ? Duration.zero
+        : (duration > Duration.zero && pos > duration ? duration : pos);
     _player.seek(target);
   }
 

@@ -147,7 +147,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     if (input == null || input.isEmpty) return;
     final targetLine = int.tryParse(input);
-    if (targetLine == null || targetLine < 1) {
+    if (targetLine == null || targetLine < 1 || targetLine > totalLines) {
       // The dialog used to close and quietly do nothing.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

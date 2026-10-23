@@ -1,11 +1,11 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/entry_item.dart';
-import '../rust/api/file_manager.dart';
 import '../services/platform_paths.dart';
 import '../theme/app_ui_tokens.dart';
 import 'image_viewer_page.dart';
@@ -43,10 +43,6 @@ class GalleryPage extends StatefulWidget {
 }
 
 class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
-  /// Directories are scanned this deep so `DCIM/100APPLE/x.jpg` is included
-  /// without walking an entire home folder.
-  static const int _maxDepth = 3;
-
   List<_Photo> _photos = [];
   bool _loading = true;
   String? _notice;
@@ -105,7 +101,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     try {
       found = Platform.isIOS || Platform.isAndroid
           ? await _loadSystemAlbum()
-          : _scanFolders();
+          : await _scanFolders();
     } catch (e) {
       // A failed scan must not leave the page on a spinner forever.
       if (!mounted) return;
@@ -178,6 +174,13 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       return;
     }
     if (!mounted) return;
+    // A refresh can swap the album while this page was in flight; appending
+    // then duplicated tiles or mixed two albums into one grid. The flag still
+    // has to clear, or paging stays stuck for the new album.
+    if (!identical(path, _albumPath)) {
+      setState(() => _loadingMore = false);
+      return;
+    }
     setState(() {
       _photos = [
         ..._photos,
@@ -189,59 +192,20 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     });
   }
 
-  List<_Photo> _scanFolders() {
-    final found = <File>[];
-    for (final dir in PlatformPaths.galleryDirs()) {
-      _collect(Directory(dir), 0, found);
-    }
-    // Stat each file once up front: statSync inside the sort comparator
-    // cost two syscalls per comparison (thousands on a large roll).
-    // A file that vanished (or became unreadable) between listing and
-    // stat is skipped rather than aborting the whole scan.
-    final mtimes = <File, DateTime>{};
-    for (final f in found) {
-      try {
-        mtimes[f] = f.statSync().modified;
-      } catch (_) {}
-    }
-    found.retainWhere(mtimes.containsKey);
-    found.sort((a, b) => mtimes[b]!.compareTo(mtimes[a]!));
+  Future<List<_Photo>> _scanFolders() async {
+    // The walk is synchronous filesystem I/O over a whole photo tree. On the
+    // UI isolate it locked the app for seconds on a large Pictures folder —
+    // no scroll, no back, refresh dead. Run it off the main isolate.
+    final dirs = PlatformPaths.galleryDirs();
+    final found = await Isolate.run(() => _scanGalleryFolders(dirs));
     return found
-        .map((f) => _Photo.file(
-              f.path.split(Platform.pathSeparator).last,
-              f,
-              takenAt: mtimes[f],
+        .map((e) => _Photo.file(
+              e.path.split(Platform.pathSeparator).last,
+              File(e.path),
+              takenAt: DateTime.fromMillisecondsSinceEpoch(e.modifiedMillis),
             ))
         .toList();
   }
-
-  void _collect(Directory dir, int depth, List<File> out) {
-    if (depth > _maxDepth) return;
-    List<FileSystemEntity> entities;
-    try {
-      entities = dir.listSync(followLinks: false);
-    } catch (_) {
-      return;
-    }
-    for (final entity in entities) {
-      final name = entity.path.split(Platform.pathSeparator).last;
-      if (name.startsWith('.')) continue;
-      if (entity is Directory) {
-        _collect(entity, depth + 1, out);
-      } else if (entity is File) {
-        if (EntryItem(_stubDto(name)).isImage) out.add(entity);
-      }
-    }
-  }
-
-  /// [EntryItem] derives its type from the name only, so a stub DTO is enough.
-  static EntryDto _stubDto(String name) => EntryDto(
-        name: name,
-        path: name,
-        isDir: false,
-        hidden: false,
-        isSymlink: false,
-      );
 
   Future<void> _open(int index) async {
     final File? file;
@@ -482,13 +446,102 @@ class _AssetThumbState extends State<_AssetThumb> {
       future: _data,
       builder: (ctx, snapshot) {
         final bytes = snapshot.data;
+        if (snapshot.hasError || (snapshot.connectionState == ConnectionState.done && bytes == null)) {
+          // A deleted or cloud-only asset has no thumbnail. An empty grey
+          // square was indistinguishable from "still loading", so the tile
+          // looked stuck instead of broken.
+          return Container(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Icon(
+              Icons.broken_image_outlined,
+              size: 24,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          );
+        }
         if (bytes == null) {
           return Container(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
           );
         }
-        return Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, _, _) => Container(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Icon(
+              Icons.broken_image_outlined,
+              size: 24,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        );
       },
     );
   }
+}
+
+/// One scanned picture, as plain data so it can cross an isolate boundary.
+class _ScannedPhoto {
+  final String path;
+  final int modifiedMillis;
+
+  const _ScannedPhoto(this.path, this.modifiedMillis);
+}
+
+/// Folder walk for the desktop gallery, run on a worker isolate.
+///
+/// Top-level so `Isolate.run` can send it; it takes the directory list as an
+/// argument because `Platform.environment` is not guaranteed inside a worker.
+/// Directories are scanned three levels deep so `DCIM/100APPLE/x.jpg` is
+/// included without walking an entire home folder.
+List<_ScannedPhoto> _scanGalleryFolders(List<String> dirs) {
+  final found = <String>[];
+  void collect(Directory dir, int depth) {
+    if (depth > 3) return;
+    List<FileSystemEntity> entities;
+    try {
+      entities = dir.listSync(followLinks: false);
+    } catch (_) {
+      return;
+    }
+    for (final entity in entities) {
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith('.')) continue;
+      if (entity is Directory) {
+        collect(entity, depth + 1);
+      } else if (entity is File && _isImageName(name)) {
+        found.add(entity.path);
+      }
+    }
+  }
+
+  for (final dir in dirs) {
+    collect(Directory(dir), 0);
+  }
+  // Stat each file once up front: statSync inside the sort comparator cost
+  // two syscalls per comparison (thousands on a large roll). A file that
+  // vanished between listing and stat is skipped, not fatal.
+  final result = <_ScannedPhoto>[];
+  for (final path in found) {
+    try {
+      result.add(_ScannedPhoto(path, File(path).statSync().modified.millisecondsSinceEpoch));
+    } catch (_) {}
+  }
+  result.sort((a, b) => b.modifiedMillis.compareTo(a.modifiedMillis));
+  return result;
+}
+
+/// Mirrors [EntryItem.isImage] without needing a DTO in the worker isolate.
+bool _isImageName(String name) {
+  final lower = name.toLowerCase();
+  return lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.gif') ||
+      lower.endsWith('.webp') ||
+      lower.endsWith('.bmp') ||
+      lower.endsWith('.heic') ||
+      lower.endsWith('.heif');
 }

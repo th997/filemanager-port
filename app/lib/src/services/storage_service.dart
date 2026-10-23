@@ -19,13 +19,13 @@ class StorageService {
   }
 
   // Remotes
+  // These reads used to swallow every error and return an empty list, which
+  // made a transient database failure look exactly like "you have no
+  // bookmarks / remotes / history / trash" — data loss from the user's side.
+  // The callers all have error handling; let them see the failure.
   Future<List<rem_api.RemoteConfigDto>> getRemotes() async {
     ensureInitialized();
-    try {
-      return await rem_api.listRemotes(dbPath: dbPath);
-    } catch (_) {
-      return [];
-    }
+    return await rem_api.listRemotes(dbPath: dbPath);
   }
 
   Future<void> saveRemote(rem_api.RemoteConfigDto config) async {
@@ -45,11 +45,7 @@ class StorageService {
   // Bookmarks
   Future<List<meta_api.BookmarkDto>> getBookmarks() async {
     ensureInitialized();
-    try {
-      return await meta_api.listBookmarks(dbPath: dbPath);
-    } catch (_) {
-      return [];
-    }
+    return await meta_api.listBookmarks(dbPath: dbPath);
   }
 
   Future<void> addBookmark({required String name, required String root, required String path}) async {
@@ -64,23 +60,29 @@ class StorageService {
 
   Future<void> renameBookmark({
     required String id,
+    required String oldName,
     required String newName,
     required String root,
     required String path,
   }) async {
     ensureInitialized();
+    // Delete-then-add: if the add fails the bookmark is already gone, so put
+    // the original back before reporting the failure.
     await deleteBookmark(id);
-    await addBookmark(name: newName, root: root, path: path);
+    try {
+      await addBookmark(name: newName, root: root, path: path);
+    } catch (_) {
+      try {
+        await addBookmark(name: oldName, root: root, path: path);
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   // History
   Future<List<meta_api.HistoryDto>> getHistory() async {
     ensureInitialized();
-    try {
-      return await meta_api.listHistory(dbPath: dbPath);
-    } catch (_) {
-      return [];
-    }
+    return await meta_api.listHistory(dbPath: dbPath);
   }
 
   Future<void> clearHistory() async {
@@ -103,11 +105,7 @@ class StorageService {
   // Trash
   Future<List<meta_api.TrashItemDto>> getTrashItems() async {
     ensureInitialized();
-    try {
-      return await meta_api.listTrash(dbPath: dbPath);
-    } catch (_) {
-      return [];
-    }
+    return await meta_api.listTrash(dbPath: dbPath);
   }
 
   Future<void> moveToTrash(String sourcePath) async {

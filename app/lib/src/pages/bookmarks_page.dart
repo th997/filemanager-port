@@ -150,6 +150,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
       try {
         await StorageService.instance.renameBookmark(
           id: bm.id,
+          oldName: bm.name,
           newName: newName,
           root: bm.root,
           path: bm.path,
@@ -189,12 +190,24 @@ class _BookmarksPageState extends State<BookmarksPage> {
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () async {
-            await StorageService.instance.addBookmark(
-              name: bm.name,
-              root: bm.root,
-              path: bm.path,
-            );
-            _loadBookmarks();
+            // Undo is the only way back from a delete; failing silently left
+            // the bookmark gone with no hint that the restore did not work.
+            try {
+              await StorageService.instance.addBookmark(
+                name: bm.name,
+                root: bm.root,
+                path: bm.path,
+              );
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Could not restore bookmark: $e'),
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                ),
+              );
+            }
+            await _loadBookmarks();
           },
         ),
       ),

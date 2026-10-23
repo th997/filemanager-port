@@ -383,7 +383,9 @@ class _TrashPageState extends State<TrashPage> {
             IconButton(
               icon: const Icon(Icons.delete_sweep),
               tooltip: 'Empty Recycle Bin',
-              onPressed: _clearAll,
+              // Emptying mid-restore deleted items the restore loop was
+              // still working on, and left the final count wrong.
+              onPressed: _restoringTotal > 0 ? null : _clearAll,
             ),
           ],
         ],
@@ -473,13 +475,17 @@ class _TrashPageState extends State<TrashPage> {
                                         icon: Icons.restore,
                                         color: Colors.green,
                                         tooltip: 'Restore',
-                                        onPressed: () => _restore(item),
+                                        onPressed: _restoringTotal > 0
+                                            ? null
+                                            : () => _restore(item),
                                       ),
                                       AppIconButton(
                                         icon: Icons.delete_forever,
                                         color: Colors.red,
                                         tooltip: 'Delete Permanently',
-                                        onPressed: () => _delete(item),
+                                        onPressed: _restoringTotal > 0
+                                            ? null
+                                            : () => _delete(item),
                                       ),
                                     ],
                                   ),
