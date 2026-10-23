@@ -316,7 +316,13 @@ class _TasksPageState extends State<TasksPage> {
                 icon: Icons.clear,
                 tooltip: AppLocalizations.of(context).dismiss,
                 onPressed: () {
-                  TaskService.instance.dismiss(t.id);
+                  if (!TaskService.instance.dismiss(t.id)) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Could not dismiss task')),
+                      );
+                    }
+                  }
                   _refresh();
                 },
               ),

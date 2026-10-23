@@ -379,6 +379,20 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
 
                   if (_serverRunning && _serverStatus != null) ...[
                     const Divider(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.folder_shared, size: 16, color: Colors.green),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${isZh ? '共享目录' : 'Shared'}: ${_friendlyPath(_shareRoot)}${_readOnly ? (isZh ? ' (只读)' : ' (read-only)') : ''}',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       isZh
                           ? '同一 Wi-Fi 下任何浏览器输入以下地址即可访问：'
@@ -386,7 +400,18 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 4),
-                    ..._serverStatus!.addresses.map((ip) {
+                    if (_serverStatus!.addresses.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          isZh
+                              ? '未检测到局域网 IP，请连接 Wi-Fi 或网线。'
+                              : 'No local IP address detected. Connect to Wi-Fi or LAN.',
+                          style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
+                        ),
+                      )
+                    else
+                      ..._serverStatus!.addresses.map((ip) {
                       final url = 'http://$ip:${_serverStatus!.port}';
                       return Container(
                         margin: const EdgeInsets.symmetric(vertical: 2),

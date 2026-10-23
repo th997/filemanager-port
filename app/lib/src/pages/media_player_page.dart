@@ -405,6 +405,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
         child: PopScope(
           canPop: true,
           onPopInvokedWithResult: (didPop, _) {
+            _saveResumePosition();
             _player.stop();
           },
           child: Scaffold(
@@ -413,6 +414,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () async {
+                  _saveResumePosition();
                   await _player.stop();
                   if (context.mounted) {
                     Navigator.of(context).maybePop();

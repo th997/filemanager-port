@@ -2047,11 +2047,21 @@ class BrowserPageState extends State<BrowserPage> {
             controller: ctrl,
             autofocus: true,
             decoration: const InputDecoration(labelText: 'Folder Name', border: OutlineInputBorder()),
-            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+            onSubmitted: (v) {
+              if (v.trim().isNotEmpty) Navigator.of(ctx).pop(v.trim());
+            },
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Create')),
+            ListenableBuilder(
+              listenable: ctrl,
+              builder: (ctx, _) => FilledButton(
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                child: const Text('Create'),
+              ),
+            ),
           ],
         ),
       );
@@ -2088,11 +2098,21 @@ class BrowserPageState extends State<BrowserPage> {
               hintText: 'e.g. notes.txt',
               border: OutlineInputBorder(),
             ),
-            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+            onSubmitted: (v) {
+              if (v.trim().isNotEmpty) Navigator.of(ctx).pop(v.trim());
+            },
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Create')),
+            ListenableBuilder(
+              listenable: ctrl,
+              builder: (ctx, _) => FilledButton(
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                child: const Text('Create'),
+              ),
+            ),
           ],
         ),
       );
@@ -3037,14 +3057,14 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.delete, shift: true): () {
-          if (_isSelecting && _canWrite) {
+          if (!_isTyping && _isSelecting && _canWrite) {
             _deleteSelected(permanent: true);
           }
         },
         // The Mac "delete" key reports backspace, so Shift+Delete has to be
         // matched on backspace there; otherwise permanent delete is unreachable.
         const SingleActivator(LogicalKeyboardKey.backspace, shift: true): () {
-          if (Platform.isMacOS && _isSelecting && _canWrite) {
+          if (!_isTyping && Platform.isMacOS && _isSelecting && _canWrite) {
             _deleteSelected(permanent: true);
           }
         },
@@ -3056,9 +3076,9 @@ class BrowserPageState extends State<BrowserPage> {
           setState(() => _isGrid = !_isGrid);
           _saveViewPreferences();
         },
-        const SingleActivator(LogicalKeyboardKey.f5): _load,
-        const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
-        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _load,
+        const SingleActivator(LogicalKeyboardKey.f5): () => _load(refresh: true),
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () => _load(refresh: true),
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () => _load(refresh: true),
         const SingleActivator(LogicalKeyboardKey.keyH, control: true): () {
           setState(() => _showHidden = !_showHidden);
           _saveViewPreferences();
@@ -3087,7 +3107,7 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.delete): () {
-          if (_isSelecting && _canWrite) {
+          if (!_isTyping && _isSelecting && _canWrite) {
             _deleteSelected();
           }
         },

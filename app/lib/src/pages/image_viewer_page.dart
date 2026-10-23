@@ -257,20 +257,22 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Image Details'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _detailRow('Name', entry.name),
-            if (dimensions != null)
-              _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
-            if (dateTaken != null) _detailRow('Date taken', dateTaken),
-            if (camera != null) _detailRow('Camera', camera),
-            if (gpsText != null) _detailRow('Location', gpsText),
-            _detailRow('Size', _formatSize(stat.size)),
-            _detailRow('Modified', stat.modified.toString().split('.').first),
-            _detailRow('Path', imagePath),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _detailRow('Name', entry.name),
+              if (dimensions != null)
+                _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
+              if (dateTaken != null) _detailRow('Date taken', dateTaken),
+              if (camera != null) _detailRow('Camera', camera),
+              if (gpsText != null) _detailRow('Location', gpsText),
+              _detailRow('Size', _formatSize(stat.size)),
+              _detailRow('Modified', stat.modified.toString().split('.').first),
+              _detailRow('Path', imagePath),
+            ],
+          ),
         ),
         actions: [
           FilledButton.tonalIcon(

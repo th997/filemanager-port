@@ -114,16 +114,50 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     _load();
   }
 
+  bool get _canGoUp {
+    if (_relPath.isNotEmpty) return true;
+    if (isNativeRoot(_root)) {
+      final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      return parts.length > 1 || (parts.length == 1 && !RegExp(r'^[a-zA-Z]:$').hasMatch(parts.first));
+    }
+    return false;
+  }
+
   void _up() {
-    if (_relPath.isEmpty) return;
-    final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-    segments.removeLast();
-    setState(() {
-      _relPath = segments.join('/');
-      _filterQuery = '';
-      _filterController.clear();
-    });
-    _load();
+    if (_relPath.isNotEmpty) {
+      final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
+      segments.removeLast();
+      setState(() {
+        _relPath = segments.join('/');
+        _filterQuery = '';
+        _filterController.clear();
+      });
+      _load();
+      return;
+    }
+    if (isNativeRoot(_root)) {
+      final isWindows = _root.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(_root);
+      final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      if (parts.length > 1) {
+        parts.removeLast();
+        final newRoot = isWindows ? parts.join('\\') : '/${parts.join('/')}';
+        setState(() {
+          _root = newRoot;
+          _relPath = '';
+          _filterQuery = '';
+          _filterController.clear();
+        });
+        _load();
+      } else if (parts.length == 1 && !isWindows) {
+        setState(() {
+          _root = '/';
+          _relPath = '';
+          _filterQuery = '';
+          _filterController.clear();
+        });
+        _load();
+      }
+    }
   }
 
   Future<void> _createNewFolder() async {
@@ -213,8 +247,12 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                         child: ActionChip(
                           label: Text(target.name, style: const TextStyle(fontSize: 12)),
                           onPressed: () {
-                            _root = target.root;
-                            _relPath = target.relPath;
+                            setState(() {
+                              _root = target.root;
+                              _relPath = target.relPath;
+                              _filterQuery = '';
+                              _filterController.clear();
+                            });
                             _load();
                           },
                         ),
@@ -228,7 +266,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                 IconButton(
                   icon: const Icon(Icons.arrow_upward),
                   tooltip: 'Parent folder',
-                  onPressed: _relPath.isEmpty ? null : _up,
+                  onPressed: _canGoUp ? _up : null,
                 ),
                 Expanded(
                   child: InkWell(

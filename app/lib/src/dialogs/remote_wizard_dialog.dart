@@ -179,6 +179,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   }
 
   Future<void> _testConnection() async {
+    if (!_formKey.currentState!.validate()) return;
     final portError = _portError();
     if (portError != null) {
       setState(() {
