@@ -305,14 +305,13 @@ pub async fn start_move_task(
                     // it on most backends, so only take the shortcut when
                     // overwriting is allowed or the name is free.
                     let dst_taken = dst_vfs.stat(&dst_p).await.is_ok();
-                    if !dst_taken || policy == ConflictPolicy::Overwrite {
-                        if src_vfs.capabilities().rename
-                            && src_vfs.rename(&src_p, &dst_p).await.is_ok()
-                        {
-                            let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-                            p.completed += 1;
-                            continue;
-                        }
+                    if (!dst_taken || policy == ConflictPolicy::Overwrite)
+                        && src_vfs.capabilities().rename
+                        && src_vfs.rename(&src_p, &dst_p).await.is_ok()
+                    {
+                        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                        p.completed += 1;
+                        continue;
                     }
                 }
                 let created = dst_vfs.stat(&dst_p).await.is_err();
