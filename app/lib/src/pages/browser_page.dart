@@ -3160,7 +3160,7 @@ class BrowserPageState extends State<BrowserPage> {
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(4),
                     constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                    tooltip: 'Back',
+                    tooltip: 'Back to previous page',
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 : null),
@@ -3629,13 +3629,18 @@ class BrowserPageState extends State<BrowserPage> {
                     tooltip: 'Cancel selection (Esc)',
                     onPressed: _clearSelection,
                   )
-                else if (!compact && Navigator.of(context).canPop())
+                // Embedded split panes have no route of their own to pop;
+                // without this guard each pane grew its own back arrow that
+                // closed the whole split view.
+                else if (!compact &&
+                    !widget.embedded &&
+                    Navigator.of(context).canPop())
                   IconButton(
                     icon: const Icon(Icons.arrow_back, size: 18),
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(4),
                     constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                    tooltip: 'Back',
+                    tooltip: 'Back to previous page',
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 Expanded(child: _toolbarContent(segments)),
@@ -3723,18 +3728,20 @@ class BrowserPageState extends State<BrowserPage> {
       child: Row(
         children: [
           if (!isCompact) ...[
+            // Chevrons, not arrows: the plain arrow at the far left of the
+            // bar leaves the page, this one only walks folder history.
             AppIconButton(
-              icon: Icons.arrow_back,
+              icon: Icons.chevron_left,
               size: 28,
               iconSize: 16,
-              tooltip: 'Back (Alt+←)',
+              tooltip: 'Back in history (Alt+←)',
               onPressed: _backStack.isEmpty ? null : _goBack,
             ),
             AppIconButton(
-              icon: Icons.arrow_forward,
+              icon: Icons.chevron_right,
               size: 28,
               iconSize: 16,
-              tooltip: 'Forward (Alt+→)',
+              tooltip: 'Forward in history (Alt+→)',
               onPressed: _forwardStack.isEmpty ? null : _goForward,
             ),
           ],
