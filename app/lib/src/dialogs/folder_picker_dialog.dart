@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
@@ -150,14 +151,16 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
           ),
-          FilledButton(
-            onPressed: () {
-              final val = nameController.text.trim();
-              if (val.isNotEmpty) {
-                Navigator.of(ctx).pop(val);
-              }
-            },
-            child: const Text('Create'),
+          // An empty name used to leave the dialog open with no hint about
+          // why nothing happened.
+          ListenableBuilder(
+            listenable: nameController,
+            builder: (ctx, _) => FilledButton(
+              onPressed: nameController.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.of(ctx).pop(nameController.text.trim()),
+              child: const Text('Create'),
+            ),
           ),
         ],
       ),
@@ -228,11 +231,22 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                   onPressed: _relPath.isEmpty ? null : _up,
                 ),
                 Expanded(
-                  child: Text(
-                    _currentPath,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                  child: InkWell(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: _currentPath));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Path copied to clipboard')),
+                      );
+                    },
+                    child: Tooltip(
+                      message: 'Click to copy path',
+                      child: Text(
+                        _currentPath,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                      ),
+                    ),
                   ),
                 ),
                 IconButton(

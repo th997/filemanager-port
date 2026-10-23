@@ -20,6 +20,7 @@ import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../theme/app_ui_tokens.dart';
 import '../widgets/entry_thumbnail.dart';
 import 'image_viewer_page.dart';
 import 'media_player_page.dart';
@@ -77,6 +78,9 @@ class BrowserPageState extends State<BrowserPage> {
   late String _relPath;
   List<EntryItem> _entries = [];
   bool _loading = false;
+  /// A refresh keeps the old list on screen, so without this the F5 / Cmd+R
+  /// shortcut (and the pull-to-refresh) looked like it did nothing.
+  bool _refreshing = false;
   String? _error;
   CapabilitiesDto? _capabilities;
 
@@ -180,6 +184,8 @@ class BrowserPageState extends State<BrowserPage> {
   /// Set while a tile drag (stage H) is in flight so the lasso stands down.
   bool _itemDragActive = false;
   final Set<String> _selectedPaths = <String>{};
+  double _swipeStartX = 0;
+  double _swipeDeltaX = 0;
 
   String get _selectedSummary {
     final count = _selectedPaths.length;
@@ -376,6 +382,34 @@ class BrowserPageState extends State<BrowserPage> {
     _load();
   }
 
+  void _handleSwipeBack() {
+    if (_isSelecting) {
+      _clearSelection();
+      return;
+    }
+    if (_isSearching) {
+      setState(() {
+        _isSearching = false;
+        _filterQuery = '';
+        _searchController.clear();
+        _searchResults = [];
+        _searchBusy = false;
+      });
+      return;
+    }
+    if (_backStack.isNotEmpty) {
+      _goBack();
+      return;
+    }
+    if (_canNavigateUp) {
+      _navigateUp();
+      return;
+    }
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   void navigateTo(String root, String relPath) {
     setState(() {
       _root = root;
@@ -456,6 +490,7 @@ class BrowserPageState extends State<BrowserPage> {
       // A refresh keeps the current list on screen; swapping it for a spinner
       // would drop the scroll offset and flash the whole page.
       if (!refresh) _loading = true;
+      if (refresh) _refreshing = true;
       if (!refresh) _selectionAnchor = null;
       // Navigating (a non-refresh load) leaves search behind: the results
       // belonged to the folder the user just left.
@@ -492,6 +527,7 @@ class BrowserPageState extends State<BrowserPage> {
         _hasMore = paged.hasMore;
         _totalCount = paged.total;
         _loading = false;
+        _refreshing = false;
       });
       if (!refresh && _scrollController.hasClients) {
         _scrollController.jumpTo(0);
@@ -510,7 +546,10 @@ class BrowserPageState extends State<BrowserPage> {
           // A failed refresh must not nuke a list the user is looking at
           // (a network blip on a remote folder used to replace the whole
           // page with an error). Keep the entries; report via snackbar.
-          setState(() => _loading = false);
+          setState(() {
+            _loading = false;
+            _refreshing = false;
+          });
           _showError('Refresh failed: ${_friendlyError(e)}');
         } else {
           setState(() {
@@ -521,6 +560,7 @@ class BrowserPageState extends State<BrowserPage> {
             _hasMore = false;
             _capabilities = null;
             _loading = false;
+            _refreshing = false;
           });
         }
       }
@@ -960,7 +1000,12 @@ class BrowserPageState extends State<BrowserPage> {
   /// results take over the body; the old behaviour — filtering only what
   /// was already fetched — made files in subfolders unfindable.
   void _onFilterChanged(String value) {
-    setState(() => _filterQuery = value);
+    // The anchor is an index into the visible list; the filter reorders that
+    // list, so a stale anchor made the next Shift-click select the wrong span.
+    setState(() {
+      _filterQuery = value;
+      _selectionAnchor = null;
+    });
     _searchDebounce?.cancel();
     final query = value.trim();
     if (query.length < 2) {
@@ -1031,6 +1076,18 @@ class BrowserPageState extends State<BrowserPage> {
               const Text(
                 'Searched this folder and its subfolders.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.clear, size: 16),
+                label: const Text('Clear search'),
+                onPressed: () {
+                  setState(() {
+                    _filterQuery = '';
+                    _searchController.clear();
+                    _isSearching = false;
+                  });
+                },
               ),
             ],
           ),
@@ -1108,6 +1165,10 @@ class BrowserPageState extends State<BrowserPage> {
     final match = _entries.where((e) => e.name == item.name).firstOrNull;
     if (match != null) _openEntry(match);
   }
+
+  /// True while the address or search field holds the keyboard. Page-wide
+  /// shortcuts (Cmd+A, C/X/V, `/`) must not steal those keys from typing.
+  bool get _isTyping => _isEditingAddress || _searchFocusNode.hasFocus;
 
   void _showError(String message) {
     if (!mounted) return;
@@ -1764,8 +1825,13 @@ class BrowserPageState extends State<BrowserPage> {
     final list = _filteredAndSortedEntries;
     final lo = a < b ? a : b;
     final hi = a < b ? b : a;
+    final kb = HardwareKeyboard.instance;
+    // Shift alone starts a fresh range, like every desktop file manager;
+    // Ctrl/Shift adds to what is already selected.
+    final additive = kb.isControlPressed || kb.isMetaPressed;
     setState(() {
       _isSelecting = true;
+      if (!additive) _selectedPaths.clear();
       for (var i = lo; i <= hi && i < list.length; i++) {
         _selectedPaths.add(_fullEntryPath(list[i]));
       }
@@ -1792,7 +1858,10 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _selectAll() async {
     if (_hasMore && _totalCount > 0) {
       if (_totalCount > 10000) {
+        // Returning matters: falling through selected only the loaded pages,
+        // so the counter claimed a selection that was not the whole folder.
         _showError('Too many items to select all at once ($_totalCount)');
+        return;
       } else {
         try {
           final paged = await listDirPaged(
@@ -2189,7 +2258,13 @@ class BrowserPageState extends State<BrowserPage> {
   /// over, conflict prompt included.
   Future<void> _handleExternalDrop(DropDoneDetails details) async {
     final files = details.files;
-    if (files.isEmpty || !_canWrite) return;
+    if (files.isEmpty) return;
+    if (!_canWrite) {
+      // The drop target accepted the drag but nothing landed, with no
+      // explanation, so a read-only folder looked like a broken app.
+      _showError('This location is read-only — cannot drop files here');
+      return;
+    }
     final byParent = <String, List<String>>{};
     for (final f in files) {
       final full = f.path.replaceAll('\\', '/');
@@ -2231,7 +2306,12 @@ class BrowserPageState extends State<BrowserPage> {
       if (!isCut) return true;
       return destRel != p && !destRel.startsWith('$p/');
     }).toList();
-    if (safe.isEmpty) return;
+    if (safe.isEmpty) {
+      // The drag landed but nothing happened; say why instead of silently
+      // swallowing a folder dropped onto itself.
+      _showError('Cannot drop a folder onto itself or into its own subfolder');
+      return;
+    }
     await _transfer(
       srcRoot: data.root,
       paths: safe,
@@ -2286,6 +2366,10 @@ class BrowserPageState extends State<BrowserPage> {
       child: child,
     );
     if (item.isDir || item.isArchive) {
+      // The builder closure must wrap the Draggable, not `draggable` itself:
+      // capturing the variable after reassignment would nest the DragTarget
+      // inside its own builder and recurse until the stack overflows.
+      final dragSource = draggable;
       draggable = DragTarget<({String root, List<String> paths})>(
         onWillAcceptWithDetails: (details) {
           final d = details.data;
@@ -2307,7 +2391,7 @@ class BrowserPageState extends State<BrowserPage> {
                   borderRadius: BorderRadius.circular(6),
                 )
               : null,
-          child: draggable,
+          child: dragSource,
         ),
       );
     }
@@ -2864,12 +2948,27 @@ class BrowserPageState extends State<BrowserPage> {
 
     return _withDropTarget(CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyA, control: true): _selectAll,
-        const SingleActivator(LogicalKeyboardKey.keyA, meta: true): _selectAll,
-        const SingleActivator(LogicalKeyboardKey.keyA, control: true, shift: true): _invertSelection,
-        const SingleActivator(LogicalKeyboardKey.keyA, meta: true, shift: true): _invertSelection,
-        const SingleActivator(LogicalKeyboardKey.keyI, control: true): _invertSelection,
-        const SingleActivator(LogicalKeyboardKey.keyI, meta: true): _invertSelection,
+        // Shortcuts sit above the address and search fields, so they must not
+        // fire while one of them has the keyboard: Cmd+A has to select the
+        // field text, not every file. The guards live in the handlers.
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true): () {
+          if (!_isTyping) _selectAll();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyA, meta: true): () {
+          if (!_isTyping) _selectAll();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true, shift: true): () {
+          if (!_isTyping) _invertSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyA, meta: true, shift: true): () {
+          if (!_isTyping) _invertSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyI, control: true): () {
+          if (!_isTyping) _invertSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyI, meta: true): () {
+          if (!_isTyping) _invertSelection();
+        },
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
           setState(() => _isSearching = true);
           _searchFocusNode.requestFocus();
@@ -2880,41 +2979,42 @@ class BrowserPageState extends State<BrowserPage> {
         },
         // `/` is the muscle-memory filter key in most file managers.
         const SingleActivator(LogicalKeyboardKey.slash): () {
+          if (_isTyping) return;
           setState(() => _isSearching = true);
           _searchFocusNode.requestFocus();
         },
         const SingleActivator(LogicalKeyboardKey.keyC, control: true): () {
-          if (_isSelecting && _selectedPaths.isNotEmpty) {
+          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty) {
             _copySelected(isCut: false);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
-          if (_isSelecting && _selectedPaths.isNotEmpty) {
+          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty) {
             _copySelected(isCut: false);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyX, control: true): () {
-          if (_isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
+          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
             _copySelected(isCut: true);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyX, meta: true): () {
-          if (_isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
+          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
             _copySelected(isCut: true);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyV, control: true): () {
-          if (_clipboard != null && _canWrite) {
+          if (!_isTyping && _clipboard != null && _canWrite) {
             _paste();
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
-          if (_clipboard != null && _canWrite) {
+          if (!_isTyping && _clipboard != null && _canWrite) {
             _paste();
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
-          if (_isSelecting && _selectedPaths.length == 1 && _canWrite) {
+          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite) {
             final item = _entries.firstWhere(
               (e) => _fullEntryPath(e) == _selectedPaths.first,
               orElse: () => _entries.first,
@@ -2923,7 +3023,7 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
-          if (_isSelecting && _selectedPaths.length == 1 && _canWrite) {
+          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite) {
             final item = _entries.firstWhere(
               (e) => _fullEntryPath(e) == _selectedPaths.first,
               orElse: () => _entries.first,
@@ -2938,6 +3038,13 @@ class BrowserPageState extends State<BrowserPage> {
         },
         const SingleActivator(LogicalKeyboardKey.delete, shift: true): () {
           if (_isSelecting && _canWrite) {
+            _deleteSelected(permanent: true);
+          }
+        },
+        // The Mac "delete" key reports backspace, so Shift+Delete has to be
+        // matched on backspace there; otherwise permanent delete is unreachable.
+        const SingleActivator(LogicalKeyboardKey.backspace, shift: true): () {
+          if (Platform.isMacOS && _isSelecting && _canWrite) {
             _deleteSelected(permanent: true);
           }
         },
@@ -2985,7 +3092,13 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.backspace): () {
-          if (!_isEditingAddress && !_isSearching) {
+          // On a Mac keyboard "delete" reports backspace. With files selected
+          // it has to delete them; navigating up left the folder instead.
+          // Elsewhere Backspace keeps its Explorer-style "go up" meaning.
+          if (_isTyping) return;
+          if (Platform.isMacOS && _isSelecting && _canWrite) {
+            _deleteSelected();
+          } else if (!_isSearching) {
             _navigateUp();
           }
         },
@@ -3029,8 +3142,9 @@ class BrowserPageState extends State<BrowserPage> {
       },
       child: Scaffold(
       appBar: PreferencesService.toolbarAtBottom.value ? null : AppBar(
-        titleSpacing: 4,
+        titleSpacing: MediaQuery.sizeOf(context).width < 600 ? 10 : 4,
         toolbarHeight: MediaQuery.sizeOf(context).width < 600 ? 40 : 46,
+        automaticallyImplyLeading: false,
         leading: _isSelecting
             ? IconButton(
                 icon: const Icon(Icons.close, size: 18),
@@ -3040,7 +3154,7 @@ class BrowserPageState extends State<BrowserPage> {
                 tooltip: 'Cancel selection (Esc)',
                 onPressed: _clearSelection,
               )
-            : (!widget.embedded && Navigator.of(context).canPop()
+            : (MediaQuery.sizeOf(context).width >= 600 && !widget.embedded && Navigator.of(context).canPop()
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back, size: 18),
                     visualDensity: VisualDensity.compact,
@@ -3054,12 +3168,40 @@ class BrowserPageState extends State<BrowserPage> {
       ),
       bottomNavigationBar:
           PreferencesService.toolbarAtBottom.value ? _buildBottomToolbar(segments) : null,
-      body: Column(
-        children: [
-          _buildCapabilitiesBar(),
-          Expanded(child: _buildBody()),
-          if (_isSelecting || _clipboard != null) _buildBottomActionBar(),
-        ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (details) {
+          _swipeStartX = details.globalPosition.dx;
+          _swipeDeltaX = 0;
+        },
+        onHorizontalDragUpdate: (details) {
+          _swipeDeltaX = details.globalPosition.dx - _swipeStartX;
+        },
+        onHorizontalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          final fromLeftEdge = _swipeStartX < 140;
+          if (fromLeftEdge && (_swipeDeltaX > 35 || (velocity > 260 && _swipeDeltaX > 20))) {
+            _handleSwipeBack();
+          } else if ((velocity < -260 && _swipeDeltaX < -25) && _forwardStack.isNotEmpty) {
+            _goForward();
+          }
+          _swipeStartX = 0;
+          _swipeDeltaX = 0;
+        },
+        onHorizontalDragCancel: () {
+          _swipeStartX = 0;
+          _swipeDeltaX = 0;
+        },
+        child: Column(
+          children: [
+            // A refresh keeps the list, so it needs its own progress line —
+            // otherwise F5 and pull-to-refresh look like a no-op.
+            if (_refreshing) const LinearProgressIndicator(minHeight: 2),
+            _buildCapabilitiesBar(),
+            Expanded(child: _buildBody()),
+            if (_isSelecting || _clipboard != null) _buildBottomActionBar(),
+          ],
+        ),
       ),
       ),
     ),
@@ -3076,20 +3218,22 @@ class BrowserPageState extends State<BrowserPage> {
       scrollDirection: Axis.horizontal,
       child: Row(mainAxisSize: MainAxisSize.min, children: _toolbarActions()),
     );
-    // The search field and the selection summary need the whole bar.
-    if (_isSearching || _isSelecting) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    // The search field, selection summary, or narrow phone screens need the whole bar.
+    if (_isSearching || _isSelecting || isCompact) {
       return Row(
         children: [
           Expanded(child: _buildToolbarTitle(segments)),
+          const SizedBox(width: 4),
           actions,
         ],
       );
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        // The address bar keeps a stable width; the icon row scrolls once the
-        // window is too narrow to fit every action.
-        final addressWidth = (constraints.maxWidth * 0.45).clamp(150.0, 320.0);
+        // On desktop, the address bar keeps a stable width; the icon row scrolls
+        // once the window is too narrow to fit every action.
+        final addressWidth = (constraints.maxWidth * 0.45).clamp(200.0, 420.0);
         return Row(
           children: [
             SizedBox(width: addressWidth, child: _buildToolbarTitle(segments)),
@@ -3151,9 +3295,89 @@ class BrowserPageState extends State<BrowserPage> {
             : _buildUnifiedAddressBar(segments));
   }
 
+  void _showSortBottomSheet() {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: StatefulBuilder(
+          builder: (ctx, setModalState) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        isZh ? '排序方式' : 'Sort By',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      TextButton.icon(
+                        icon: Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 16),
+                        label: Text(_sortAsc ? (isZh ? '升序' : 'Ascending') : (isZh ? '降序' : 'Descending')),
+                        onPressed: () {
+                          setState(() => _sortAsc = !_sortAsc);
+                          setModalState(() {});
+                          _saveViewPreferences();
+                          _load();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                for (final field in SortField.values)
+                  ListTile(
+                    leading: Icon(
+                      _sortField == field ? Icons.check : null,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
+                    ),
+                    title: Text(
+                      isZh
+                          ? (field == SortField.name
+                              ? '按名称'
+                              : field == SortField.size
+                                  ? '按大小'
+                                  : field == SortField.modified
+                                      ? '按修改日期'
+                                      : '按文件类型')
+                          : field.label,
+                    ),
+                    trailing: _sortField == field
+                        ? Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 16)
+                        : null,
+                    onTap: () {
+                      setState(() {
+                        if (_sortField == field) {
+                          _sortAsc = !_sortAsc;
+                        } else {
+                          _sortField = field;
+                          _sortAsc = field == SortField.name || field == SortField.type;
+                        }
+                      });
+                      _saveViewPreferences();
+                      _load();
+                      Navigator.pop(ctx);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _toolbarActions() {
     // Phones get a tighter bar so more icons fit before scrolling.
     final compact = MediaQuery.sizeOf(context).width < 600;
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     Widget action(IconData icon, String tooltip, VoidCallback onPressed) {
       // `shrinkWrap` drops the 48px Material tap-target box, which otherwise
       // leaves a wide gap between neighbouring icons.
@@ -3168,11 +3392,15 @@ class BrowserPageState extends State<BrowserPage> {
       );
     }
 
+    if (_isSelecting) {
+      return [
+        action(Icons.select_all, isZh ? '全选' : 'Select All (Ctrl+A)', _selectAll),
+        action(Icons.swap_horiz, isZh ? '反选' : 'Invert Selection (Ctrl+Shift+A)', _invertSelection),
+      ];
+    }
+
     return [
-      if (_isSelecting) ...[
-        action(Icons.select_all, 'Select All (Ctrl+A)', _selectAll),
-        action(Icons.swap_horiz, 'Invert Selection (Ctrl+Shift+A)', _invertSelection),
-      ] else ...[
+      if (!compact) ...[
         action(
           _isSearching ? Icons.search_off : Icons.search,
           'Search',
@@ -3200,11 +3428,11 @@ class BrowserPageState extends State<BrowserPage> {
         ),
         // Sorting lives one tap from the list instead of two menus deep.
         PopupMenuButton<SortField>(
-          tooltip: 'Sort',
+          // The current order was only visible inside the opened menu, so the
+          // button looked identical whatever the list was sorted by.
+          tooltip: 'Sort: ${_sortField.label} ${_sortAsc ? '↑' : '↓'}',
           icon: Icon(Icons.sort, size: compact ? 18 : 20),
           padding: EdgeInsets.zero,
-          // `constraints` here sizes the *menu*, not the button; a tight box
-          // collapsed the popup to the icon's footprint and clipped every row.
           style: IconButton.styleFrom(
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             fixedSize: Size.square(compact ? 28 : 30),
@@ -3219,8 +3447,6 @@ class BrowserPageState extends State<BrowserPage> {
               }
             });
             _saveViewPreferences();
-            // Sorting happens on the Rust side now: refetch page one in
-            // the new order instead of reshuffling the loaded subset.
             _load();
           },
           itemBuilder: (ctx) => [
@@ -3235,41 +3461,108 @@ class BrowserPageState extends State<BrowserPage> {
               ),
           ],
         ),
-        if (Navigator.of(context).canPop())
-          action(
-            Icons.home_outlined,
-            'Home Dashboard',
-            () => Navigator.of(context).popUntil((route) => route.isFirst),
-          ),
-        PopupMenuButton<String>(
-          tooltip: 'Options',
-          icon: Icon(Icons.more_vert, size: compact ? 18 : 20),
-          padding: EdgeInsets.zero,
-          style: IconButton.styleFrom(
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            fixedSize: Size.square(compact ? 28 : 30),
-          ),
-          onSelected: (val) {
-            if (val == 'toggle_hidden') {
-              setState(() => _showHidden = !_showHidden);
-            } else if (val == 'select') {
-              setState(() => _isSelecting = true);
-            }
+      ],
+      if (Navigator.of(context).canPop())
+        action(
+          Icons.home_outlined,
+          isZh ? '返回主页' : 'Home Dashboard',
+          () => Navigator.of(context).popUntil((route) => route.isFirst),
+        ),
+      PopupMenuButton<String>(
+        tooltip: isZh ? '更多选项' : 'Options',
+        icon: Icon(Icons.more_vert, size: compact ? 18 : 20),
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          fixedSize: Size.square(compact ? 28 : 30),
+        ),
+        onSelected: (val) {
+          if (val == 'search') {
+            setState(() {
+              _isSearching = !_isSearching;
+              if (!_isSearching) {
+                _filterQuery = '';
+                _searchController.clear();
+                _searchResults = [];
+                _searchBusy = false;
+              }
+            });
+          } else if (val == 'toggle_view') {
+            setState(() => _isGrid = !_isGrid);
             _saveViewPreferences();
-          },
-          itemBuilder: (ctx) => [
-            CheckedPopupMenuItem<String>(
-              value: 'toggle_hidden',
-              checked: _showHidden,
-              child: const Text('Show hidden files'),
+          } else if (val == 'sort') {
+            _showSortBottomSheet();
+          } else if (val == 'split') {
+            _toggleSplit();
+          } else if (val == 'select') {
+            setState(() => _isSelecting = true);
+          } else if (val == 'toggle_hidden') {
+            setState(() => _showHidden = !_showHidden);
+            _saveViewPreferences();
+          }
+        },
+        itemBuilder: (ctx) => [
+          if (compact) ...[
+            PopupMenuItem<String>(
+              value: 'search',
+              child: Row(
+                children: [
+                  Icon(_isSearching ? Icons.search_off : Icons.search, size: 18),
+                  const SizedBox(width: 8),
+                  Text(_isSearching ? (isZh ? '关闭搜索' : 'Close search') : (isZh ? '搜索文件' : 'Search files')),
+                ],
+              ),
             ),
             PopupMenuItem<String>(
-              value: 'select',
-              child: const Text('Select items'),
+              value: 'toggle_view',
+              child: Row(
+                children: [
+                  Icon(_isGrid ? Icons.view_list : Icons.grid_view, size: 18),
+                  const SizedBox(width: 8),
+                  Text(_isGrid ? (isZh ? '切换为列表视图' : 'Switch to List') : (isZh ? '切换为网格视图' : 'Switch to Grid')),
+                ],
+              ),
             ),
+            PopupMenuItem<String>(
+              value: 'sort',
+              child: Row(
+                children: [
+                  const Icon(Icons.sort, size: 18),
+                  const SizedBox(width: 8),
+                  Text(isZh ? '文件排序方式…' : 'Sort by…'),
+                ],
+              ),
+            ),
+            if (!widget.embedded)
+              PopupMenuItem<String>(
+                value: 'split',
+                child: Row(
+                  children: [
+                    const Icon(Icons.vertical_split, size: 18),
+                    const SizedBox(width: 8),
+                    Text(isZh ? '分屏浏览' : 'Split view'),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
           ],
-        ),
-      ],
+          PopupMenuItem<String>(
+            value: 'select',
+            child: Row(
+              children: [
+                const Icon(Icons.checklist, size: 18),
+                const SizedBox(width: 8),
+                Text(isZh ? '多选模式' : 'Select items'),
+              ],
+            ),
+          ),
+          CheckedPopupMenuItem<String>(
+            value: 'toggle_hidden',
+            checked: _showHidden,
+            child: Text(isZh ? '显示隐藏文件' : 'Show hidden files'),
+          ),
+        ],
+      ),
     ];
   }
 
@@ -3302,7 +3595,7 @@ class BrowserPageState extends State<BrowserPage> {
                     tooltip: 'Cancel selection (Esc)',
                     onPressed: _clearSelection,
                   )
-                else if (Navigator.of(context).canPop())
+                else if (!compact && Navigator.of(context).canPop())
                   IconButton(
                     icon: const Icon(Icons.arrow_back, size: 18),
                     visualDensity: VisualDensity.compact,
@@ -3383,54 +3676,57 @@ class BrowserPageState extends State<BrowserPage> {
       rootLabel = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? _root;
     }
 
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+
     return Container(
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: AppUiTokens.borderRadiusMd,
         border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, size: 16),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Back (Alt+←)',
-            onPressed: _backStack.isEmpty ? null : _goBack,
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward, size: 16),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Forward (Alt+→)',
-            onPressed: _forwardStack.isEmpty ? null : _goForward,
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_upward, size: 16),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Up one level',
-            onPressed: _canNavigateUp ? _navigateUp : null,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 16),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Refresh',
-            onPressed: _load,
-          ),
-          Container(
-            height: 16,
-            width: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-          ),
+          if (!isCompact) ...[
+            AppIconButton(
+              icon: Icons.arrow_back,
+              size: 28,
+              iconSize: 16,
+              tooltip: 'Back (Alt+←)',
+              onPressed: _backStack.isEmpty ? null : _goBack,
+            ),
+            AppIconButton(
+              icon: Icons.arrow_forward,
+              size: 28,
+              iconSize: 16,
+              tooltip: 'Forward (Alt+→)',
+              onPressed: _forwardStack.isEmpty ? null : _goForward,
+            ),
+          ],
+          if (!isCompact || _canNavigateUp)
+            AppIconButton(
+              icon: Icons.arrow_upward,
+              size: 28,
+              iconSize: 16,
+              tooltip: 'Up one level',
+              onPressed: _canNavigateUp ? _navigateUp : null,
+            ),
+          if (!isCompact)
+            AppIconButton(
+              icon: Icons.refresh,
+              size: 28,
+              iconSize: 16,
+              tooltip: 'Refresh',
+              onPressed: _load,
+            ),
+          if (!isCompact || _canNavigateUp)
+            Container(
+              height: 16,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+            ),
           Expanded(
             // Reversed so a deep path opens scrolled to the current folder
             // instead of the drive root; the crumb order still reads normally.
@@ -3507,7 +3803,7 @@ class BrowserPageState extends State<BrowserPage> {
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Edit address',
+            tooltip: 'Edit address (Cmd/Ctrl+L)',
             onPressed: () {
               _addressController.text = _displayFullPath;
               setState(() => _isEditingAddress = true);
@@ -3520,6 +3816,16 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Bytes of the files currently listed; folders are skipped because their
   /// size is unknown until they are walked.
+  BigInt get _selectedBytes {
+    var total = BigInt.zero;
+    for (final e in _entries) {
+      if (_selectedPaths.contains(_fullEntryPath(e)) && !e.isDir && e.size != null) {
+        total += e.size!;
+      }
+    }
+    return total;
+  }
+
   BigInt get _totalListedBytes {
     BigInt total = BigInt.zero;
     for (final e in _filteredAndSortedEntries) {
@@ -3539,6 +3845,13 @@ class BrowserPageState extends State<BrowserPage> {
   Widget _buildCapabilitiesBar() {
     final caps = _capabilities;
     if (caps == null) return const SizedBox.shrink();
+    // Clicking the item count opens search directly.
+    void openSearch() {
+      if (!_isSearching) {
+        setState(() => _isSearching = true);
+        _searchFocusNode.requestFocus();
+      }
+    }
     // On a phone the capability chips take more room than the item count they
     // sit next to, so the row keeps only the counts there.
     final showCaps = MediaQuery.sizeOf(context).width >= 600;
@@ -3557,14 +3870,21 @@ class BrowserPageState extends State<BrowserPage> {
             _capChip('remove', caps.remove),
           ],
           const Spacer(),
-          Text(
-            _filterQuery.isNotEmpty
-                ? '${_filteredAndSortedEntries.length} of ${_entries.where((e) => _showHidden || !e.hidden).length} items'
-                : '${_filteredAndSortedEntries.length} items'
-            '${_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : ''}'
-            '${!_showHidden && _entries.any((e) => e.hidden) ? '  •  hidden files off' : ''}'
-            '${_hasMore ? ' (more below)' : ''}',
-            style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          InkWell(
+            onTap: openSearch,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              child: Text(
+                _filterQuery.isNotEmpty
+                    ? '${_filteredAndSortedEntries.length} of ${_entries.where((e) => _showHidden || !e.hidden).length} items'
+                    : '${_filteredAndSortedEntries.length} items'
+                '${_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : ''}'
+                '${!_showHidden && _entries.any((e) => e.hidden) ? '  •  hidden files off' : ''}'
+                '${_hasMore ? ' (more below)' : ''}',
+                style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
           ),
         ],
       ),
@@ -3586,6 +3906,10 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Widget _buildBottomActionBar() {
+    final selectionSize = _selectedBytes;
+    final selectionLabel = selectionSize > BigInt.zero
+        ? '${_selectedPaths.length} selected (${_formatBytes(selectionSize)})'
+        : '${_selectedPaths.length} selected';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -3600,6 +3924,17 @@ class BrowserPageState extends State<BrowserPage> {
             if (_isSelecting) ...[
               if (_isRemoteOrArchive(_root))
                 _actionButton(Icons.download, 'Download', _downloadSelected, color: Colors.blue),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  selectionLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
               _actionButton(Icons.copy, 'Copy', () => _copySelected(isCut: false)),
               if (_canWrite) ...[
                 _actionButton(Icons.cut, 'Cut', () => _copySelected(isCut: true)),
@@ -3731,9 +4066,14 @@ class BrowserPageState extends State<BrowserPage> {
                           icon: const Icon(Icons.clear, size: 16),
                           label: const Text('Clear Filter'),
                           onPressed: () {
+                            // Leaving `_isSearching` on kept an empty search
+                            // box open after the filter it belonged to was gone.
                             setState(() {
                               _filterQuery = '';
                               _searchController.clear();
+                              _searchResults = [];
+                              _searchBusy = false;
+                              _isSearching = false;
                             });
                           },
                         ),

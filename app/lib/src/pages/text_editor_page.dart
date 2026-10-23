@@ -6,6 +6,7 @@ import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart
 import '../rust/api/file_manager.dart';
 import '../services/highlight_service.dart';
 import '../services/preferences_service.dart';
+import '../theme/app_ui_tokens.dart';
 
 enum TextFileMode { preview, code, edit }
 
@@ -146,7 +147,17 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     if (input == null || input.isEmpty) return;
     final targetLine = int.tryParse(input);
-    if (targetLine == null || targetLine < 1) return;
+    if (targetLine == null || targetLine < 1) {
+      // The dialog used to close and quietly do nothing.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Enter a line number between 1 and $totalLines'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
 
     final lines = text.split('\n');
     final clampedLine = targetLine.clamp(1, lines.length);
@@ -384,7 +395,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
   Widget build(BuildContext context) {
     final canPreview = _isMarkdown || _isHtml;
 
-    return CallbackShortcuts(
+    return AppSwipeBack(
+      child: CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
           if (_isDirty && _error == null) _save();
@@ -556,6 +568,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         _saveViewPreferences();
                       } else if (val == 'goto_line') {
                         _showGoToLineDialog();
+                      } else if (val == 'reload') {
+                        _reload();
                       } else if (val == 'copy_all') {
                         Clipboard.setData(ClipboardData(text: _controller.text));
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -564,6 +578,16 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       }
                     },
                     itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: 'reload',
+                        child: Row(
+                          children: [
+                            Icon(Icons.refresh, size: 20),
+                            SizedBox(width: 8),
+                            Text('Reload from Disk (Ctrl+R)'),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: 'copy_all',
                         child: Row(
@@ -701,6 +725,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       ),
           ),
         ),
+      ),
       ),
     );
   }

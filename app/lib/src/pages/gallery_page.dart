@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/platform_paths.dart';
+import '../theme/app_ui_tokens.dart';
 import 'image_viewer_page.dart';
 
 /// One picture shown by the gallery.
@@ -97,9 +98,24 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       _albumPath = null;
       _albumTotal = 0;
     });
-    final found = Platform.isIOS || Platform.isAndroid
-        ? await _loadSystemAlbum()
-        : _scanFolders();
+    // Let the spinner paint before the synchronous folder walk starts;
+    // otherwise a large Pictures folder freezes the frame that shows it.
+    await Future<void>.delayed(Duration.zero);
+    List<_Photo> found;
+    try {
+      found = Platform.isIOS || Platform.isAndroid
+          ? await _loadSystemAlbum()
+          : _scanFolders();
+    } catch (e) {
+      // A failed scan must not leave the page on a spinner forever.
+      if (!mounted) return;
+      setState(() {
+        _photos = [];
+        _loading = false;
+        _notice = 'Could not scan for photos.\n$e';
+      });
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _photos = found;
@@ -148,8 +164,18 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     List<AssetEntity> assets;
     try {
       assets = await path.getAssetListRange(start: start, end: end);
-    } catch (_) {
-      assets = [];
+    } catch (e) {
+      // Stop paging instead of retrying on every scroll: leaving the total
+      // untouched made the scroll listener re-fire the same failing fetch.
+      if (!mounted) return;
+      setState(() {
+        _loadingMore = false;
+        _albumTotal = _photos.length;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load more photos: $e')),
+      );
+      return;
     }
     if (!mounted) return;
     setState(() {
@@ -170,9 +196,15 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     }
     // Stat each file once up front: statSync inside the sort comparator
     // cost two syscalls per comparison (thousands on a large roll).
-    final mtimes = <File, DateTime>{
-      for (final f in found) f: f.statSync().modified,
-    };
+    // A file that vanished (or became unreadable) between listing and
+    // stat is skipped rather than aborting the whole scan.
+    final mtimes = <File, DateTime>{};
+    for (final f in found) {
+      try {
+        mtimes[f] = f.statSync().modified;
+      } catch (_) {}
+    }
+    found.retainWhere(mtimes.containsKey);
     found.sort((a, b) => mtimes[b]!.compareTo(mtimes[a]!));
     return found
         .map((f) => _Photo.file(
@@ -257,30 +289,38 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _loading
-              ? 'Photos'
-              : 'Photos (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
-            tooltip: 'Rescan',
-            onPressed: _scan,
+    return AppSwipeBack(
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            _loading
+                ? 'Photos'
+                : 'Photos (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
           ),
-        ],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Rescan',
+              onPressed: _scan,
+            ),
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_photos.isEmpty) {
-      return Center(
+      return RefreshIndicator(
+        onRefresh: _scan,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -310,6 +350,10 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                 ),
               ],
             ],
+          ),
+        ),
+              ),
+            ),
           ),
         ),
       );
@@ -389,20 +433,22 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 
   Widget _buildTile(_Photo photo, int index) {
     final thumb = photo.asset;
-    return GestureDetector(
-      onTap: () => _open(index),
-      child: ClipRRect(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _open(index),
         borderRadius: BorderRadius.circular(4),
-        child: thumb != null
-            ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
-            : Image.file(
-                photo.file!,
-                fit: BoxFit.cover,
-                // Decode at thumbnail size; full-size decode of a photo
-                // roll would exhaust memory.
-                cacheWidth: 220,
-                errorBuilder: (_, _, _) => _brokenThumb(),
-              ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: thumb != null
+              ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
+              : Image.file(
+                  photo.file!,
+                  fit: BoxFit.cover,
+                  cacheWidth: 220,
+                  errorBuilder: (_, _, _) => _brokenThumb(),
+                ),
+        ),
       ),
     );
   }

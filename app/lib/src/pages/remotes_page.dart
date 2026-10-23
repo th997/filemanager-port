@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
 import '../services/storage_service.dart';
+import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 
 enum _ConnStatus { unknown, checking, online, offline }
@@ -67,8 +68,9 @@ class _RemotesPageState extends State<RemotesPage> {
   }
 
   Future<void> _loadRemotes() async {
-    final rems = await StorageService.instance.getRemotes();
-    if (mounted) {
+    try {
+      final rems = await StorageService.instance.getRemotes();
+      if (!mounted) return;
       setState(() {
         _remotes = rems;
         _loading = false;
@@ -78,6 +80,16 @@ class _RemotesPageState extends State<RemotesPage> {
       for (final r in rems) {
         _probeStatus(r);
       }
+    } catch (e) {
+      // Without this the page stays on its spinner after a storage failure.
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load connections: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -245,13 +257,14 @@ class _RemotesPageState extends State<RemotesPage> {
   Widget build(BuildContext context) {
     final displayedRemotes = _visibleRemotes;
 
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).cloudRemoteStorage, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context).cloudRemoteStorage),
         actions: [
           if (_remotes.isNotEmpty)
             IconButton(
-              icon: Icon(_showSearch ? Icons.search_off : Icons.search, size: 20),
+              icon: Icon(_showSearch ? Icons.search_off : Icons.search),
               tooltip: _showSearch ? 'Close Search' : 'Search Remotes',
               onPressed: () {
                 setState(() {
@@ -264,12 +277,12 @@ class _RemotesPageState extends State<RemotesPage> {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.add, size: 22),
+            icon: const Icon(Icons.add),
             tooltip: 'Add Connection',
             onPressed: _addRemote,
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
+            icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
             onPressed: _loadRemotes,
           ),
@@ -378,7 +391,7 @@ class _RemotesPageState extends State<RemotesPage> {
                               )
                             : ListView.builder(
                                 physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                padding: AppUiTokens.pagePadding,
                                 itemCount: displayedRemotes.length + 1,
                                 itemBuilder: (ctx, i) {
                                   if (i == displayedRemotes.length) {
@@ -400,30 +413,11 @@ class _RemotesPageState extends State<RemotesPage> {
                                       (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}');
 
                                   return Card(
-                                    elevation: 0,
-                                    margin: const EdgeInsets.symmetric(vertical: 2),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-                                    ),
                                     child: ListTile(
-                                      dense: true,
-                                      visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                                      minTileHeight: 40,
-                                      minLeadingWidth: 24,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                                       leading: Stack(
                                         clipBehavior: Clip.none,
                                         children: [
-                                          Container(
-                                            width: 30,
-                                            height: 30,
-                                            decoration: BoxDecoration(
-                                              color: color.withValues(alpha: 0.15),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: Icon(icon, size: 16, color: color),
-                                          ),
+                                          AppCircleBadge(icon: icon, color: color),
                                           Positioned(
                                             right: -1,
                                             bottom: -1,
@@ -442,45 +436,33 @@ class _RemotesPageState extends State<RemotesPage> {
                                           ),
                                         ],
                                       ),
-                                      title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                      title: Text(r.name),
                                       subtitle: Text(
                                         '${r.kind.toUpperCase()} • $sub',
-                                        style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.copy_outlined, size: 15),
-                                            visualDensity: VisualDensity.compact,
-                                            padding: const EdgeInsets.all(4),
-                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                          AppIconButton(
+                                            icon: Icons.copy_outlined,
                                             tooltip: 'Copy Connection URI',
                                             onPressed: () => _copyRemoteUri(r),
                                           ),
-                                          IconButton(
-                                            icon: const Icon(Icons.network_check, size: 16),
-                                            visualDensity: VisualDensity.compact,
-                                            padding: const EdgeInsets.all(4),
-                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                          AppIconButton(
+                                            icon: Icons.network_check,
                                             tooltip: 'Test Connection',
                                             onPressed: () => _testRemote(r),
                                           ),
-                                          IconButton(
-                                            icon: const Icon(Icons.edit_outlined, size: 16),
-                                            visualDensity: VisualDensity.compact,
-                                            padding: const EdgeInsets.all(4),
-                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                          AppIconButton(
+                                            icon: Icons.edit_outlined,
                                             tooltip: 'Edit',
                                             onPressed: () => _editRemote(r),
                                           ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
-                                            visualDensity: VisualDensity.compact,
-                                            padding: const EdgeInsets.all(4),
-                                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                          AppIconButton(
+                                            icon: Icons.delete_outline,
+                                            color: Colors.red,
                                             tooltip: 'Delete',
                                             onPressed: () => _deleteRemote(r),
                                           ),
@@ -497,6 +479,7 @@ class _RemotesPageState extends State<RemotesPage> {
                 ),
               ],
             ),
+      ),
     );
   }
 }

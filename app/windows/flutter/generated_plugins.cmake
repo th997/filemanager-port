@@ -3,11 +3,15 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  desktop_drop
+  dynamic_color
   media_kit_libs_windows_video
   media_kit_video
   permission_handler_windows
+  screen_retriever_windows
   share_plus
   url_launcher_windows
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

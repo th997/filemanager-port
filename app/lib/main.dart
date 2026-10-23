@@ -139,12 +139,56 @@ class _FileManagerAppState extends State<FileManagerApp> {
       useMaterial3: true,
       visualDensity: VisualDensity.compact,
       colorScheme: scheme,
-      listTileTheme: const ListTileThemeData(
+      appBarTheme: AppBarTheme(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 48,
+        centerTitle: false,
+        titleTextStyle: TextStyle(
+          color: scheme.onSurface,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+        iconTheme: IconThemeData(
+          color: scheme.onSurface,
+          size: 20,
+        ),
+        actionsIconTheme: IconThemeData(
+          color: scheme.onSurface,
+          size: 20,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: scheme.surfaceContainerLow,
+        margin: const EdgeInsets.symmetric(vertical: 2.5),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+      ),
+      listTileTheme: ListTileThemeData(
         dense: true,
-        visualDensity: VisualDensity(horizontal: -2, vertical: -3),
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-        minVerticalPadding: 0,
-        minTileHeight: 36,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        minVerticalPadding: 2,
+        minLeadingWidth: 32,
+        minTileHeight: 44,
+        titleTextStyle: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurface,
+        ),
+        subtitleTextStyle: TextStyle(
+          fontSize: 11,
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 52,

@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../services/preferences_service.dart';
+import '../theme/app_ui_tokens.dart';
 
 class SettingsPage extends StatefulWidget {
   final ThemeMode currentThemeMode;
@@ -28,7 +29,14 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  ThemeMode get currentThemeMode => widget.currentThemeMode;
+  // Mirrors of the values owned by HomePage. The page is pushed with copies
+  // of those values and never rebuilt when they change, so the dropdowns and
+  // subtitles kept showing the old choice after a selection.
+  late ThemeMode _themeMode = widget.currentThemeMode;
+  late String _accentCode = widget.accentCode;
+  late String _localeCode = widget.localeCode;
+
+  ThemeMode get currentThemeMode => _themeMode;
 
   String? _versionLabel;
 
@@ -104,36 +112,22 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
-        title: Text(l10n.settings, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(l10n.settings),
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: AppUiTokens.pagePadding,
         children: [
           _buildSectionHeader(context, l10n.appearance),
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
             child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 42,
-              minLeadingWidth: 24,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.brightness_medium, size: 16, color: Colors.blue),
+              leading: const AppCircleBadge(
+                icon: Icons.brightness_medium,
+                color: Colors.blue,
               ),
-              title: Text(l10n.theme, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              title: Text(l10n.theme),
               subtitle: Text(_themeModeLabel(currentThemeMode), style: const TextStyle(fontSize: 10)),
               trailing: DropdownButton<ThemeMode>(
                 value: currentThemeMode,
@@ -144,43 +138,26 @@ class _SettingsPageState extends State<SettingsPage> {
                   DropdownMenuItem(value: ThemeMode.dark, child: Text(l10n.themeDark, style: const TextStyle(fontSize: 12))),
                 ],
                 onChanged: (mode) {
-                  if (mode != null) widget.onThemeModeChanged(mode);
+                  if (mode == null) return;
+                  setState(() => _themeMode = mode);
+                  widget.onThemeModeChanged(mode);
                 },
               ),
             ),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
             child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 42,
-              minLeadingWidth: 24,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: (_accentSeeds[widget.accentCode] ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.palette_outlined,
-                  size: 16,
-                  color: _accentSeeds[widget.accentCode] ?? Theme.of(context).colorScheme.primary,
-                ),
+              leading: AppCircleBadge(
+                icon: Icons.palette_outlined,
+                color: _accentSeeds[_accentCode] ?? Theme.of(context).colorScheme.primary,
               ),
-              title: Text(l10n.accentColor, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-              subtitle: Text(_accentLabel(widget.accentCode), style: const TextStyle(fontSize: 10)),
+              title: Text(l10n.accentColor),
+              subtitle: Text(_accentLabel(_accentCode), style: const TextStyle(fontSize: 10)),
               trailing: DropdownButton<String>(
-                value: widget.accentCode,
+                value: _accentCode,
                 underline: const SizedBox.shrink(),
                 items: [
                   DropdownMenuItem(value: 'dynamic', child: Text(l10n.accentDynamic, style: const TextStyle(fontSize: 12))),
@@ -192,38 +169,25 @@ class _SettingsPageState extends State<SettingsPage> {
                   DropdownMenuItem(value: 'grape', child: Text(l10n.accentGrape, style: const TextStyle(fontSize: 12))),
                 ],
                 onChanged: (code) {
-                  if (code != null) widget.onAccentChanged(code);
+                  if (code == null) return;
+                  setState(() => _accentCode = code);
+                  widget.onAccentChanged(code);
                 },
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
             child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 42,
-              minLeadingWidth: 24,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.indigo.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.language, size: 16, color: Colors.indigo),
+              leading: const AppCircleBadge(
+                icon: Icons.language,
+                color: Colors.indigo,
               ),
-              title: Text(l10n.language, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-              subtitle: Text(_languageLabel(widget.localeCode), style: const TextStyle(fontSize: 10)),
+              title: Text(l10n.language),
+              subtitle: Text(_languageLabel(_localeCode), style: const TextStyle(fontSize: 10)),
               trailing: DropdownButton<String>(
-                value: widget.localeCode,
+                value: _localeCode,
                 underline: const SizedBox.shrink(),
                 items: [
                   DropdownMenuItem(value: 'system', child: Text(l10n.languageSystem, style: const TextStyle(fontSize: 12))),
@@ -231,7 +195,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   const DropdownMenuItem(value: 'zh', child: Text('中文', style: TextStyle(fontSize: 12))),
                 ],
                 onChanged: (code) {
-                  if (code != null) widget.onLocaleChanged(code);
+                  if (code == null) return;
+                  setState(() => _localeCode = code);
+                  widget.onLocaleChanged(code);
                 },
               ),
             ),
@@ -241,26 +207,16 @@ class _SettingsPageState extends State<SettingsPage> {
 
           _buildSectionHeader(context, l10n.browserSection),
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
             child: SwitchListTile(
               dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 42,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+              minTileHeight: 40,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              secondary: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.teal.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.vertical_align_bottom, size: 16, color: Colors.teal),
+              secondary: const AppCircleBadge(
+                icon: Icons.vertical_align_bottom,
+                color: Colors.teal,
               ),
-              title: Text(l10n.toolbarAtBottom, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              title: Text(l10n.toolbarAtBottom),
               subtitle: Text(l10n.toolbarAtBottomDesc,
                   style: const TextStyle(fontSize: 10)),
               value: PreferencesService.toolbarAtBottom.value,
@@ -272,29 +228,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
           _buildSectionHeader(context, l10n.aboutSection),
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
             child: Column(
               children: [
                 ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                  minTileHeight: 42,
-                  minLeadingWidth: 24,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  leading: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                  leading: const AppCircleBadge(
+                    icon: Icons.info_outline,
+                    color: Colors.blue,
                   ),
-                  title: const Text('File Manager+ Cross-Platform', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  title: Text(l10n.appTitle),
                   subtitle: Text(
                     '${_versionLabel ?? 'Rust Core'}\n'
                     'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
@@ -303,21 +244,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                  minTileHeight: 40,
-                  minLeadingWidth: 24,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  leading: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.cloud_done, size: 16, color: Colors.green),
+                  leading: const AppCircleBadge(
+                    icon: Icons.cloud_done,
+                    color: Colors.green,
                   ),
-                  title: Text(l10n.supportedProtocols, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  title: Text(l10n.supportedProtocols),
                   subtitle: const Text(
                     'Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z',
                     style: TextStyle(fontSize: 10),
@@ -327,6 +258,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

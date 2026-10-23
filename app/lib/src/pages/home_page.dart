@@ -8,6 +8,7 @@ import '../services/semantic_colors.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../theme/app_ui_tokens.dart';
 import '../../l10n/app_localizations.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
@@ -40,13 +41,14 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<RemoteConfigDto> _remotes = [];
   List<BookmarkDto> _bookmarks = [];
   List<HistoryDto> _history = [];
   int _trashCount = 0;
   int _activeTaskCount = 0;
   bool _hasStorageAccess = true;
+  bool _requestingAccess = false;
   bool _welcomeDismissed = false;
 
   static const _prefWelcomeDismissed = 'home.welcome_dismissed';
@@ -56,8 +58,22 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _welcomeDismissed =
         PreferencesService.instance.getBool(_prefWelcomeDismissed) ?? false;
+    WidgetsBinding.instance.addObserver(this);
     _loadMetadata();
     _checkStorageAccess();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// The grant happens in the system Settings app, so the banner only clears
+  /// on the next resume unless the check runs again here.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkStorageAccess();
   }
 
   /// First-run guidance: shown only while there is nothing configured
@@ -140,28 +156,66 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _checkStorageAccess() async {
     if (!Platform.isAndroid) return;
-    final granted = await PermissionService.instance.hasStorageAccess();
+    bool granted;
+    try {
+      granted = await PermissionService.instance.hasStorageAccess();
+    } catch (_) {
+      // Keep the banner hidden rather than claiming access is fine; the
+      // first real file operation still reports the missing permission.
+      return;
+    }
     if (mounted) setState(() => _hasStorageAccess = granted);
   }
 
   Future<void> _requestStorageAccess() async {
-    final granted = await PermissionService.instance.requestStorageAccess();
-    if (mounted) setState(() => _hasStorageAccess = granted);
+    // No busy state meant a slow permission prompt looked like a dead button,
+    // and a throw left the banner with no explanation.
+    if (_requestingAccess) return;
+    setState(() => _requestingAccess = true);
+    try {
+      final granted = await PermissionService.instance.requestStorageAccess();
+      if (mounted) setState(() => _hasStorageAccess = granted);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not request file access: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _requestingAccess = false);
+    }
   }
 
   Future<void> _loadMetadata() async {
-    final rems = await StorageService.instance.getRemotes();
-    final bms = await StorageService.instance.getBookmarks();
-    final hist = await StorageService.instance.getHistory();
-    final trash = await StorageService.instance.getTrashItems();
+    // A failing metadata read used to leave the cards showing stale counts
+    // with no hint that they were stale.
+    try {
+      final rems = await StorageService.instance.getRemotes();
+      final bms = await StorageService.instance.getBookmarks();
+      final hist = await StorageService.instance.getHistory();
+      final trash = await StorageService.instance.getTrashItems();
 
-    if (mounted) {
-      setState(() {
-        _remotes = rems;
-        _bookmarks = bms;
-        _history = hist;
-        _trashCount = trash.length;
-      });
+      if (mounted) {
+        setState(() {
+          _remotes = rems;
+          _bookmarks = bms;
+          _history = hist;
+          _trashCount = trash.length;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not refresh home data: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            action: SnackBarAction(label: 'Retry', onPressed: _loadMetadata),
+          ),
+        );
+      }
     }
     _refreshTaskCount();
   }
@@ -181,10 +235,10 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).appTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context).appTitle),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
+            icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
             onPressed: _loadMetadata,
           ),
@@ -194,7 +248,7 @@ class _HomePageState extends State<HomePage> {
         onRefresh: _loadMetadata,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: AppUiTokens.pagePadding,
           children: [
             if (!_hasStorageAccess) ...[
               _buildPermissionBanner(),
@@ -244,8 +298,11 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               backgroundColor: Theme.of(context).colorScheme.warning,
             ),
-            onPressed: _requestStorageAccess,
-            child: const Text('Grant', style: TextStyle(fontSize: 11)),
+            onPressed: _requestingAccess ? null : _requestStorageAccess,
+            child: Text(
+              _requestingAccess ? 'Requesting…' : 'Grant',
+              style: const TextStyle(fontSize: 11),
+            ),
           ),
         ],
       ),
@@ -298,26 +355,23 @@ class _HomePageState extends State<HomePage> {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: AppUiTokens.borderRadiusMd,
         border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: AppUiTokens.borderRadiusMd,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             child: Row(
               children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, size: 15, color: iconColor),
+                AppCircleBadge(
+                  icon: icon,
+                  color: iconColor,
+                  size: 28,
+                  iconSize: 15,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -327,7 +381,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
@@ -335,7 +389,7 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 1),
                         Text(
                           subtitle,
-                          style: TextStyle(fontSize: 9, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          style: TextStyle(fontSize: 9.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                         ),

@@ -37,7 +37,9 @@ class VideoThumbnailService {
       (file) {
         if (file == null) _cache.remove(key);
       },
-      onError: (_) => _cache.remove(key),
+      onError: (_) {
+        _cache.remove(key);
+      },
     );
     return future;
   }

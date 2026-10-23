@@ -1,4 +1,9 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
 
 /// The translations for English (`en`).
 class AppLocalizationsEn extends AppLocalizations {
@@ -134,13 +139,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolbarAtBottom => 'Toolbar at bottom';
 
   @override
-  String get toolbarAtBottomDesc => 'Move the address bar and icons below the file list';
+  String get toolbarAtBottomDesc =>
+      'Move the address bar and icons below the file list';
 
   @override
   String get utilities => 'Utilities';
 
   @override
-  String get welcomeBody => 'Browse local folders right away, or connect a server — SFTP, WebDAV, S3, SMB and more — to manage files anywhere.';
+  String get welcomeBody =>
+      'Browse local folders right away, or connect a server — SFTP, WebDAV, S3, SMB and more — to manage files anywhere.';
 
   @override
   String get welcomeTitle => 'Welcome to File Manager';
@@ -168,5 +175,4 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accentSunset => 'Sunset';
-
 }

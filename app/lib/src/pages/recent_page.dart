@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
+import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 
 class RecentPage extends StatefulWidget {
@@ -46,14 +47,25 @@ class _RecentPageState extends State<RecentPage> {
   }
 
   Future<void> _loadHistory() async {
-    final hist = await StorageService.instance.getHistory();
-    final rems = await StorageService.instance.getRemotes();
-    if (mounted) {
+    try {
+      final hist = await StorageService.instance.getHistory();
+      final rems = await StorageService.instance.getRemotes();
+      if (!mounted) return;
       setState(() {
         _history = hist;
         _remotes = rems;
         _loading = false;
       });
+    } catch (e) {
+      // Without this the page stays on its spinner after a storage failure.
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load recent locations: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -114,13 +126,18 @@ class _RecentPageState extends State<RecentPage> {
           label: 'Undo',
           onPressed: () async {
             // Re-record the visit, then put it back where it was in the list.
+            // The restored row is found by root+path: the database orders by
+            // visit time, so assuming it lands last picks the wrong entry.
             await StorageService.instance.recordHistory(root: h.root, path: h.path);
             await _loadHistory();
             if (!mounted) return;
             setState(() {
-              if (index >= 0 && index < _history.length) {
-                final restored = _history.removeAt(_history.length - 1);
-                _history.insert(index, restored);
+              final found = _history.indexWhere(
+                (e) => e.root == h.root && e.path == h.path,
+              );
+              if (found >= 0 && index >= 0) {
+                final restored = _history.removeAt(found);
+                _history.insert(index.clamp(0, _history.length), restored);
               }
             });
           },
@@ -142,8 +159,25 @@ class _RecentPageState extends State<RecentPage> {
       ),
     );
     if (confirm != true) return;
+    // Keep the list so a mis-tap does not cost every recorded location.
+    final cleared = List<HistoryDto>.of(_history);
     await StorageService.instance.clearHistory();
     await _loadHistory();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Cleared ${cleared.length} recent locations'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            for (final h in cleared.reversed) {
+              await StorageService.instance.recordHistory(root: h.root, path: h.path);
+            }
+            await _loadHistory();
+          },
+        ),
+      ),
+    );
   }
 
   /// Compact relative time, so the list reads as "when", not a timestamp.
@@ -176,13 +210,14 @@ class _RecentPageState extends State<RecentPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
-        title: const Text('Recent History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: const Text('Recent History'),
         actions: [
           if (_history.isNotEmpty) ...[
             IconButton(
-              icon: Icon(_showSearch ? Icons.search_off : Icons.search, size: 20),
+              icon: Icon(_showSearch ? Icons.search_off : Icons.search),
               tooltip: _showSearch ? 'Close Search' : 'Search History',
               onPressed: () {
                 setState(() {
@@ -200,7 +235,7 @@ class _RecentPageState extends State<RecentPage> {
             ),
           ],
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
+            icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
             onPressed: _loadHistory,
           ),
@@ -278,7 +313,7 @@ class _RecentPageState extends State<RecentPage> {
                           )
                         : ListView.builder(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: AppUiTokens.pagePadding,
                             itemCount: _visibleHistory.length,
                             itemBuilder: (ctx, i) {
                               final h = _visibleHistory[i];
@@ -287,65 +322,44 @@ class _RecentPageState extends State<RecentPage> {
                               final sub = h.path.isEmpty ? rootLabel : '$rootLabel/${h.path}';
 
                               return Card(
-                                elevation: 0,
-                                margin: const EdgeInsets.symmetric(vertical: 2),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-                                ),
                                 child: ListTile(
-                                  dense: true,
-                                  visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                                  minTileHeight: 40,
-                                  minLeadingWidth: 24,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                                  leading: Container(
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: Colors.indigo.withValues(alpha: 0.15),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.history, size: 16, color: Colors.indigo),
+                                  leading: const AppCircleBadge(
+                                    icon: Icons.history,
+                                    color: Colors.indigo,
                                   ),
-                                  title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                  title: Text(title),
                                   subtitle: Text(
                                     sub,
-                                    style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
+                                  // The time plus three icons overflowed on
+                                  // narrow phones; the actions live in a menu.
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
                                         _relativeTime(h.visitedMillis.toInt()),
-                                        style: TextStyle(fontSize: 9.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                        style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       ),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        icon: const Icon(Icons.copy_outlined, size: 15),
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                        tooltip: 'Copy Path',
-                                        onPressed: () => _copyHistoryPath(h),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                        tooltip: 'Bookmark Location',
-                                        onPressed: () => _bookmarkHistory(h, title),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                        tooltip: 'Remove',
-                                        onPressed: () => _removeEntry(h, title),
+                                      PopupMenuButton<String>(
+                                        tooltip: 'Actions',
+                                        icon: const Icon(Icons.more_vert, size: 16),
+                                        padding: EdgeInsets.zero,
+                                        style: IconButton.styleFrom(
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          fixedSize: const Size.square(AppUiTokens.buttonTargetSize),
+                                        ),
+                                        onSelected: (v) {
+                                          if (v == 'copy') _copyHistoryPath(h);
+                                          if (v == 'bookmark') _bookmarkHistory(h, title);
+                                          if (v == 'remove') _removeEntry(h, title);
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(value: 'copy', child: Text('Copy Path')),
+                                          PopupMenuItem(value: 'bookmark', child: Text('Bookmark Location')),
+                                          PopupMenuItem(value: 'remove', child: Text('Remove')),
+                                        ],
                                       ),
                                       const Icon(Icons.chevron_right, size: 16),
                                     ],
@@ -360,6 +374,7 @@ class _RecentPageState extends State<RecentPage> {
                 ),
               ],
             ),
+      ),
     );
   }
 }

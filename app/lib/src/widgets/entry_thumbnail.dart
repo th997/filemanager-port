@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
@@ -36,12 +37,21 @@ class EntryThumbnail extends StatelessWidget {
     final key = '$root\u0000$relPath';
     final existing = _exports[key];
     if (existing != null) return existing;
-    final future = exportToNative(root: root, path: relPath);
+    final future = _doExport();
     _exports[key] = future;
     // A failed export should not poison the session: drop it so a later
     // build can retry (e.g. after the connection comes back).
-    future.then((_) {}, onError: (_) => _exports.remove(key));
+    future.then((_) {}, onError: (_) {
+      _exports.remove(key);
+    });
     return future;
+  }
+
+  Future<String> _doExport() async {
+    final base = await getTemporaryDirectory();
+    final dir = Directory(joinNative(base.path, 'thumbs'));
+    if (!dir.existsSync()) await dir.create(recursive: true);
+    return exportToNative(root: root, path: relPath, cacheDir: dir.path);
   }
 
   Widget _image(File file, Widget fallback) {
@@ -53,7 +63,7 @@ class EntryThumbnail extends StatelessWidget {
         height: size,
         fit: BoxFit.cover,
         cacheWidth: (size * 2).round(),
-        errorBuilder: (_, __, ___) => fallback,
+        errorBuilder: (_, _, _) => fallback,
       ),
     );
   }

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:exif/exif.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -182,7 +181,14 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     }
     if (!mounted) return;
     final file = File(native);
-    if (!file.existsSync()) return;
+    if (!file.existsSync()) {
+      // A cached copy can be evicted between opening the viewer and tapping
+      // Details; silently returning made the button look broken.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image details are no longer available')),
+      );
+      return;
+    }
 
     final stat = file.statSync();
     Size? dimensions;
@@ -423,6 +429,27 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     );
   }
 
+  /// Copies the resolved path, which is what a user needs to paste into a
+  /// terminal or another app — the gallery shows no path anywhere else.
+  Future<void> _copyCurrentPath() async {
+    try {
+      final native = await _localPathFor(_index);
+      await Clipboard.setData(ClipboardData(text: native));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image path copied')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cannot copy path: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _shareCurrent() async {
     try {
       final native = await _localPathFor(_index);
@@ -518,6 +545,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 icon: const Icon(Icons.share),
                 tooltip: 'Share image',
                 onPressed: _shareCurrent,
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy_all_outlined),
+                tooltip: 'Copy image file path',
+                onPressed: _copyCurrentPath,
               ),
               IconButton(
                 icon: const Icon(Icons.info_outline),

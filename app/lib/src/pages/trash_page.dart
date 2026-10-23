@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../services/storage_service.dart';
+import '../theme/app_ui_tokens.dart';
 
 class TrashPage extends StatefulWidget {
   const TrashPage({super.key});
@@ -14,6 +15,10 @@ class _TrashPageState extends State<TrashPage> {
   List<TrashItemDto> _items = [];
   bool _loading = true;
   bool _showSearch = false;
+  /// Non-zero while "Restore All" is running, so the header can show progress
+  /// instead of looking hung.
+  int _restoringTotal = 0;
+  int _restoringDone = 0;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -30,13 +35,26 @@ class _TrashPageState extends State<TrashPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final items = await StorageService.instance.getTrashItems();
-    if (mounted) {
+    // Only the first load blanks the page; a refresh keeps the list visible
+    // so a restore does not flash a full-screen spinner.
+    if (_items.isEmpty) setState(() => _loading = true);
+    try {
+      final items = await StorageService.instance.getTrashItems();
+      if (!mounted) return;
       setState(() {
         _items = items;
         _loading = false;
       });
+    } catch (e) {
+      // Without this the page stays on its spinner after a storage failure.
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load the Recycle Bin: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -282,8 +300,12 @@ class _TrashPageState extends State<TrashPage> {
       ),
     );
     if (confirm == true) {
+      if (mounted) setState(() => _restoringTotal = count);
       int successCount = 0;
       final failures = <String>[];
+      // Restoring is one FFI round-trip per item; without a counter a large
+      // bin looks frozen until the snackbar appears.
+      if (mounted) setState(() => _restoringDone = 0);
       for (final item in List.of(_items)) {
         try {
           await StorageService.instance.restoreTrashItem(item.id);
@@ -291,7 +313,9 @@ class _TrashPageState extends State<TrashPage> {
         } catch (_) {
           failures.add(_displayName(item));
         }
+        if (mounted) setState(() => _restoringDone++);
       }
+      if (mounted) setState(() => _restoringTotal = 0);
       _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -316,21 +340,24 @@ class _TrashPageState extends State<TrashPage> {
 
   @override
   Widget build(BuildContext context) {
-    final displayedItems = _searchQuery.isEmpty
-        ? _items
+    final displayedItems = (_searchQuery.isEmpty
+        ? [..._items]
         : _items
             .where((item) =>
                 item.originalPath.toLowerCase().contains(_searchQuery.toLowerCase()) ||
                 _displayName(item).toLowerCase().contains(_searchQuery.toLowerCase()))
-            .toList();
+            .toList())
+      ..sort((a, b) => b.deletedMillis.compareTo(a.deletedMillis));
 
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
-          _items.isEmpty
-              ? 'Recycle Bin'
-              : 'Recycle Bin • ${_items.length} items, ${_formatSize(_totalSize)}',
-          style: const TextStyle(fontSize: 14),
+          _restoringTotal > 0
+              ? 'Restoring $_restoringDone / $_restoringTotal…'
+              : _items.isEmpty
+                  ? 'Recycle Bin'
+                  : 'Recycle Bin • ${_items.length} items, ${_formatSize(_totalSize)}',
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
@@ -351,7 +378,7 @@ class _TrashPageState extends State<TrashPage> {
             IconButton(
               icon: const Icon(Icons.settings_backup_restore),
               tooltip: 'Restore All Items',
-              onPressed: _restoreAll,
+              onPressed: _restoringTotal > 0 ? null : _restoreAll,
             ),
             IconButton(
               icon: const Icon(Icons.delete_sweep),
@@ -419,53 +446,45 @@ class _TrashPageState extends State<TrashPage> {
                           )
                         : ListView.builder(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            padding: AppUiTokens.pagePadding,
                             itemCount: displayedItems.length,
                             itemBuilder: (ctx, i) {
                               final item = displayedItems[i];
                               final name = _displayName(item);
 
-                              return ListTile(
-                                dense: true,
-                                visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                                minTileHeight: 40,
-                                leading: Icon(
-                                  item.isDir ? Icons.folder : Icons.insert_drive_file,
-                                  size: 20,
-                                  color: item.isDir ? Colors.amber : Colors.blue,
+                              return Card(
+                                child: ListTile(
+                                  leading: AppCircleBadge(
+                                    icon: item.isDir ? Icons.folder : Icons.insert_drive_file,
+                                    color: item.isDir ? Colors.amber : Colors.blue,
+                                  ),
+                                  title: Text(
+                                    name.isEmpty ? item.originalPath : name,
+                                  ),
+                                  subtitle: Text(
+                                    '${_formatSize(item.size)}  •  deleted ${_deletedAgo(item)}  •  ${item.originalPath}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      AppIconButton(
+                                        icon: Icons.restore,
+                                        color: Colors.green,
+                                        tooltip: 'Restore',
+                                        onPressed: () => _restore(item),
+                                      ),
+                                      AppIconButton(
+                                        icon: Icons.delete_forever,
+                                        color: Colors.red,
+                                        tooltip: 'Delete Permanently',
+                                        onPressed: () => _delete(item),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _showItemDetails(item),
                                 ),
-                                title: Text(
-                                  name.isEmpty ? item.originalPath : name,
-                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                                ),
-                                subtitle: Text(
-                                  '${_formatSize(item.size)}  •  deleted ${_deletedAgo(item)}  •  ${item.originalPath}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.restore, color: Colors.green, size: 18),
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                      tooltip: 'Restore',
-                                      onPressed: () => _restore(item),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18),
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                      tooltip: 'Delete Permanently',
-                                      onPressed: () => _delete(item),
-                                    ),
-                                  ],
-                                ),
-                                onTap: () => _showItemDetails(item),
                               );
                             },
                           ),
@@ -473,6 +492,7 @@ class _TrashPageState extends State<TrashPage> {
                 ),
               ],
             ),
+      ),
     );
   }
 }

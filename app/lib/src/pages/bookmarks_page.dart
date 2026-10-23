@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
+import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 
 class BookmarksPage extends StatefulWidget {
@@ -33,14 +34,25 @@ class _BookmarksPageState extends State<BookmarksPage> {
   }
 
   Future<void> _loadBookmarks() async {
-    final bms = await StorageService.instance.getBookmarks();
-    final rems = await StorageService.instance.getRemotes();
-    if (mounted) {
+    try {
+      final bms = await StorageService.instance.getBookmarks();
+      final rems = await StorageService.instance.getRemotes();
+      if (!mounted) return;
       setState(() {
         _bookmarks = bms;
         _remotes = rems;
         _loading = false;
       });
+    } catch (e) {
+      // Without this the page stays on its spinner after a storage failure.
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load bookmarks: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -118,7 +130,16 @@ class _BookmarksPageState extends State<BookmarksPage> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Rename')),
+            // An empty name used to close the dialog and then do nothing.
+            ListenableBuilder(
+              listenable: ctrl,
+              builder: (ctx, _) => FilledButton(
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                child: const Text('Rename'),
+              ),
+            ),
           ],
         ),
       );
@@ -126,19 +147,40 @@ class _BookmarksPageState extends State<BookmarksPage> {
       ctrl.dispose();
     }
     if (newName != null && newName.isNotEmpty && newName != bm.name) {
-      await StorageService.instance.renameBookmark(
-        id: bm.id,
-        newName: newName,
-        root: bm.root,
-        path: bm.path,
-      );
-      _loadBookmarks();
+      try {
+        await StorageService.instance.renameBookmark(
+          id: bm.id,
+          newName: newName,
+          root: bm.root,
+          path: bm.path,
+        );
+        await _loadBookmarks();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not rename bookmark: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
     }
   }
 
   /// Removes without a confirmation dialog; the snackbar carries the undo.
   Future<void> _deleteBookmark(BookmarkDto bm) async {
-    await StorageService.instance.deleteBookmark(bm.id);
+    try {
+      await StorageService.instance.deleteBookmark(bm.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not remove bookmark: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
     await _loadBookmarks();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -161,13 +203,14 @@ class _BookmarksPageState extends State<BookmarksPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
-        title: const Text('Bookmarks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: const Text('Bookmarks'),
         actions: [
           if (_bookmarks.isNotEmpty)
             IconButton(
-              icon: Icon(_showSearch ? Icons.search_off : Icons.search, size: 20),
+              icon: Icon(_showSearch ? Icons.search_off : Icons.search),
               tooltip: _showSearch ? 'Close Search' : 'Search Bookmarks',
               onPressed: () {
                 setState(() {
@@ -180,7 +223,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
+            icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
             onPressed: _loadBookmarks,
           ),
@@ -254,69 +297,45 @@ class _BookmarksPageState extends State<BookmarksPage> {
                     )
                   : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: AppUiTokens.pagePadding,
                       itemCount: _visibleBookmarks.length,
                       itemBuilder: (ctx, i) {
                         final b = _visibleBookmarks[i];
                         return Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.symmetric(vertical: 2),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-                          ),
                           child: ListTile(
-                            dense: true,
-                            visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                            minTileHeight: 40,
-                            minLeadingWidth: 24,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                            leading: Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: Colors.amber.withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.bookmark, size: 16, color: Colors.amber),
+                            leading: const AppCircleBadge(
+                              icon: Icons.bookmark,
+                              color: Colors.amber,
                             ),
-                            title: Text(b.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+                            title: Text(b.name),
                             subtitle: Text(
                               b.path.isEmpty
                                   ? _rootLabel(b.root)
                                   : '${_rootLabel(b.root)}/${b.path}',
-                              style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  icon: const Icon(Icons.copy_outlined, size: 15),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                AppIconButton(
+                                  icon: Icons.copy_outlined,
                                   tooltip: 'Copy Path',
                                   onPressed: () => _copyBookmarkPath(b),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined, size: 16),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                const SizedBox(width: 4),
+                                AppIconButton(
+                                  icon: Icons.edit_outlined,
                                   tooltip: 'Rename',
                                   onPressed: () => _renameBookmark(b),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.close, size: 16, color: Colors.red),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                const SizedBox(width: 4),
+                                AppIconButton(
+                                  icon: Icons.close,
+                                  color: Colors.red,
                                   tooltip: 'Remove',
                                   onPressed: () => _deleteBookmark(b),
                                 ),
-                                const Icon(Icons.chevron_right, size: 16),
                               ],
                             ),
                             onTap: () => _openBookmark(b),
@@ -329,6 +348,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 ),
               ],
             ),
+      ),
     );
   }
 }

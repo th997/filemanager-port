@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
@@ -143,15 +144,27 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     });
   }
 
+  /// Files the list is actually showing. "Select All" has to work on these:
+  /// with a filter typed it used to select every file in the folder, so the
+  /// upload included files the user never saw.
+  List<EntryItem> get _visibleFiles {
+    final query = _filterQuery.toLowerCase();
+    return query.isEmpty
+        ? _files
+        : _files.where((f) => f.name.toLowerCase().contains(query)).toList();
+  }
+
   void _selectAllFiles() {
     setState(() {
-      final allSelected = _files.isNotEmpty && _files.every((f) => _selectedPaths.contains(_fullPath(f)));
+      final visible = _visibleFiles;
+      final allSelected =
+          visible.isNotEmpty && visible.every((f) => _selectedPaths.contains(_fullPath(f)));
       if (allSelected) {
-        for (final f in _files) {
+        for (final f in visible) {
           _selectedPaths.remove(_fullPath(f));
         }
       } else {
-        for (final f in _files) {
+        for (final f in visible) {
           _selectedPaths.add(_fullPath(f));
         }
       }
@@ -209,10 +222,21 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                   onPressed: _relPath.isEmpty ? null : _up,
                 ),
                 Expanded(
-                  child: Text(
-                    _currentPath,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  child: InkWell(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: _currentPath));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Path copied to clipboard')),
+                      );
+                    },
+                    child: Tooltip(
+                      message: 'Click to copy path',
+                      child: Text(
+                        _currentPath,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
                 ),
                 IconButton(
@@ -223,16 +247,16 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                     _load();
                   },
                 ),
-                if (_files.isNotEmpty)
+                if (_visibleFiles.isNotEmpty)
                   TextButton.icon(
                     icon: Icon(
-                      _files.every((f) => _selectedPaths.contains(_fullPath(f)))
+                      _visibleFiles.every((f) => _selectedPaths.contains(_fullPath(f)))
                           ? Icons.deselect
                           : Icons.select_all,
                       size: 16,
                     ),
                     label: Text(
-                      _files.every((f) => _selectedPaths.contains(_fullPath(f)))
+                      _visibleFiles.every((f) => _selectedPaths.contains(_fullPath(f)))
                           ? 'Deselect All'
                           : 'Select All',
                       style: const TextStyle(fontSize: 12),
@@ -272,7 +296,22 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                      ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)))
+                      // A dead-end error forced the user to cancel and reopen
+                      // the dialog to retry, as the folder picker already does.
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('Retry'),
+                                onPressed: _load,
+                              ),
+                            ],
+                          ),
+                        )
                       : (_folders.isEmpty && _files.isEmpty)
                           ? const Center(child: Text('Folder is empty', style: TextStyle(color: Colors.grey)))
                           : () {

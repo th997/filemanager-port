@@ -1,13 +1,17 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../l10n/app_localizations.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../rust/api/file_manager.dart' as fm_api;
+import '../rust/api/metadata.dart' as meta_api;
 import '../rust/api/servers.dart';
 import '../services/file_open_service.dart';
 import '../services/platform_paths.dart';
 import '../services/sharing_service.dart';
 import '../services/storage_service.dart';
+import '../theme/app_ui_tokens.dart';
 import 'trash_page.dart';
 
 class UtilitiesPage extends StatefulWidget {
@@ -50,8 +54,23 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   }
 
   Future<void> _loadData() async {
-    final trash = await StorageService.instance.getTrashItems();
-    final cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
+    final List<meta_api.TrashItemDto> trash;
+    final int cacheBytes;
+    try {
+      trash = await StorageService.instance.getTrashItems();
+      cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
+    } catch (e) {
+      // Pull-to-refresh used to fail silently, leaving the old counts on
+      // screen with no hint that they were stale.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not read storage stats: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
     int archiveBytes = 0;
     try {
       archiveBytes = fm_api.archiveCacheSize().toInt();
@@ -91,9 +110,17 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     setState(() => _clearingCache = true);
     try {
       await FileOpenService.instance.clearExports();
+      // Re-reading the size can fail on its own; the `finally` below is what
+      // guarantees the spinner stops either way.
+      final cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
+      if (mounted) {
+        setState(() => _cacheSizeBytes = cacheBytes);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Temporary cache cleared')),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        setState(() => _clearingCache = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not clear cache: $e'),
@@ -101,17 +128,8 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           ),
         );
       }
-      return;
-    }
-    final cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
-    if (mounted) {
-      setState(() {
-        _cacheSizeBytes = cacheBytes;
-        _clearingCache = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Temporary cache cleared')),
-      );
+    } finally {
+      if (mounted) setState(() => _clearingCache = false);
     }
   }
 
@@ -201,11 +219,28 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         }
       }
     } else {
-      SharingService.instance.stopHttp();
-      setState(() {
-        _serverRunning = false;
-        _serverStatus = null;
-      });
+      // The backend reports whether it actually stopped; ignoring the result
+      // left the UI claiming "stopped" while the server kept serving.
+      bool stopped;
+      try {
+        stopped = SharingService.instance.stopHttp();
+      } catch (_) {
+        stopped = false;
+      }
+      if (mounted) {
+        setState(() {
+          _serverRunning = !stopped;
+          _serverStatus = stopped ? null : _serverStatus;
+        });
+        if (!stopped) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Could not stop the LAN server'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -216,9 +251,23 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
+  String _friendlyPath(String path) {
+    if (Platform.isIOS && path.contains('/Containers/Data/Application/')) {
+      final docIdx = path.indexOf('/Documents');
+      if (docIdx != -1) {
+        final sub = path.substring(docIdx);
+        return sub == '/Documents' ? 'Documents' : 'Documents${sub.substring('/Documents'.length)}';
+      }
+      return 'Documents';
+    }
+    return path;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(AppLocalizations.of(context).utilities, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
@@ -233,41 +282,31 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         onRefresh: _loadData,
         child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: AppUiTokens.pagePadding,
         children: [
           // 1. Recycle Bin Card
           _buildSectionHeader(AppLocalizations.of(context).recycleBin),
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
             child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 42,
-              leading: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.deepOrange.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.delete_outline, size: 18, color: Colors.deepOrange),
+              leading: const AppCircleBadge(
+                icon: Icons.delete_outline,
+                color: Colors.deepOrange,
               ),
-              title: const Text('Recycle Bin', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-              subtitle: Text('$_trashCount items in trash', style: const TextStyle(fontSize: 10)),
+              title: Text(AppLocalizations.of(context).recycleBin),
+              subtitle: Text(
+                isZh ? '回收站共有 $_trashCount 项' : '$_trashCount items in trash',
+                style: const TextStyle(fontSize: 10),
+              ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (_trashCount > 0)
-                    IconButton(
-                      icon: const Icon(Icons.delete_sweep_outlined, size: 18, color: Colors.redAccent),
-                      tooltip: 'Empty Recycle Bin',
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    AppIconButton(
+                      icon: Icons.delete_sweep_outlined,
+                      size: 28,
+                      iconSize: 18,
+                      color: Colors.redAccent,
+                      tooltip: isZh ? '清空回收站' : 'Empty Recycle Bin',
                       onPressed: _emptyTrash,
                     ),
                   const Icon(Icons.chevron_right, size: 16),
@@ -288,14 +327,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           Card(
             elevation: _serverRunning ? 2 : 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(
-                color: _serverRunning ? Colors.green : Theme.of(context).dividerColor.withValues(alpha: 0.15),
-                width: _serverRunning ? 1.5 : 1,
-              ),
+              borderRadius: BorderRadius.circular(10),
+              side: _serverRunning
+                  ? const BorderSide(color: Colors.green, width: 1.5)
+                  : BorderSide.none,
             ),
             child: Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -313,9 +351,14 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Web Sharing Server', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
                               Text(
-                                _serverRunning ? '🟢 Running on LAN' : '⚪ Stopped',
+                                isZh ? '局域网网页共享服务' : 'Web Sharing Server',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                              ),
+                              Text(
+                                _serverRunning
+                                    ? (isZh ? '🟢 局域网运行中' : '🟢 Running on LAN')
+                                    : (isZh ? '⚪ 已停止' : '⚪ Stopped'),
                                 style: TextStyle(fontSize: 10, color: _serverRunning ? Colors.green : Colors.grey),
                               ),
                             ],
@@ -337,7 +380,9 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                   if (_serverRunning && _serverStatus != null) ...[
                     const Divider(height: 12),
                     Text(
-                      'Access files from any browser on the same Wi-Fi:',
+                      isZh
+                          ? '同一 Wi-Fi 下任何浏览器输入以下地址即可访问：'
+                          : 'Access files from any browser on the same Wi-Fi:',
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 4),
@@ -363,11 +408,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               visualDensity: VisualDensity.compact,
                               padding: const EdgeInsets.all(2),
                               constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-                              tooltip: 'Copy URL',
+                              tooltip: isZh ? '复制网址' : 'Copy URL',
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: url));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('URL copied to clipboard')),
+                                  SnackBar(content: Text(isZh ? '网址已复制到剪贴板' : 'URL copied to clipboard')),
                                 );
                               },
                             ),
@@ -376,33 +421,37 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       );
                     }),
                   ] else ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
-                      'Share files on your local network without cables. Stream media, download or upload through any web browser.',
+                      isZh
+                          ? '在局域网内免数据线共享文件。任何浏览器均可直接访问、串流媒体、下载或上传。'
+                          : 'Share files on your local network without cables. Stream media, download or upload through any web browser.',
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
                           const Icon(Icons.folder_shared, size: 18, color: Colors.blue),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Shared Folder', style: TextStyle(fontSize: 9, color: Colors.grey)),
                                 Text(
-                                  _shareRoot,
+                                  isZh ? '共享目录' : 'Shared Folder',
+                                  style: const TextStyle(fontSize: 9, color: Colors.grey),
+                                ),
+                                Text(
+                                  _friendlyPath(_shareRoot),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
@@ -413,24 +462,25 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                             ),
                             onPressed: _serverRunning ? null : _pickShareFolder,
-                            child: const Text('Change', style: TextStyle(fontSize: 11)),
+                            child: Text(isZh ? '更改' : 'Change', style: const TextStyle(fontSize: 11)),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
-                        Expanded(
+                        SizedBox(
+                          width: 85,
                           child: TextField(
                             controller: _portCtrl,
                             keyboardType: TextInputType.number,
                             style: const TextStyle(fontSize: 11.5),
-                            decoration: const InputDecoration(
-                              labelText: 'Port',
-                              border: OutlineInputBorder(),
+                            decoration: InputDecoration(
+                              labelText: isZh ? '端口' : 'Port',
+                              border: const OutlineInputBorder(),
                               isDense: true,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                             ),
                           ),
                         ),
@@ -441,15 +491,16 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                             obscureText: _obscurePwd,
                             style: const TextStyle(fontSize: 11.5),
                             decoration: InputDecoration(
-                              labelText: 'Password (Optional)',
+                              labelText: isZh ? '访问密码 (可选)' : 'Password (Optional)',
                               border: const OutlineInputBorder(),
                               isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              suffixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                               suffixIcon: IconButton(
                                 icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 15),
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                                 tooltip: _obscurePwd ? 'Show password' : 'Hide password',
                                 onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
                               ),
@@ -460,7 +511,10 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                     ),
                     const SizedBox(height: 4),
                     CheckboxListTile(
-                      title: const Text('Read Only (disallow web uploads)', style: TextStyle(fontSize: 11)),
+                      title: Text(
+                        isZh ? '只读模式 (禁止网页端上传)' : 'Read Only (disallow web uploads)',
+                        style: const TextStyle(fontSize: 11),
+                      ),
                       value: _readOnly,
                       onChanged: (v) => setState(() => _readOnly = v ?? true),
                       contentPadding: EdgeInsets.zero,
@@ -478,27 +532,19 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           // 3. Cache cleaner
           _buildSectionHeader(AppLocalizations.of(context).storageAndCache),
           Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-            ),
-            child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 40,
-              leading: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.teal.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.cleaning_services, size: 18, color: Colors.teal),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+            ListTile(
+              leading: const AppCircleBadge(
+                icon: Icons.cleaning_services,
+                color: Colors.teal,
               ),
-              title: const Text('Export & Preview Cache', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              title: Text(isZh ? '导出与预览缓存' : 'Export & Preview Cache'),
               subtitle: Text(
-                'Temporary files cached when opening with external apps (${_formatSize(_cacheSizeBytes)})',
+                isZh
+                    ? '外部应用打开文件产生的临时缓存 (${_formatSize(_cacheSizeBytes)})'
+                    : 'Temporary files cached when opening with external apps (${_formatSize(_cacheSizeBytes)})',
                 style: const TextStyle(fontSize: 10),
               ),
               trailing: _clearingCache
@@ -509,26 +555,20 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
                       onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
-                      child: const Text('Clear', style: TextStyle(fontSize: 11)),
+                      child: Text(isZh ? '清理' : 'Clear', style: const TextStyle(fontSize: 11)),
                     ),
             ),
             const Divider(height: 1),
             ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              minTileHeight: 40,
-              leading: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.deepPurple.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.archive_outlined, size: 18, color: Colors.deepPurple),
+              leading: const AppCircleBadge(
+                icon: Icons.archive_outlined,
+                color: Colors.deepPurple,
               ),
-              title: const Text('Remote Archive Cache', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              title: Text(isZh ? '远程与压缩包缓存' : 'Remote Archive Cache'),
               subtitle: Text(
-                'Archives downloaded from remote servers for browsing (${_formatSize(_archiveCacheBytes)})',
+                isZh
+                    ? '浏览远程服务器时产生的临时文件 (${_formatSize(_archiveCacheBytes)})'
+                    : 'Archives downloaded from remote servers for browsing (${_formatSize(_archiveCacheBytes)})',
                 style: const TextStyle(fontSize: 10),
               ),
               trailing: OutlinedButton(
@@ -537,12 +577,15 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                 ),
                 onPressed: _archiveCacheBytes > 0 ? _clearArchiveCache : null,
-                child: const Text('Clear', style: TextStyle(fontSize: 11)),
+                child: Text(isZh ? '清理' : 'Clear', style: const TextStyle(fontSize: 11)),
               ),
+            ),
+              ],
             ),
           ),
         ],
         ),
+      ),
       ),
     );
   }

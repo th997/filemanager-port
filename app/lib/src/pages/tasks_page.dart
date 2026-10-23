@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../rust/api/tasks.dart';
 import '../services/task_service.dart';
+import '../theme/app_ui_tokens.dart';
 
 /// Task centre: every copy/move/delete/compress/extract task, live.
 ///
@@ -36,7 +38,14 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   void _refresh() {
-    final tasks = TaskService.instance.list();
+    final List<TaskProgressDto> tasks;
+    try {
+      tasks = TaskService.instance.list();
+    } catch (_) {
+      // This runs on a 1-second timer: letting it throw left the page
+      // showing "No tasks yet" while transfers were actually running.
+      return;
+    }
     final ids = tasks.map((t) => t.id).toSet();
     _speeds.removeWhere((id, _) => !ids.contains(id));
     for (final t in tasks) {
@@ -116,16 +125,24 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   void _clearFinished() {
+    var refused = 0;
     for (final t in _tasks) {
-      if (_isTerminal(t)) TaskService.instance.dismiss(t.id);
+      if (_isTerminal(t) && !TaskService.instance.dismiss(t.id)) refused++;
     }
     _refresh();
+    // A refused dismiss left the row in the list, so the button looked dead.
+    if (refused > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$refused finished task(s) could not be cleared')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final hasTerminal = _tasks.any(_isTerminal);
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(AppLocalizations.of(context).tasks),
         actions: [
@@ -137,25 +154,41 @@ class _TasksPageState extends State<TasksPage> {
         ],
       ),
       body: _tasks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.task_alt, size: 64, color: Colors.grey.shade400),
-                  const SizedBox(height: 16),
-                  const Text(
-                    AppLocalizations.of(context).noTasksYet,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          // Scrollable so pull-to-refresh works while the list is empty too.
+          ? RefreshIndicator(
+              onRefresh: () async => _refresh(),
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.task_alt, size: 64, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text(
+                            AppLocalizations.of(context).noTasksYet,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Copies, moves and other long operations will appear here.',
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Copies, moves and other long operations will appear here.',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ],
+                ),
               ),
             )
-          : ListView.builder(
+          : RefreshIndicator(
+              onRefresh: () async => _refresh(),
+              child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: AppUiTokens.pagePadding,
               itemCount: _tasks.length,
               itemBuilder: (context, index) {
                 // Registry order is oldest first; show newest on top.
@@ -163,100 +196,131 @@ class _TasksPageState extends State<TasksPage> {
                 return _buildTaskTile(t);
               },
             ),
+            ),
+      ),
     );
   }
 
   Widget _buildTaskTile(TaskProgressDto t) {
     final terminal = _isTerminal(t);
     final fraction = t.fraction;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(_iconFor(t), color: _iconColor(t), size: 26),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            t.label ?? 'Task',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppCircleBadge(
+              icon: _iconFor(t),
+              color: _iconColor(t),
+              size: 32,
+              iconSize: 18,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t.label ?? 'Task',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
                           ),
                         ),
-                        if (fraction != null && !terminal)
-                          Text(
-                            '${(fraction * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                      ),
+                      if (fraction != null && !terminal)
+                        Text(
+                          '${(fraction * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (!terminal) ...[
+                    const SizedBox(height: 6),
+                    if (fraction != null)
+                      LinearProgressIndicator(value: fraction)
+                    else
+                      const LinearProgressIndicator(),
+                  ],
+                  const SizedBox(height: 6),
+                  Text(
+                    _detailText(t),
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  if (t.current != null && !terminal) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      t.current!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                  if (t.error != null) ...[
+                    const SizedBox(height: 4),
+                    // Long backend messages are the useful part; let the
+                    // user copy them instead of re-typing from a truncation.
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: t.error!));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Error copied to clipboard')),
+                        );
+                      },
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              t.error!,
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11, color: Colors.red),
                             ),
                           ),
-                      ],
-                    ),
-                    if (!terminal) ...[
-                      const SizedBox(height: 6),
-                      if (fraction != null)
-                        LinearProgressIndicator(value: fraction)
-                      else
-                        const LinearProgressIndicator(),
-                    ],
-                    const SizedBox(height: 6),
-                    Text(
-                      _detailText(t),
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    if (t.current != null && !terminal) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        t.current!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.copy, size: 13, color: Colors.red),
+                          ),
+                        ],
                       ),
-                    ],
-                    if (t.error != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        t.error!,
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: Colors.red),
-                      ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
-              if (!terminal)
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  tooltip: AppLocalizations.of(context).cancelTask,
-                  onPressed: () {
-                    TaskService.instance.cancel(t.id);
-                    _refresh();
-                  },
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.clear, size: 20),
-                  tooltip: AppLocalizations.of(context).dismiss,
-                  onPressed: () {
-                    TaskService.instance.dismiss(t.id);
-                    _refresh();
-                  },
-                ),
-            ],
-          ),
+            ),
+            if (!terminal)
+              AppIconButton(
+                icon: Icons.close,
+                tooltip: AppLocalizations.of(context).cancelTask,
+                onPressed: () {
+                  // The backend refuses cancellation for some task types; the
+                  // button used to look like it worked either way.
+                  if (!TaskService.instance.cancel(t.id)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('This task cannot be cancelled')),
+                    );
+                  }
+                  _refresh();
+                },
+              )
+            else
+              AppIconButton(
+                icon: Icons.clear,
+                tooltip: AppLocalizations.of(context).dismiss,
+                onPressed: () {
+                  TaskService.instance.dismiss(t.id);
+                  _refresh();
+                },
+              ),
+          ],
         ),
       ),
     );

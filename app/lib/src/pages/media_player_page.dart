@@ -440,12 +440,12 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                 ],
                 IconButton(
                   icon: const Icon(Icons.replay_10),
-                  tooltip: 'Rewind 10s (←)',
+                  tooltip: 'Rewind 10s (← for 5s)',
                   onPressed: () => _seekRelative(-10),
                 ),
                 IconButton(
                   icon: const Icon(Icons.forward_10),
-                  tooltip: 'Forward 10s (→)',
+                  tooltip: 'Forward 10s (→ for 5s)',
                   onPressed: () => _seekRelative(10),
                 ),
                 IconButton(
