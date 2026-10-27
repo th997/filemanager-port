@@ -167,7 +167,11 @@ class _RecentPageState extends State<RecentPage> {
         content: const Text('Remove all recent locations? Bookmarks are kept.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Clear')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Clear'),
+          ),
         ],
       ),
     );
@@ -304,33 +308,12 @@ class _RecentPageState extends State<RecentPage> {
                               physics: const AlwaysScrollableScrollPhysics(),
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                                child: Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          _history.isEmpty ? Icons.history : Icons.search_off,
-                                          size: 56,
-                                          color: Colors.grey.shade400,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          _history.isEmpty ? 'No recent browsing history' : 'No matching locations',
-                                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          _history.isEmpty
-                                              ? 'Directories and files you browse will show up here.'
-                                              : 'Nothing matches "$_searchQuery".',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                child: AppEmptyState(
+                                  icon: _history.isEmpty ? Icons.history : Icons.search_off,
+                                  title: _history.isEmpty ? 'No recent browsing history' : 'No matching locations',
+                                  subtitle: _history.isEmpty
+                                      ? 'Directories and files you browse will show up here.'
+                                      : 'Nothing matches "$_searchQuery".',
                                 ),
                               ),
                             ),
@@ -379,10 +362,46 @@ class _RecentPageState extends State<RecentPage> {
                                           if (v == 'bookmark') _bookmarkHistory(h, title);
                                           if (v == 'remove') _removeEntry(h, title);
                                         },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(value: 'copy', child: Text('Copy Path')),
-                                          PopupMenuItem(value: 'bookmark', child: Text('Bookmark Location')),
-                                          PopupMenuItem(value: 'remove', child: Text('Remove')),
+                                        itemBuilder: (_) => [
+                                          const PopupMenuItem(
+                                            value: 'copy',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.copy_outlined, size: 18),
+                                                SizedBox(width: 8),
+                                                Text('Copy Path'),
+                                              ],
+                                            ),
+                                          ),
+                                          const PopupMenuItem(
+                                            value: 'bookmark',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.bookmark_add_outlined, size: 18),
+                                                SizedBox(width: 8),
+                                                Text('Bookmark Location'),
+                                              ],
+                                            ),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'remove',
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.delete_outline,
+                                                  size: 18,
+                                                  color: Theme.of(context).colorScheme.error,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  'Remove',
+                                                  style: TextStyle(
+                                                    color: Theme.of(context).colorScheme.error,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ],
                                       ),
                                       const Icon(Icons.chevron_right, size: 16),

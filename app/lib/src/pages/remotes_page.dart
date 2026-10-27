@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
@@ -266,6 +267,158 @@ class _RemotesPageState extends State<RemotesPage> {
     }
   }
 
+  Future<void> _exportRemotes() async {
+    try {
+      if (_remotes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No connections to export')),
+        );
+        return;
+      }
+      final jsonStr = await StorageService.instance.exportRemotesJson();
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Backup Connections (${_remotes.length})',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Export your configured connections as JSON. You can copy it or share/save to Files.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copy to Clipboard'),
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    Clipboard.setData(ClipboardData(text: jsonStr));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Connections copied to clipboard')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Share / Save to Files'),
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    SharePlus.instance.share(ShareParams(
+                      text: jsonStr,
+                      subject: 'remotes_backup.json',
+                    ));
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _importRemotes() async {
+    final controller = TextEditingController();
+    try {
+      final clip = await Clipboard.getData(Clipboard.kTextPlain);
+      if (clip?.text != null &&
+          (clip!.text!.trim().startsWith('[') || clip.text!.trim().startsWith('{'))) {
+        controller.text = clip.text!.trim();
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    final imported = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore Connections'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Paste JSON backup text below:',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  hintText: '[{"id": "...", "name": "...", "kind": "s3", ...}]',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final text = controller.text.trim();
+              if (text.isEmpty) return;
+              try {
+                final count = await StorageService.instance.importRemotesJson(text);
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop(true);
+                }
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Successfully imported $count connection(s)'),
+                      backgroundColor: Theme.of(context).colorScheme.success,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text('Import failed: $e'),
+                      backgroundColor: Theme.of(ctx).colorScheme.error,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    if (imported == true) {
+      _loadRemotes();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final displayedRemotes = _visibleRemotes;
@@ -298,6 +451,39 @@ class _RemotesPageState extends State<RemotesPage> {
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
             onPressed: _loadRemotes,
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Backup / Restore',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (val) {
+              if (val == 'export') {
+                _exportRemotes();
+              } else if (val == 'import') {
+                _importRemotes();
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'export',
+                child: Row(
+                  children: [
+                    Icon(Icons.upload_file, size: 18),
+                    SizedBox(width: 8),
+                    Text('Backup / Export'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'import',
+                child: Row(
+                  children: [
+                    Icon(Icons.download_for_offline, size: 18),
+                    SizedBox(width: 8),
+                    Text('Restore / Import'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -340,33 +526,15 @@ class _RemotesPageState extends State<RemotesPage> {
                               physics: const AlwaysScrollableScrollPhysics(),
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                                child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.cloud_queue, size: 56, color: Colors.grey.shade400),
-                                  const SizedBox(height: 12),
-                                  const Text(
-                                    'No remote connections configured',
-                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  FilledButton.icon(
+                                child: AppEmptyState(
+                                  icon: Icons.cloud_queue,
+                                  title: 'No remote connections configured',
+                                  subtitle: 'Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.',
+                                  action: FilledButton.icon(
                                     onPressed: _addRemote,
                                     icon: const Icon(Icons.add, size: 18),
                                     label: const Text('Add Remote Storage'),
                                   ),
-                                ],
-                              ),
-                            ),
                                 ),
                               ),
                             ),
@@ -377,27 +545,10 @@ class _RemotesPageState extends State<RemotesPage> {
                                   physics: const AlwaysScrollableScrollPhysics(),
                                   child: ConstrainedBox(
                                     constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                                    child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.search_off, size: 56, color: Colors.grey.shade400),
-                                      const SizedBox(height: 12),
-                                      const Text(
-                                        'No matching connections',
-                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        'Nothing matches "$_searchQuery".',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                    child: AppEmptyState(
+                                      icon: Icons.search_off,
+                                      title: 'No matching connections',
+                                      subtitle: 'Nothing matches "$_searchQuery".',
                                     ),
                                   ),
                                 ),
@@ -458,26 +609,76 @@ class _RemotesPageState extends State<RemotesPage> {
                                       trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          AppIconButton(
-                                            icon: Icons.copy_outlined,
-                                            tooltip: 'Copy Connection URI',
-                                            onPressed: () => _copyRemoteUri(r),
-                                          ),
-                                          AppIconButton(
-                                            icon: Icons.network_check,
-                                            tooltip: 'Test Connection',
-                                            onPressed: () => _testRemote(r),
-                                          ),
-                                          AppIconButton(
-                                            icon: Icons.edit_outlined,
-                                            tooltip: 'Edit',
-                                            onPressed: () => _editRemote(r),
-                                          ),
-                                          AppIconButton(
-                                            icon: Icons.delete_outline,
-                                            color: Colors.red,
-                                            tooltip: 'Delete',
-                                            onPressed: () => _deleteRemote(r),
+                                          PopupMenuButton<String>(
+                                            icon: const Icon(Icons.more_vert, size: 20),
+                                            tooltip: 'Remote actions',
+                                            onSelected: (action) {
+                                              switch (action) {
+                                                case 'test':
+                                                  _testRemote(r);
+                                                  break;
+                                                case 'copy':
+                                                  _copyRemoteUri(r);
+                                                  break;
+                                                case 'edit':
+                                                  _editRemote(r);
+                                                  break;
+                                                case 'delete':
+                                                  _deleteRemote(r);
+                                                  break;
+                                              }
+                                            },
+                                            itemBuilder: (ctx) => [
+                                              const PopupMenuItem(
+                                                value: 'test',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.network_check, size: 18),
+                                                    SizedBox(width: 8),
+                                                    Text('Test Connection'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'copy',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.copy_outlined, size: 18),
+                                                    SizedBox(width: 8),
+                                                    Text('Copy URI'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'edit',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.edit_outlined, size: 18),
+                                                    SizedBox(width: 8),
+                                                    Text('Edit'),
+                                                  ],
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.delete_outline,
+                                                      size: 18,
+                                                      color: Theme.of(context).colorScheme.error,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      'Delete',
+                                                      style: TextStyle(
+                                                        color: Theme.of(context).colorScheme.error,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           const Icon(Icons.chevron_right, size: 16),
                                         ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
+import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 
@@ -318,6 +319,7 @@ class _TrashPageState extends State<TrashPage> {
       if (mounted) setState(() => _restoringTotal = 0);
       _load();
       if (mounted) {
+        final scheme = Theme.of(context).colorScheme;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -326,7 +328,7 @@ class _TrashPageState extends State<TrashPage> {
                   : 'Restored $successCount of $count. Still in trash: '
                       '${failures.take(3).join(', ')}${failures.length > 3 ? '…' : ''}',
             ),
-            backgroundColor: failures.isEmpty ? null : Colors.orange.shade800,
+            backgroundColor: failures.isEmpty ? null : scheme.warning,
           ),
         );
       }
@@ -357,7 +359,9 @@ class _TrashPageState extends State<TrashPage> {
               ? 'Restoring $_restoringDone / $_restoringTotal…'
               : _items.isEmpty
                   ? 'Recycle Bin'
-                  : 'Recycle Bin • ${_items.length} items, ${_formatSize(_totalSize)}',
+                  : MediaQuery.sizeOf(context).width < 500
+                      ? 'Recycle Bin (${_items.length})'
+                      : 'Recycle Bin • ${_items.length} items, ${_formatSize(_totalSize)}',
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
@@ -430,18 +434,10 @@ class _TrashPageState extends State<TrashPage> {
                               physics: const AlwaysScrollableScrollPhysics(),
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                                child: Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.delete_outline, size: 64, color: Colors.grey.shade400),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        _items.isEmpty ? 'Recycle Bin is empty' : 'No matching items in trash',
-                                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                      ),
-                                    ],
-                                  ),
+                                child: AppEmptyState(
+                                  icon: Icons.delete_outline,
+                                  title: _items.isEmpty ? 'Recycle Bin is empty' : 'No matching items in trash',
+                                  subtitle: _items.isEmpty ? 'Deleted files and folders will appear here.' : null,
                                 ),
                               ),
                             ),
@@ -473,7 +469,7 @@ class _TrashPageState extends State<TrashPage> {
                                     children: [
                                       AppIconButton(
                                         icon: Icons.restore,
-                                        color: Colors.green,
+                                        color: Theme.of(context).colorScheme.success,
                                         tooltip: 'Restore',
                                         onPressed: _restoringTotal > 0
                                             ? null
@@ -481,7 +477,7 @@ class _TrashPageState extends State<TrashPage> {
                                       ),
                                       AppIconButton(
                                         icon: Icons.delete_forever,
-                                        color: Colors.red,
+                                        color: Theme.of(context).colorScheme.error,
                                         tooltip: 'Delete Permanently',
                                         onPressed: _restoringTotal > 0
                                             ? null
@@ -490,6 +486,12 @@ class _TrashPageState extends State<TrashPage> {
                                     ],
                                   ),
                                   onTap: () => _showItemDetails(item),
+                                  onLongPress: () {
+                                    Clipboard.setData(ClipboardData(text: item.originalPath));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Original path copied to clipboard')),
+                                    );
+                                  },
                                 ),
                               );
                             },

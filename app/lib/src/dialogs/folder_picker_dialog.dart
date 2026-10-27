@@ -229,10 +229,13 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
     return AlertDialog(
       title: Text(widget.title),
-      content: SizedBox(
-        width: 420,
-        height: 420,
-        child: Column(
+      actionsOverflowButtonSpacing: 6,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 420),
+        child: SizedBox(
+          width: double.maxFinite,
+          height: 420,
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (quickTargets.isNotEmpty)
@@ -401,6 +404,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
             ),
           ],
         ),
+      ),
       ),
       actions: [
         TextButton(

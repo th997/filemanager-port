@@ -1919,6 +1919,38 @@ class BrowserPageState extends State<BrowserPage> {
     _openEntry(item);
   }
 
+  void _selectAdjacent(int delta) {
+    if (_isTyping) return;
+    final list = _filteredAndSortedEntries;
+    if (list.isEmpty) return;
+    int currentIndex = -1;
+    if (_selectedPaths.isNotEmpty) {
+      final lastSelected = _selectedPaths.last;
+      currentIndex = list.indexWhere((e) => _fullEntryPath(e) == lastSelected);
+    }
+    final nextIndex = currentIndex < 0
+        ? (delta > 0 ? 0 : list.length - 1)
+        : (currentIndex + delta).clamp(0, list.length - 1);
+    final target = list[nextIndex];
+    setState(() {
+      _selectedPaths.clear();
+      _selectedPaths.add(_fullEntryPath(target));
+      _isSelecting = true;
+    });
+  }
+
+  void _selectBoundary(bool first) {
+    if (_isTyping) return;
+    final list = _filteredAndSortedEntries;
+    if (list.isEmpty) return;
+    final target = first ? list.first : list.last;
+    setState(() {
+      _selectedPaths.clear();
+      _selectedPaths.add(_fullEntryPath(target));
+      _isSelecting = true;
+    });
+  }
+
   void _clearSelection() {
     setState(() {
       _selectedPaths.clear();
@@ -2209,6 +2241,7 @@ class BrowserPageState extends State<BrowserPage> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Already exists'),
+          actionsOverflowButtonSpacing: 6,
           content: Text(
             conflicts.length == 1
                 ? '"${conflicts.first}" already exists in this folder. What should happen to it?'
@@ -2471,9 +2504,15 @@ class BrowserPageState extends State<BrowserPage> {
     if (paths.isEmpty) return;
     final count = paths.length;
     final canTrash = isNativeRoot(_root) && !permanent;
+    final scheme = Theme.of(context).colorScheme;
     final confirm = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        icon: Icon(
+          canTrash ? Icons.delete_outline : Icons.warning_amber_rounded,
+          color: canTrash ? scheme.primary : scheme.error,
+          size: 28,
+        ),
         title: Text(count == 1 ? 'Delete "${paths.first.split('/').last}"?' : 'Delete $count items?'),
         content: Text(
           canTrash
@@ -2485,16 +2524,24 @@ class BrowserPageState extends State<BrowserPage> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          if (canTrash)
-            OutlinedButton(
-              onPressed: () => Navigator.of(ctx).pop('trash'),
-              child: const Text('Recycle Bin'),
+          if (canTrash) ...[
+            TextButton.icon(
+              icon: Icon(Icons.delete_forever, size: 18, color: scheme.error),
+              label: Text('Permanent Delete', style: TextStyle(color: scheme.error)),
+              onPressed: () => Navigator.of(ctx).pop('permanent'),
             ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.of(ctx).pop('permanent'),
-            child: const Text('Permanent Delete'),
-          ),
+            FilledButton.icon(
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('Recycle Bin'),
+              onPressed: () => Navigator.of(ctx).pop('trash'),
+            ),
+          ] else
+            FilledButton.icon(
+              icon: const Icon(Icons.delete_forever, size: 18),
+              style: FilledButton.styleFrom(backgroundColor: scheme.error),
+              onPressed: () => Navigator.of(ctx).pop('permanent'),
+              label: const Text('Permanent Delete'),
+            ),
         ],
       ),
     );
@@ -2626,7 +2673,15 @@ class BrowserPageState extends State<BrowserPage> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Rename')),
+            ListenableBuilder(
+              listenable: ctrl,
+              builder: (ctx, _) => FilledButton(
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                child: const Text('Rename'),
+              ),
+            ),
           ],
         ),
       );
@@ -2680,7 +2735,15 @@ class BrowserPageState extends State<BrowserPage> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Compress')),
+            ListenableBuilder(
+              listenable: ctrl,
+              builder: (ctx, _) => FilledButton(
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(ctx).pop(ctrl.text.trim()),
+                child: const Text('Compress'),
+              ),
+            ),
           ],
         ),
       );
@@ -2827,24 +2890,26 @@ class BrowserPageState extends State<BrowserPage> {
             Expanded(child: Text(item.name, overflow: TextOverflow.ellipsis)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _infoRow('Name', item.name),
-            _infoRow('Path', fullPath),
-            if (ext != null) _infoRow('Extension', ext.toUpperCase()),
-            _infoRow(
-              'Size',
-              item.isDir
-                  ? (dirSize ?? 'Directory')
-                  : '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
-            ),
-            _infoRow('Modified', item.formattedModified),
-            _infoRow('Type', item.isDir ? 'Directory' : (item.isArchive ? 'Archive' : 'File')),
-            _infoRow('Hidden', item.hidden ? 'Yes' : 'No'),
-            if (item.isSymlink) _infoRow('Symlink', 'Yes'),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _infoRow('Name', item.name),
+              _infoRow('Path', fullPath),
+              if (ext != null) _infoRow('Extension', ext.toUpperCase()),
+              _infoRow(
+                'Size',
+                item.isDir
+                    ? (dirSize ?? 'Directory')
+                    : '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
+              ),
+              _infoRow('Modified', item.formattedModified),
+              _infoRow('Type', item.isDir ? 'Directory' : (item.isArchive ? 'Archive' : 'File')),
+              _infoRow('Hidden', item.hidden ? 'Yes' : 'No'),
+              if (item.isSymlink) _infoRow('Symlink', 'Yes'),
+            ],
+          ),
         ),
         actions: [
           FilledButton.tonalIcon(
@@ -3125,6 +3190,10 @@ class BrowserPageState extends State<BrowserPage> {
         const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): _navigateUp,
         const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): _goBack,
         const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): _goForward,
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () => _selectAdjacent(1),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () => _selectAdjacent(-1),
+        const SingleActivator(LogicalKeyboardKey.home): () => _selectBoundary(true),
+        const SingleActivator(LogicalKeyboardKey.end): () => _selectBoundary(false),
         // Enter opens the single selected entry, like every desktop file list.
         const SingleActivator(LogicalKeyboardKey.enter): _openSelected,
         const SingleActivator(LogicalKeyboardKey.numpadEnter): _openSelected,
@@ -3297,8 +3366,8 @@ class BrowserPageState extends State<BrowserPage> {
                         IconButton(
                           icon: const Icon(Icons.clear, size: 18),
                           visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                           onPressed: _clearSearch,
                         ),
                       ],
@@ -3810,6 +3879,12 @@ class BrowserPageState extends State<BrowserPage> {
                         _load();
                       }
                     },
+                    onLongPress: () {
+                      Clipboard.setData(ClipboardData(text: _root));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Copied path: $_root')),
+                      );
+                    },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                       child: Text(
@@ -3840,6 +3915,14 @@ class BrowserPageState extends State<BrowserPage> {
                           }
                           _load();
                         }
+                      },
+                      onLongPress: () {
+                        final next = segments.sublist(0, i + 1).join('/');
+                        final full = isNativeRoot(_root) ? joinNative(_root, next) : '$_root/$next';
+                        Clipboard.setData(ClipboardData(text: full));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Copied path: $full')),
+                        );
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -3958,7 +4041,7 @@ class BrowserPageState extends State<BrowserPage> {
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 9,
+          fontSize: 10,
           color: enabled ? Colors.green.shade700 : Colors.grey,
           fontWeight: enabled ? FontWeight.bold : FontWeight.normal,
         ),
@@ -4039,7 +4122,7 @@ class BrowserPageState extends State<BrowserPage> {
           children: [
             Icon(icon, size: 17, color: color),
             const SizedBox(height: 1),
-            Text(label, style: TextStyle(fontSize: 8.5, color: color)),
+            Text(label, style: TextStyle(fontSize: 10, color: color)),
           ],
         ),
       ),
@@ -4288,7 +4371,7 @@ class BrowserPageState extends State<BrowserPage> {
                               ),
                             ),
                             const SizedBox(height: 1),
-                            Text(item.formattedSize, style: TextStyle(fontSize: 8.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                            Text(item.formattedSize, style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                           ],
                         ),
                       ),
@@ -4436,7 +4519,7 @@ class BrowserPageState extends State<BrowserPage> {
                 item.isDir
                     ? item.formattedModified
                     : '${item.formattedSize}  •  ${item.formattedModified}',
-                style: const TextStyle(fontSize: 9.5),
+                style: const TextStyle(fontSize: 11),
               ),
               trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
               onTap: () => _handleTileTap(item, i),

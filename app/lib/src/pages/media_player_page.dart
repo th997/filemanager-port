@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../rust/api/servers.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
+import '../widgets/app_swipe_back.dart';
 
 /// Video and audio playback for local, remote, and archive files.
 ///
@@ -54,21 +56,26 @@ class MediaPlayerPage extends StatefulWidget {
   State<MediaPlayerPage> createState() => _MediaPlayerPageState();
 }
 
-class _MediaPlayerPageState extends State<MediaPlayerPage> {
+class _MediaPlayerPageState extends State<MediaPlayerPage>
+    with WidgetsBindingObserver {
   final GlobalKey<VideoState> _videoKey = GlobalKey<VideoState>();
   late final Player _player;
   late final VideoController _controller;
   StreamSubscription<String>? _errorSub;
   StreamSubscription<double>? _volumeSub;
+  StreamSubscription<bool>? _playingSub;
   String? _error;
   bool _opened = false;
   bool _startedStream = false;
   bool _isLooping = false;
+  bool _wasPlayingBeforeBackground = false;
   static const _prefVolume = 'player.volume';
   static const _prefLoop = 'player.loop';
+  static const _prefAutoNext = 'player.auto_next';
   static const _prefResumePrefix = 'player.resume.';
   late int _index;
   bool _switching = false;
+  bool _autoNext = true;
   StreamSubscription<bool>? _completedSub;
 
   MediaTrack get _track => widget.playlist.isEmpty
@@ -81,6 +88,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   /// Where playback was when the page closed, keyed by the opened file.
   String get _resumeKey => '$_prefResumePrefix${widget.root}|${_track.path}';
   bool _resumeApplied = false;
+  Duration? _retryPosition;
   StreamSubscription<Duration>? _resumeSub;
   double _volume = 100.0;
   double _lastNonZeroVolume = 100.0;
@@ -88,15 +96,29 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
   @override
   void initState() {
     super.initState();
-    _player = Player();
+    WidgetsBinding.instance.addObserver(this);
+    _player = Player(
+      configuration: const PlayerConfiguration(
+        bufferSize: 128 * 1024 * 1024,
+      ),
+    );
+    _tunePlayerProperties();
+    final softwareRender = Platform.isLinux;
     _controller = VideoController(
       _player,
       configuration: VideoControllerConfiguration(
-        hwdec: Platform.isLinux ? 'no' : null,
-        enableHardwareAcceleration: !Platform.isLinux,
+        hwdec: softwareRender ? 'no' : null,
+        enableHardwareAcceleration: !softwareRender,
       ),
     );
     _volume = _player.state.volume;
+    _playingSub = _player.stream.playing.listen((playing) {
+      if (playing) {
+        WakelockPlus.enable().catchError((_) {});
+      } else {
+        WakelockPlus.disable().catchError((_) {});
+      }
+    });
     // Volume is a user preference, so a muted-then-closed player does not come
     // back silent next time.
     final savedVolume = double.tryParse(
@@ -110,6 +132,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     // looping the next one.
     _isLooping = PreferencesService.instance.getBool(_prefLoop) ?? false;
     if (_isLooping) _player.setPlaylistMode(PlaylistMode.single);
+    _autoNext = PreferencesService.instance.getBool(_prefAutoNext) ?? true;
     _volumeSub = _player.stream.volume.listen((vol) {
       if (mounted) setState(() => _volume = vol);
     });
@@ -120,10 +143,32 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
         ? 0
         : widget.startIndex.clamp(0, widget.playlist.length - 1);
     _completedSub = _player.stream.completed.listen((completed) {
-      // Auto-advance only on a natural finish: not while looping a
-      // single track and not while a manual track switch is mid-open.
-      if (completed && !_isLooping && !_switching && _hasNext) {
-        _openTrack(_index + 1);
+      if (completed) {
+        final pos = _player.state.position;
+        final dur = _player.state.duration;
+        // Premature stream termination (>2s before true duration):
+        // auto-resume from current position instead of pausing or skipping.
+        if (dur > const Duration(seconds: 3) &&
+            pos < dur - const Duration(seconds: 2)) {
+          _retry(fromPosition: pos);
+          return;
+        }
+        // Auto-advance only on a natural finish: not while looping a
+        // single track and not while a manual track switch is mid-open.
+        if (_autoNext && completed && !_isLooping && !_switching && _hasNext) {
+          final nextTrack = widget.playlist[_index + 1];
+          _openTrack(_index + 1);
+          if (mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Auto-playing next: ${nextTrack.fileName}'),
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
       }
     });
     _open();
@@ -238,9 +283,18 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
             .join('/');
         uri = '$base/$encoded';
       }
+      await _tunePlayerProperties();
       await _player.open(Media(uri));
+      await _tunePlayerProperties();
       if (mounted) setState(() => _opened = true);
-      _applyResume();
+      if (_retryPosition != null) {
+        final resumePos = _retryPosition!;
+        _retryPosition = null;
+        _resumeApplied = true;
+        _player.seek(resumePos);
+      } else {
+        _applyResume();
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -285,7 +339,9 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
 
   /// Reopens the same source after a playback error, e.g. once the network
   /// is back or the remote stream endpoint has restarted.
-  Future<void> _retry() async {
+  Future<void> _retry({Duration? fromPosition}) async {
+    _resumeApplied = false;
+    _retryPosition = fromPosition;
     await _player.stop();
     if (mounted) {
       setState(() {
@@ -296,8 +352,53 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     await _open();
   }
 
+  Future<void> _tunePlayerProperties() async {
+    final dynamic platform = _player.platform;
+    if (platform != null) {
+      try {
+        await platform.setProperty('cache-pause', 'no');
+        await platform.setProperty('cache-pause-wait', '0');
+        await platform.setProperty('cache-pause-initial', 'no');
+        await platform.setProperty('cache-on-disk', 'no');
+        await platform.setProperty('video-sync', 'display-resample');
+        await platform.setProperty('demuxer-readahead-secs', '120');
+        await platform.setProperty('demuxer-max-bytes', '${128 * 1024 * 1024}');
+        await platform.setProperty('demuxer-max-back-bytes', '${64 * 1024 * 1024}');
+        await platform.setProperty('network-timeout', '60');
+        await platform.setProperty('framedrop', 'vo');
+        await platform.setProperty('hr-seek-framedrop', 'yes');
+        await platform.setProperty('audio-buffer', '0.5');
+        await platform.setProperty('keep-open-pause', 'no');
+      } catch (_) {}
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!Platform.isIOS) return;
+    if (_track.isAudio) return;
+
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      // iOS kills apps that perform OpenGL ES rendering in the background.
+      // Disabling video track stops GL rendering while audio keeps playing uninterrupted.
+      if (_player.state.playing) {
+        _wasPlayingBeforeBackground = true;
+      }
+      _player.setVideoTrack(VideoTrack.no());
+    } else if (state == AppLifecycleState.resumed) {
+      _player.setVideoTrack(VideoTrack.auto());
+      if (_wasPlayingBeforeBackground) {
+        _wasPlayingBeforeBackground = false;
+        _player.play();
+      }
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable().catchError((_) {});
+    _playingSub?.cancel();
     _saveResumePosition();
     _resumeSub?.cancel();
     _completedSub?.cancel();
@@ -321,20 +422,57 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
     // Each theme data gets its own instance: normal and fullscreen controls can
     // be mounted at the same time, and one widget instance cannot be.
     Widget speedButton() => _SpeedButton(player: _player);
+    Widget nextButton() => widget.playlist.length > 1
+        ? IconButton(
+            icon: Icon(
+              Icons.skip_next,
+              color: _hasNext ? Colors.white : Colors.white38,
+            ),
+            tooltip: 'Next episode (N)',
+            onPressed: _hasNext ? () => _openTrack(_index + 1) : null,
+          )
+        : const SizedBox.shrink();
     final mobileNormal = kDefaultMaterialVideoControlsThemeData.copyWith(
       // Not enabled by default in non-fullscreen. The page used to wrap the
       // video in its own drag handler, but the controls' recognizer is deeper
       // in the tree and always won the gesture arena, so it never fired.
       seekGesture: true,
+      volumeGesture: true,
+      brightnessGesture: true,
+      bottomButtonBarMargin: const EdgeInsets.only(
+        left: 16.0,
+        right: 8.0,
+        bottom: 24.0,
+      ),
+      seekBarMargin: const EdgeInsets.only(
+        left: 16.0,
+        right: 16.0,
+        bottom: 84.0,
+      ),
       bottomButtonBar: [
         ...kDefaultMaterialVideoControlsThemeData.bottomButtonBar,
+        nextButton(),
         speedButton(),
       ],
     );
     final mobileFullscreen = kDefaultMaterialVideoControlsThemeDataFullscreen
         .copyWith(
+      seekGesture: true,
+      volumeGesture: true,
+      brightnessGesture: true,
+      bottomButtonBarMargin: const EdgeInsets.only(
+        left: 16.0,
+        right: 8.0,
+        bottom: 36.0,
+      ),
+      seekBarMargin: const EdgeInsets.only(
+        left: 16.0,
+        right: 16.0,
+        bottom: 96.0,
+      ),
       bottomButtonBar: [
         ...kDefaultMaterialVideoControlsThemeDataFullscreen.bottomButtonBar,
+        nextButton(),
         speedButton(),
       ],
     );
@@ -342,6 +480,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
         .copyWith(
       bottomButtonBar: [
         ...kDefaultMaterialDesktopVideoControlsThemeData.bottomButtonBar,
+        nextButton(),
         speedButton(),
       ],
     );
@@ -350,6 +489,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
       bottomButtonBar: [
         ...kDefaultMaterialDesktopVideoControlsThemeDataFullscreen
             .bottomButtonBar,
+        nextButton(),
         speedButton(),
       ],
     );
@@ -367,7 +507,8 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
+    return AppSwipeBack(
+      child: CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.space): () {
           _player.playOrPause();
@@ -427,42 +568,22 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
               actions: [
                 if (widget.playlist.length > 1) ...[
                   IconButton(
-                    icon: const Icon(Icons.skip_previous),
-                    tooltip: 'Previous (P)',
-                    onPressed: _hasPrev ? () => _openTrack(_index - 1) : null,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next),
-                    tooltip: 'Next (N)',
-                    onPressed: _hasNext ? () => _openTrack(_index + 1) : null,
-                  ),
-                  IconButton(
                     icon: const Icon(Icons.queue_music),
                     tooltip: 'Playlist (${_index + 1}/${widget.playlist.length})',
                     onPressed: _showPlaylist,
                   ),
-                ],
-                IconButton(
-                  icon: const Icon(Icons.replay_10),
-                  tooltip: 'Rewind 10s (← for 5s)',
-                  onPressed: () => _seekRelative(-10),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.forward_10),
-                  tooltip: 'Forward 10s (→ for 5s)',
-                  onPressed: () => _seekRelative(10),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _volume == 0
-                        ? Icons.volume_off
-                        : (_volume < 50 ? Icons.volume_down : Icons.volume_up),
+                  IconButton(
+                    icon: Icon(_autoNext ? Icons.playlist_play : Icons.playlist_remove),
+                    tooltip: _autoNext ? 'Auto-next: On' : 'Auto-next: Off',
+                    color: _autoNext ? Colors.blueAccent : Colors.white60,
+                    onPressed: () {
+                      setState(() {
+                        _autoNext = !_autoNext;
+                        PreferencesService.instance.setBool(_prefAutoNext, _autoNext);
+                      });
+                    },
                   ),
-                  tooltip: _volume == 0
-                      ? 'Unmute (M)'
-                      : 'Mute (M) (${_volume.toInt()}%)',
-                  onPressed: _toggleMute,
-                ),
+                ],
                 IconButton(
                   icon: Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
                   tooltip: _isLooping ? 'Loop: Single' : 'Loop: Off',
@@ -483,6 +604,111 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                   onPressed: () {
                     _videoKey.currentState?.toggleFullscreen();
                   },
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  tooltip: 'Playback options',
+                  onSelected: (action) {
+                    switch (action) {
+                      case 'prev':
+                        if (_hasPrev) _openTrack(_index - 1);
+                        break;
+                      case 'next':
+                        if (_hasNext) _openTrack(_index + 1);
+                        break;
+                      case 'auto_next':
+                        setState(() {
+                          _autoNext = !_autoNext;
+                          PreferencesService.instance.setBool(_prefAutoNext, _autoNext);
+                        });
+                        break;
+                      case 'rewind':
+                        _seekRelative(-10);
+                        break;
+                      case 'forward':
+                        _seekRelative(10);
+                        break;
+                      case 'mute':
+                        _toggleMute();
+                        break;
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    PopupMenuItem(
+                      value: 'mute',
+                      child: Row(
+                        children: [
+                          Icon(
+                            _volume == 0
+                                ? Icons.volume_off
+                                : (_volume < 50 ? Icons.volume_down : Icons.volume_up),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(_volume == 0 ? 'Unmute (M)' : 'Mute (M) (${_volume.toInt()}%)'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'rewind',
+                      child: Row(
+                        children: [
+                          Icon(Icons.replay_10, size: 20),
+                          SizedBox(width: 10),
+                          Text('Rewind 10s'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'forward',
+                      child: Row(
+                        children: [
+                          Icon(Icons.forward_10, size: 20),
+                          SizedBox(width: 10),
+                          Text('Forward 10s'),
+                        ],
+                      ),
+                    ),
+                    if (widget.playlist.length > 1) ...[
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'auto_next',
+                        child: Row(
+                          children: [
+                            Icon(
+                              _autoNext ? Icons.playlist_play : Icons.playlist_remove,
+                              size: 20,
+                              color: _autoNext ? Colors.blueAccent : null,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(_autoNext ? 'Auto-next (On)' : 'Auto-next (Off)'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'prev',
+                        enabled: _hasPrev,
+                        child: const Row(
+                          children: [
+                            Icon(Icons.skip_previous, size: 20),
+                            SizedBox(width: 10),
+                            Text('Previous (P)'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'next',
+                        enabled: _hasNext,
+                        child: const Row(
+                          children: [
+                            Icon(Icons.skip_next, size: 20),
+                            SizedBox(width: 10),
+                            Text('Next (N)'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -532,6 +758,8 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
                         controller: _controller,
                         fill: Colors.black,
                         controls: AdaptiveVideoControls,
+                        pauseUponEnteringBackgroundMode: false,
+                        resumeUponEnteringForegroundMode: false,
                       ),
                     ),
                     if (_track.isAudio)
@@ -561,6 +789,7 @@ class _MediaPlayerPageState extends State<MediaPlayerPage> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -616,9 +845,13 @@ class _SpeedButtonState extends State<_SpeedButton> {
     return PopupMenuButton<double>(
       tooltip: 'Playback speed',
       initialValue: _rate,
-      onSelected: (rate) {
-        widget.player.setRate(rate);
+      onSelected: (rate) async {
+        final wasPlaying = widget.player.state.playing;
+        await widget.player.setRate(rate);
         PreferencesService.instance.setString(_prefSpeed, rate.toString());
+        if (wasPlaying) {
+          await widget.player.play();
+        }
       },
       itemBuilder: (context) => [
         for (final rate in _rates)

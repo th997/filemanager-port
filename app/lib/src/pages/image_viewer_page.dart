@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/file_open_service.dart';
+import '../widgets/app_swipe_back.dart';
 
 /// One image shown by [ImageViewerPage].
 ///
@@ -59,6 +60,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   late int _index;
   int _quarterTurns = 0;
   bool _zoomed = false;
+  bool _showChrome = true;
   Offset _lastDoubleTapPosition = Offset.zero;
   /// Accumulated downward drag on the current image, used to close on swipe.
   double _dismissDrag = 0;
@@ -257,21 +259,25 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Image Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _detailRow('Name', entry.name),
-              if (dimensions != null)
-                _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
-              if (dateTaken != null) _detailRow('Date taken', dateTaken),
-              if (camera != null) _detailRow('Camera', camera),
-              if (gpsText != null) _detailRow('Location', gpsText),
-              _detailRow('Size', _formatSize(stat.size)),
-              _detailRow('Modified', stat.modified.toString().split('.').first),
-              _detailRow('Path', imagePath),
-            ],
+        actionsOverflowButtonSpacing: 8,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _detailRow('Name', entry.name),
+                if (dimensions != null)
+                  _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
+                if (dateTaken != null) _detailRow('Date taken', dateTaken),
+                if (camera != null) _detailRow('Camera', camera),
+                if (gpsText != null) _detailRow('Location', gpsText),
+                _detailRow('Size', _formatSize(stat.size)),
+                _detailRow('Modified', stat.modified.toString().split('.').first),
+                _detailRow('Path', imagePath),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -416,15 +422,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         child: Text('Image file not found locally', style: TextStyle(color: Colors.white70)),
       );
     }
-    // Decode at display size: a full-resolution decode of a 24 MP photo
-    // costs ~96 MB, and the PageView keeps neighbouring pages resident.
-    final display = MediaQuery.of(context).size;
-    final pixelRatio = MediaQuery.of(context).devicePixelRatio;
     return Image.file(
       file,
       fit: BoxFit.contain,
-      cacheWidth: (display.width * pixelRatio).round(),
-      cacheHeight: (display.height * pixelRatio).round(),
       errorBuilder: (ctx, err, stack) => const Center(
         child: Text('Failed to load image', style: TextStyle(color: Colors.white70)),
       ),
@@ -468,8 +468,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Widget build(BuildContext context) {
     final multiple = _entries.length > 1;
 
-    return CallbackShortcuts(
-      bindings: {
+    return AppSwipeBack(
+      child: CallbackShortcuts(
+        bindings: {
         const SingleActivator(LogicalKeyboardKey.equal): () => _zoomBy(1.25),
         const SingleActivator(LogicalKeyboardKey.equal, control: true): () => _zoomBy(1.25),
         const SingleActivator(LogicalKeyboardKey.equal, meta: true): () => _zoomBy(1.25),
@@ -509,14 +510,17 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         autofocus: true,
         child: Scaffold(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-            backgroundColor: Colors.black87,
-            foregroundColor: Colors.white,
-            title: Text(
+          extendBodyBehindAppBar: true,
+          appBar: _showChrome
+              ? AppBar(
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                  backgroundColor: Colors.black.withValues(alpha: 0.65),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  title: Text(
               multiple
                   ? '${_current.name}  (${_index + 1}/${_entries.length})'
                   : _current.name,
@@ -524,42 +528,94 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.zoom_in),
-                tooltip: 'Zoom in (+ / Ctrl+=)',
-                onPressed: () => _zoomBy(1.25),
-              ),
-              IconButton(
-                icon: const Icon(Icons.zoom_out),
-                tooltip: 'Zoom out (- / Ctrl+-)',
-                onPressed: () => _zoomBy(0.8),
-              ),
-              IconButton(
                 icon: const Icon(Icons.rotate_right),
                 tooltip: 'Rotate 90° (R)',
                 onPressed: () => setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
-              ),
-              IconButton(
-                icon: const Icon(Icons.zoom_out_map),
-                tooltip: 'Reset zoom (0 / Ctrl+0)',
-                onPressed: _resetView,
               ),
               IconButton(
                 icon: const Icon(Icons.share),
                 tooltip: 'Share image',
                 onPressed: _shareCurrent,
               ),
-              IconButton(
-                icon: const Icon(Icons.copy_all_outlined),
-                tooltip: 'Copy image file path',
-                onPressed: _copyCurrentPath,
-              ),
-              IconButton(
-                icon: const Icon(Icons.info_outline),
-                tooltip: 'Details',
-                onPressed: _showImageDetails,
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'More options',
+                onSelected: (action) {
+                  switch (action) {
+                    case 'zoom_in':
+                      _zoomBy(1.25);
+                      break;
+                    case 'zoom_out':
+                      _zoomBy(0.8);
+                      break;
+                    case 'reset_zoom':
+                      _resetView();
+                      break;
+                    case 'copy_path':
+                      _copyCurrentPath();
+                      break;
+                    case 'details':
+                      _showImageDetails();
+                      break;
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'details',
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 20),
+                        SizedBox(width: 10),
+                        Text('Details'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'copy_path',
+                    child: Row(
+                      children: [
+                        Icon(Icons.copy_all_outlined, size: 20),
+                        SizedBox(width: 10),
+                        Text('Copy Path'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'zoom_in',
+                    child: Row(
+                      children: [
+                        Icon(Icons.zoom_in, size: 20),
+                        SizedBox(width: 10),
+                        Text('Zoom in (+)'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'zoom_out',
+                    child: Row(
+                      children: [
+                        Icon(Icons.zoom_out, size: 20),
+                        SizedBox(width: 10),
+                        Text('Zoom out (-)'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'reset_zoom',
+                    child: Row(
+                      children: [
+                        Icon(Icons.zoom_out_map, size: 20),
+                        SizedBox(width: 10),
+                        Text('Reset zoom (0)'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
+          )
+        : null,
           body: Stack(
             children: [
               PageView.builder(
@@ -576,6 +632,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     return Center(child: _buildImageAt(i, interactive: false));
                   }
                   return GestureDetector(
+                    onTap: () => setState(() => _showChrome = !_showChrome),
                     onDoubleTapDown: (details) =>
                         _lastDoubleTapPosition = details.localPosition,
                     onDoubleTap: () => _toggleZoom(_lastDoubleTapPosition),
@@ -608,35 +665,37 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
               // A long file name truncates the app bar title, so the position
               // in the set gets its own chip.
-              if (multiple && !_zoomed)
+              if (multiple && !_zoomed && _showChrome)
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 12,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${_index + 1} / ${_entries.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                  child: SafeArea(
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${_index + 1} / ${_entries.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              if (multiple && !_zoomed) ...[
+              if (multiple && !_zoomed && _showChrome) ...[
                 Positioned(
                   left: 8,
                   top: 0,
@@ -668,6 +727,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
           ),
         ),
       ),
+    ),
     );
   }
 }

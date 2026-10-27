@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../rust/api/tasks.dart';
+import '../services/semantic_colors.dart';
 import '../services/task_service.dart';
 import '../theme/app_ui_tokens.dart';
 
@@ -80,10 +81,11 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Color _iconColor(TaskProgressDto t) {
-    if (t.state == 'completed') return Colors.green;
-    if (t.state == 'failed') return Colors.red;
-    if (t.state == 'cancelled') return Colors.grey;
-    return Colors.blue;
+    final scheme = Theme.of(context).colorScheme;
+    if (t.state == 'completed') return scheme.success;
+    if (t.state == 'failed') return scheme.error;
+    if (t.state == 'cancelled') return scheme.outline;
+    return scheme.primary;
   }
 
   String _statusText(TaskProgressDto t) {
@@ -146,6 +148,11 @@ class _TasksPageState extends State<TasksPage> {
       appBar: AppBar(
         title: Text(AppLocalizations.of(context).tasks),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _refresh,
+          ),
           if (hasTerminal)
             TextButton(
               onPressed: _clearFinished,
@@ -162,23 +169,10 @@ class _TasksPageState extends State<TasksPage> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.task_alt, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            AppLocalizations.of(context).noTasksYet,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Copies, moves and other long operations will appear here.',
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
+                    child: AppEmptyState(
+                      icon: Icons.task_alt,
+                      title: AppLocalizations.of(context).noTasksYet,
+                      subtitle: 'Copies, moves and other long operations will appear here.',
                     ),
                   ),
                 ),

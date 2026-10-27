@@ -243,9 +243,12 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.initialConfig == null ? 'Add Remote Storage' : 'Edit Remote Storage'),
-      content: SizedBox(
-        width: 500,
-        child: Form(
+      actionsOverflowButtonSpacing: 8,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: Form(
           key: _formKey,
           child: SingleChildScrollView(
             child: Column(
@@ -519,6 +522,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
             ),
           ),
         ),
+      ),
       ),
       actions: [
         TextButton(

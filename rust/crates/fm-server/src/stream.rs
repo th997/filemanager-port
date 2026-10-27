@@ -22,9 +22,9 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
 
-/// Bytes pushed to the socket per read. 4 KiB (the `ReaderStream` default)
-/// leaves the network mostly idle for video.
-const STREAM_BUFFER: usize = 64 * 1024;
+/// Bytes pushed to the socket per read. 256 KiB leaves the network
+/// and loopback streaming responsive even at high bitrate and fast playback rates.
+const STREAM_BUFFER: usize = 256 * 1024;
 
 pub struct StreamServer {
     pub port: u16,

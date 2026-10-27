@@ -9,6 +9,7 @@ import '../rust/api/metadata.dart' as meta_api;
 import '../rust/api/servers.dart';
 import '../services/file_open_service.dart';
 import '../services/platform_paths.dart';
+import '../services/semantic_colors.dart';
 import '../services/sharing_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
@@ -138,6 +139,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Empty Recycle Bin'),
+        actionsOverflowButtonSpacing: 8,
         content: Text('Permanently delete all $_trashCount items? This cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
@@ -305,7 +307,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       icon: Icons.delete_sweep_outlined,
                       size: 28,
                       iconSize: 18,
-                      color: Colors.redAccent,
+                      color: Theme.of(context).colorScheme.error,
                       tooltip: isZh ? '清空回收站' : 'Empty Recycle Bin',
                       onPressed: _emptyTrash,
                     ),
@@ -325,11 +327,10 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           // 2. LAN HTTP Sharing Card
           _buildSectionHeader(AppLocalizations.of(context).lanSharing),
           Card(
-            elevation: _serverRunning ? 2 : 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
               side: _serverRunning
-                  ? const BorderSide(color: Colors.green, width: 1.5)
+                  ? BorderSide(color: Theme.of(context).colorScheme.success, width: 1.5)
                   : BorderSide.none,
             ),
             child: Padding(
@@ -345,7 +346,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                           Icon(
                             Icons.wifi_tethering,
                             size: 22,
-                            color: _serverRunning ? Colors.green : Theme.of(context).colorScheme.primary,
+                            color: _serverRunning ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.primary,
                           ),
                           const SizedBox(width: 8),
                           Column(
@@ -353,13 +354,18 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                             children: [
                               Text(
                                 isZh ? '局域网网页共享服务' : 'Web Sharing Server',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               Text(
                                 _serverRunning
                                     ? (isZh ? '🟢 局域网运行中' : '🟢 Running on LAN')
                                     : (isZh ? '⚪ 已停止' : '⚪ Stopped'),
-                                style: TextStyle(fontSize: 10, color: _serverRunning ? Colors.green : Colors.grey),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _serverRunning
+                                      ? Theme.of(context).colorScheme.success
+                                      : Theme.of(context).colorScheme.outline,
+                                ),
                               ),
                             ],
                           ),
@@ -381,13 +387,21 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                     const Divider(height: 12),
                     Row(
                       children: [
-                        const Icon(Icons.folder_shared, size: 16, color: Colors.green),
+                        Icon(Icons.folder_shared, size: 16, color: Theme.of(context).colorScheme.success),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: Text(
-                            '${isZh ? '共享目录' : 'Shared'}: ${_friendlyPath(_shareRoot)}${_readOnly ? (isZh ? ' (只读)' : ' (read-only)') : ''}',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
+                          child: InkWell(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: _shareRoot));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(isZh ? '共享目录路径已复制' : 'Shared path copied')),
+                              );
+                            },
+                            child: Text(
+                              '${isZh ? '共享目录' : 'Shared'}: ${_friendlyPath(_shareRoot)}${_readOnly ? (isZh ? ' (只读)' : ' (read-only)') : ''}',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ],
@@ -407,32 +421,33 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                           isZh
                               ? '未检测到局域网 IP，请连接 Wi-Fi 或网线。'
                               : 'No local IP address detected. Connect to Wi-Fi or LAN.',
-                          style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
+                          style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.warning),
                         ),
                       )
                     else
                       ..._serverStatus!.addresses.map((ip) {
                       final url = 'http://$ip:${_serverStatus!.port}';
+                      final successColor = Theme.of(context).colorScheme.success;
                       return Container(
                         margin: const EdgeInsets.symmetric(vertical: 2),
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.1),
+                          color: successColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                          border: Border.all(color: successColor.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             SelectableText(
                               url,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Colors.green),
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: successColor),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.copy, size: 15),
+                              icon: const Icon(Icons.copy, size: 16),
                               visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.all(2),
-                              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                               tooltip: isZh ? '复制网址' : 'Copy URL',
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: url));
@@ -520,12 +535,12 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               border: const OutlineInputBorder(),
                               isDense: true,
                               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              suffixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                              suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                               suffixIcon: IconButton(
-                                icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 15),
+                                icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
                                 visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                                padding: const EdgeInsets.all(8),
+                                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                                 tooltip: _obscurePwd ? 'Show password' : 'Hide password',
                                 onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
                               ),

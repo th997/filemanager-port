@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../services/preferences_service.dart';
+import '../services/semantic_colors.dart';
 import '../theme/app_ui_tokens.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -122,84 +124,93 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _buildSectionHeader(context, l10n.appearance),
           Card(
-            child: ListTile(
-              leading: const AppCircleBadge(
-                icon: Icons.brightness_medium,
-                color: Colors.blue,
-              ),
-              title: Text(l10n.theme),
-              subtitle: Text(_themeModeLabel(currentThemeMode), style: const TextStyle(fontSize: 10)),
-              trailing: DropdownButton<ThemeMode>(
-                value: currentThemeMode,
-                underline: const SizedBox.shrink(),
-                items: [
-                  DropdownMenuItem(value: ThemeMode.system, child: Text(l10n.themeSystem, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: ThemeMode.light, child: Text(l10n.themeLight, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: ThemeMode.dark, child: Text(l10n.themeDark, style: const TextStyle(fontSize: 12))),
-                ],
-                onChanged: (mode) {
-                  if (mode == null) return;
-                  setState(() => _themeMode = mode);
-                  widget.onThemeModeChanged(mode);
-                },
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          Card(
-            child: ListTile(
-              leading: AppCircleBadge(
-                icon: Icons.palette_outlined,
-                color: _accentSeeds[_accentCode] ?? Theme.of(context).colorScheme.primary,
-              ),
-              title: Text(l10n.accentColor),
-              subtitle: Text(_accentLabel(_accentCode), style: const TextStyle(fontSize: 10)),
-              trailing: DropdownButton<String>(
-                value: _accentCode,
-                underline: const SizedBox.shrink(),
-                items: [
-                  DropdownMenuItem(value: 'dynamic', child: Text(l10n.accentDynamic, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 'deepTeal', child: Text(l10n.accentDeepTeal, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 'classicBlue', child: Text(l10n.accentClassicBlue, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 'indigo', child: Text(l10n.accentIndigo, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 'forest', child: Text(l10n.accentForest, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 'sunset', child: Text(l10n.accentSunset, style: const TextStyle(fontSize: 12))),
-                  DropdownMenuItem(value: 'grape', child: Text(l10n.accentGrape, style: const TextStyle(fontSize: 12))),
-                ],
-                onChanged: (code) {
-                  if (code == null) return;
-                  setState(() => _accentCode = code);
-                  widget.onAccentChanged(code);
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-
-          Card(
-            child: ListTile(
-              leading: const AppCircleBadge(
-                icon: Icons.language,
-                color: Colors.indigo,
-              ),
-              title: Text(l10n.language),
-              subtitle: Text(_languageLabel(_localeCode), style: const TextStyle(fontSize: 10)),
-              trailing: DropdownButton<String>(
-                value: _localeCode,
-                underline: const SizedBox.shrink(),
-                items: [
-                  DropdownMenuItem(value: 'system', child: Text(l10n.languageSystem, style: const TextStyle(fontSize: 12))),
-                  const DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(fontSize: 12))),
-                  const DropdownMenuItem(value: 'zh', child: Text('中文', style: TextStyle(fontSize: 12))),
-                ],
-                onChanged: (code) {
-                  if (code == null) return;
-                  setState(() => _localeCode = code);
-                  widget.onLocaleChanged(code);
-                },
-              ),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.brightness_medium,
+                    color: Colors.blue,
+                  ),
+                  title: Text(l10n.theme),
+                  subtitle: Text(_themeModeLabel(currentThemeMode), style: const TextStyle(fontSize: 11)),
+                  trailing: SegmentedButton<ThemeMode>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        icon: const Icon(Icons.brightness_auto, size: 16),
+                        tooltip: l10n.themeSystem,
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        icon: const Icon(Icons.light_mode, size: 16),
+                        tooltip: l10n.themeLight,
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        icon: const Icon(Icons.dark_mode, size: 16),
+                        tooltip: l10n.themeDark,
+                      ),
+                    ],
+                    selected: {currentThemeMode},
+                    onSelectionChanged: (set) {
+                      final mode = set.first;
+                      setState(() => _themeMode = mode);
+                      widget.onThemeModeChanged(mode);
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: AppCircleBadge(
+                    icon: Icons.palette_outlined,
+                    color: _accentSeeds[_accentCode] ?? Theme.of(context).colorScheme.primary,
+                  ),
+                  title: Text(l10n.accentColor),
+                  subtitle: Text(_accentLabel(_accentCode), style: const TextStyle(fontSize: 11)),
+                  trailing: DropdownButton<String>(
+                    value: _accentCode,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      DropdownMenuItem(value: 'dynamic', child: Text(l10n.accentDynamic, style: const TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'deepTeal', child: Text(l10n.accentDeepTeal, style: const TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'classicBlue', child: Text(l10n.accentClassicBlue, style: const TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'indigo', child: Text(l10n.accentIndigo, style: const TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'forest', child: Text(l10n.accentForest, style: const TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'sunset', child: Text(l10n.accentSunset, style: const TextStyle(fontSize: 12))),
+                      DropdownMenuItem(value: 'grape', child: Text(l10n.accentGrape, style: const TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (code) {
+                      if (code == null) return;
+                      setState(() => _accentCode = code);
+                      widget.onAccentChanged(code);
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.language,
+                    color: Colors.indigo,
+                  ),
+                  title: Text(l10n.language),
+                  subtitle: Text(_languageLabel(_localeCode), style: const TextStyle(fontSize: 11)),
+                  trailing: DropdownButton<String>(
+                    value: _localeCode,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      DropdownMenuItem(value: 'system', child: Text(l10n.languageSystem, style: const TextStyle(fontSize: 12))),
+                      const DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(fontSize: 12))),
+                      const DropdownMenuItem(value: 'zh', child: Text('中文', style: TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (code) {
+                      if (code == null) return;
+                      setState(() => _localeCode = code);
+                      widget.onLocaleChanged(code);
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -241,18 +252,35 @@ class _SettingsPageState extends State<SettingsPage> {
                     'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
                     style: const TextStyle(fontSize: 10),
                   ),
+                  trailing: const Icon(Icons.copy, size: 16),
+                  onTap: () {
+                    final info = '${l10n.appTitle} ${_versionLabel ?? ""}\nPlatform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})';
+                    Clipboard.setData(ClipboardData(text: info));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('App info copied to clipboard')),
+                    );
+                  },
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const AppCircleBadge(
+                  leading: AppCircleBadge(
                     icon: Icons.cloud_done,
-                    color: Colors.green,
+                    color: Theme.of(context).colorScheme.success,
                   ),
                   title: Text(l10n.supportedProtocols),
                   subtitle: const Text(
                     'Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z',
                     style: TextStyle(fontSize: 10),
                   ),
+                  trailing: const Icon(Icons.copy, size: 16),
+                  onTap: () {
+                    Clipboard.setData(const ClipboardData(
+                      text: 'Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z',
+                    ));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Supported protocols copied to clipboard')),
+                    );
+                  },
                 ),
               ],
             ),

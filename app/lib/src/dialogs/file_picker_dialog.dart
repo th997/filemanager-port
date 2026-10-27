@@ -181,10 +181,13 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
 
     return AlertDialog(
       title: Text(widget.title),
-      content: SizedBox(
-        width: 480,
-        height: 480,
-        child: Column(
+      actionsOverflowButtonSpacing: 6,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 480),
+        child: SizedBox(
+          width: double.maxFinite,
+          height: 480,
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (quickTargets.isNotEmpty)
@@ -400,6 +403,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
             ),
           ],
         ),
+      ),
       ),
       actions: [
         TextButton(

@@ -108,25 +108,33 @@ class _BookmarksPageState extends State<BookmarksPage> {
   }
 
   Future<void> _renameBookmark(BookmarkDto bm) async {
-    final ctrl = TextEditingController(text: bm.name);
+    final oldName = bm.name;
+    final dotIndex = oldName.lastIndexOf('.');
+    final selectionEnd = (dotIndex > 0 && !oldName.startsWith('.')) ? dotIndex : oldName.length;
+    final ctrl = TextEditingController(text: oldName)
+      ..selection = TextSelection(baseOffset: 0, extentOffset: selectionEnd);
     final String? newName;
     try {
       newName = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Rename Bookmark'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Bookmark Name',
-              border: OutlineInputBorder(),
+          actionsOverflowButtonSpacing: 8,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Bookmark Name',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (v) {
+                if (v.trim().isNotEmpty) {
+                  Navigator.of(ctx).pop(v.trim());
+                }
+              },
             ),
-            onSubmitted: (v) {
-              if (v.trim().isNotEmpty) {
-                Navigator.of(ctx).pop(v.trim());
-              }
-            },
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
@@ -281,29 +289,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: ConstrainedBox(
                           constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                          child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.bookmark_border, size: 56, color: Colors.grey.shade400),
-                            const SizedBox(height: 12),
-                            Text(
-                              _searchQuery.isEmpty ? 'No bookmarks saved yet' : 'No matching bookmarks',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _searchQuery.isEmpty
-                                  ? 'In the file browser, long-press a folder (or right-click it) and choose "Bookmark This Folder".'
-                                  : 'Nothing matches "$_searchQuery".',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
+                          child: AppEmptyState(
+                            icon: Icons.bookmark_border,
+                            title: _searchQuery.isEmpty ? 'No bookmarks saved yet' : 'No matching bookmarks',
+                            subtitle: _searchQuery.isEmpty
+                                ? 'In the file browser, long-press a folder (or right-click it) and choose "Bookmark This Folder".'
+                                : 'Nothing matches "$_searchQuery".',
                           ),
                         ),
                       ),
@@ -328,26 +319,61 @@ class _BookmarksPageState extends State<BookmarksPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AppIconButton(
-                                  icon: Icons.copy_outlined,
-                                  tooltip: 'Copy Path',
-                                  onPressed: () => _copyBookmarkPath(b),
+                            trailing: PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, size: 20),
+                              tooltip: 'Bookmark actions',
+                              onSelected: (action) {
+                                switch (action) {
+                                  case 'copy':
+                                    _copyBookmarkPath(b);
+                                    break;
+                                  case 'rename':
+                                    _renameBookmark(b);
+                                    break;
+                                  case 'remove':
+                                    _deleteBookmark(b);
+                                    break;
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'rename',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit_outlined, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Rename'),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(width: 4),
-                                AppIconButton(
-                                  icon: Icons.edit_outlined,
-                                  tooltip: 'Rename',
-                                  onPressed: () => _renameBookmark(b),
+                                const PopupMenuItem(
+                                  value: 'copy',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.copy_outlined, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Copy Path'),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(width: 4),
-                                AppIconButton(
-                                  icon: Icons.close,
-                                  color: Colors.red,
-                                  tooltip: 'Remove',
-                                  onPressed: () => _deleteBookmark(b),
+                                PopupMenuItem(
+                                  value: 'remove',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.delete_outline,
+                                        size: 18,
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Remove',
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.error,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),

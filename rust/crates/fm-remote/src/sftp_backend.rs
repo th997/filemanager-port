@@ -139,6 +139,7 @@ impl SftpFs {
         let ssh_config = russh::client::Config {
             inactivity_timeout: None,
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
+            window_size: 4 * 1024 * 1024,
             ..Default::default()
         };
 
@@ -219,7 +220,13 @@ impl SftpFs {
                 message: format!("Failed to request SFTP subsystem: {e}"),
             })?;
 
-        let sftp = SftpSession::new(channel.into_stream())
+        let sftp_cfg = russh_sftp::client::Config {
+            max_concurrent_reads: 32,
+            max_concurrent_writes: 32,
+            request_timeout_secs: 120,
+            ..Default::default()
+        };
+        let sftp = SftpSession::new_with_config(channel.into_stream(), sftp_cfg)
             .await
             .map_err(|e| VfsError::Connection {
                 message: format!("Failed to initialize SFTP session: {e}"),

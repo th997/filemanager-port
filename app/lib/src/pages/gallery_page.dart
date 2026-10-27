@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/entry_item.dart';
@@ -251,6 +251,18 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _copyPhotoPath(int index) async {
+    try {
+      final file = await _photos[index].resolve();
+      if (file != null && mounted) {
+        Clipboard.setData(ClipboardData(text: file.path));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Copied: ${file.path.split(Platform.pathSeparator).last}')),
+        );
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppSwipeBack(
@@ -284,38 +296,19 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
             physics: const AlwaysScrollableScrollPhysics(),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey.shade400),
-              const SizedBox(height: 12),
-              Text(
-                _notice ?? 'No photos found',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-              if (_permissionDenied) ...[
-                const SizedBox(height: 16),
-                FilledButton.tonalIcon(
-                  icon: const Icon(Icons.settings, size: 16),
-                  label: const Text('Open Settings'),
-                  onPressed: () => PhotoManager.openSetting(),
-                ),
-              ],
-              if (_notice == null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  PlatformPaths.galleryDirs().join('\n'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ],
-            ],
-          ),
-        ),
+              child: AppEmptyState(
+                icon: Icons.photo_library_outlined,
+                title: _notice ?? 'No photos found',
+                subtitle: _notice == null && PlatformPaths.galleryDirs().isNotEmpty
+                    ? PlatformPaths.galleryDirs().join('\n')
+                    : null,
+                action: _permissionDenied
+                    ? FilledButton.tonalIcon(
+                        icon: const Icon(Icons.settings, size: 16),
+                        label: const Text('Open Settings'),
+                        onPressed: () => PhotoManager.openSetting(),
+                      )
+                    : null,
               ),
             ),
           ),
@@ -397,14 +390,12 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 
   Widget _buildTile(_Photo photo, int index) {
     final thumb = photo.asset;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _open(index),
-        borderRadius: BorderRadius.circular(4),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: thumb != null
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          thumb != null
               ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
               : Image.file(
                   photo.file!,
@@ -412,7 +403,14 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                   cacheWidth: 220,
                   errorBuilder: (_, _, _) => _brokenThumb(),
                 ),
-        ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _open(index),
+              onLongPress: () => _copyPhotoPath(index),
+            ),
+          ),
+        ],
       ),
     );
   }

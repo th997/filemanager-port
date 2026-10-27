@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/permission_service.dart';
@@ -351,6 +352,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required String title,
     String? subtitle,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -362,6 +364,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: AppUiTokens.borderRadiusMd,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -424,19 +427,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ...targets.map((t) {
         IconData icon = Icons.folder;
         Color iconColor = Colors.blue;
-        if (t.name.contains('Download')) {
+        final key = '${t.name} ${t.relPath} ${t.path}'.toLowerCase();
+        if (key.contains('download') || key.contains('下载')) {
           icon = Icons.download;
           iconColor = Colors.teal;
-        } else if (t.name.contains('Photos') || t.name.contains('DCIM') || t.name.contains('Pictures')) {
+        } else if (key.contains('photo') || key.contains('dcim') || key.contains('picture') || key.contains('图片') || key.contains('相册')) {
           icon = Icons.photo_library;
           iconColor = Colors.purple;
-        } else if (t.name.contains('Document')) {
+        } else if (key.contains('document') || key.contains('文档')) {
           icon = Icons.description;
           iconColor = Colors.indigo;
-        } else if (t.name.contains('Home')) {
+        } else if (key.contains('home') || key.contains('主目录') || key.contains('用户')) {
           icon = Icons.home;
           iconColor = Colors.deepOrange;
-        } else if (t.name.contains('Root')) {
+        } else if (key.contains('root') || key.contains('storage') || key.contains('drive') || key.contains('根目录') || key.contains('存储')) {
           icon = Icons.storage;
           iconColor = Colors.blueGrey;
         }
@@ -447,6 +451,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           title: t.name,
           subtitle: t.path,
           onTap: () => _openTarget(t.root, t.relPath),
+          onLongPress: () {
+            Clipboard.setData(ClipboardData(text: t.path));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Copied path: ${t.path}')),
+            );
+          },
         );
         }),
       ],
