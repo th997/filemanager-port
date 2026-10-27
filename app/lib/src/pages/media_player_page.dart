@@ -11,6 +11,7 @@ import '../rust/api/servers.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
 import '../widgets/app_swipe_back.dart';
+import 'native_media_player_page.dart';
 
 /// Video and audio playback for local, remote, and archive files.
 ///
@@ -31,7 +32,7 @@ class MediaTrack {
   });
 }
 
-class MediaPlayerPage extends StatefulWidget {
+class MediaPlayerPage extends StatelessWidget {
   final String root;
   final String path;
   final String fileName;
@@ -53,10 +54,50 @@ class MediaPlayerPage extends StatefulWidget {
   });
 
   @override
-  State<MediaPlayerPage> createState() => _MediaPlayerPageState();
+  Widget build(BuildContext context) {
+    if (Platform.isIOS) {
+      return NativeMediaPlayerPage(
+        root: root,
+        path: path,
+        fileName: fileName,
+        isAudio: isAudio,
+        playlist: playlist,
+        startIndex: startIndex,
+      );
+    }
+    return _MediaKitPlayerPage(
+      root: root,
+      path: path,
+      fileName: fileName,
+      isAudio: isAudio,
+      playlist: playlist,
+      startIndex: startIndex,
+    );
+  }
 }
 
-class _MediaPlayerPageState extends State<MediaPlayerPage>
+class _MediaKitPlayerPage extends StatefulWidget {
+  final String root;
+  final String path;
+  final String fileName;
+  final bool isAudio;
+  final List<MediaTrack> playlist;
+  final int startIndex;
+
+  const _MediaKitPlayerPage({
+    required this.root,
+    required this.path,
+    required this.fileName,
+    required this.isAudio,
+    this.playlist = const [],
+    this.startIndex = 0,
+  });
+
+  @override
+  State<_MediaKitPlayerPage> createState() => _MediaKitPlayerPageState();
+}
+
+class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     with WidgetsBindingObserver {
   final GlobalKey<VideoState> _videoKey = GlobalKey<VideoState>();
   late final Player _player;
