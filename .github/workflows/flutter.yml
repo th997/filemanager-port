@@ -2,8 +2,9 @@ name: flutter
 
 on:
   push:
-    paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
+    branches: ["main"]
     tags: ["v*"]
+    paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
   pull_request:
     paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
   workflow_dispatch:
