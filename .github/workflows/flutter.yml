@@ -41,6 +41,36 @@ jobs:
           name: filemanager-linux-x64
           path: filemanager-linux-x64.tar.gz
 
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build libgtk-3-dev libmpv-dev \
+            libdbus-1-dev libsecret-1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Flutter SDK
+        run: |
+          git clone --depth 1 --branch 3.47.7 https://github.com/flutter/flutter.git $HOME/flutter
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+          git config --global --add safe.directory $HOME/flutter
+      - name: Build Linux ARM64
+        working-directory: app
+        run: |
+          $HOME/flutter/bin/flutter pub get
+          $HOME/flutter/bin/flutter build linux --release
+      - name: Package Linux ARM64
+        run: |
+          cd app/build/linux/arm64/release/bundle
+          tar -czf "${{ github.workspace }}/filemanager-linux-arm64.tar.gz" *
+      - name: Upload Linux ARM64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-linux-arm64
+          path: filemanager-linux-arm64.tar.gz
+
   android:
     runs-on: ubuntu-latest
     steps:
