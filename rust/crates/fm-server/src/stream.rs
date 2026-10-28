@@ -26,6 +26,10 @@ use tokio_util::io::ReaderStream;
 /// and loopback streaming responsive even at high bitrate and fast playback rates.
 const STREAM_BUFFER: usize = 256 * 1024;
 
+/// In-memory prefetch capacity per stream (16 MiB). Decouples remote backend reads
+/// (e.g. SFTP over WAN) from loopback socket polling so AVPlayer is never starved by network jitter.
+const PREFETCH_CAPACITY: usize = 16 * 1024 * 1024;
+
 pub struct StreamServer {
     pub port: u16,
     pub token: String,
@@ -92,12 +96,11 @@ async fn handle_stream(
     let path = VfsPath::from_slash_path(&subpath);
     let entry = match state.vfs.stat(&path).await {
         Ok(entry) => entry,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => {
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
     let total = entry.size;
-    let mime = mime_guess::from_path(&subpath)
-        .first_or_octet_stream()
-        .to_string();
 
     let range = parse_range(headers.get(header::RANGE), total);
     let (offset, length, status) = match range {
@@ -116,10 +119,17 @@ async fn handle_stream(
         }
     };
 
+    let mime = mime_guess::from_path(&subpath)
+        .first_or_octet_stream()
+        .to_string();
+
     let mut builder = Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, mime)
-        .header(header::ACCEPT_RANGES, "bytes");
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONNECTION, "keep-alive")
+        .header(header::CACHE_CONTROL, "no-cache, no-store")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 
     match (total, length) {
         (Some(total), Some(length)) => {
@@ -145,10 +155,30 @@ async fn handle_stream(
 
     let reader = match state.vfs.open_read_range(&path, offset, length).await {
         Ok(reader) => reader,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(_) => {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
     };
 
-    let body = Body::from_stream(ReaderStream::with_capacity(reader, STREAM_BUFFER));
+    let (reader_end, mut writer_end) = tokio::io::simplex(PREFETCH_CAPACITY);
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut reader = reader;
+        let mut buf = vec![0u8; 256 * 1024];
+        loop {
+            match reader.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    if writer_end.write_all(&buf[..n]).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let body = Body::from_stream(ReaderStream::with_capacity(reader_end, STREAM_BUFFER));
     builder.body(body).unwrap_or_else(|_| {
         StatusCode::INTERNAL_SERVER_ERROR.into_response()
     })

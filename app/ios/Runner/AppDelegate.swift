@@ -3,6 +3,128 @@ import UIKit
 import Security
 import AVFoundation
 
+private var avPlayerSwizzled = false
+private var statusObserverKey: UInt8 = 0
+private var itemObserverKey: UInt8 = 0
+private var userRequestedPauseKey: UInt8 = 0
+
+extension AVPlayer {
+  var fm_userPaused: Bool {
+    get {
+      return (objc_getAssociatedObject(self, &userRequestedPauseKey) as? Bool) ?? false
+    }
+    set {
+      objc_setAssociatedObject(self, &userRequestedPauseKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  @objc dynamic func fm_observeStatusIfNeeded() {
+    guard objc_getAssociatedObject(self, &statusObserverKey) == nil else { return }
+
+    let observation = self.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+      guard let self = self else { return }
+      // Auto-recovery: if AVPlayer paused on its own without user intervention, resume immediately
+      if player.timeControlStatus == .paused && !self.fm_userPaused {
+        let curTime = player.currentTime()
+        let durTime = player.currentItem?.duration ?? .invalid
+        let cur = CMTimeGetSeconds(curTime)
+        let dur = CMTimeGetSeconds(durTime)
+        let nearEnd = dur.isFinite && dur > 0 && (dur - cur < 0.5)
+        if !nearEnd && player.currentItem?.status == .readyToPlay {
+          DispatchQueue.main.async { [weak player] in
+            guard let player = player, !player.fm_userPaused else { return }
+            player.play()
+          }
+        }
+      }
+    }
+    objc_setAssociatedObject(self, &statusObserverKey, observation, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+    self.fm_observeCurrentItemIfNeeded()
+  }
+
+  @objc dynamic func fm_observeCurrentItemIfNeeded() {
+    guard let item = self.currentItem else { return }
+    guard objc_getAssociatedObject(item, &itemObserverKey) == nil else { return }
+
+    let obs = item.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, _ in
+      if let self = self, item.isPlaybackLikelyToKeepUp, !self.fm_userPaused && self.timeControlStatus == .paused {
+        DispatchQueue.main.async { [weak self] in
+          guard let self = self, !self.fm_userPaused else { return }
+          self.play()
+        }
+      }
+    }
+    objc_setAssociatedObject(item, &itemObserverKey, [obs], .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+  }
+
+  @objc dynamic func fm_initWithPlayerItem(_ item: AVPlayerItem?) -> AVPlayer {
+    let player = self.fm_initWithPlayerItem(item)
+    player.automaticallyWaitsToMinimizeStalling = true
+    item?.preferredForwardBufferDuration = 15.0
+    player.fm_observeStatusIfNeeded()
+    return player
+  }
+
+  @objc dynamic func fm_setRate(_ rate: Float) {
+    if rate > 0 {
+      self.fm_userPaused = false
+    }
+    fm_observeStatusIfNeeded()
+    self.fm_setRate(rate)
+  }
+
+  @objc dynamic func fm_play() {
+    self.fm_userPaused = false
+    self.automaticallyWaitsToMinimizeStalling = true
+    fm_observeStatusIfNeeded()
+    self.fm_play()
+  }
+
+  @objc dynamic func fm_pause() {
+    self.fm_userPaused = true
+    self.fm_pause()
+  }
+
+  @objc dynamic func fm_replaceCurrentItem(with item: AVPlayerItem?) {
+    item?.preferredForwardBufferDuration = 15.0
+    self.automaticallyWaitsToMinimizeStalling = true
+    self.fm_replaceCurrentItem(with: item)
+    fm_observeStatusIfNeeded()
+  }
+
+  static func swizzleForLowLatencyStreaming() {
+    guard !avPlayerSwizzled else { return }
+    avPlayerSwizzled = true
+
+    let initSel = NSSelectorFromString("initWithPlayerItem:")
+    if let orig = class_getInstanceMethod(AVPlayer.self, initSel),
+       let swizz = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.fm_initWithPlayerItem(_:))) {
+      method_exchangeImplementations(orig, swizz)
+    }
+
+    if let orig = class_getInstanceMethod(AVPlayer.self, #selector(setter: AVPlayer.rate)),
+       let swizz = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.fm_setRate(_:))) {
+      method_exchangeImplementations(orig, swizz)
+    }
+
+    if let orig = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.play)),
+       let swizz = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.fm_play)) {
+      method_exchangeImplementations(orig, swizz)
+    }
+
+    if let orig = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.pause)),
+       let swizz = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.fm_pause)) {
+      method_exchangeImplementations(orig, swizz)
+    }
+
+    if let orig = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.replaceCurrentItem(with:))),
+       let swizz = class_getInstanceMethod(AVPlayer.self, #selector(AVPlayer.fm_replaceCurrentItem(with:))) {
+      method_exchangeImplementations(orig, swizz)
+    }
+  }
+}
+
 private class KeychainHelper {
   static let service = "com.github.th997.filemanager.keychain"
 
@@ -91,14 +213,12 @@ private class KeychainHelper {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    let launchResult = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+
     do {
-      // `.allowBluetooth` is only valid with the playAndRecord category; passing
-      // it here makes setCategory throw, which previously left the session at
-      // the default (non-mixing) category.
       try AVAudioSession.sharedInstance().setCategory(
         .playback,
-        mode: .moviePlayback,
-        options: [.allowAirPlay, .allowBluetoothA2DP]
+        mode: .moviePlayback
       )
       try AVAudioSession.sharedInstance().setActive(true)
       NSLog("AudioSession: configured category=\(AVAudioSession.sharedInstance().category.rawValue)")
@@ -114,32 +234,25 @@ private class KeychainHelper {
     ) { note in
       let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt ?? 0
       let opts = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-      NSLog("AudioSession: interruption type=\(type) options=\(opts)")
       if type == AVAudioSession.InterruptionType.ended.rawValue,
         opts & AVAudioSession.InterruptionOptions.shouldResume.rawValue != 0
       {
         try? AVAudioSession.sharedInstance().setActive(true)
-        NSLog("AudioSession: reactivated after interruption")
       }
     }
-    center.addObserver(
-      forName: AVAudioSession.routeChangeNotification,
-      object: nil,
-      queue: .main
-    ) { note in
-      let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
-      NSLog("AudioSession: route change reason=\(reason)")
-    }
+
+    AVPlayer.swizzleForLowLatencyStreaming()
 
     if let controller = window?.rootViewController as? FlutterViewController {
       AppDelegate.setupKeychainChannel(messenger: controller.binaryMessenger)
     }
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+
+    return launchResult
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "KeychainBackupPlugin") {
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "Runner") {
       AppDelegate.setupKeychainChannel(messenger: registrar.messenger())
     }
   }

@@ -124,12 +124,18 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     _prefetchNeighbors();
   }
 
-  /// Warm the cache for the previous/next image so a swipe does not wait for
-  /// a fresh remote download.
+  /// Warm the cache for previous and upcoming images so a swipe does not wait
+  /// for a fresh remote download or image decode.
   void _prefetchNeighbors() {
-    for (final i in [_index - 1, _index + 1]) {
+    for (final i in [_index - 1, _index + 1, _index + 2]) {
       if (i < 0 || i >= _entries.length) continue;
-      _localPathFor(i).catchError((_) => '');
+      _localPathFor(i).then((path) {
+        if (!mounted || path.isEmpty) return;
+        final file = File(path);
+        if (file.existsSync()) {
+          precacheImage(FileImage(file), context).catchError((_) {});
+        }
+      }).catchError((_) {});
     }
   }
 

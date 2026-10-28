@@ -134,6 +134,30 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   double _volume = 100.0;
   double _lastNonZeroVolume = 100.0;
 
+  bool _isSpeedBoosting = false;
+  double _preBoostSpeed = 1.0;
+  double _boostRate = 2.0;
+
+  void _onLongPressStart(LongPressStartDetails details) {
+    if (!_player.state.playing) return;
+    HapticFeedback.mediumImpact();
+    _preBoostSpeed = _player.state.rate;
+    _boostRate = _preBoostSpeed >= 2.0 ? 3.0 : 2.0;
+    _player.setRate(_boostRate);
+    setState(() {
+      _isSpeedBoosting = true;
+    });
+  }
+
+  void _onLongPressEnd(LongPressEndDetails details) {
+    if (!_isSpeedBoosting) return;
+    HapticFeedback.lightImpact();
+    _player.setRate(_preBoostSpeed);
+    setState(() {
+      _isSpeedBoosting = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -594,7 +618,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
             backgroundColor: Colors.black,
             appBar: AppBar(
               leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () async {
                   _saveResumePosition();
                   await _player.stop();
@@ -605,6 +629,8 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
               ),
               backgroundColor: Colors.black87,
               foregroundColor: Colors.white,
+              iconTheme: const IconThemeData(color: Colors.white),
+              actionsIconTheme: const IconThemeData(color: Colors.white),
               title: Text(_track.fileName, overflow: TextOverflow.ellipsis),
               actions: [
                 if (widget.playlist.length > 1) ...[
@@ -793,16 +819,63 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
               ? const Center(child: CircularProgressIndicator())
               : Stack(
                   children: [
-                    _withSpeedControls(
-                      Video(
-                        key: _videoKey,
-                        controller: _controller,
-                        fill: Colors.black,
-                        controls: AdaptiveVideoControls,
-                        pauseUponEnteringBackgroundMode: false,
-                        resumeUponEnteringForegroundMode: false,
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onLongPressStart: _onLongPressStart,
+                      onLongPressEnd: _onLongPressEnd,
+                      child: _withSpeedControls(
+                        Video(
+                          key: _videoKey,
+                          controller: _controller,
+                          fill: Colors.black,
+                          controls: AdaptiveVideoControls,
+                          pauseUponEnteringBackgroundMode: false,
+                          resumeUponEnteringForegroundMode: false,
+                        ),
                       ),
                     ),
+                    if (_isSpeedBoosting)
+                      Positioned(
+                        top: 64,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.amber.withValues(alpha: 0.7),
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.fast_forward,
+                                  color: Colors.amber,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${_boostRate.toInt()}X Fast Forward',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     if (_track.isAudio)
                       Positioned(
                         top: 24,
@@ -846,7 +919,7 @@ class _SpeedButton extends StatefulWidget {
 }
 
 class _SpeedButtonState extends State<_SpeedButton> {
-  static const _rates = [0.5, 1.0, 1.5, 2.0, 4.0, 8.0];
+  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
   static const _prefSpeed = 'player.speed';
 
   double _rate = 1.0;

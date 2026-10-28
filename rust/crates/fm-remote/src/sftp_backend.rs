@@ -139,7 +139,7 @@ impl SftpFs {
         let ssh_config = russh::client::Config {
             inactivity_timeout: None,
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
-            window_size: 4 * 1024 * 1024,
+            window_size: 8 * 1024 * 1024,
             ..Default::default()
         };
 
@@ -221,7 +221,7 @@ impl SftpFs {
             })?;
 
         let sftp_cfg = russh_sftp::client::Config {
-            max_concurrent_reads: 32,
+            max_concurrent_reads: 64,
             max_concurrent_writes: 32,
             request_timeout_secs: 120,
             ..Default::default()

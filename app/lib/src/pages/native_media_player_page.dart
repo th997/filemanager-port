@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -62,6 +63,26 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   double _volume = 1.0;
   double _lastNonZeroVolume = 1.0;
 
+  // Swipe gesture state
+  bool _isDraggingSeek = false;
+  Duration _dragSeekStartPos = Duration.zero;
+  Duration _dragSeekTarget = Duration.zero;
+  int _dragSeekDeltaSec = 0;
+  double _dragSeekAccumulatedDx = 0.0;
+
+  bool _isDraggingBrightness = false;
+  double _dragBrightnessLevel = 0.5;
+  Timer? _brightnessHudTimer;
+
+  bool _isDraggingVolume = false;
+  double _dragVolumeLevel = 1.0;
+  Timer? _volumeHudTimer;
+
+  // Long-press speed boost state
+  bool _isSpeedBoosting = false;
+  double _preBoostSpeed = 1.0;
+  double _boostRate = 2.0;
+
   MediaTrack get _track => widget.playlist.isEmpty
       ? MediaTrack(
           path: widget.path,
@@ -104,6 +125,9 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
     _openCurrentTrack();
     _resetControlsTimer();
+    ScreenBrightness.instance.application.then((val) {
+      if (mounted) _dragBrightnessLevel = val;
+    }).catchError((_) {});
   }
 
   void _resetControlsTimer() {
@@ -151,7 +175,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         uri = Uri.file(native).toString();
         _controller = VideoPlayerController.file(
           File(native),
-          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+          videoPlayerOptions: VideoPlayerOptions(
+            mixWithOthers: false,
+            allowBackgroundPlayback: true,
+          ),
         );
       } else {
         final base = (await startMediaStream(root: widget.root))
@@ -165,7 +192,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         uri = '$base/$encoded';
         _controller = VideoPlayerController.networkUrl(
           Uri.parse(uri),
-          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+          videoPlayerOptions: VideoPlayerOptions(
+            mixWithOthers: false,
+            allowBackgroundPlayback: true,
+          ),
         );
       }
 
@@ -176,7 +206,6 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       await _controller!.setPlaybackSpeed(_playbackSpeed);
       await _controller!.setVolume(_volume);
 
-      // Restore saved resume position if available
       _applyResume();
 
       await _controller!.play();
@@ -388,9 +417,153 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     );
   }
 
+  // Horizontal seek gesture handlers
+  void _onHorizontalDragStart(DragStartDetails details) {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    _controlsTimer?.cancel();
+    setState(() {
+      _isDraggingSeek = true;
+      _dragSeekStartPos = _controller!.value.position;
+      _dragSeekTarget = _dragSeekStartPos;
+      _dragSeekDeltaSec = 0;
+      _dragSeekAccumulatedDx = 0.0;
+    });
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (!_isDraggingSeek ||
+        _controller == null ||
+        !_controller!.value.isInitialized) {
+      return;
+    }
+    _dragSeekAccumulatedDx += details.primaryDelta ?? 0.0;
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final dur = _controller!.value.duration;
+    final double maxDragSeconds;
+    if (dur > const Duration(minutes: 30)) {
+      maxDragSeconds = 300.0;
+    } else if (dur > const Duration(minutes: 10)) {
+      maxDragSeconds = 180.0;
+    } else {
+      maxDragSeconds = 90.0;
+    }
+
+    final deltaSec =
+        (_dragSeekAccumulatedDx / screenWidth * maxDragSeconds).round();
+    final targetMs = (_dragSeekStartPos.inMilliseconds + deltaSec * 1000)
+        .clamp(0, dur.inMilliseconds);
+
+    setState(() {
+      _dragSeekDeltaSec = deltaSec;
+      _dragSeekTarget = Duration(milliseconds: targetMs);
+    });
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (!_isDraggingSeek) return;
+    if (_controller != null && _controller!.value.isInitialized) {
+      _controller!.seekTo(_dragSeekTarget);
+    }
+    setState(() {
+      _isDraggingSeek = false;
+    });
+    _resetControlsTimer();
+  }
+
+  // Vertical drag: left = brightness, right = volume
+  void _onVerticalDragStart(DragStartDetails details) {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    _controlsTimer?.cancel();
+    final screenWidth = MediaQuery.of(context).size.width;
+    if (details.localPosition.dx < screenWidth / 2) {
+      _brightnessHudTimer?.cancel();
+      _isDraggingBrightness = true;
+      _isDraggingVolume = false;
+      ScreenBrightness.instance.application.then((val) {
+        if (mounted) _dragBrightnessLevel = val;
+      }).catchError((_) {});
+      setState(() {});
+    } else {
+      _volumeHudTimer?.cancel();
+      _isDraggingVolume = true;
+      _isDraggingBrightness = false;
+      _dragVolumeLevel = _volume;
+      setState(() {});
+    }
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    if (_controller == null) return;
+    final delta = -(details.primaryDelta ?? 0.0) / 250.0;
+    if (_isDraggingBrightness) {
+      _dragBrightnessLevel = (_dragBrightnessLevel + delta).clamp(0.0, 1.0);
+      ScreenBrightness.instance
+          .setApplicationScreenBrightness(_dragBrightnessLevel)
+          .catchError((_) {});
+      setState(() {});
+    } else if (_isDraggingVolume) {
+      _dragVolumeLevel = (_dragVolumeLevel + delta).clamp(0.0, 1.0);
+      _volume = _dragVolumeLevel;
+      if (_volume > 0) {
+        _lastNonZeroVolume = _volume;
+      }
+      _controller!.setVolume(_volume);
+      setState(() {});
+    }
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    if (_isDraggingBrightness) {
+      _brightnessHudTimer?.cancel();
+      _brightnessHudTimer = Timer(const Duration(milliseconds: 700), () {
+        if (mounted) {
+          setState(() => _isDraggingBrightness = false);
+        }
+      });
+    }
+    if (_isDraggingVolume) {
+      PreferencesService.instance.setString(
+        _prefVolume,
+        (_volume * 100).toInt().toString(),
+      );
+      _volumeHudTimer?.cancel();
+      _volumeHudTimer = Timer(const Duration(milliseconds: 700), () {
+        if (mounted) {
+          setState(() => _isDraggingVolume = false);
+        }
+      });
+    }
+    _resetControlsTimer();
+  }
+
+  // Long-press speed boost handlers
+  void _onLongPressStart(LongPressStartDetails details) {
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        !_controller!.value.isPlaying) {
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    _preBoostSpeed = _playbackSpeed;
+    _boostRate = _preBoostSpeed >= 2.0 ? 3.0 : 2.0;
+    _controller!.setPlaybackSpeed(_boostRate);
+    setState(() {
+      _isSpeedBoosting = true;
+    });
+  }
+
+  void _onLongPressEnd(LongPressEndDetails details) {
+    if (!_isSpeedBoosting) return;
+    HapticFeedback.lightImpact();
+    _controller?.setPlaybackSpeed(_preBoostSpeed);
+    setState(() {
+      _isSpeedBoosting = false;
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // AVPlayer handles background audio natively without OpenGL ES crashes.
     if (state == AppLifecycleState.resumed) {
       _resetControlsTimer();
     }
@@ -400,6 +573,9 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controlsTimer?.cancel();
+    _volumeHudTimer?.cancel();
+    _brightnessHudTimer?.cancel();
+    ScreenBrightness.instance.resetApplicationScreenBrightness().catchError((_) {});
     WakelockPlus.disable().catchError((_) {});
     _saveResumePosition();
 
@@ -451,7 +627,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
             appBar: _showControls || !_isFullscreen
                 ? AppBar(
                     leading: IconButton(
-                      icon: const Icon(Icons.arrow_back),
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () async {
                         _saveResumePosition();
                         if (context.mounted) {
@@ -461,23 +637,34 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                     ),
                     backgroundColor: Colors.black87,
                     foregroundColor: Colors.white,
-                    title:
-                        Text(_track.fileName, overflow: TextOverflow.ellipsis),
+                    iconTheme: const IconThemeData(color: Colors.white),
+                    actionsIconTheme: const IconThemeData(color: Colors.white),
+                    title: Text(
+                      _track.fileName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     actions: [
                       if (widget.playlist.length > 1) ...[
                         IconButton(
-                          icon: const Icon(Icons.queue_music),
+                          icon: const Icon(Icons.queue_music, color: Colors.white),
                           tooltip:
                               'Playlist (${_index + 1}/${widget.playlist.length})',
                           onPressed: _showPlaylist,
                         ),
                         IconButton(
-                          icon: Icon(_autoNext
-                              ? Icons.playlist_play
-                              : Icons.playlist_remove),
+                          icon: Icon(
+                            _autoNext
+                                ? Icons.playlist_play
+                                : Icons.playlist_remove,
+                            color: _autoNext ? Colors.blueAccent : Colors.white70,
+                          ),
                           tooltip:
                               _autoNext ? 'Auto-next: On' : 'Auto-next: Off',
-                          color: _autoNext ? Colors.blueAccent : Colors.white60,
                           onPressed: () {
                             setState(() {
                               _autoNext = !_autoNext;
@@ -488,10 +675,11 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                         ),
                       ],
                       IconButton(
-                        icon:
-                            Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
+                        icon: Icon(
+                          _isLooping ? Icons.repeat_one : Icons.repeat,
+                          color: _isLooping ? Colors.blueAccent : Colors.white,
+                        ),
                         tooltip: _isLooping ? 'Loop: Single' : 'Loop: Off',
-                        color: _isLooping ? Colors.blueAccent : Colors.white,
                         onPressed: () {
                           setState(() {
                             _isLooping = !_isLooping;
@@ -502,16 +690,19 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                         },
                       ),
                       IconButton(
-                        icon: Icon(_isFullscreen
-                            ? Icons.fullscreen_exit
-                            : Icons.fullscreen),
+                        icon: Icon(
+                          _isFullscreen
+                              ? Icons.fullscreen_exit
+                              : Icons.fullscreen,
+                          color: Colors.white,
+                        ),
                         tooltip: _isFullscreen
                             ? 'Exit Fullscreen'
                             : 'Fullscreen',
                         onPressed: _toggleFullscreen,
                       ),
                       PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert),
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
                         tooltip: 'Playback options',
                         onSelected: (action) {
                           switch (action) {
@@ -585,45 +776,45 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                               value: 'auto_next',
                               child: Row(
                                 children: [
-                                Icon(
-                                  _autoNext
-                                      ? Icons.playlist_play
-                                      : Icons.playlist_remove,
-                                  size: 20,
-                                  color: _autoNext ? Colors.blueAccent : null,
-                                ),
-                                const SizedBox(width: 10),
-                                Text(_autoNext
-                                    ? 'Auto-next (On)'
-                                    : 'Auto-next (Off)'),
-                              ],
+                                  Icon(
+                                    _autoNext
+                                        ? Icons.playlist_play
+                                        : Icons.playlist_remove,
+                                    size: 20,
+                                    color: _autoNext ? Colors.blueAccent : null,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(_autoNext
+                                      ? 'Auto-next (On)'
+                                      : 'Auto-next (Off)'),
+                                ],
+                              ),
                             ),
-                          ),
-                          PopupMenuItem(
-                            value: 'prev',
-                            enabled: _hasPrev,
-                            child: const Row(
-                              children: [
-                                Icon(Icons.skip_previous, size: 20),
-                                SizedBox(width: 10),
-                                Text('Previous (P)'),
-                              ],
+                            PopupMenuItem(
+                              value: 'prev',
+                              enabled: _hasPrev,
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.skip_previous, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Previous (P)'),
+                                ],
+                              ),
                             ),
-                          ),
-                          PopupMenuItem(
-                            value: 'next',
-                            enabled: _hasNext,
-                            child: const Row(
-                              children: [
-                                Icon(Icons.skip_next, size: 20),
-                                SizedBox(width: 10),
-                                Text('Next (N)'),
-                              ],
+                            PopupMenuItem(
+                              value: 'next',
+                              enabled: _hasNext,
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.skip_next, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Next (N)'),
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
-                    ),
+                      ),
                     ],
                   )
                 : null,
@@ -640,6 +831,14 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                   _togglePlayPause();
                 }
               },
+              onHorizontalDragStart: _onHorizontalDragStart,
+              onHorizontalDragUpdate: _onHorizontalDragUpdate,
+              onHorizontalDragEnd: _onHorizontalDragEnd,
+              onVerticalDragStart: _onVerticalDragStart,
+              onVerticalDragUpdate: _onVerticalDragUpdate,
+              onVerticalDragEnd: _onVerticalDragEnd,
+              onLongPressStart: _onLongPressStart,
+              onLongPressEnd: _onLongPressEnd,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -687,12 +886,204 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                       ),
                     ),
 
+                  // Horizontal swipe seek HUD
+                  if (_isDraggingSeek)
+                    _buildSeekHud(),
+
+                  // Vertical brightness gesture HUD
+                  if (_isDraggingBrightness)
+                    _buildBrightnessHud(),
+
+                  // Vertical volume gesture HUD
+                  if (_isDraggingVolume)
+                    _buildVolumeHud(),
+
+                  // Long-press speed boost floating HUD
+                  if (_isSpeedBoosting)
+                    _buildSpeedBoostHud(),
+
                   // Overlay Controls (Timeline + Bottom Buttons)
                   if (_showControls && _initialized && _controller != null)
                     _buildControlsOverlay(),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeekHud() {
+    final dur = _controller?.value.duration ?? Duration.zero;
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white24, width: 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _dragSeekDeltaSec >= 0 ? Icons.fast_forward : Icons.fast_rewind,
+              color: Colors.white,
+              size: 38,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_dragSeekDeltaSec >= 0 ? "+" : ""}${_dragSeekDeltaSec}s',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_formatDuration(_dragSeekTarget)} / ${_formatDuration(dur)}',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVolumeHud() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white24, width: 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _volume == 0
+                  ? Icons.volume_off
+                  : (_volume < 0.5 ? Icons.volume_down : Icons.volume_up),
+              color: Colors.white,
+              size: 38,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${(_volume * 100).toInt()}%',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: 100,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: _volume,
+                  minHeight: 4,
+                  backgroundColor: Colors.white24,
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrightnessHud() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white24, width: 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _dragBrightnessLevel < 0.3
+                  ? Icons.brightness_low
+                  : (_dragBrightnessLevel < 0.7
+                      ? Icons.brightness_medium
+                      : Icons.brightness_high),
+              color: Colors.white,
+              size: 38,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${(_dragBrightnessLevel * 100).toInt()}%',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: 100,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: _dragBrightnessLevel,
+                  minHeight: 4,
+                  backgroundColor: Colors.white24,
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.amber),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpeedBoostHud() {
+    return Positioned(
+      top: 64,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.amber.withValues(alpha: 0.7),
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.fast_forward, color: Colors.amber, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                '${_boostRate.toInt()}X Fast Forward',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -754,7 +1145,8 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     final pos = val.position;
     final dur = val.duration;
     final double maxSec = dur.inMilliseconds.toDouble();
-    final double curSec = pos.inMilliseconds.toDouble().clamp(0.0, maxSec > 0 ? maxSec : 0.0);
+    final double curSec =
+        pos.inMilliseconds.toDouble().clamp(0.0, maxSec > 0 ? maxSec : 0.0);
 
     final double bottomMargin = _isFullscreen ? 36.0 : 24.0;
     final double seekMargin = _isFullscreen ? 96.0 : 84.0;
@@ -855,7 +1247,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                 ),
               ],
               const Spacer(),
-              // Speed Menu
+              // Speed Menu: 0.5x to 8.0x
               PopupMenuButton<double>(
                 tooltip: 'Playback speed',
                 onSelected: _setSpeed,
@@ -866,6 +1258,8 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                   PopupMenuItem(value: 1.25, child: Text('1.25x')),
                   PopupMenuItem(value: 1.5, child: Text('1.5x')),
                   PopupMenuItem(value: 2.0, child: Text('2.0x')),
+                  PopupMenuItem(value: 4.0, child: Text('4.0x')),
+                  PopupMenuItem(value: 8.0, child: Text('8.0x')),
                 ],
                 child: Container(
                   padding:

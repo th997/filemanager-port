@@ -27,6 +27,12 @@ class VideoThumbnailService {
   Timer? _idleTimer;
 
   Future<File?> thumbnail({required String root, required String path}) {
+    // Only local native roots should ever generate video thumbnails.
+    // Remote SFTP/WebDAV/SMB must NEVER stream entire files in background.
+    // On iOS, media_kit is disabled to prevent AudioSession collisions.
+    if (!isNativeRoot(root) || Platform.isIOS) {
+      return Future.value(null);
+    }
     final key = '$root\u0000$path';
     final existing = _cache[key];
     if (existing != null) return existing;

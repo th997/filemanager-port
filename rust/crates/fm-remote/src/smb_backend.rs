@@ -164,6 +164,57 @@ impl SmbFs {
     }
 }
 
+/// Whether an error indicates the cached SMB session or TCP transport died
+/// and an auto-reconnect should be attempted.
+fn is_closed_error(error: &VfsError) -> bool {
+    match error {
+        VfsError::Connection { .. } => true,
+        VfsError::Backend { source, .. } => {
+            let text = source.to_string().to_lowercase();
+            text.contains("session closed")
+                || text.contains("connection reset")
+                || text.contains("broken pipe")
+                || text.contains("not connected")
+                || text.contains("connection closed")
+                || text.contains("transport endpoint")
+                || text.contains("eof")
+                || text.contains("timed out")
+                || text.contains("timeout")
+        }
+        _ => false,
+    }
+}
+
+macro_rules! run_smb {
+    ($self:expr, $session:ident => $body:expr) => {{
+        let mut guard = $self.session.lock().await;
+        if guard.is_none() {
+            let client = Self::connect_client(&$self.config).await?;
+            *guard = Some(SmbSession {
+                client,
+                trees: HashMap::new(),
+            });
+        }
+        let res = {
+            let $session = guard.as_mut().unwrap();
+            $body.await
+        };
+        match res {
+            Err(ref err) if is_closed_error(err) => {
+                *guard = None;
+                let client = Self::connect_client(&$self.config).await?;
+                *guard = Some(SmbSession {
+                    client,
+                    trees: HashMap::new(),
+                });
+                let $session = guard.as_mut().unwrap();
+                $body.await
+            }
+            other => other,
+        }
+    }};
+}
+
 #[async_trait]
 impl Vfs for SmbFs {
     fn capabilities(&self) -> Capabilities {
@@ -171,101 +222,83 @@ impl Vfs for SmbFs {
     }
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
         let (share_opt, subpath) = self.split_path(dir);
 
-        match share_opt {
-            None => {
-                // List root shares
-                let shares = session
-                    .client
-                    .list_shares()
-                    .await
-                    .map_err(|e| VfsError::Backend {
-                        path: dir.clone(),
-                        source: std::io::Error::other(e.to_string()),
-                    })?;
+        run_smb!(self, session => async {
+            match &share_opt {
+                None => {
+                    // List root shares
+                    let shares = session
+                        .client
+                        .list_shares()
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: dir.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
 
-                let entries = shares
-                    .into_iter()
-                    .map(|s| Entry {
-                        name: s.name.clone(),
-                        path: dir.join(&s.name),
-                        kind: EntryKind::Dir,
-                        size: None,
-                        modified: None,
-                        mode: None,
-                        hidden: s.name.ends_with('$'),
-                        is_symlink: false,
-                        mime: None,
-                    })
-                    .collect();
+                    let entries = shares
+                        .into_iter()
+                        .map(|s| Entry {
+                            name: s.name.clone(),
+                            path: dir.join(&s.name),
+                            kind: EntryKind::Dir,
+                            size: None,
+                            modified: None,
+                            mode: None,
+                            hidden: s.name.ends_with('$'),
+                            is_symlink: false,
+                            mime: None,
+                        })
+                        .collect();
 
-                Ok(entries)
-            }
-            Some(share) => {
-                let mut tree = Self::get_share_tree(session, &share).await?;
-                let list = session
-                    .client
-                    .list_directory(&mut tree, &subpath)
-                    .await
-                    .map_err(|e| VfsError::Backend {
-                        path: dir.clone(),
-                        source: std::io::Error::other(e.to_string()),
-                    })?;
-
-                let mut entries = Vec::new();
-                for item in list {
-                    if item.name == "." || item.name == ".." {
-                        continue;
-                    }
-                    let child_path = dir.join(&item.name);
-                    entries.push(Entry {
-                        name: item.name.clone(),
-                        path: child_path,
-                        kind: if item.is_directory {
-                            EntryKind::Dir
-                        } else {
-                            EntryKind::File
-                        },
-                        size: if item.is_directory {
-                            None
-                        } else {
-                            Some(item.size)
-                        },
-                        modified: item.modified.to_system_time(),
-                        mode: None,
-                        hidden: item.name.starts_with('.'),
-                        is_symlink: false,
-                        mime: None,
-                    });
+                    Ok(entries)
                 }
+                Some(share) => {
+                    let mut tree = Self::get_share_tree(session, share).await?;
+                    let list = session
+                        .client
+                        .list_directory(&mut tree, &subpath)
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: dir.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
 
-                Ok(entries)
+                    let mut entries = Vec::new();
+                    for item in list {
+                        if item.name == "." || item.name == ".." {
+                            continue;
+                        }
+                        let child_path = dir.join(&item.name);
+                        entries.push(Entry {
+                            name: item.name.clone(),
+                            path: child_path,
+                            kind: if item.is_directory {
+                                EntryKind::Dir
+                            } else {
+                                EntryKind::File
+                            },
+                            size: if item.is_directory {
+                                None
+                            } else {
+                                Some(item.size)
+                            },
+                            modified: item.modified.to_system_time(),
+                            mode: None,
+                            hidden: item.name.starts_with('.'),
+                            is_symlink: false,
+                            mime: None,
+                        });
+                    }
+
+                    Ok(entries)
+                }
             }
-        }
+        })
     }
 
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
         let (share_opt, subpath) = self.split_path(path);
         let name = path.name().unwrap_or("").to_string();
 
@@ -296,34 +329,36 @@ impl Vfs for SmbFs {
                     });
                 }
 
-                let mut tree = Self::get_share_tree(session, &share).await?;
-                let info = session
-                    .client
-                    .stat(&mut tree, &subpath)
-                    .await
-                    .map_err(|e| VfsError::Backend {
-                        path: path.clone(),
-                        source: std::io::Error::other(e.to_string()),
-                    })?;
+                run_smb!(self, session => async {
+                    let mut tree = Self::get_share_tree(session, &share).await?;
+                    let info = session
+                        .client
+                        .stat(&mut tree, &subpath)
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: path.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
 
-                Ok(Entry {
-                    name,
-                    path: path.clone(),
-                    kind: if info.is_directory {
-                        EntryKind::Dir
-                    } else {
-                        EntryKind::File
-                    },
-                    size: if info.is_directory {
-                        None
-                    } else {
-                        Some(info.size)
-                    },
-                    modified: info.modified.to_system_time(),
-                    mode: None,
-                    hidden: path.name().map(|n| n.starts_with('.')).unwrap_or(false),
-                    is_symlink: false,
-                    mime: None,
+                    Ok(Entry {
+                        name: name.clone(),
+                        path: path.clone(),
+                        kind: if info.is_directory {
+                            EntryKind::Dir
+                        } else {
+                            EntryKind::File
+                        },
+                        size: if info.is_directory {
+                            None
+                        } else {
+                            Some(info.size)
+                        },
+                        modified: info.modified.to_system_time(),
+                        mode: None,
+                        hidden: path.name().map(|n| n.starts_with('.')).unwrap_or(false),
+                        is_symlink: false,
+                        mime: None,
+                    })
                 })
             }
         }
@@ -333,31 +368,22 @@ impl Vfs for SmbFs {
         &self,
         path: &VfsPath,
     ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
         let (share_opt, subpath) = self.split_path(path);
         let share = share_opt.ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
 
-        let tree = Self::get_share_tree(session, &share).await?;
-        let reader = session
-            .client
-            .open_file_reader(&tree, &subpath)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::other(e.to_string()),
-            })?;
-        drop(guard);
+        let reader = run_smb!(self, session => async {
+            let tree = Self::get_share_tree(session, &share).await?;
+            session
+                .client
+                .open_file_reader(&tree, &subpath)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+        })?;
 
         Ok(Self::spawn_range_reader(reader, 0, None))
     }
@@ -368,31 +394,22 @@ impl Vfs for SmbFs {
         offset: u64,
         length: Option<u64>,
     ) -> VfsResult<Box<dyn AsyncRead + Send + Unpin>> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
         let (share_opt, subpath) = self.split_path(path);
         let share = share_opt.ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
 
-        let tree = Self::get_share_tree(session, &share).await?;
-        let reader = session
-            .client
-            .open_file_reader(&tree, &subpath)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::other(e.to_string()),
-            })?;
-        drop(guard);
+        let reader = run_smb!(self, session => async {
+            let tree = Self::get_share_tree(session, &share).await?;
+            session
+                .client
+                .open_file_reader(&tree, &subpath)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+        })?;
 
         Ok(Self::spawn_range_reader(reader, offset, length))
     }
@@ -411,58 +428,45 @@ impl Vfs for SmbFs {
             path: path.clone(),
         })?;
 
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-        let mut tree = Self::get_share_tree(session, &share).await?;
+        let mut writer = run_smb!(self, session => async {
+            let mut tree = Self::get_share_tree(session, &share).await?;
 
-        let writer_res = match mode {
-            WriteMode::Create => {
-                session
-                    .client
-                    .create_file_writer_exclusive(&tree, &subpath)
-                    .await
-            }
-            WriteMode::Append => {
-                let offset = match session.client.stat(&mut tree, &subpath).await {
-                    Ok(s) => s.size,
-                    // Appending to a file that does not exist yet
-                    // legitimately starts at offset 0...
-                    Err(e) if e.kind() == smb2::ErrorKind::NotFound => 0,
-                    // ...but any other failure must not: degrading it to 0
-                    // rewound the writer and overwrote the start of the
-                    // existing file.
-                    Err(e) => {
-                        return Err(VfsError::Backend {
-                            path: path.clone(),
-                            source: std::io::Error::other(e.to_string()),
-                        })
-                    }
-                };
-                session
-                    .client
-                    .create_file_writer_at(&tree, &subpath, offset)
-                    .await
-            }
-            WriteMode::Truncate => {
-                session
-                    .client
-                    .create_file_writer(&tree, &subpath)
-                    .await
-            }
-        };
+            let writer_res = match mode {
+                WriteMode::Create => {
+                    session
+                        .client
+                        .create_file_writer_exclusive(&tree, &subpath)
+                        .await
+                }
+                WriteMode::Append => {
+                    let offset = match session.client.stat(&mut tree, &subpath).await {
+                        Ok(s) => s.size,
+                        Err(e) if e.kind() == smb2::ErrorKind::NotFound => 0,
+                        Err(e) => {
+                            return Err(VfsError::Backend {
+                                path: path.clone(),
+                                source: std::io::Error::other(e.to_string()),
+                            })
+                        }
+                    };
+                    session
+                        .client
+                        .create_file_writer_at(&tree, &subpath, offset)
+                        .await
+                }
+                WriteMode::Truncate => {
+                    session
+                        .client
+                        .create_file_writer(&tree, &subpath)
+                        .await
+                }
+            };
 
-        let mut writer = writer_res.map_err(|e| VfsError::Backend {
-            path: path.clone(),
-            source: std::io::Error::other(e.to_string()),
+            writer_res.map_err(|e| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::other(e.to_string()),
+            })
         })?;
-        drop(guard);
 
         Ok(pipe_writer(move |mut rx| async move {
             let mut buf = vec![0u8; 64 * 1024];
@@ -487,76 +491,47 @@ impl Vfs for SmbFs {
     }
 
     async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
         let (share_opt, subpath) = self.split_path(path);
         let share = share_opt.ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
 
-        let tree = Self::get_share_tree(session, &share).await?;
-        session
-            .client
-            .create_directory(&tree, &subpath)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::other(e.to_string()),
-            })?;
-
-        Ok(())
-    }
-
-    async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
-        let (share_opt, subpath) = self.split_path(path);
-        let share = share_opt.ok_or_else(|| VfsError::NotFound {
-            path: path.clone(),
-        })?;
-
-        let tree = Self::get_share_tree(session, &share).await?;
-        if session.client.delete_file(&tree, &subpath).await.is_err() {
+        run_smb!(self, session => async {
+            let tree = Self::get_share_tree(session, &share).await?;
             session
                 .client
-                .delete_directory(&tree, &subpath)
+                .create_directory(&tree, &subpath)
                 .await
                 .map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: std::io::Error::other(e.to_string()),
-                })?;
-        }
+                })
+        })
+    }
 
-        Ok(())
+    async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
+        let (share_opt, subpath) = self.split_path(path);
+        let share = share_opt.ok_or_else(|| VfsError::NotFound {
+            path: path.clone(),
+        })?;
+
+        run_smb!(self, session => async {
+            let tree = Self::get_share_tree(session, &share).await?;
+            if session.client.delete_file(&tree, &subpath).await.is_err() {
+                session
+                    .client
+                    .delete_directory(&tree, &subpath)
+                    .await
+                    .map_err(|e| VfsError::Backend {
+                        path: path.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })?;
+            }
+            Ok(())
+        })
     }
 
     async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
-        let mut guard = self.session.lock().await;
-        if guard.is_none() {
-            let client = Self::connect_client(&self.config).await?;
-            *guard = Some(SmbSession {
-                client,
-                trees: HashMap::new(),
-            });
-        }
-        let session = guard.as_mut().unwrap();
-
         let (share_from, sub_from) = self.split_path(from);
         let (share_to, sub_to) = self.split_path(to);
 
@@ -570,17 +545,17 @@ impl Vfs for SmbFs {
             });
         }
 
-        let tree = Self::get_share_tree(session, &share).await?;
-        session
-            .client
-            .rename(&tree, &sub_from, &sub_to)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: from.clone(),
-                source: std::io::Error::other(e.to_string()),
-            })?;
-
-        Ok(())
+        run_smb!(self, session => async {
+            let tree = Self::get_share_tree(session, &share).await?;
+            session
+                .client
+                .rename(&tree, &sub_from, &sub_to)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: from.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })
+        })
     }
 }
 

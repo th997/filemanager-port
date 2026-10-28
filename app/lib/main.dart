@@ -13,7 +13,9 @@ import 'src/services/storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
+  if (!Platform.isIOS) {
+    MediaKit.ensureInitialized();
+  }
   await RustLib.init();
   await PlatformPaths.init();
   StorageService.instance.ensureInitialized();
