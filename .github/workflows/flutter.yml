@@ -12,6 +12,8 @@ on:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -40,9 +42,16 @@ jobs:
         with:
           name: filemanager-linux-x64
           path: filemanager-linux-x64.tar.gz
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: filemanager-linux-x64.tar.gz
 
   linux-arm64:
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Linux ARM64 build dependencies
@@ -70,9 +79,16 @@ jobs:
         with:
           name: filemanager-linux-arm64
           path: filemanager-linux-arm64.tar.gz
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: filemanager-linux-arm64.tar.gz
 
   android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -87,14 +103,44 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - name: Build APK
+      - name: Build APK (Universal & Split per ABI)
         working-directory: app
-        run: flutter build apk --release
-      - name: Upload Android Artifact
+        run: |
+          flutter build apk --release
+          flutter build apk --release --split-per-abi
+      - name: Prepare Android Artifacts
+        run: |
+          mkdir -p "${{ github.workspace }}/android-apks"
+          cd app/build/app/outputs/flutter-apk
+          cp app-release.apk "${{ github.workspace }}/android-apks/filemanager-android-universal.apk"
+          cp app-arm64-v8a-release.apk "${{ github.workspace }}/android-apks/filemanager-android-arm64-v8a.apk"
+          cp app-armeabi-v7a-release.apk "${{ github.workspace }}/android-apks/filemanager-android-armeabi-v7a.apk"
+          cp app-x86_64-release.apk "${{ github.workspace }}/android-apks/filemanager-android-x86_64.apk"
+      - name: Upload Android arm64-v8a
         uses: actions/upload-artifact@v4
         with:
-          name: filemanager-android-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          name: filemanager-android-arm64-v8a
+          path: android-apks/filemanager-android-arm64-v8a.apk
+      - name: Upload Android armeabi-v7a
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-android-armeabi-v7a
+          path: android-apks/filemanager-android-armeabi-v7a.apk
+      - name: Upload Android x86_64
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-android-x86_64
+          path: android-apks/filemanager-android-x86_64.apk
+      - name: Upload Android Universal
+        uses: actions/upload-artifact@v4
+        with:
+          name: filemanager-android-universal
+          path: android-apks/filemanager-android-universal.apk
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android-apks/*.apk
 
   windows:
     runs-on: windows-latest
@@ -132,6 +178,8 @@ jobs:
 
   apple:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -154,6 +202,11 @@ jobs:
         with:
           name: filemanager-macos
           path: filemanager-macos.zip
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: filemanager-macos.zip
       - name: Build iOS (unsigned)
         working-directory: app
         run: flutter build ios --debug --no-codesign
