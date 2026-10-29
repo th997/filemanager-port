@@ -51,9 +51,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
   static const _prefFontSize = 'editor.font_size';
   static const _prefWordWrap = 'editor.word_wrap';
   static const _prefMarkdownTheme = 'markdown.theme';
+  static const _prefPdfMargin = 'markdown.pdf_margin';
   double _fontSize = 13.0;
   bool _wordWrap = true;
   MarkdownThemeType _markdownTheme = MarkdownThemeType.github;
+  PdfMarginMode _pdfMargin = PdfMarginMode.standard;
   bool _showFind = false;
   bool _showReplace = false;
   final TextEditingController _findController = TextEditingController();
@@ -83,6 +85,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _fontSize = double.tryParse(prefs.getString(_prefFontSize) ?? '') ?? _fontSize;
     _wordWrap = prefs.getBool(_prefWordWrap) ?? _wordWrap;
     _markdownTheme = MarkdownThemeType.fromId(prefs.getString(_prefMarkdownTheme));
+    _pdfMargin = PdfMarginMode.fromId(prefs.getString(_prefPdfMargin));
     _mode = (_isMarkdown || _isHtml) ? TextFileMode.preview : TextFileMode.code;
     _loadFile();
   }
@@ -385,12 +388,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
           markdown: text,
           title: widget.fileName,
           themeConfig: themeConfig,
+          marginMode: _pdfMargin,
         );
       } else {
         await MarkdownPdfService.instance.printOrPreview(
           markdown: text,
           title: widget.fileName,
           themeConfig: themeConfig,
+          marginMode: _pdfMargin,
         );
       }
     } catch (e) {
@@ -651,10 +656,15 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           _exportPdf(share: false);
                         } else if (val == 'share') {
                           _exportPdf(share: true);
+                        } else if (val.startsWith('margin_')) {
+                          final modeId = val.substring('margin_'.length);
+                          final mode = PdfMarginMode.fromId(modeId);
+                          setState(() => _pdfMargin = mode);
+                          PreferencesService.instance.setString(_prefPdfMargin, mode.id);
                         }
                       },
-                      itemBuilder: (ctx) => const [
-                        PopupMenuItem(
+                      itemBuilder: (ctx) => [
+                        const PopupMenuItem(
                           value: 'preview',
                           child: Row(
                             children: [
@@ -664,7 +674,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             ],
                           ),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'share',
                           child: Row(
                             children: [
@@ -674,6 +684,25 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             ],
                           ),
                         ),
+                        const PopupMenuDivider(),
+                        PopupMenuItem(
+                          enabled: false,
+                          height: 28,
+                          child: Text(
+                            '页间距 / 边距',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.outline,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        for (final mode in PdfMarginMode.values)
+                          CheckedPopupMenuItem<String>(
+                            value: 'margin_${mode.id}',
+                            checked: _pdfMargin == mode,
+                            child: Text(mode.label),
+                          ),
                       ],
                     ),
                 ],

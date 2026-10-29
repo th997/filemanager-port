@@ -105,5 +105,22 @@ final x = 42;
         expect(header, equals('%PDF-'));
       }
     });
+
+    test('PdfMarginMode parsing and generation with different margins', () async {
+      expect(PdfMarginMode.fromId('compact'), equals(PdfMarginMode.compact));
+      expect(PdfMarginMode.fromId('standard'), equals(PdfMarginMode.standard));
+      expect(PdfMarginMode.fromId('relaxed'), equals(PdfMarginMode.relaxed));
+      expect(PdfMarginMode.fromId('invalid'), equals(PdfMarginMode.standard));
+
+      for (final marginMode in PdfMarginMode.values) {
+        final bytes = await MarkdownPdfService.instance.generatePdf(
+          markdown: '# 边距测试\n\n段落内容\n\n```dart\nvar a = 1;\n```',
+          title: '边距测试',
+          marginMode: marginMode,
+        );
+        expect(bytes, isNotEmpty);
+        expect(bytes.length, greaterThan(300));
+      }
+    });
   });
 }

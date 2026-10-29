@@ -1184,16 +1184,25 @@ class BrowserPageState extends State<BrowserPage> {
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(item.icon, color: item.iconColor(ctx)),
-              title: Text(item.name, overflow: TextOverflow.ellipsis),
-              subtitle: Text(item.isDir ? 'Folder' : item.formattedSize),
-            ),
-            const Divider(height: 1),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+        ),
+        child: SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.only(bottom: 16),
+            children: [
+              ListTile(
+                leading: Icon(item.icon, color: item.iconColor(ctx)),
+                title: Text(item.name, overflow: TextOverflow.ellipsis),
+                subtitle: Text(item.isDir ? 'Folder' : item.formattedSize),
+              ),
+              const Divider(height: 1),
             if (!item.isDir)
               ListTile(
                 leading: const Icon(Icons.open_in_new),
@@ -1277,6 +1286,7 @@ class BrowserPageState extends State<BrowserPage> {
           ],
         ),
       ),
+      ),
     );
 
     switch (action) {
@@ -1354,6 +1364,10 @@ class BrowserPageState extends State<BrowserPage> {
     final path = _fullEntryPath(item);
     final action = await showMenu<String>(
       context: originContext,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(originContext).height * 0.85,
+        minWidth: 200,
+      ),
       position: RelativeRect.fromLTRB(
         position.dx,
         position.dy,
@@ -1584,6 +1598,10 @@ class BrowserPageState extends State<BrowserPage> {
     }
     final action = await showMenu<String>(
       context: context,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        minWidth: 200,
+      ),
       position: RelativeRect.fromLTRB(
         position.dx,
         position.dy,
@@ -4325,7 +4343,11 @@ class BrowserPageState extends State<BrowserPage> {
               child: GestureDetector(
               onSecondaryTapDown: (details) {
                 _lastItemSecondaryTap = DateTime.now();
-                _showContextMenu(context, details.globalPosition, item);
+                if (Platform.isIOS || Platform.isAndroid) {
+                  _showEntryActions(item);
+                } else {
+                  _showContextMenu(context, details.globalPosition, item);
+                }
               },
               child: InkWell(
                 onTap: () => _handleTileTap(item, i),
@@ -4469,7 +4491,11 @@ class BrowserPageState extends State<BrowserPage> {
             child: GestureDetector(
             onSecondaryTapDown: (details) {
               _lastItemSecondaryTap = DateTime.now();
-              _showContextMenu(context, details.globalPosition, item);
+              if (Platform.isIOS || Platform.isAndroid) {
+                _showEntryActions(item);
+              } else {
+                _showContextMenu(context, details.globalPosition, item);
+              }
             },
             child: ListTile(
               dense: true,

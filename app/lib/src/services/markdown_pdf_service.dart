@@ -12,6 +12,27 @@ import 'highlight_service.dart';
 
 PdfColor _pdf(Color c) => PdfColor.fromInt(c.toARGB32());
 
+/// Page margins and spacing presets for PDF exports.
+enum PdfMarginMode {
+  compact('compact', '紧凑 (16pt)', 16.0, 0.6),
+  standard('standard', '标准 (36pt)', 36.0, 1.0),
+  relaxed('relaxed', '宽松 (54pt)', 54.0, 1.5);
+
+  final String id;
+  final String label;
+  final double pageMargin;
+  final double spacingScale;
+
+  const PdfMarginMode(this.id, this.label, this.pageMargin, this.spacingScale);
+
+  static PdfMarginMode fromId(String? id) {
+    for (final m in PdfMarginMode.values) {
+      if (m.id == id) return m;
+    }
+    return PdfMarginMode.standard;
+  }
+}
+
 /// Exports Markdown content to a PDF document with proper formatting,
 /// code block highlighting, and Chinese/Unicode font support.
 class MarkdownPdfService {
@@ -57,6 +78,7 @@ class MarkdownPdfService {
     required String markdown,
     required String title,
     MarkdownThemeConfig? themeConfig,
+    PdfMarginMode marginMode = PdfMarginMode.standard,
     pw.Font? customRegularFont,
     pw.Font? customBoldFont,
   }) async {
@@ -100,6 +122,7 @@ class MarkdownPdfService {
       regularFont,
       boldFont,
       themeConfig,
+      marginMode.spacingScale,
     );
 
     final pageBg = themeConfig != null ? _pdf(themeConfig.backgroundColor) : null;
@@ -109,7 +132,7 @@ class MarkdownPdfService {
         pageTheme: pw.PageTheme(
           theme: theme,
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+          margin: pw.EdgeInsets.all(marginMode.pageMargin),
           buildBackground: pageBg != null
               ? (context) => pw.FullPage(
                     ignoreMargins: true,
@@ -130,6 +153,7 @@ class MarkdownPdfService {
     pw.Font regularFont,
     pw.Font boldFont,
     MarkdownThemeConfig? themeConfig,
+    double scale,
   ) {
     final List<pw.Widget> result = [];
     final lines = const LineSplitter().convert(markdown);
@@ -157,7 +181,7 @@ class MarkdownPdfService {
         } else {
           inCodeBlock = false;
           result.add(
-            _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig),
+            _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig, scale),
           );
           codeBuffer.clear();
           codeLang = null;
@@ -171,7 +195,7 @@ class MarkdownPdfService {
       }
 
       if (trimmed.isEmpty) {
-        result.add(pw.SizedBox(height: 6));
+        result.add(pw.SizedBox(height: 6 * scale));
         continue;
       }
 
@@ -179,7 +203,7 @@ class MarkdownPdfService {
       if (trimmed == '---' || trimmed == '***' || trimmed == '___') {
         result.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 8),
+            padding: pw.EdgeInsets.symmetric(vertical: 8 * scale),
             child: pw.Divider(color: hrColor, thickness: 1),
           ),
         );
@@ -190,7 +214,7 @@ class MarkdownPdfService {
       if (trimmed.startsWith('# ')) {
         result.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.only(top: 14, bottom: 6),
+            padding: pw.EdgeInsets.only(top: 14 * scale, bottom: 6 * scale),
             child: pw.Text(
               trimmed.substring(2).trim(),
               style: pw.TextStyle(
@@ -206,7 +230,7 @@ class MarkdownPdfService {
       if (trimmed.startsWith('## ')) {
         result.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.only(top: 10, bottom: 5),
+            padding: pw.EdgeInsets.only(top: 10 * scale, bottom: 5 * scale),
             child: pw.Text(
               trimmed.substring(3).trim(),
               style: pw.TextStyle(
@@ -222,7 +246,7 @@ class MarkdownPdfService {
       if (trimmed.startsWith('### ')) {
         result.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.only(top: 8, bottom: 4),
+            padding: pw.EdgeInsets.only(top: 8 * scale, bottom: 4 * scale),
             child: pw.Text(
               trimmed.substring(4).trim(),
               style: pw.TextStyle(
@@ -239,7 +263,7 @@ class MarkdownPdfService {
       // Blockquotes & Callouts
       if (trimmed.startsWith('>')) {
         final quoteText = trimmed.substring(1).trim();
-        result.add(_buildBlockquote(quoteText, regularFont, boldFont, themeConfig));
+        result.add(_buildBlockquote(quoteText, regularFont, boldFont, themeConfig, scale));
         continue;
       }
 
@@ -248,7 +272,7 @@ class MarkdownPdfService {
         final itemText = trimmed.substring(2).trim();
         result.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.only(left: 12, bottom: 3),
+            padding: pw.EdgeInsets.only(left: 12, bottom: 3 * scale),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
@@ -286,7 +310,7 @@ class MarkdownPdfService {
         final itemText = numMatch.group(2)!;
         result.add(
           pw.Padding(
-            padding: const pw.EdgeInsets.only(left: 12, bottom: 3),
+            padding: pw.EdgeInsets.only(left: 12, bottom: 3 * scale),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
@@ -322,7 +346,7 @@ class MarkdownPdfService {
       // Standard paragraph
       result.add(
         pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 5),
+          padding: pw.EdgeInsets.only(bottom: 5 * scale),
           child: pw.Text(
             trimmed,
             style: pw.TextStyle(
@@ -338,7 +362,7 @@ class MarkdownPdfService {
 
     if (inCodeBlock && codeBuffer.isNotEmpty) {
       result.add(
-        _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig),
+        _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig, scale),
       );
     }
 
@@ -350,6 +374,7 @@ class MarkdownPdfService {
     String? lang,
     pw.Font font,
     MarkdownThemeConfig? themeConfig,
+    double scale,
   ) {
     final codeBg = themeConfig != null
         ? _pdf(themeConfig.cardColor)
@@ -388,7 +413,7 @@ class MarkdownPdfService {
 
     return pw.Container(
       width: double.infinity,
-      margin: const pw.EdgeInsets.symmetric(vertical: 6),
+      margin: pw.EdgeInsets.symmetric(vertical: 6 * scale),
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
         color: codeBg,
@@ -464,6 +489,7 @@ class MarkdownPdfService {
     pw.Font regularFont,
     pw.Font boldFont,
     MarkdownThemeConfig? themeConfig,
+    double scale,
   ) {
     final isDark = themeConfig?.isDark ?? false;
     PdfColor accent = isDark ? const PdfColor.fromInt(0xFF1F6FEB) : const PdfColor.fromInt(0xFF0969DA);
@@ -510,7 +536,7 @@ class MarkdownPdfService {
 
     return pw.Container(
       width: double.infinity,
-      margin: const pw.EdgeInsets.symmetric(vertical: 4),
+      margin: pw.EdgeInsets.symmetric(vertical: 4 * scale),
       padding: const pw.EdgeInsets.fromLTRB(10, 6, 10, 6),
       decoration: pw.BoxDecoration(
         color: bg,
@@ -547,12 +573,14 @@ class MarkdownPdfService {
     required String markdown,
     required String title,
     MarkdownThemeConfig? themeConfig,
+    PdfMarginMode marginMode = PdfMarginMode.standard,
   }) async {
     await Printing.layoutPdf(
       onLayout: (format) => generatePdf(
         markdown: markdown,
         title: title,
         themeConfig: themeConfig,
+        marginMode: marginMode,
       ),
       name: '$title.pdf',
     );
@@ -563,11 +591,13 @@ class MarkdownPdfService {
     required String markdown,
     required String title,
     MarkdownThemeConfig? themeConfig,
+    PdfMarginMode marginMode = PdfMarginMode.standard,
   }) async {
     final bytes = await generatePdf(
       markdown: markdown,
       title: title,
       themeConfig: themeConfig,
+      marginMode: marginMode,
     );
     await Printing.sharePdf(
       bytes: bytes,
