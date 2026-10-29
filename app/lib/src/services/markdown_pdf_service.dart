@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/painting.dart' show Color, TextStyle;
+import 'package:markdown/markdown.dart' as md;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -38,6 +39,10 @@ enum PdfMarginMode {
 class MarkdownPdfService {
   static final MarkdownPdfService instance = MarkdownPdfService._();
   MarkdownPdfService._();
+
+  static final md.Document _inlineMdDoc = md.Document(
+    extensionSet: md.ExtensionSet.gitHubFlavored,
+  );
 
   static pw.Font? _cachedSystemFont;
   static bool _systemFontSearched = false;
@@ -126,6 +131,9 @@ class MarkdownPdfService {
     );
 
     final pageBg = themeConfig != null ? _pdf(themeConfig.backgroundColor) : null;
+    final headerColor = themeConfig != null
+        ? _pdf(themeConfig.textColor.withValues(alpha: 0.6))
+        : PdfColors.grey600;
 
     pdf.addPage(
       pw.MultiPage(
@@ -140,6 +148,24 @@ class MarkdownPdfService {
                   )
               : null,
         ),
+        header: (context) {
+          // Keep document title at top of page 1 only; omit on subsequent pages
+          if (context.pageNumber == 1 && title.trim().isNotEmpty) {
+            return pw.Container(
+              alignment: pw.Alignment.centerRight,
+              margin: pw.EdgeInsets.only(bottom: 8 * marginMode.spacingScale),
+              child: pw.Text(
+                title,
+                style: pw.TextStyle(
+                  font: regularFont,
+                  fontSize: 9,
+                  color: headerColor,
+                ),
+              ),
+            );
+          }
+          return pw.SizedBox();
+        },
         build: (context) => widgets,
       ),
     );
@@ -215,13 +241,14 @@ class MarkdownPdfService {
         result.add(
           pw.Padding(
             padding: pw.EdgeInsets.only(top: 14 * scale, bottom: 6 * scale),
-            child: pw.Text(
+            child: _buildRichText(
               trimmed.substring(2).trim(),
-              style: pw.TextStyle(
-                font: boldFont,
-                fontSize: 20,
-                color: h1Color,
-              ),
+              regularFont: regularFont,
+              boldFont: boldFont,
+              themeConfig: themeConfig,
+              fontSize: 20,
+              textColor: h1Color,
+              isBold: true,
             ),
           ),
         );
@@ -231,13 +258,14 @@ class MarkdownPdfService {
         result.add(
           pw.Padding(
             padding: pw.EdgeInsets.only(top: 10 * scale, bottom: 5 * scale),
-            child: pw.Text(
+            child: _buildRichText(
               trimmed.substring(3).trim(),
-              style: pw.TextStyle(
-                font: boldFont,
-                fontSize: 16,
-                color: h2Color,
-              ),
+              regularFont: regularFont,
+              boldFont: boldFont,
+              themeConfig: themeConfig,
+              fontSize: 16,
+              textColor: h2Color,
+              isBold: true,
             ),
           ),
         );
@@ -247,17 +275,63 @@ class MarkdownPdfService {
         result.add(
           pw.Padding(
             padding: pw.EdgeInsets.only(top: 8 * scale, bottom: 4 * scale),
-            child: pw.Text(
+            child: _buildRichText(
               trimmed.substring(4).trim(),
-              style: pw.TextStyle(
-                font: boldFont,
-                fontSize: 13,
-                color: h3Color,
-              ),
+              regularFont: regularFont,
+              boldFont: boldFont,
+              themeConfig: themeConfig,
+              fontSize: 13,
+              textColor: h3Color,
+              isBold: true,
             ),
           ),
         );
         continue;
+      }
+      if (trimmed.startsWith('#### ')) {
+        result.add(
+          pw.Padding(
+            padding: pw.EdgeInsets.only(top: 6 * scale, bottom: 3 * scale),
+            child: _buildRichText(
+              trimmed.substring(5).trim(),
+              regularFont: regularFont,
+              boldFont: boldFont,
+              themeConfig: themeConfig,
+              fontSize: 11,
+              textColor: h3Color,
+              isBold: true,
+            ),
+          ),
+        );
+        continue;
+      }
+
+      // Markdown Tables
+      if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+        final tableLines = <String>[];
+        while (i < lines.length) {
+          final tblLine = lines[i].trim();
+          if (tblLine.startsWith('|') && tblLine.endsWith('|') && tblLine.length > 2) {
+            tableLines.add(tblLine);
+            i++;
+          } else {
+            i--;
+            break;
+          }
+        }
+        if (tableLines.length >= 2) {
+          final tableWidget = _buildTable(
+            tableLines,
+            regularFont,
+            boldFont,
+            themeConfig,
+            scale,
+          );
+          if (tableWidget != null) {
+            result.add(tableWidget);
+            continue;
+          }
+        }
       }
 
       // Blockquotes & Callouts
@@ -270,9 +344,17 @@ class MarkdownPdfService {
       // Unordered lists
       if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('+ ')) {
         final itemText = trimmed.substring(2).trim();
+        int leadingSpaces = 0;
+        for (int c = 0; c < line.length; c++) {
+          if (line[c] == ' ') leadingSpaces++;
+          else if (line[c] == '\t') leadingSpaces += 2;
+          else break;
+        }
+        final indentPadding = 12.0 + (leadingSpaces ~/ 2) * 10.0;
+
         result.add(
           pw.Padding(
-            padding: pw.EdgeInsets.only(left: 12, bottom: 3 * scale),
+            padding: pw.EdgeInsets.only(left: indentPadding, bottom: 3 * scale),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
@@ -286,14 +368,14 @@ class MarkdownPdfService {
                   ),
                 ),
                 pw.Expanded(
-                  child: pw.Text(
+                  child: _buildRichText(
                     itemText,
-                    style: pw.TextStyle(
-                      font: regularFont,
-                      fontSize: 10,
-                      lineSpacing: 2,
-                      color: textColor,
-                    ),
+                    regularFont: regularFont,
+                    boldFont: boldFont,
+                    themeConfig: themeConfig,
+                    fontSize: 10,
+                    textColor: textColor,
+                    lineSpacing: 2,
                   ),
                 ),
               ],
@@ -308,14 +390,22 @@ class MarkdownPdfService {
       if (numMatch != null) {
         final numStr = numMatch.group(1)!;
         final itemText = numMatch.group(2)!;
+        int leadingSpaces = 0;
+        for (int c = 0; c < line.length; c++) {
+          if (line[c] == ' ') leadingSpaces++;
+          else if (line[c] == '\t') leadingSpaces += 2;
+          else break;
+        }
+        final indentPadding = 12.0 + (leadingSpaces ~/ 2) * 10.0;
+
         result.add(
           pw.Padding(
-            padding: pw.EdgeInsets.only(left: 12, bottom: 3 * scale),
+            padding: pw.EdgeInsets.only(left: indentPadding, bottom: 3 * scale),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.SizedBox(
-                  width: 16,
+                  width: 18,
                   child: pw.Text(
                     '$numStr.',
                     style: pw.TextStyle(
@@ -326,14 +416,14 @@ class MarkdownPdfService {
                   ),
                 ),
                 pw.Expanded(
-                  child: pw.Text(
+                  child: _buildRichText(
                     itemText,
-                    style: pw.TextStyle(
-                      font: regularFont,
-                      fontSize: 10,
-                      lineSpacing: 2,
-                      color: textColor,
-                    ),
+                    regularFont: regularFont,
+                    boldFont: boldFont,
+                    themeConfig: themeConfig,
+                    fontSize: 10,
+                    textColor: textColor,
+                    lineSpacing: 2,
                   ),
                 ),
               ],
@@ -347,14 +437,14 @@ class MarkdownPdfService {
       result.add(
         pw.Padding(
           padding: pw.EdgeInsets.only(bottom: 5 * scale),
-          child: pw.Text(
+          child: _buildRichText(
             trimmed,
-            style: pw.TextStyle(
-              font: regularFont,
-              fontSize: 10,
-              lineSpacing: 3,
-              color: textColor,
-            ),
+            regularFont: regularFont,
+            boldFont: boldFont,
+            themeConfig: themeConfig,
+            fontSize: 10,
+            textColor: textColor,
+            lineSpacing: 3,
           ),
         ),
       );
@@ -554,18 +644,258 @@ class MarkdownPdfService {
                 color: accent,
               ),
             ),
-          pw.Text(
+          _buildRichText(
             cleanText,
-            style: pw.TextStyle(
-              font: regularFont,
-              fontSize: 9.5,
-              lineSpacing: 2,
-              color: quoteTextColor,
-            ),
+            regularFont: regularFont,
+            boldFont: boldFont,
+            themeConfig: themeConfig,
+            fontSize: 9.5,
+            textColor: quoteTextColor,
+            lineSpacing: 2,
           ),
         ],
       ),
     );
+  }
+
+  pw.Widget? _buildTable(
+    List<String> tableLines,
+    pw.Font regularFont,
+    pw.Font boldFont,
+    MarkdownThemeConfig? themeConfig,
+    double scale,
+  ) {
+    if (tableLines.length < 2) return null;
+
+    List<String> parseRow(String row) {
+      final trimmed = row.trim();
+      var inner = trimmed;
+      if (inner.startsWith('|')) inner = inner.substring(1);
+      if (inner.endsWith('|')) inner = inner.substring(0, inner.length - 1);
+      return inner.split('|').map((c) => c.trim()).toList();
+    }
+
+    final headers = parseRow(tableLines[0]);
+    final separator = parseRow(tableLines[1]);
+
+    if (separator.isEmpty || !separator.every((s) => RegExp(r'^:?-+:?$').hasMatch(s))) {
+      return null;
+    }
+
+    final numCols = headers.length;
+    final rows = <pw.TableRow>[];
+
+    final tableBorderColor = themeConfig != null
+        ? _pdf(themeConfig.tableBorder)
+        : PdfColors.grey300;
+    final headerBg = themeConfig != null
+        ? _pdf(themeConfig.tableHeadBg)
+        : PdfColors.grey100;
+    final textColor = themeConfig != null
+        ? _pdf(themeConfig.textColor)
+        : PdfColors.grey900;
+
+    rows.add(
+      pw.TableRow(
+        decoration: pw.BoxDecoration(color: headerBg),
+        children: headers.map((h) {
+          return pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: _buildRichText(
+              h,
+              regularFont: regularFont,
+              boldFont: boldFont,
+              themeConfig: themeConfig,
+              fontSize: 9,
+              textColor: textColor,
+              isBold: true,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+
+    for (int r = 2; r < tableLines.length; r++) {
+      final cells = parseRow(tableLines[r]);
+      while (cells.length < numCols) cells.add('');
+      final truncatedCells = cells.take(numCols).toList();
+
+      final rowBg = (r % 2 == 1 && themeConfig != null)
+          ? _pdf(themeConfig.cardColor.withValues(alpha: 0.3))
+          : null;
+
+      rows.add(
+        pw.TableRow(
+          decoration: rowBg != null ? pw.BoxDecoration(color: rowBg) : null,
+          children: truncatedCells.map((c) {
+            return pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: _buildRichText(
+                c,
+                regularFont: regularFont,
+                boldFont: boldFont,
+                themeConfig: themeConfig,
+                fontSize: 8.5,
+                textColor: textColor,
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    return pw.Padding(
+      padding: pw.EdgeInsets.symmetric(vertical: 6 * scale),
+      child: pw.Table(
+        border: pw.TableBorder.all(color: tableBorderColor, width: 0.5),
+        children: rows,
+      ),
+    );
+  }
+
+  pw.Widget _buildRichText(
+    String text, {
+    required pw.Font regularFont,
+    required pw.Font boldFont,
+    required MarkdownThemeConfig? themeConfig,
+    required double fontSize,
+    required PdfColor textColor,
+    double lineSpacing = 2.5,
+    pw.TextAlign textAlign = pw.TextAlign.left,
+    bool isBold = false,
+  }) {
+    final baseStyle = pw.TextStyle(
+      font: isBold ? boldFont : regularFont,
+      fontSize: fontSize,
+      color: textColor,
+      lineSpacing: lineSpacing,
+    );
+
+    if (!text.contains('*') &&
+        !text.contains('_') &&
+        !text.contains('`') &&
+        !text.contains('~') &&
+        !text.contains('[') &&
+        !text.contains('<')) {
+      return pw.Text(
+        text,
+        style: baseStyle,
+        textAlign: textAlign,
+      );
+    }
+
+    try {
+      final nodes = _inlineMdDoc.parseInline(text);
+      if (nodes.isEmpty) {
+        return pw.Text(text, style: baseStyle, textAlign: textAlign);
+      }
+      final spans = <pw.InlineSpan>[];
+      for (final node in nodes) {
+        spans.add(
+          _mdNodeToPdfSpan(
+            node,
+            baseStyle: baseStyle,
+            regularFont: regularFont,
+            boldFont: boldFont,
+            themeConfig: themeConfig,
+          ),
+        );
+      }
+      return pw.RichText(
+        text: pw.TextSpan(children: spans),
+        textAlign: textAlign,
+      );
+    } catch (_) {
+      return pw.Text(
+        text,
+        style: baseStyle,
+        textAlign: textAlign,
+      );
+    }
+  }
+
+  pw.InlineSpan _mdNodeToPdfSpan(
+    md.Node node, {
+    required pw.TextStyle baseStyle,
+    required pw.Font regularFont,
+    required pw.Font boldFont,
+    required MarkdownThemeConfig? themeConfig,
+  }) {
+    if (node is md.Text) {
+      return pw.TextSpan(text: node.text, style: baseStyle);
+    }
+
+    if (node is md.Element) {
+      pw.TextStyle childStyle = baseStyle;
+
+      switch (node.tag) {
+        case 'strong':
+        case 'b':
+          childStyle = childStyle.copyWith(
+            font: boldFont,
+            fontWeight: pw.FontWeight.bold,
+          );
+          break;
+        case 'em':
+        case 'i':
+          childStyle = childStyle.copyWith(
+            fontStyle: pw.FontStyle.italic,
+          );
+          break;
+        case 'code':
+          final codeColor = themeConfig != null
+              ? _pdf(themeConfig.codeTextColor)
+              : PdfColors.pink800;
+          final codeBg = themeConfig != null
+              ? _pdf(themeConfig.cardColor)
+              : PdfColors.grey200;
+          childStyle = childStyle.copyWith(
+            font: regularFont,
+            color: codeColor,
+            background: pw.BoxDecoration(
+              color: codeBg,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+            ),
+          );
+          break;
+        case 'del':
+          childStyle = childStyle.copyWith(
+            decoration: pw.TextDecoration.lineThrough,
+          );
+          break;
+        case 'a':
+          final linkColor = themeConfig != null
+              ? _pdf(themeConfig.isDark ? const Color(0xFF58A6FF) : const Color(0xFF0969DA))
+              : PdfColors.blue700;
+          childStyle = childStyle.copyWith(
+            color: linkColor,
+            decoration: pw.TextDecoration.underline,
+          );
+          break;
+      }
+
+      final children = node.children;
+      if (children == null || children.isEmpty) {
+        return pw.TextSpan(text: node.textContent, style: childStyle);
+      }
+
+      final childSpans = <pw.InlineSpan>[];
+      for (final child in children) {
+        childSpans.add(
+          _mdNodeToPdfSpan(
+            child,
+            baseStyle: childStyle,
+            regularFont: regularFont,
+            boldFont: boldFont,
+            themeConfig: themeConfig,
+          ),
+        );
+      }
+
+      return pw.TextSpan(children: childSpans, style: childStyle);
+    }
+
+    return pw.TextSpan(text: node.textContent, style: baseStyle);
   }
 
   /// Opens print dialog or system preview.

@@ -122,5 +122,38 @@ final x = 42;
         expect(bytes.length, greaterThan(300));
       }
     });
+
+    test('Generates PDF with inline markdown styles and tables', () async {
+      const complexMarkdown = '''
+# 综合样式测试
+
+这里是普通段落，包含 **粗体文字** 和 *斜体文字*，以及 ***粗斜体***。
+还支持 `行内代码` 和 ~~删除线文本~~ 以及 [链接标签](https://example.com)。
+
+## 列表与格式组合
+- **项目 A**：包含 *斜体说明* 和 `代码提示`
+- **项目 B**：普通说明
+  - 缩进子项目 **子重点**
+
+1. **第一步**：执行 `flutter test`
+2. **第二步**：验证结果
+
+### 表格测试
+| 功能特性 | 支持平台 | 状态 |
+| :--- | :---: | ---: |
+| **PDF 导出** | 全平台 | 已就绪 |
+| **语法高亮** | iOS/Android/桌面 | *完全支持* |
+''';
+
+      final bytes = await MarkdownPdfService.instance.generatePdf(
+        markdown: complexMarkdown,
+        title: '格式与表格测试',
+      );
+
+      expect(bytes, isNotEmpty);
+      expect(bytes.length, greaterThan(500));
+      final header = String.fromCharCodes(bytes.take(5));
+      expect(header, equals('%PDF-'));
+    });
   });
 }
