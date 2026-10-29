@@ -77,5 +77,33 @@ void main() {
       final header = String.fromCharCodes(bytes.take(5));
       expect(header, equals('%PDF-'));
     });
+
+    test('Generates themed PDFs (Dracula, Sepia, Vibrant) without header/footer', () async {
+      const sampleMarkdown = '''
+# 深度主题测试
+
+正文内容段落。
+
+```dart
+final x = 42;
+```
+
+> [!NOTE]
+> 提示信息
+''';
+
+      for (final type in [MarkdownThemeType.dracula, MarkdownThemeType.sepia, MarkdownThemeType.vibrant]) {
+        final config = MarkdownThemeConfig.get(type, Brightness.dark);
+        final bytes = await MarkdownPdfService.instance.generatePdf(
+          markdown: sampleMarkdown,
+          title: '主题测试',
+          themeConfig: config,
+        );
+        expect(bytes, isNotEmpty);
+        expect(bytes.length, greaterThan(500));
+        final header = String.fromCharCodes(bytes.take(5));
+        expect(header, equals('%PDF-'));
+      }
+    });
   });
 }

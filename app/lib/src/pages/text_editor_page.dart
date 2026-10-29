@@ -378,15 +378,19 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
     setState(() => _exportingPdf = true);
     try {
+      final brightness = Theme.of(context).brightness;
+      final themeConfig = MarkdownThemeConfig.get(_markdownTheme, brightness);
       if (share) {
         await MarkdownPdfService.instance.sharePdf(
           markdown: text,
           title: widget.fileName,
+          themeConfig: themeConfig,
         );
       } else {
         await MarkdownPdfService.instance.printOrPreview(
           markdown: text,
           title: widget.fileName,
+          themeConfig: themeConfig,
         );
       }
     } catch (e) {

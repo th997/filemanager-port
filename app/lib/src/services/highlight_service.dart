@@ -32,6 +32,7 @@ class HighlightService {
   static final HighlightService instance = HighlightService._();
 
   final Highlight _highlight = Highlight();
+  Highlight get highlight => _highlight;
   final Map<String, String> _extensions = const {
     'html': 'xml',
     'htm': 'xml',

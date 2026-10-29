@@ -1,9 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/painting.dart' show Color, TextStyle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:re_highlight/re_highlight.dart';
+
+import '../theme/markdown_themes.dart';
+import 'highlight_service.dart';
+
+PdfColor _pdf(Color c) => PdfColor.fromInt(c.toARGB32());
 
 /// Exports Markdown content to a PDF document with proper formatting,
 /// code block highlighting, and Chinese/Unicode font support.
@@ -45,10 +52,11 @@ class MarkdownPdfService {
     return null;
   }
 
-  /// Generates a PDF byte stream from Markdown text.
+  /// Generates a PDF byte stream from Markdown text, themed with [themeConfig].
   Future<Uint8List> generatePdf({
     required String markdown,
     required String title,
+    MarkdownThemeConfig? themeConfig,
     pw.Font? customRegularFont,
     pw.Font? customBoldFont,
   }) async {
@@ -87,7 +95,14 @@ class MarkdownPdfService {
       bold: boldFont,
     );
 
-    final widgets = _parseMarkdownToPdfWidgets(markdown, regularFont, boldFont);
+    final widgets = _parseMarkdownToPdfWidgets(
+      markdown,
+      regularFont,
+      boldFont,
+      themeConfig,
+    );
+
+    final pageBg = themeConfig != null ? _pdf(themeConfig.backgroundColor) : null;
 
     pdf.addPage(
       pw.MultiPage(
@@ -95,30 +110,12 @@ class MarkdownPdfService {
           theme: theme,
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-        ),
-        header: (context) => pw.Container(
-          alignment: pw.Alignment.centerRight,
-          margin: const pw.EdgeInsets.only(bottom: 12),
-          child: pw.Text(
-            title,
-            style: pw.TextStyle(
-              font: regularFont,
-              fontSize: 9,
-              color: PdfColors.grey600,
-            ),
-          ),
-        ),
-        footer: (context) => pw.Container(
-          alignment: pw.Alignment.center,
-          margin: const pw.EdgeInsets.only(top: 12),
-          child: pw.Text(
-            'Page ${context.pageNumber} of ${context.pagesCount}',
-            style: pw.TextStyle(
-              font: regularFont,
-              fontSize: 9,
-              color: PdfColors.grey600,
-            ),
-          ),
+          buildBackground: pageBg != null
+              ? (context) => pw.FullPage(
+                    ignoreMargins: true,
+                    child: pw.Container(color: pageBg),
+                  )
+              : null,
         ),
         build: (context) => widgets,
       ),
@@ -127,14 +124,21 @@ class MarkdownPdfService {
     return pdf.save();
   }
 
-  /// Parses Markdown lines into a list of pdf widgets.
+  /// Parses Markdown lines into a list of pdf widgets with theme colors applied.
   List<pw.Widget> _parseMarkdownToPdfWidgets(
     String markdown,
     pw.Font regularFont,
     pw.Font boldFont,
+    MarkdownThemeConfig? themeConfig,
   ) {
     final List<pw.Widget> result = [];
     final lines = const LineSplitter().convert(markdown);
+
+    final h1Color = themeConfig != null ? _pdf(themeConfig.h1Color) : PdfColors.blueGrey900;
+    final h2Color = themeConfig != null ? _pdf(themeConfig.h2Color) : PdfColors.blueGrey800;
+    final h3Color = themeConfig != null ? _pdf(themeConfig.h3Color) : PdfColors.blueGrey700;
+    final textColor = themeConfig != null ? _pdf(themeConfig.textColor) : PdfColors.grey900;
+    final hrColor = themeConfig != null ? _pdf(themeConfig.hrColor) : PdfColors.grey300;
 
     bool inCodeBlock = false;
     final List<String> codeBuffer = [];
@@ -153,7 +157,7 @@ class MarkdownPdfService {
         } else {
           inCodeBlock = false;
           result.add(
-            _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont),
+            _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig),
           );
           codeBuffer.clear();
           codeLang = null;
@@ -176,7 +180,7 @@ class MarkdownPdfService {
         result.add(
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 8),
-            child: pw.Divider(color: PdfColors.grey300, thickness: 1),
+            child: pw.Divider(color: hrColor, thickness: 1),
           ),
         );
         continue;
@@ -192,7 +196,7 @@ class MarkdownPdfService {
               style: pw.TextStyle(
                 font: boldFont,
                 fontSize: 20,
-                color: PdfColors.blueGrey900,
+                color: h1Color,
               ),
             ),
           ),
@@ -208,7 +212,7 @@ class MarkdownPdfService {
               style: pw.TextStyle(
                 font: boldFont,
                 fontSize: 16,
-                color: PdfColors.blueGrey800,
+                color: h2Color,
               ),
             ),
           ),
@@ -224,7 +228,7 @@ class MarkdownPdfService {
               style: pw.TextStyle(
                 font: boldFont,
                 fontSize: 13,
-                color: PdfColors.blueGrey700,
+                color: h3Color,
               ),
             ),
           ),
@@ -235,7 +239,7 @@ class MarkdownPdfService {
       // Blockquotes & Callouts
       if (trimmed.startsWith('>')) {
         final quoteText = trimmed.substring(1).trim();
-        result.add(_buildBlockquote(quoteText, regularFont, boldFont));
+        result.add(_buildBlockquote(quoteText, regularFont, boldFont, themeConfig));
         continue;
       }
 
@@ -252,8 +256,8 @@ class MarkdownPdfService {
                   width: 4,
                   height: 4,
                   margin: const pw.EdgeInsets.only(top: 5, right: 8),
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.grey700,
+                  decoration: pw.BoxDecoration(
+                    color: textColor,
                     shape: pw.BoxShape.circle,
                   ),
                 ),
@@ -264,6 +268,7 @@ class MarkdownPdfService {
                       font: regularFont,
                       fontSize: 10,
                       lineSpacing: 2,
+                      color: textColor,
                     ),
                   ),
                 ),
@@ -292,7 +297,7 @@ class MarkdownPdfService {
                     style: pw.TextStyle(
                       font: boldFont,
                       fontSize: 10,
-                      color: PdfColors.grey700,
+                      color: textColor,
                     ),
                   ),
                 ),
@@ -303,6 +308,7 @@ class MarkdownPdfService {
                       font: regularFont,
                       fontSize: 10,
                       lineSpacing: 2,
+                      color: textColor,
                     ),
                   ),
                 ),
@@ -323,7 +329,7 @@ class MarkdownPdfService {
               font: regularFont,
               fontSize: 10,
               lineSpacing: 3,
-              color: PdfColors.grey900,
+              color: textColor,
             ),
           ),
         ),
@@ -332,22 +338,62 @@ class MarkdownPdfService {
 
     if (inCodeBlock && codeBuffer.isNotEmpty) {
       result.add(
-        _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont),
+        _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig),
       );
     }
 
     return result;
   }
 
-  pw.Widget _buildCodeBlock(String code, String? lang, pw.Font font) {
+  pw.Widget _buildCodeBlock(
+    String code,
+    String? lang,
+    pw.Font font,
+    MarkdownThemeConfig? themeConfig,
+  ) {
+    final codeBg = themeConfig != null
+        ? _pdf(themeConfig.cardColor)
+        : PdfColors.grey100;
+    final codeBorder = themeConfig != null
+        ? _pdf(themeConfig.tableBorder.withValues(alpha: 0.6))
+        : PdfColors.grey300;
+    final langColor = themeConfig != null
+        ? _pdf(themeConfig.codeTextColor.withValues(alpha: 0.7))
+        : PdfColors.grey600;
+    final defaultCodeColor = themeConfig != null
+        ? _pdf(themeConfig.codeTextColor)
+        : PdfColors.grey900;
+
+    pw.Widget codeContent;
+    if (themeConfig != null && themeConfig.highlightTheme.isNotEmpty) {
+      final span = _highlightCodeToPdfSpan(
+        code,
+        lang,
+        font,
+        defaultCodeColor,
+        themeConfig.highlightTheme,
+      );
+      codeContent = pw.RichText(text: span);
+    } else {
+      codeContent = pw.Text(
+        code,
+        style: pw.TextStyle(
+          font: font,
+          fontSize: 8.5,
+          lineSpacing: 2,
+          color: defaultCodeColor,
+        ),
+      );
+    }
+
     return pw.Container(
       width: double.infinity,
       margin: const pw.EdgeInsets.symmetric(vertical: 6),
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
-        color: PdfColors.grey100,
+        color: codeBg,
         borderRadius: pw.BorderRadius.circular(6),
-        border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+        border: pw.Border.all(color: codeBorder, width: 0.5),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -360,55 +406,106 @@ class MarkdownPdfService {
                 style: pw.TextStyle(
                   font: font,
                   fontSize: 7,
-                  color: PdfColors.grey600,
+                  color: langColor,
                 ),
               ),
             ),
-          pw.Text(
-            code,
-            style: pw.TextStyle(
-              font: font,
-              fontSize: 8.5,
-              lineSpacing: 2,
-              color: PdfColors.grey900,
-            ),
-          ),
+          codeContent,
         ],
       ),
     );
   }
 
-  pw.Widget _buildBlockquote(String text, pw.Font regularFont, pw.Font boldFont) {
-    PdfColor accent = PdfColors.blue600;
-    PdfColor bg = PdfColors.blue50;
+  pw.TextSpan _highlightCodeToPdfSpan(
+    String code,
+    String? lang,
+    pw.Font font,
+    PdfColor defaultColor,
+    Map<String, TextStyle> highlightTheme,
+  ) {
+    final baseStyle = pw.TextStyle(
+      font: font,
+      fontSize: 8.5,
+      lineSpacing: 2,
+      color: defaultColor,
+    );
+
+    if (code.length > 32 * 1024) {
+      return pw.TextSpan(text: code, style: baseStyle);
+    }
+
+    try {
+      final highlighter = HighlightService.instance.highlight;
+      HighlightResult? result;
+      if (lang != null && lang.isNotEmpty) {
+        try {
+          result = highlighter.highlight(code: code, language: lang);
+        } catch (_) {}
+      }
+      if (result == null) {
+        try {
+          result = highlighter.highlightAuto(code);
+        } catch (_) {}
+      }
+
+      if (result != null) {
+        final renderer = _PdfHighlightRenderer(baseStyle, highlightTheme);
+        result.render(renderer);
+        final span = renderer.span;
+        if (span != null) return span;
+      }
+    } catch (_) {}
+
+    return pw.TextSpan(text: code, style: baseStyle);
+  }
+
+  pw.Widget _buildBlockquote(
+    String text,
+    pw.Font regularFont,
+    pw.Font boldFont,
+    MarkdownThemeConfig? themeConfig,
+  ) {
+    final isDark = themeConfig?.isDark ?? false;
+    PdfColor accent = isDark ? const PdfColor.fromInt(0xFF1F6FEB) : const PdfColor.fromInt(0xFF0969DA);
+    PdfColor bg = themeConfig != null
+        ? _pdf(themeConfig.blockquoteBg)
+        : (isDark ? const PdfColor.fromInt(0x261F6FEB) : const PdfColor.fromInt(0x140969DA));
+    PdfColor quoteTextColor = themeConfig != null ? _pdf(themeConfig.textColor) : PdfColors.grey800;
     String cleanText = text;
     String? title;
 
     if (text.startsWith('[!NOTE]')) {
-      accent = PdfColors.blue700;
-      bg = PdfColors.blue50;
+      final color = isDark ? const Color(0xFF1F6FEB) : const Color(0xFF0969DA);
+      accent = _pdf(color);
+      bg = _pdf(color.withValues(alpha: isDark ? 0.15 : 0.08));
       title = 'Note';
       cleanText = text.substring('[!NOTE]'.length).trim();
     } else if (text.startsWith('[!TIP]')) {
-      accent = PdfColors.green700;
-      bg = PdfColors.green50;
+      final color = isDark ? const Color(0xFF238636) : const Color(0xFF1A7F37);
+      accent = _pdf(color);
+      bg = _pdf(color.withValues(alpha: isDark ? 0.15 : 0.08));
       title = 'Tip';
       cleanText = text.substring('[!TIP]'.length).trim();
     } else if (text.startsWith('[!IMPORTANT]')) {
-      accent = PdfColors.purple700;
-      bg = PdfColors.purple50;
+      final color = isDark ? const Color(0xFF8957E5) : const Color(0xFF8250DF);
+      accent = _pdf(color);
+      bg = _pdf(color.withValues(alpha: isDark ? 0.15 : 0.08));
       title = 'Important';
       cleanText = text.substring('[!IMPORTANT]'.length).trim();
     } else if (text.startsWith('[!WARNING]')) {
-      accent = PdfColors.amber800;
-      bg = PdfColors.amber50;
+      final color = isDark ? const Color(0xFFD29922) : const Color(0xFF9A6700);
+      accent = _pdf(color);
+      bg = _pdf(color.withValues(alpha: isDark ? 0.15 : 0.08));
       title = 'Warning';
       cleanText = text.substring('[!WARNING]'.length).trim();
     } else if (text.startsWith('[!CAUTION]')) {
-      accent = PdfColors.red700;
-      bg = PdfColors.red50;
+      final color = isDark ? const Color(0xFFDA3633) : const Color(0xFFCF222E);
+      accent = _pdf(color);
+      bg = _pdf(color.withValues(alpha: isDark ? 0.15 : 0.08));
       title = 'Caution';
       cleanText = text.substring('[!CAUTION]'.length).trim();
+    } else if (themeConfig != null) {
+      accent = _pdf(themeConfig.blockquoteBorder);
     }
 
     return pw.Container(
@@ -437,7 +534,7 @@ class MarkdownPdfService {
               font: regularFont,
               fontSize: 9.5,
               lineSpacing: 2,
-              color: PdfColors.grey800,
+              color: quoteTextColor,
             ),
           ),
         ],
@@ -449,9 +546,14 @@ class MarkdownPdfService {
   Future<void> printOrPreview({
     required String markdown,
     required String title,
+    MarkdownThemeConfig? themeConfig,
   }) async {
     await Printing.layoutPdf(
-      onLayout: (format) => generatePdf(markdown: markdown, title: title),
+      onLayout: (format) => generatePdf(
+        markdown: markdown,
+        title: title,
+        themeConfig: themeConfig,
+      ),
       name: '$title.pdf',
     );
   }
@@ -460,11 +562,94 @@ class MarkdownPdfService {
   Future<void> sharePdf({
     required String markdown,
     required String title,
+    MarkdownThemeConfig? themeConfig,
   }) async {
-    final bytes = await generatePdf(markdown: markdown, title: title);
+    final bytes = await generatePdf(
+      markdown: markdown,
+      title: title,
+      themeConfig: themeConfig,
+    );
     await Printing.sharePdf(
       bytes: bytes,
       filename: '$title.pdf',
+    );
+  }
+}
+
+class _PdfHighlightRenderer implements HighlightRenderer {
+  final pw.TextStyle baseStyle;
+  final Map<String, TextStyle> theme;
+  final List<_PdfHighlightSpan> _stack = [];
+  final List<pw.TextSpan> _results = [];
+
+  _PdfHighlightRenderer(this.baseStyle, this.theme);
+
+  @override
+  void addText(String text) {
+    if (_stack.isEmpty) {
+      _results.add(pw.TextSpan(text: text, style: baseStyle));
+    } else {
+      final top = _stack.removeLast();
+      final scope = top.node.scope;
+      pw.TextStyle spanStyle = baseStyle;
+      if (scope != null && theme.containsKey(scope)) {
+        final flutterStyle = theme[scope];
+        if (flutterStyle?.color != null) {
+          spanStyle = baseStyle.copyWith(
+            color: PdfColor.fromInt(flutterStyle!.color!.toARGB32()),
+          );
+        }
+      }
+      _stack.add(top.addSpan(pw.TextSpan(text: text, style: spanStyle)));
+    }
+  }
+
+  @override
+  void closeNode(DataNode node) {
+    final top = _stack.removeLast();
+    final span = top.toSpan();
+    if (_stack.isNotEmpty) {
+      _stack.last = _stack.last.addSpan(span);
+    } else {
+      _results.add(span);
+    }
+  }
+
+  @override
+  void openNode(DataNode node) {
+    _stack.add(_PdfHighlightSpan(node: node, style: baseStyle));
+  }
+
+  pw.TextSpan? get span {
+    if (_results.isEmpty) return null;
+    if (_results.length == 1) return _results.first;
+    return pw.TextSpan(children: _results);
+  }
+}
+
+class _PdfHighlightSpan {
+  final DataNode node;
+  final pw.TextStyle style;
+  final List<pw.InlineSpan> children;
+
+  _PdfHighlightSpan({
+    required this.node,
+    required this.style,
+    List<pw.InlineSpan>? children,
+  }) : children = children ?? [];
+
+  _PdfHighlightSpan addSpan(pw.InlineSpan span) {
+    return _PdfHighlightSpan(
+      node: node,
+      style: style,
+      children: [...children, span],
+    );
+  }
+
+  pw.TextSpan toSpan() {
+    return pw.TextSpan(
+      style: style,
+      children: children,
     );
   }
 }
