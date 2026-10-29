@@ -6,12 +6,15 @@ import 'package:window_manager/window_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/services/external_file_service.dart';
 import 'src/services/permission_service.dart';
 import 'src/services/platform_paths.dart';
 import 'src/services/preferences_service.dart';
 import 'src/services/storage_service.dart';
 
-Future<void> main() async {
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   if (!Platform.isIOS) {
     MediaKit.ensureInitialized();
@@ -27,7 +30,7 @@ Future<void> main() async {
   if (Platform.isAndroid && !await PermissionService.instance.hasStorageAccess()) {
     await PermissionService.instance.requestStorageAccess();
   }
-  runApp(const FileManagerApp());
+  runApp(FileManagerApp(initialArgs: args));
 }
 
 /// Persists window bounds on move/resize so the next launch restores
@@ -73,7 +76,8 @@ Future<void> _initDesktopWindow() async {
 }
 
 class FileManagerApp extends StatefulWidget {
-  const FileManagerApp({super.key});
+  final List<String> initialArgs;
+  const FileManagerApp({super.key, this.initialArgs = const []});
 
   @override
   State<FileManagerApp> createState() => _FileManagerAppState();
@@ -91,6 +95,10 @@ class _FileManagerAppState extends State<FileManagerApp> {
   @override
   void initState() {
     super.initState();
+    ExternalFileService.instance.init(
+      appNavigatorKey,
+      initialArgs: widget.initialArgs,
+    );
     final saved = PreferencesService.instance.getString(_themeKey);
     _themeMode = ThemeMode.values.firstWhere(
       (mode) => mode.name == saved,
@@ -222,6 +230,7 @@ class _FileManagerAppState extends State<FileManagerApp> {
             ? darkDynamic
             : ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark);
         return MaterialApp(
+          navigatorKey: appNavigatorKey,
           title: 'File Manager',
           debugShowCheckedModeBanner: false,
           locale: _locale,

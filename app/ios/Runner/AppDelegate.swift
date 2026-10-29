@@ -174,6 +174,84 @@ private class KeychainHelper {
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  static var pendingFilePath: String?
+  static var openFileChannel: FlutterMethodChannel?
+
+  static func setupOpenFileChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.github.th997.filemanager/open_file",
+      binaryMessenger: messenger
+    )
+    openFileChannel = channel
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getInitialFile":
+        let file = pendingFilePath
+        pendingFilePath = nil
+        result(file)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  static func handleIncomingFile(url: URL) {
+    guard let path = resolveIncomingUrl(url) else { return }
+    pendingFilePath = path
+    if let channel = openFileChannel {
+      DispatchQueue.main.async {
+        channel.invokeMethod("onFileOpened", arguments: path)
+      }
+    }
+  }
+
+  static func resolveIncomingUrl(_ url: URL) -> String? {
+    guard url.isFileURL else { return nil }
+
+    let hasScoped = url.startAccessingSecurityScopedResource()
+    defer {
+      if hasScoped {
+        url.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let path = url.path
+    let fileManager = FileManager.default
+
+    let docsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
+    let tmpPath = NSTemporaryDirectory()
+    let cachesPath = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? ""
+
+    if (!docsPath.isEmpty && path.hasPrefix(docsPath)) ||
+       (!tmpPath.isEmpty && path.hasPrefix(tmpPath)) ||
+       (!cachesPath.isEmpty && path.hasPrefix(cachesPath)) {
+      if fileManager.fileExists(atPath: path) {
+        return path
+      }
+    }
+
+    let inboxDir = URL(fileURLWithPath: docsPath).appendingPathComponent("Inbox", isDirectory: true)
+    try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true, attributes: nil)
+
+    var destUrl = inboxDir.appendingPathComponent(url.lastPathComponent)
+    if fileManager.fileExists(atPath: destUrl.path) {
+      try? fileManager.removeItem(at: destUrl)
+    }
+    if fileManager.fileExists(atPath: destUrl.path) {
+      let ext = url.pathExtension
+      let base = url.deletingPathExtension().lastPathComponent
+      destUrl = inboxDir.appendingPathComponent("\(base)_\(Int(Date().timeIntervalSince1970)).\(ext)")
+    }
+
+    do {
+      try fileManager.copyItem(at: url, to: destUrl)
+      return destUrl.path
+    } catch {
+      NSLog("Failed to copy incoming file: \(error)")
+      return fileManager.fileExists(atPath: path) ? path : nil
+    }
+  }
+
   private static func setupKeychainChannel(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(
       name: "com.github.th997.filemanager/keychain",
@@ -245,15 +323,26 @@ private class KeychainHelper {
 
     if let controller = window?.rootViewController as? FlutterViewController {
       AppDelegate.setupKeychainChannel(messenger: controller.binaryMessenger)
+      AppDelegate.setupOpenFileChannel(messenger: controller.binaryMessenger)
     }
 
     return launchResult
+  }
+
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    AppDelegate.handleIncomingFile(url: url)
+    return true
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "Runner") {
       AppDelegate.setupKeychainChannel(messenger: registrar.messenger())
+      AppDelegate.setupOpenFileChannel(messenger: registrar.messenger())
     }
   }
 }
