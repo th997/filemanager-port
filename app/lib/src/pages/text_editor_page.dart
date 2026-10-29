@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../rust/api/file_manager.dart';
 import '../services/highlight_service.dart';
+import '../services/markdown_pdf_service.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_ui_tokens.dart';
+import '../theme/markdown_themes.dart';
+import '../widgets/markdown_callout_builder.dart';
+import '../widgets/markdown_code_builder.dart';
 
 enum TextFileMode { preview, code, edit }
 
@@ -45,8 +50,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
   late TextFileMode _mode;
   static const _prefFontSize = 'editor.font_size';
   static const _prefWordWrap = 'editor.word_wrap';
+  static const _prefMarkdownTheme = 'markdown.theme';
   double _fontSize = 13.0;
   bool _wordWrap = true;
+  MarkdownThemeType _markdownTheme = MarkdownThemeType.github;
   bool _showFind = false;
   bool _showReplace = false;
   final TextEditingController _findController = TextEditingController();
@@ -75,6 +82,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final prefs = PreferencesService.instance;
     _fontSize = double.tryParse(prefs.getString(_prefFontSize) ?? '') ?? _fontSize;
     _wordWrap = prefs.getBool(_prefWordWrap) ?? _wordWrap;
+    _markdownTheme = MarkdownThemeType.fromId(prefs.getString(_prefMarkdownTheme));
     _mode = (_isMarkdown || _isHtml) ? TextFileMode.preview : TextFileMode.code;
     _loadFile();
   }
@@ -362,6 +370,41 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
   }
 
+  bool _exportingPdf = false;
+
+  Future<void> _exportPdf({required bool share}) async {
+    final text = _controller.text;
+    if (text.isEmpty) return;
+
+    setState(() => _exportingPdf = true);
+    try {
+      if (share) {
+        await MarkdownPdfService.instance.sharePdf(
+          markdown: text,
+          title: widget.fileName,
+        );
+      } else {
+        await MarkdownPdfService.instance.printOrPreview(
+          markdown: text,
+          title: widget.fileName,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('PDF Export failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportingPdf = false);
+      }
+    }
+  }
+
   /// Font size and wrapping are viewer preferences, not per-file state, so
   /// they survive closing the file and opening another one.
   void _saveViewPreferences() {
@@ -537,6 +580,99 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       _mode == TextFileMode.preview ? TextFileMode.code : TextFileMode.preview,
                     ),
                   ),
+                if (_isMarkdown && _mode == TextFileMode.preview) ...[
+                  PopupMenuButton<MarkdownThemeType>(
+                    tooltip: 'Markdown Theme',
+                    icon: const Icon(Icons.palette_outlined),
+                    initialValue: _markdownTheme,
+                    onSelected: (theme) {
+                      setState(() => _markdownTheme = theme);
+                      PreferencesService.instance.setString(_prefMarkdownTheme, theme.id);
+                    },
+                    itemBuilder: (ctx) => [
+                      for (final theme in MarkdownThemeType.values)
+                        PopupMenuItem(
+                          value: theme,
+                          child: Row(
+                            children: [
+                              Icon(
+                                theme.icon,
+                                size: 18,
+                                color: _markdownTheme == theme
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  theme.label,
+                                  style: TextStyle(
+                                    fontWeight: _markdownTheme == theme
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    color: _markdownTheme == theme
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              if (_markdownTheme == theme)
+                                Icon(
+                                  Icons.check,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (_exportingPdf)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else
+                    PopupMenuButton<String>(
+                      tooltip: 'Export to PDF',
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      onSelected: (val) {
+                        if (val == 'preview') {
+                          _exportPdf(share: false);
+                        } else if (val == 'share') {
+                          _exportPdf(share: true);
+                        }
+                      },
+                      itemBuilder: (ctx) => const [
+                        PopupMenuItem(
+                          value: 'preview',
+                          child: Row(
+                            children: [
+                              Icon(Icons.print_outlined, size: 18),
+                              SizedBox(width: 10),
+                              Text('Print / Preview PDF'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'share',
+                          child: Row(
+                            children: [
+                              Icon(Icons.share_outlined, size: 18),
+                              SizedBox(width: 10),
+                              Text('Share / Save PDF'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
                 if (widget.readOnly)
                   const IconButton(
                     icon: Icon(Icons.lock_outline),
@@ -549,10 +685,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     tooltip: 'Edit',
                     onPressed: () => _setMode(TextFileMode.edit),
                   ),
-                if (_mode != TextFileMode.preview)
-                  PopupMenuButton<String>(
-                    tooltip: 'Text Options',
-                    icon: const Icon(Icons.tune),
+                PopupMenuButton<String>(
+                  tooltip: 'Text Options',
+                  icon: const Icon(Icons.tune),
                     onSelected: (val) {
                       if (val == 'zoom_in') {
                         setState(() => _fontSize = (_fontSize + 1).clamp(9.0, 32.0));
@@ -889,15 +1024,34 @@ class _TextEditorPageState extends State<TextEditorPage> {
     switch (_mode) {
       case TextFileMode.preview:
         if (_isMarkdown) {
-          return Markdown(
-            data: _controller.text,
-            padding: const EdgeInsets.all(16),
-            selectable: true,
+          final brightness = Theme.of(context).brightness;
+          final themeConfig = MarkdownThemeConfig.get(_markdownTheme, brightness);
+          return Container(
+            color: themeConfig.backgroundColor,
+            width: double.infinity,
+            height: double.infinity,
+            child: Markdown(
+              data: _controller.text,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              selectable: true,
+              extensionSet: md.ExtensionSet.gitHubFlavored,
+              styleSheet: themeConfig.toStyleSheet(context, fontSize: _fontSize),
+              builders: {
+                'code': HighlightCodeElementBuilder(
+                  themeConfig: themeConfig,
+                  fontSize: _fontSize,
+                ),
+                'blockquote': CalloutBlockquoteBuilder(
+                  themeConfig: themeConfig,
+                  fontSize: _fontSize,
+                ),
+              },
+            ),
           );
         }
         return HtmlWidget(
           _controller.text,
-          textStyle: const TextStyle(fontSize: 15),
+          textStyle: TextStyle(fontSize: _fontSize + 2),
         );
       case TextFileMode.code:
         return _buildCodeView();
