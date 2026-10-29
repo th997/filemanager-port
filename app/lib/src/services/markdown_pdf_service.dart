@@ -131,9 +131,6 @@ class MarkdownPdfService {
     );
 
     final pageBg = themeConfig != null ? _pdf(themeConfig.backgroundColor) : null;
-    final headerColor = themeConfig != null
-        ? _pdf(themeConfig.textColor.withValues(alpha: 0.6))
-        : PdfColors.grey600;
 
     pdf.addPage(
       pw.MultiPage(
@@ -148,24 +145,6 @@ class MarkdownPdfService {
                   )
               : null,
         ),
-        header: (context) {
-          // Keep document title at top of page 1 only; omit on subsequent pages
-          if (context.pageNumber == 1 && title.trim().isNotEmpty) {
-            return pw.Container(
-              alignment: pw.Alignment.centerRight,
-              margin: pw.EdgeInsets.only(bottom: 8 * marginMode.spacingScale),
-              child: pw.Text(
-                title,
-                style: pw.TextStyle(
-                  font: regularFont,
-                  fontSize: 9,
-                  color: headerColor,
-                ),
-              ),
-            );
-          }
-          return pw.SizedBox();
-        },
         build: (context) => widgets,
       ),
     );
