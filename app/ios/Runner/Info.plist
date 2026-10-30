@@ -32,12 +32,31 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
-			<string>Alternate</string>
+			<string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>public.item</string>
 				<string>public.content</string>
 				<string>public.data</string>
+				<string>public.text</string>
+				<string>public.plain-text</string>
+				<string>public.utf8-plain-text</string>
+				<string>public.html</string>
+				<string>public.xml</string>
+				<string>public.json</string>
+				<string>public.source-code</string>
+				<string>public.image</string>
+				<string>public.audiovisual-content</string>
+				<string>public.movie</string>
+				<string>public.audio</string>
+				<string>com.adobe.pdf</string>
+				<string>public.archive</string>
+				<string>public.zip-archive</string>
+				<string>com.pkware.zip-archive</string>
+				<string>org.gnu.gnu-zip-archive</string>
+				<string>org.7-zip.7-zip-archive</string>
+				<string>public.tar-archive</string>
+				<string>public.database</string>
 			</array>
 		</dict>
 	</array>

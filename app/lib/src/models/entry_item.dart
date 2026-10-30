@@ -35,6 +35,10 @@ class EntryItem {
     return lower.endsWith('.txt') ||
         lower.endsWith('.md') ||
         lower.endsWith('.json') ||
+        lower.endsWith('.jsonc') ||
+        lower.endsWith('.json5') ||
+        lower.endsWith('.geojson') ||
+        lower.endsWith('.lock') ||
         lower.endsWith('.yaml') ||
         lower.endsWith('.yml') ||
         lower.endsWith('.xml') ||

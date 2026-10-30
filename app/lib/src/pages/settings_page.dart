@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../services/preferences_service.dart';
@@ -41,6 +42,8 @@ class _SettingsPageState extends State<SettingsPage> {
   ThemeMode get currentThemeMode => _themeMode;
 
   String? _versionLabel;
+  int _cacheSizeBytes = 0;
+  bool _clearingCache = false;
 
   @override
   void initState() {
@@ -50,6 +53,75 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() => _versionLabel =
           'v${info.version} (build ${info.buildNumber}) • Rust Core');
     }).catchError((_) {});
+    _updateCacheSize();
+  }
+
+  Future<void> _updateCacheSize() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      int total = 0;
+      if (tempDir.existsSync()) {
+        for (final file in tempDir.listSync(recursive: true, followLinks: false)) {
+          if (file is File) {
+            total += file.lengthSync();
+          }
+        }
+      }
+      if (mounted) setState(() => _cacheSizeBytes = total);
+    } catch (_) {}
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  Future<void> _clearCache() async {
+    HapticFeedback.mediumImpact();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Temporary Cache?'),
+        content: Text(
+          'This will delete ${_formatBytes(_cacheSizeBytes)} of temporary thumbnail, media, and preview cache. Your saved files and connections are safe.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    setState(() => _clearingCache = true);
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (tempDir.existsSync()) {
+        for (final f in tempDir.listSync()) {
+          try {
+            if (f is File) await f.delete();
+            if (f is Directory) await f.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+      await _updateCacheSize();
+      if (!mounted) return;
+      HapticFeedback.lightImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Temporary cache cleared')),
+      );
+    } finally {
+      if (mounted) setState(() => _clearingCache = false);
+    }
   }
 
   void _setToolbarAtBottom(bool value) {
@@ -232,6 +304,37 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: const TextStyle(fontSize: 10)),
               value: PreferencesService.toolbarAtBottom.value,
               onChanged: _setToolbarAtBottom,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSectionHeader(context, 'Storage & Cache'),
+          Card(
+            child: ListTile(
+              leading: const AppCircleBadge(
+                icon: Icons.cleaning_services_outlined,
+                color: Colors.orange,
+              ),
+              title: const Text('Temporary Cache'),
+              subtitle: Text(
+                '${_formatBytes(_cacheSizeBytes)} • thumbnails, media chunks & previews',
+                style: const TextStyle(fontSize: 10),
+              ),
+              trailing: _clearingCache
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                      onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
+                      child: const Text('Clear'),
+                    ),
             ),
           ),
 

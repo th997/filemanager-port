@@ -44,16 +44,28 @@ class MainActivity : FlutterActivity() {
         if (intent == null) return
         val action = intent.action
         val uri: Uri? = when (action) {
-            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_VIEW -> {
+                intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            }
             Intent.ACTION_SEND -> {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                val streamUri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 } else {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                 }
+                streamUri ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri ?: intent.data
             }
-            else -> null
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val streamList = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+                streamList?.firstOrNull() ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            }
+            else -> intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
         }
         if (uri != null) {
             val resolvedPath = resolveUri(uri)
@@ -65,13 +77,28 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun resolveUri(uri: Uri): String? {
-        if (uri.scheme == "file") {
-            return uri.path
+        val scheme = uri.scheme
+        val inboxDir = File(cacheDir, "inbox")
+        if (!inboxDir.exists()) {
+            inboxDir.mkdirs()
         }
-        if (uri.scheme == "content") {
+
+        // 1. Direct file:// scheme
+        if (scheme == "file") {
+            val rawPath = uri.path
+            if (!rawPath.isNullOrEmpty()) {
+                val file = File(rawPath)
+                if (file.exists() && file.canRead()) {
+                    return file.absolutePath
+                }
+            }
+        }
+
+        // 2. content:// scheme or file stream copy
+        try {
+            var displayName: String? = null
             try {
-                var displayName: String? = null
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) {
                         val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                         if (nameIndex != -1) {
@@ -79,24 +106,34 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                if (displayName.isNullOrBlank()) {
-                    displayName = "shared_file_${System.currentTimeMillis()}"
-                }
-                val inboxDir = File(cacheDir, "inbox")
-                if (!inboxDir.exists()) {
-                    inboxDir.mkdirs()
-                }
-                val destFile = File(inboxDir, displayName)
-                contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                return destFile.absolutePath
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
+                // Ignore query exceptions; some providers deny query permission but allow openInputStream
             }
+
+            if (displayName.isNullOrBlank()) {
+                val lastSeg = uri.lastPathSegment
+                displayName = if (!lastSeg.isNullOrBlank()) {
+                    lastSeg.substringAfterLast('/')
+                } else {
+                    "shared_${System.currentTimeMillis()}"
+                }
+            }
+            // Sanitize file name to avoid directory traversal
+            displayName = File(displayName).name.ifBlank { "shared_${System.currentTimeMillis()}" }
+
+            val destFile = File(inboxDir, displayName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (destFile.exists() && destFile.length() > 0) {
+                return destFile.absolutePath
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+
         return null
     }
 }

@@ -45,6 +45,12 @@ class HighlightService {
     'dart': 'dart',
     'rs': 'rust',
     'json': 'json',
+    'jsonc': 'json',
+    'json5': 'json',
+    'geojson': 'json',
+    'topojson': 'json',
+    'map': 'json',
+    'lock': 'json',
     'yaml': 'yaml',
     'yml': 'yaml',
     'css': 'css',
@@ -106,10 +112,32 @@ class HighlightService {
     });
   }
 
+  static final Map<String, TextStyle> _lightTheme = {
+    ...githubTheme,
+    'string': const TextStyle(color: Color(0xFF098658)),
+    'attr': const TextStyle(color: Color(0xFF005CC5)),
+    'number': const TextStyle(color: Color(0xFF098658)),
+    'literal': const TextStyle(color: Color(0xFFD73A49)),
+    'keyword': const TextStyle(color: Color(0xFFD73A49)),
+    'punctuation': const TextStyle(color: Color(0xFF586069)),
+  };
+
+  static final Map<String, TextStyle> _darkTheme = {
+    ...atomOneDarkTheme,
+    'attr': const TextStyle(color: Color(0xFF9CDCFE)),
+    'string': const TextStyle(color: Color(0xFF98C379)),
+    'number': const TextStyle(color: Color(0xFFD19A66)),
+    'literal': const TextStyle(color: Color(0xFF56B6C2)),
+    'keyword': const TextStyle(color: Color(0xFFC678DD)),
+    'punctuation': const TextStyle(color: Color(0xFFABB2BF)),
+  };
+
   String? languageFor(String fileName) {
-    final lower = fileName.toLowerCase();
+    final cleanName = fileName.split('?').first.split('/').last.split('\\').last;
+    final lower = cleanName.toLowerCase();
     if (lower == 'dockerfile') return 'dockerfile';
     if (lower == 'makefile') return 'bash';
+    if (lower == '.eslintrc' || lower == '.prettierrc' || lower == '.stylelintrc') return 'json';
     final dot = lower.lastIndexOf('.');
     if (dot < 0 || dot == lower.length - 1) return null;
     return _extensions[lower.substring(dot + 1)];
@@ -119,26 +147,27 @@ class HighlightService {
   TextSpan? spanFor(
     String code,
     String fileName,
-    Brightness brightness,
-  ) {
+    Brightness brightness, {
+    double fontSize = 13.0,
+  }) {
     final language = languageFor(fileName);
     if (language == null) return null;
 
-    final theme = brightness == Brightness.dark ? atomOneDarkTheme : githubTheme;
+    final theme = brightness == Brightness.dark ? _darkTheme : _lightTheme;
     final base = TextStyle(
       fontFamily: 'monospace',
-      fontSize: 13,
+      fontSize: fontSize,
       height: 1.35,
       color: theme['root']?.color,
     );
 
     // Guard against large files freezing UI isolate with regex backtracking
-    if (code.length > 64 * 1024) return null;
+    if (code.length > 512 * 1024) return null;
     int lineCount = 1;
     for (int i = 0; i < code.length; i++) {
       if (code.codeUnitAt(i) == 10) {
         lineCount++;
-        if (lineCount > 1500) return null;
+        if (lineCount > 8000) return null;
       }
     }
 
@@ -153,7 +182,7 @@ class HighlightService {
   }
 
   Color backgroundFor(Brightness brightness) {
-    final theme = brightness == Brightness.dark ? atomOneDarkTheme : githubTheme;
+    final theme = brightness == Brightness.dark ? _darkTheme : _lightTheme;
     return theme['root']?.backgroundColor ?? Colors.transparent;
   }
 }

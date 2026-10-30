@@ -119,16 +119,33 @@ async fn handle_stream(
         }
     };
 
-    let mime = mime_guess::from_path(&subpath)
+    let raw_mime = mime_guess::from_path(&subpath)
         .first_or_octet_stream()
         .to_string();
+    let mime = if raw_mime.starts_with("text/") && !raw_mime.contains("charset") {
+        format!("{raw_mime}; charset=utf-8")
+    } else {
+        raw_mime
+    };
+
+    let cache_control = if mime.starts_with("image/")
+        || mime.starts_with("font/")
+        || mime.starts_with("video/")
+        || mime.starts_with("audio/")
+        || mime == "text/css"
+        || mime == "application/javascript"
+    {
+        "public, max-age=300"
+    } else {
+        "no-cache"
+    };
 
     let mut builder = Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, mime)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONNECTION, "keep-alive")
-        .header(header::CACHE_CONTROL, "no-cache, no-store")
+        .header(header::CACHE_CONTROL, cache_control)
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 
     match (total, length) {
@@ -160,11 +177,18 @@ async fn handle_stream(
         }
     };
 
-    let (reader_end, mut writer_end) = tokio::io::simplex(PREFETCH_CAPACITY);
+    let prefetch_cap = match length.or(total) {
+        Some(size) => ((size as usize).min(PREFETCH_CAPACITY)).max(64 * 1024),
+        None => 1024 * 1024,
+    };
+    let read_buf_size = prefetch_cap.min(64 * 1024);
+    let stream_buf = prefetch_cap.min(STREAM_BUFFER);
+
+    let (reader_end, mut writer_end) = tokio::io::simplex(prefetch_cap);
     tokio::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut reader = reader;
-        let mut buf = vec![0u8; 256 * 1024];
+        let mut buf = vec![0u8; read_buf_size];
         loop {
             match reader.read(&mut buf).await {
                 Ok(0) => break,
@@ -178,7 +202,7 @@ async fn handle_stream(
         }
     });
 
-    let body = Body::from_stream(ReaderStream::with_capacity(reader_end, STREAM_BUFFER));
+    let body = Body::from_stream(ReaderStream::with_capacity(reader_end, stream_buf));
     builder.body(body).unwrap_or_else(|_| {
         StatusCode::INTERNAL_SERVER_ERROR.into_response()
     })

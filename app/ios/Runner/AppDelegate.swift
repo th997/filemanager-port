@@ -215,25 +215,36 @@ private class KeychainHelper {
       }
     }
 
-    let path = url.path
     let fileManager = FileManager.default
+    let resolvedUrl = url.resolvingSymlinksInPath()
+    let resolvedPath = resolvedUrl.path
 
-    let docsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
-    let tmpPath = NSTemporaryDirectory()
-    let cachesPath = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? ""
+    let docsUrl = URL(fileURLWithPath: NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? "").resolvingSymlinksInPath()
+    let tmpUrl = URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath()
+    let cachesUrl = URL(fileURLWithPath: NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? "").resolvingSymlinksInPath()
 
-    if (!docsPath.isEmpty && path.hasPrefix(docsPath)) ||
-       (!tmpPath.isEmpty && path.hasPrefix(tmpPath)) ||
-       (!cachesPath.isEmpty && path.hasPrefix(cachesPath)) {
-      if fileManager.fileExists(atPath: path) {
-        return path
+    let docsPath = docsUrl.path
+    let tmpPath = tmpUrl.path
+    let cachesPath = cachesUrl.path
+
+    if (!docsPath.isEmpty && resolvedPath.hasPrefix(docsPath)) ||
+       (!tmpPath.isEmpty && resolvedPath.hasPrefix(tmpPath)) ||
+       (!cachesPath.isEmpty && resolvedPath.hasPrefix(cachesPath)) {
+      if fileManager.fileExists(atPath: resolvedPath) {
+        return resolvedPath
       }
     }
 
-    let inboxDir = URL(fileURLWithPath: docsPath).appendingPathComponent("Inbox", isDirectory: true)
+    let inboxDir = docsUrl.appendingPathComponent("Inbox", isDirectory: true)
     try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true, attributes: nil)
 
-    var destUrl = inboxDir.appendingPathComponent(url.lastPathComponent)
+    let fileName = url.lastPathComponent
+    var destUrl = inboxDir.appendingPathComponent(fileName)
+
+    if destUrl.resolvingSymlinksInPath().path == resolvedPath {
+      return resolvedPath
+    }
+
     if fileManager.fileExists(atPath: destUrl.path) {
       try? fileManager.removeItem(at: destUrl)
     }
@@ -243,12 +254,38 @@ private class KeychainHelper {
       destUrl = inboxDir.appendingPathComponent("\(base)_\(Int(Date().timeIntervalSince1970)).\(ext)")
     }
 
+    var coordinatedSuccess = false
+    let coordinator = NSFileCoordinator()
+    var coordError: NSError?
+    coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { readUrl in
+      do {
+        try fileManager.copyItem(at: readUrl, to: destUrl)
+        coordinatedSuccess = true
+      } catch {
+        if let data = try? Data(contentsOf: readUrl) {
+          do {
+            try data.write(to: destUrl, options: .atomic)
+            coordinatedSuccess = true
+          } catch {}
+        }
+      }
+    }
+
+    if coordinatedSuccess && fileManager.fileExists(atPath: destUrl.path) {
+      return destUrl.resolvingSymlinksInPath().path
+    }
+
     do {
       try fileManager.copyItem(at: url, to: destUrl)
-      return destUrl.path
+      return destUrl.resolvingSymlinksInPath().path
     } catch {
+      if let data = try? Data(contentsOf: url) {
+        if (try? data.write(to: destUrl, options: .atomic)) != nil {
+          return destUrl.resolvingSymlinksInPath().path
+        }
+      }
       NSLog("Failed to copy incoming file: \(error)")
-      return fileManager.fileExists(atPath: path) ? path : nil
+      return fileManager.fileExists(atPath: resolvedPath) ? resolvedPath : nil
     }
   }
 

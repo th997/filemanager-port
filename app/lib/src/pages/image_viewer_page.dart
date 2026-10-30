@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/file_open_service.dart';
+import '../services/task_service.dart';
 import '../widgets/app_swipe_back.dart';
 
 /// One image shown by [ImageViewerPage].
@@ -73,7 +74,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     super.initState();
     _entries = widget.siblings.isEmpty
         ? [ImageViewerEntry(name: widget.fileName, localPath: widget.filePath)]
-        : widget.siblings;
+        : List<ImageViewerEntry>.from(widget.siblings);
     _index = widget.initialIndex.clamp(0, _entries.length - 1);
     _pageController = PageController(initialPage: _index);
     _transformationController.addListener(_onTransformChanged);
@@ -470,6 +471,139 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     }
   }
 
+  Future<void> _deleteCurrent() async {
+    HapticFeedback.mediumImpact();
+    final entry = _current;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 28),
+        title: Text('Delete "${entry.name}"?'),
+        content: const Text(
+          'Are you sure you want to delete this image? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      if (entry.localPath != null) {
+        final f = File(entry.localPath!);
+        if (f.existsSync()) {
+          await f.delete();
+        }
+      } else if (entry.root != null && entry.remotePath != null) {
+        await TaskService.instance.delete(root: entry.root!, paths: [entry.remotePath!]);
+      }
+
+      HapticFeedback.lightImpact();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted ${entry.name}')),
+      );
+
+      setState(() {
+        _entries.removeAt(_index);
+        _localPaths.remove(_index);
+      });
+
+      if (_entries.isEmpty) {
+        Navigator.of(context).pop();
+      } else {
+        final newIndex = _index.clamp(0, _entries.length - 1);
+        _index = newIndex;
+        _pageController.jumpToPage(newIndex);
+        setState(() {});
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  void _showQuickActionsSheet() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  _current.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.share),
+                title: const Text('Share Image'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _shareCurrent();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_all_outlined),
+                title: const Text('Copy Path'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _copyCurrentPath();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.rotate_right),
+                title: const Text('Rotate 90°'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('Image Details'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showImageDetails();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Delete Image', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteCurrent();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final multiple = _entries.length > 1;
@@ -543,6 +677,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 tooltip: 'Share image',
                 onPressed: _shareCurrent,
               ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Delete image',
+                onPressed: _deleteCurrent,
+              ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
                 tooltip: 'More options',
@@ -562,6 +701,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                       break;
                     case 'details':
                       _showImageDetails();
+                      break;
+                    case 'delete':
+                      _deleteCurrent();
                       break;
                   }
                 },
@@ -617,6 +759,17 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                       ],
                     ),
                   ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                        SizedBox(width: 10),
+                        Text('Delete', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -639,6 +792,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   }
                   return GestureDetector(
                     onTap: () => setState(() => _showChrome = !_showChrome),
+                    onLongPress: _showQuickActionsSheet,
                     onDoubleTapDown: (details) =>
                         _lastDoubleTapPosition = details.localPosition,
                     onDoubleTap: () => _toggleZoom(_lastDoubleTapPosition),

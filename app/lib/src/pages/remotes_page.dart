@@ -142,6 +142,86 @@ class _RemotesPageState extends State<RemotesPage> {
     ).then((_) => _loadRemotes());
   }
 
+  void _showRemoteActionSheet(RemoteConfigDto r) {
+    HapticFeedback.mediumImpact();
+    final sub = r.endpoint ??
+        (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}');
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  r.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '${r.kind.toUpperCase()} • $sub',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: const Text('Connect & Browse'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openRemote(r);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.network_check),
+                title: const Text('Test Connection'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _testRemote(r);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Copy URI'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _copyRemoteUri(r);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit Configuration'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _editRemote(r);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                title: Text(
+                  'Delete Remote',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteRemote(r);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _addRemote() async {
     final created = await showDialog<RemoteConfigDto>(
       context: context,
@@ -684,7 +764,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                         ],
                                       ),
                                       onTap: () => _openRemote(r),
-                                      onLongPress: () => _copyRemoteUri(r),
+                                      onLongPress: () => _showRemoteActionSheet(r),
                                     ),
                                   );
                                 },

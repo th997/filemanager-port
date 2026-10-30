@@ -230,6 +230,78 @@ class _RecentPageState extends State<RecentPage> {
     ).then((_) => _loadHistory());
   }
 
+  void _showHistoryActionSheet(HistoryDto h, String title) {
+    HapticFeedback.mediumImpact();
+    final rootLabel = _rootLabel(h.root);
+    final sub = h.path.isEmpty ? rootLabel : '$rootLabel/${h.path}';
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  sub,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: const Text('Open'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openHistory(h);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Copy Path'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _copyHistoryPath(h);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.bookmark_add_outlined),
+                title: const Text('Bookmark Location'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _bookmarkHistory(h, title);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                title: Text(
+                  'Remove from History',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _removeEntry(h, title);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String _displayTitle(HistoryDto h) {
     if (h.path.isEmpty) return h.root;
     final segments = h.path.split('/').where((s) => s.isNotEmpty).toList();
@@ -408,7 +480,7 @@ class _RecentPageState extends State<RecentPage> {
                                     ],
                                   ),
                                   onTap: () => _openHistory(h),
-                                  onLongPress: () => _copyHistoryPath(h),
+                                  onLongPress: () => _showHistoryActionSheet(h, title),
                                 ),
                               );
                             },

@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/entry_item.dart';
 import '../services/platform_paths.dart';
@@ -57,19 +58,28 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   AssetPathEntity? _albumPath;
   int _albumTotal = 0;
   bool _loadingMore = false;
+  bool _showScrollToTop = false;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _scrollController.addListener(() {
+    _scrollController.addListener(_onScroll);
+    _scan();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients) {
+      final shouldShow = _scrollController.position.pixels > 400;
+      if (shouldShow != _showScrollToTop) {
+        setState(() => _showScrollToTop = shouldShow);
+      }
       if (_scrollController.position.pixels >
           _scrollController.position.maxScrollExtent - 800) {
         _loadMore();
       }
-    });
-    _scan();
+    }
   }
 
   @override
@@ -263,6 +273,70 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  Future<void> _showPhotoActionSheet(int index) async {
+    HapticFeedback.mediumImpact();
+    final photo = _photos[index];
+    final file = await photo.resolve();
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  photo.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (photo.takenAt != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    _monthLabel(photo.takenAt),
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.fullscreen),
+                title: const Text('Open in Viewer'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _open(index);
+                },
+              ),
+              if (file != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.share),
+                  title: const Text('Share Photo'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.copy_outlined),
+                  title: const Text('Copy File Path'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _copyPhotoPath(index);
+                  },
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppSwipeBack(
@@ -282,6 +356,20 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
           ],
         ),
         body: _buildBody(),
+        floatingActionButton: _showScrollToTop
+            ? FloatingActionButton.small(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _scrollController.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+                tooltip: 'Scroll to top',
+                child: const Icon(Icons.arrow_upward),
+              )
+            : null,
       ),
     );
   }
@@ -407,7 +495,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
             color: Colors.transparent,
             child: InkWell(
               onTap: () => _open(index),
-              onLongPress: () => _copyPhotoPath(index),
+              onLongPress: () => _showPhotoActionSheet(index),
             ),
           ),
         ],

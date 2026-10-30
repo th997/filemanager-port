@@ -78,6 +78,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   double _dragVolumeLevel = 1.0;
   Timer? _volumeHudTimer;
 
+  // Double-tap seek HUD state
+  int? _doubleTapSeekSeconds;
+  Timer? _doubleTapHudTimer;
+
   // Long-press speed boost state
   bool _isSpeedBoosting = false;
   double _preBoostSpeed = 1.0;
@@ -575,6 +579,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _controlsTimer?.cancel();
     _volumeHudTimer?.cancel();
     _brightnessHudTimer?.cancel();
+    _doubleTapHudTimer?.cancel();
     ScreenBrightness.instance.resetApplicationScreenBrightness().catchError((_) {});
     WakelockPlus.disable().catchError((_) {});
     _saveResumePosition();
@@ -824,9 +829,29 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               onDoubleTapDown: (details) {
                 final width = MediaQuery.of(context).size.width;
                 if (details.localPosition.dx < width / 3) {
+                  _doubleTapHudTimer?.cancel();
+                  setState(() {
+                    _doubleTapSeekSeconds = (_doubleTapSeekSeconds != null && _doubleTapSeekSeconds! < 0)
+                        ? _doubleTapSeekSeconds! - 10
+                        : -10;
+                  });
                   _seekRelative(-10);
+                  HapticFeedback.lightImpact();
+                  _doubleTapHudTimer = Timer(const Duration(milliseconds: 650), () {
+                    if (mounted) setState(() => _doubleTapSeekSeconds = null);
+                  });
                 } else if (details.localPosition.dx > width * 2 / 3) {
+                  _doubleTapHudTimer?.cancel();
+                  setState(() {
+                    _doubleTapSeekSeconds = (_doubleTapSeekSeconds != null && _doubleTapSeekSeconds! > 0)
+                        ? _doubleTapSeekSeconds! + 10
+                        : 10;
+                  });
                   _seekRelative(10);
+                  HapticFeedback.lightImpact();
+                  _doubleTapHudTimer = Timer(const Duration(milliseconds: 650), () {
+                    if (mounted) setState(() => _doubleTapSeekSeconds = null);
+                  });
                 } else {
                   _togglePlayPause();
                 }
@@ -901,6 +926,44 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                   // Long-press speed boost floating HUD
                   if (_isSpeedBoosting)
                     _buildSpeedBoostHud(),
+
+                  // Double-tap seek HUD ripple
+                  if (_doubleTapSeekSeconds != null)
+                    Positioned(
+                      left: _doubleTapSeekSeconds! < 0 ? 32 : null,
+                      right: _doubleTapSeekSeconds! > 0 ? 32 : null,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(color: Colors.white24, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _doubleTapSeekSeconds! < 0 ? Icons.replay_10 : Icons.forward_10,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${_doubleTapSeekSeconds! > 0 ? '+' : ''}$_doubleTapSeekSeconds s',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
 
                   // Overlay Controls (Timeline + Bottom Buttons)
                   if (_showControls && _initialized && _controller != null)

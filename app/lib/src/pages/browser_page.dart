@@ -253,15 +253,22 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.hasClients &&
-        _scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 250 &&
-        _hasMore &&
-        !_loadingMore &&
-        !_loading) {
-      _loadMore();
+    if (_scrollController.hasClients) {
+      final shouldShow = _scrollController.position.pixels > 350;
+      if (shouldShow != _showScrollToTop) {
+        setState(() => _showScrollToTop = shouldShow);
+      }
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 250 &&
+          _hasMore &&
+          !_loadingMore &&
+          !_loading) {
+        _loadMore();
+      }
     }
   }
+
+  bool _showScrollToTop = false;
 
   /// Directory the in-flight load belongs to. A load started for one folder
   /// must not fill the list after the user has navigated elsewhere.
@@ -1180,6 +1187,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// Long-press menu for one entry, matching the actions the original app
   /// offers on a file.
   Future<void> _showEntryActions(EntryItem item) async {
+    HapticFeedback.mediumImpact();
     final path = _fullEntryPath(item);
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -1360,6 +1368,7 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Desktop right-click context menu on a file/folder referencing File Manager+.
   Future<void> _showContextMenu(BuildContext originContext, Offset position, EntryItem item) async {
+    HapticFeedback.mediumImpact();
     _lastItemSecondaryTap = DateTime.now();
     final path = _fullEntryPath(item);
     final action = await showMenu<String>(
@@ -1596,6 +1605,7 @@ class BrowserPageState extends State<BrowserPage> {
         DateTime.now().difference(_lastItemSecondaryTap!).inMilliseconds < 400) {
       return;
     }
+    HapticFeedback.mediumImpact();
     final action = await showMenu<String>(
       context: context,
       constraints: BoxConstraints(
@@ -1857,6 +1867,7 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _toggleSelect(String path) {
+    HapticFeedback.selectionClick();
     setState(() {
       if (_selectedPaths.contains(path)) {
         _selectedPaths.remove(path);
@@ -1874,6 +1885,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// (server-sorted) folder in one call first; beyond a sanity cap, say so
   /// instead of pretending everything is selected.
   Future<void> _selectAll() async {
+    HapticFeedback.selectionClick();
     if (_hasMore && _totalCount > 0) {
       if (_totalCount > 10000) {
         // Returning matters: falling through selected only the loaded pages,
@@ -1970,6 +1982,7 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _clearSelection() {
+    HapticFeedback.lightImpact();
     setState(() {
       _selectedPaths.clear();
       _isSelecting = false;
@@ -3275,6 +3288,21 @@ class BrowserPageState extends State<BrowserPage> {
       ),
       bottomNavigationBar:
           PreferencesService.toolbarAtBottom.value ? _buildBottomToolbar(segments) : null,
+      floatingActionButton: _showScrollToTop
+          ? FloatingActionButton.small(
+              heroTag: 'browser_scroll_to_top',
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOut,
+                );
+              },
+              tooltip: 'Back to top',
+              child: const Icon(Icons.arrow_upward, size: 18),
+            )
+          : null,
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onHorizontalDragStart: (details) {
@@ -4131,10 +4159,13 @@ class BrowserPageState extends State<BrowserPage> {
 
   Widget _actionButton(IconData icon, String label, VoidCallback onTap, {Color? color}) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       borderRadius: BorderRadius.circular(6),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -4144,6 +4175,62 @@ class BrowserPageState extends State<BrowserPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildItemNameText(
+    String name,
+    TextStyle baseStyle, {
+    int maxLines = 1,
+    TextAlign textAlign = TextAlign.start,
+  }) {
+    final query = _filterQuery.trim();
+    if (query.isEmpty) {
+      return Text(
+        name,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+        textAlign: textAlign,
+        style: baseStyle,
+      );
+    }
+
+    final lowerName = name.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    final highlightColor = Theme.of(context).colorScheme.primary;
+    var start = 0;
+
+    while (start < name.length) {
+      final matchIdx = lowerName.indexOf(lowerQuery, start);
+      if (matchIdx == -1) {
+        spans.add(TextSpan(text: name.substring(start)));
+        break;
+      }
+      if (matchIdx > start) {
+        spans.add(TextSpan(text: name.substring(start, matchIdx)));
+      }
+      spans.add(
+        TextSpan(
+          text: name.substring(matchIdx, matchIdx + query.length),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: highlightColor,
+            backgroundColor: highlightColor.withValues(alpha: 0.18),
+          ),
+        ),
+      );
+      start = matchIdx + query.length;
+    }
+
+    return Text.rich(
+      TextSpan(
+        style: baseStyle,
+        children: spans,
+      ),
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      textAlign: textAlign,
     );
   }
 
@@ -4381,16 +4468,15 @@ class BrowserPageState extends State<BrowserPage> {
                             else
                               Icon(item.icon, size: 28, color: item.iconColor(ctx)),
                             const SizedBox(height: 4),
-                            Text(
+                            _buildItemNameText(
                               item.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
+                              TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 1),
                             Text(item.formattedSize, style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
@@ -4531,11 +4617,9 @@ class BrowserPageState extends State<BrowserPage> {
                           ),
                       ],
                     ),
-              title: Text(
+              title: _buildItemNameText(
                 item.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                   color: Theme.of(context).colorScheme.onSurface,

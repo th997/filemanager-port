@@ -27,9 +27,6 @@ Future<void> main(List<String> args) async {
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
     await _initDesktopWindow();
   }
-  if (Platform.isAndroid && !await PermissionService.instance.hasStorageAccess()) {
-    await PermissionService.instance.requestStorageAccess();
-  }
   runApp(FileManagerApp(initialArgs: args));
 }
 

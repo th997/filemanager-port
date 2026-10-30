@@ -154,6 +154,80 @@ class _TrashPageState extends State<TrashPage> {
     );
   }
 
+  void _showTrashActionSheet(TrashItemDto item) {
+    HapticFeedback.mediumImpact();
+    final name = _displayName(item);
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  name.isEmpty ? item.originalPath : name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '${_formatSize(item.size)}  •  ${item.originalPath}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: Icon(Icons.restore, color: Theme.of(context).colorScheme.success),
+                title: const Text('Restore Item'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _restore(item);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('View Details'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showItemDetails(item);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Copy Original Path'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Clipboard.setData(ClipboardData(text: item.originalPath));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Original path copied to clipboard')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
+                title: Text(
+                  'Delete Permanently',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _delete(item);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -486,12 +560,7 @@ class _TrashPageState extends State<TrashPage> {
                                     ],
                                   ),
                                   onTap: () => _showItemDetails(item),
-                                  onLongPress: () {
-                                    Clipboard.setData(ClipboardData(text: item.originalPath));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Original path copied to clipboard')),
-                                    );
-                                  },
+                                  onLongPress: () => _showTrashActionSheet(item),
                                 ),
                               );
                             },

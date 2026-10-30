@@ -107,6 +107,75 @@ class _BookmarksPageState extends State<BookmarksPage> {
     ).then((_) => _loadBookmarks());
   }
 
+  void _showBookmarkActionSheet(BookmarkDto b) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  b.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  b.path.isEmpty ? _rootLabel(b.root) : '${_rootLabel(b.root)}/${b.path}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: const Text('Open'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openBookmark(b);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Copy Path'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _copyBookmarkPath(b);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Rename'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _renameBookmark(b);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                title: Text(
+                  'Remove',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteBookmark(b);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _renameBookmark(BookmarkDto bm) async {
     final oldName = bm.name;
     final dotIndex = oldName.lastIndexOf('.');
@@ -378,7 +447,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                               ],
                             ),
                             onTap: () => _openBookmark(b),
-                            onLongPress: () => _copyBookmarkPath(b),
+                            onLongPress: () => _showBookmarkActionSheet(b),
                           ),
                         );
                       },

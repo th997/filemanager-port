@@ -1,8 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../rust/api/file_manager.dart';
 import '../services/highlight_service.dart';
@@ -10,6 +11,7 @@ import '../services/markdown_pdf_service.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../theme/markdown_themes.dart';
+import '../widgets/html_preview_widget.dart';
 import '../widgets/markdown_callout_builder.dart';
 import '../widgets/markdown_code_builder.dart';
 
@@ -63,10 +65,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
   final FocusNode _findFocusNode = FocusNode();
   final FocusNode _replaceFocusNode = FocusNode();
   final UndoHistoryController _undoController = UndoHistoryController();
+  final ScrollController _codeScrollController = ScrollController();
+  final ScrollController _codeHorizontalScrollController = ScrollController();
+  final ScrollController _editScrollController = ScrollController();
   final List<int> _matchIndices = [];
   int _currentMatchIndex = 0;
   int _cursorLine = 1;
   int _cursorCol = 1;
+  WebViewController? _webViewController;
 
   String get _lowerName => widget.fileName.toLowerCase();
   bool get _isMarkdown => _lowerName.endsWith('.md') || _lowerName.endsWith('.markdown');
@@ -99,6 +105,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _findFocusNode.dispose();
     _replaceFocusNode.dispose();
     _undoController.dispose();
+    _codeScrollController.dispose();
+    _codeHorizontalScrollController.dispose();
+    _editScrollController.dispose();
     super.dispose();
   }
 
@@ -178,6 +187,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     final lineEnd = offset + lines[clampedLine - 1].length;
     _controller.selection = TextSelection(baseOffset: offset, extentOffset: lineEnd);
+    _scrollToMatch(offset);
   }
 
   void _updateMatches() {
@@ -198,7 +208,26 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _currentMatchIndex = _matchIndices.isEmpty ? 0 : _matchIndices.length - 1;
     }
     _selectCurrentMatch();
+    if (_showFind && query.isNotEmpty) {
+      _controller.updateSearch(
+        query: query,
+        matches: _matchIndices,
+        currentMatch: _currentMatchIndex,
+      );
+    } else {
+      _controller.updateSearch(query: null, matches: null, currentMatch: null);
+    }
     setState(() {});
+  }
+
+  void _closeFind() {
+    setState(() {
+      _showFind = false;
+      _showReplace = false;
+      _matchIndices.clear();
+      _currentMatchIndex = 0;
+    });
+    _controller.updateSearch(query: null, matches: null, currentMatch: null);
   }
 
   void _nextMatch() {
@@ -207,6 +236,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _currentMatchIndex = (_currentMatchIndex + 1) % _matchIndices.length;
     });
     _selectCurrentMatch();
+    _controller.updateSearch(
+      query: _findController.text,
+      matches: _matchIndices,
+      currentMatch: _currentMatchIndex,
+    );
   }
 
   void _prevMatch() {
@@ -215,6 +249,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _currentMatchIndex = (_currentMatchIndex - 1 + _matchIndices.length) % _matchIndices.length;
     });
     _selectCurrentMatch();
+    _controller.updateSearch(
+      query: _findController.text,
+      matches: _matchIndices,
+      currentMatch: _currentMatchIndex,
+    );
   }
 
   void _ensureEditing() {
@@ -289,6 +328,83 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final idx = _matchIndices[_currentMatchIndex];
     final len = _findController.text.length;
     _controller.selection = TextSelection(baseOffset: idx, extentOffset: idx + len);
+    _scrollToMatch(idx);
+  }
+
+  void _scrollToMatch(int charIndex) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final text = _controller.text;
+      if (charIndex < 0 || charIndex > text.length) return;
+
+      final ScrollController activeVerticalController;
+      final ScrollController? activeHorizontalController;
+      switch (_mode) {
+        case TextFileMode.code:
+          activeVerticalController = _codeScrollController;
+          activeHorizontalController = _codeHorizontalScrollController;
+          break;
+        case TextFileMode.edit:
+          activeVerticalController = _editScrollController;
+          activeHorizontalController = null;
+          break;
+        case TextFileMode.preview:
+          return;
+      }
+
+      if (!activeVerticalController.hasClients) return;
+
+      final textStyle = TextStyle(
+        fontFamily: 'monospace',
+        fontSize: _fontSize,
+        height: 1.35,
+      );
+
+      final queryLen = _findController.text.length;
+      final lineEnd = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
+      final subtext = text.substring(0, lineEnd == -1 ? text.length : lineEnd);
+
+      final painter = TextPainter(
+        text: TextSpan(text: subtext, style: textStyle),
+        textDirection: TextDirection.ltr,
+      );
+      final mediaWidth = MediaQuery.of(context).size.width;
+      final viewWidth = mediaWidth > 32 ? mediaWidth - 32 : mediaWidth;
+      painter.layout(maxWidth: _wordWrap ? viewWidth : double.infinity);
+
+      final caretOffset = painter.getOffsetForCaret(
+        TextPosition(offset: charIndex),
+        Rect.zero,
+      );
+
+      final viewport = activeVerticalController.position.viewportDimension;
+      final lineHeight = _fontSize * 1.35;
+      const topPadding = 16.0;
+
+      final targetY = ((topPadding + caretOffset.dy) - (viewport - lineHeight) / 2).clamp(
+        0.0,
+        activeVerticalController.position.maxScrollExtent,
+      );
+
+      activeVerticalController.animateTo(
+        targetY,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+
+      if (!_wordWrap && activeHorizontalController != null && activeHorizontalController.hasClients) {
+        final hViewport = activeHorizontalController.position.viewportDimension;
+        final targetX = ((topPadding + caretOffset.dx) - (hViewport / 2)).clamp(
+          0.0,
+          activeHorizontalController.position.maxScrollExtent,
+        );
+        activeHorizontalController.animateTo(
+          targetX,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   Future<void> _loadFile() async {
@@ -341,6 +457,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (discard != true) return;
     }
     await _loadFile();
+    _webViewController?.reload();
   }
 
   Future<void> _save() async {
@@ -359,6 +476,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           _saving = false;
           _isDirty = _controller.text != savedText;
         });
+        _webViewController?.reload();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('File saved successfully')),
         );
@@ -520,7 +638,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
         const SingleActivator(LogicalKeyboardKey.numpad0, control: true): _resetZoom,
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (_showFind) {
-            setState(() => _showFind = false);
+            _closeFind();
           } else if (_mode == TextFileMode.edit) {
             // Leave the editor without leaving the file; the dirty guard still
             // runs on the way out.
@@ -531,9 +649,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
       child: Focus(
         autofocus: true,
         child: PopScope(
-          canPop: !_isDirty,
+          canPop: false,
           onPopInvokedWithResult: (didPop, _) async {
             if (didPop) return;
+            if (_mode == TextFileMode.preview && !_isMarkdown && _webViewController != null) {
+              if (await _webViewController!.canGoBack()) {
+                await _webViewController!.goBack();
+                return;
+              }
+            }
+            if (!context.mounted) return;
+            if (!_isDirty) {
+              Navigator.of(context).pop();
+              return;
+            }
             final discard = await showDialog<String>(
               context: context,
               builder: (ctx) => AlertDialog(
@@ -575,9 +704,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   icon: Icon(_showFind ? Icons.search_off : Icons.search),
                   tooltip: 'Find in file (Ctrl+F)',
                   onPressed: () {
-                    setState(() => _showFind = !_showFind);
                     if (_showFind) {
+                      _closeFind();
+                    } else {
+                      setState(() => _showFind = true);
                       _findFocusNode.requestFocus();
+                      _updateMatches();
                     }
                   },
                 ),
@@ -712,12 +844,34 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     tooltip: 'Read-only location — this file cannot be edited here',
                     onPressed: null,
                   )
-                else if (_mode != TextFileMode.edit)
-                  IconButton(
-                    icon: const Icon(Icons.edit),
-                    tooltip: 'Edit',
-                    onPressed: () => _setMode(TextFileMode.edit),
-                  ),
+                else ...[
+                  if (_mode == TextFileMode.edit)
+                    IconButton(
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              Icons.save_outlined,
+                              color: _isDirty ? Theme.of(context).colorScheme.primary : null,
+                            ),
+                      tooltip: _isDirty ? 'Save changes (Ctrl+S)' : 'Saved',
+                      onPressed: (_isDirty && !_saving && _error == null)
+                          ? () {
+                              HapticFeedback.lightImpact();
+                              _save();
+                            }
+                          : null,
+                    ),
+                  if (_mode != TextFileMode.edit)
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      tooltip: 'Edit',
+                      onPressed: () => _setMode(TextFileMode.edit),
+                    ),
+                ],
                 PopupMenuButton<String>(
                   tooltip: 'Text Options',
                   icon: const Icon(Icons.tune),
@@ -967,7 +1121,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           IconButton(
             icon: const Icon(Icons.close, size: 18),
             tooltip: 'Close find (Esc)',
-            onPressed: () => setState(() => _showFind = false),
+            onPressed: _closeFind,
           ),
             ],
           ),
@@ -1006,6 +1160,85 @@ class _TextEditorPageState extends State<TextEditorPage> {
     );
   }
 
+  void _showDocumentStats() {
+    HapticFeedback.mediumImpact();
+    final text = _controller.text;
+    final lines = text.isEmpty ? 1 : text.split('\n').length;
+    final words = RegExp(r'[\w一-龥]+').allMatches(text).length;
+    final chars = text.length;
+    final bytes = utf8.encode(text).length;
+    final crlfCount = RegExp(r'\r\n').allMatches(text).length;
+    final lfCount = RegExp(r'[^\r]\n').allMatches(text).length;
+    final lineEnding = crlfCount > lfCount ? 'CRLF (Windows)' : 'LF (Unix)';
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.analytics_outlined, size: 22),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Document Details',
+                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      icon: const Icon(Icons.copy, size: 16),
+                      label: const Text('Copy All'),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: text));
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Document copied to clipboard'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const Divider(),
+                _statRow('File', widget.fileName),
+                _statRow('Lines', '$lines'),
+                _statRow('Words', '$words'),
+                _statRow('Characters', '$chars'),
+                _statRow('Byte Size', '$bytes bytes'),
+                _statRow('Line Endings', lineEnding),
+                _statRow('Cursor Position', 'Line $_cursorLine, Col $_cursorCol'),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _statRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatusBar() {
     final text = _controller.text;
     final lines = text.isEmpty ? 1 : text.split('\n').length;
@@ -1021,34 +1254,43 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ? 'Preview'
             : (_mode == TextFileMode.code ? 'Viewing source' : 'Editing');
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-      child: Row(
-        children: [
-          Text(
-            modeLabel,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-          ),
-          if (_isDirty) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(4),
+    return InkWell(
+      onTap: _showDocumentStats,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        child: Row(
+          children: [
+            Text(
+              modeLabel,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            if (_isDirty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('Modified', style: TextStyle(fontSize: 10, color: Colors.amber)),
               ),
-              child: const Text('Modified', style: TextStyle(fontSize: 10, color: Colors.amber)),
+            ],
+            const Spacer(),
+            Text(
+              'Ln $_cursorLine, Col $_cursorCol  •  Lines: $lines  •  '
+              '${words == null ? '' : 'Words: $words  •  '}Chars: $chars  •  '
+              '${_fontSize.toInt()}pt${_wordWrap ? '  •  Wrap' : ''}',
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.info_outline,
+              size: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ],
-          const Spacer(),
-          Text(
-            'Ln $_cursorLine, Col $_cursorCol  •  Lines: $lines  •  '
-            '${words == null ? '' : 'Words: $words  •  '}Chars: $chars  •  '
-            '${_fontSize.toInt()}pt${_wordWrap ? '  •  Wrap' : ''}',
-            style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1082,9 +1324,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ),
           );
         }
-        return HtmlWidget(
-          _controller.text,
-          textStyle: TextStyle(fontSize: _fontSize + 2),
+        return HtmlPreviewWidget(
+          root: widget.root,
+          path: widget.path,
+          rawHtml: _controller.text,
+          isDirty: _isDirty,
+          fontSize: _fontSize,
+          onControllerCreated: (controller) => _webViewController = controller,
         );
       case TextFileMode.code:
         return _buildCodeView();
@@ -1095,6 +1341,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           color: background,
           child: TextField(
             controller: _controller,
+            scrollController: _editScrollController,
             undoController: _undoController,
             maxLines: null,
             expands: true,
@@ -1102,6 +1349,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
             style: TextStyle(
               fontFamily: 'monospace',
               fontSize: _fontSize,
+              height: 1.35,
             ),
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -1109,6 +1357,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ),
             onChanged: (_) {
               if (!_isDirty) setState(() => _isDirty = true);
+              if (_showFind && _findController.text.isNotEmpty) {
+                _updateMatches();
+              }
             },
           ),
         );
@@ -1121,18 +1372,40 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _controller.text,
       widget.fileName,
       brightness,
+      fontSize: _fontSize,
     );
     final background = HighlightService.instance.backgroundFor(brightness);
+    final baseStyle = TextStyle(
+      fontFamily: 'monospace',
+      fontSize: _fontSize,
+      height: 1.35,
+    );
+
+    TextSpan resultSpan = span ?? TextSpan(text: _controller.text, style: baseStyle);
+
+    if (_showFind &&
+        _findController.text.isNotEmpty &&
+        _matchIndices.isNotEmpty) {
+      final currentOffset = (_currentMatchIndex >= 0 &&
+              _currentMatchIndex < _matchIndices.length)
+          ? _matchIndices[_currentMatchIndex]
+          : -1;
+      resultSpan = _SpanWalker(
+        query: _findController.text,
+        matches: _matchIndices,
+        currentOffset: currentOffset,
+        baseStyle: baseStyle,
+      ).walk(resultSpan);
+    }
 
     Widget textWidget = SelectableText.rich(
-      TextSpan(
-        style: TextStyle(fontFamily: 'monospace', fontSize: _fontSize),
-        children: span != null ? [span] : [TextSpan(text: _controller.text)],
-      ),
+      resultSpan,
+      key: ValueKey('code_view_${_showFind}_${_currentMatchIndex}_${_findController.text}'),
     );
 
     if (!_wordWrap) {
       textWidget = SingleChildScrollView(
+        controller: _codeHorizontalScrollController,
         scrollDirection: Axis.horizontal,
         child: textWidget,
       );
@@ -1142,10 +1415,129 @@ class _TextEditorPageState extends State<TextEditorPage> {
       color: background,
       width: double.infinity,
       child: SingleChildScrollView(
+        controller: _codeScrollController,
         scrollDirection: Axis.vertical,
         padding: const EdgeInsets.all(16),
         child: textWidget,
       ),
+    );
+  }
+}
+
+class _SpanWalker {
+  final String query;
+  final List<int> matches;
+  final int currentOffset;
+  final TextStyle baseStyle;
+  int _globalOffset = 0;
+
+  _SpanWalker({
+    required this.query,
+    required this.matches,
+    required this.currentOffset,
+    required this.baseStyle,
+  });
+
+  TextSpan walk(TextSpan span) {
+    List<InlineSpan>? newChildren;
+    if (span.children != null && span.children!.isNotEmpty) {
+      newChildren = [];
+      for (final child in span.children!) {
+        if (child is TextSpan) {
+          newChildren.add(walk(child));
+        } else {
+          newChildren.add(child);
+        }
+      }
+    }
+
+    final text = span.text;
+    if (text == null || text.isEmpty) {
+      return TextSpan(
+        children: newChildren,
+        style: span.style,
+        recognizer: span.recognizer,
+      );
+    }
+
+    final spanStart = _globalOffset;
+    final spanEnd = spanStart + text.length;
+    _globalOffset = spanEnd;
+
+    final qLen = query.length;
+    final intersecting = <int>[];
+    for (final m in matches) {
+      if (m + qLen <= spanStart) continue;
+      if (m >= spanEnd) break;
+      intersecting.add(m);
+    }
+
+    if (intersecting.isEmpty) {
+      if (newChildren != null) {
+        return TextSpan(
+          text: text,
+          children: newChildren,
+          style: span.style,
+          recognizer: span.recognizer,
+        );
+      }
+      return span;
+    }
+
+    final cutPoints = <int>{0, text.length};
+    for (final m in intersecting) {
+      final relStart = (m - spanStart).clamp(0, text.length);
+      final relEnd = (m + qLen - spanStart).clamp(0, text.length);
+      cutPoints.add(relStart);
+      cutPoints.add(relEnd);
+    }
+    final sortedCuts = cutPoints.toList()..sort();
+
+    final pieceSpans = <TextSpan>[];
+    final parentStyle = span.style ?? baseStyle;
+
+    for (int i = 0; i < sortedCuts.length - 1; i++) {
+      final start = sortedCuts[i];
+      final end = sortedCuts[i + 1];
+      if (start >= end) continue;
+      final pieceText = text.substring(start, end);
+      final pieceGlobalStart = spanStart + start;
+      final pieceGlobalEnd = spanStart + end;
+
+      int matchedAt = -1;
+      for (final m in intersecting) {
+        if (pieceGlobalStart >= m && pieceGlobalEnd <= m + qLen) {
+          matchedAt = m;
+          break;
+        }
+      }
+
+      if (matchedAt != -1) {
+        final isCurrent = matchedAt == currentOffset;
+        pieceSpans.add(TextSpan(
+          text: pieceText,
+          style: parentStyle.copyWith(
+            backgroundColor: isCurrent ? const Color(0xFFFF6D00) : const Color(0xFFFFEB3B),
+            color: isCurrent ? Colors.white : Colors.black,
+            fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
+          ),
+        ));
+      } else {
+        pieceSpans.add(TextSpan(
+          text: pieceText,
+          style: parentStyle,
+        ));
+      }
+    }
+
+    if (newChildren != null) {
+      pieceSpans.addAll(newChildren.whereType<TextSpan>());
+    }
+
+    return TextSpan(
+      children: pieceSpans,
+      style: span.style,
+      recognizer: span.recognizer,
     );
   }
 }
@@ -1155,6 +1547,10 @@ class SyntaxHighlightingEditingController extends TextEditingController {
   final Brightness Function() brightnessProvider;
   final double Function()? fontSizeProvider;
 
+  String? _searchQuery;
+  List<int>? _searchMatches;
+  int? _currentMatchIndex;
+
   SyntaxHighlightingEditingController({
     super.text,
     required this.fileName,
@@ -1162,33 +1558,57 @@ class SyntaxHighlightingEditingController extends TextEditingController {
     this.fontSizeProvider,
   });
 
+  void updateSearch({
+    String? query,
+    List<int>? matches,
+    int? currentMatch,
+  }) {
+    _searchQuery = query;
+    _searchMatches = matches;
+    _currentMatchIndex = currentMatch;
+    notifyListeners();
+  }
+
   @override
   TextSpan buildTextSpan({
     required BuildContext context,
     TextStyle? style,
     required bool withComposing,
   }) {
-    final span = HighlightService.instance.spanFor(
-      text,
-      fileName,
-      brightnessProvider(),
-    );
     final size = fontSizeProvider?.call() ?? 13.0;
     final baseStyle = (style ?? const TextStyle()).copyWith(
       fontFamily: 'monospace',
       fontSize: size,
+      height: 1.35,
     );
-    if (span != null) {
-      return TextSpan(
-        style: baseStyle,
-        children: [span],
-      );
+
+    final span = HighlightService.instance.spanFor(
+      text,
+      fileName,
+      brightnessProvider(),
+      fontSize: size,
+    );
+
+    TextSpan resultSpan = span ?? TextSpan(text: text, style: baseStyle);
+
+    if (_searchQuery != null &&
+        _searchQuery!.isNotEmpty &&
+        _searchMatches != null &&
+        _searchMatches!.isNotEmpty) {
+      final currentOffset = (_currentMatchIndex != null &&
+              _currentMatchIndex! >= 0 &&
+              _currentMatchIndex! < _searchMatches!.length)
+          ? _searchMatches![_currentMatchIndex!]
+          : -1;
+      resultSpan = _SpanWalker(
+        query: _searchQuery!,
+        matches: _searchMatches!,
+        currentOffset: currentOffset,
+        baseStyle: baseStyle,
+      ).walk(resultSpan);
     }
-    return super.buildTextSpan(
-      context: context,
-      style: baseStyle,
-      withComposing: withComposing,
-    );
+
+    return resultSpan;
   }
 }
 
