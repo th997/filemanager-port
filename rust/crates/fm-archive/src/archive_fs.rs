@@ -159,15 +159,16 @@ impl ArchiveFs {
             path: VfsPath::root(),
             source: e,
         })?;
+        let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
 
         // Read errors must propagate: swallowing them here made a truncated
         // or corrupt tar open successfully as an "empty" archive.
         let entries_found = if is_gz {
-            let gz = flate2::read::GzDecoder::new(file);
+            let gz = flate2::read::GzDecoder::new(buffered);
             let mut archive = tar::Archive::new(gz);
             Self::collect_tar_entries(&mut archive)?
         } else {
-            let mut archive = tar::Archive::new(file);
+            let mut archive = tar::Archive::new(buffered);
             Self::collect_tar_entries(&mut archive)?
         };
 

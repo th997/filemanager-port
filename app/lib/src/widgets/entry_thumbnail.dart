@@ -17,7 +17,7 @@ import '../services/video_thumbnail_service.dart';
 /// viewer uses; exports are memoised per root+path for the session so
 /// scrolling does not re-export. Anything that fails falls back to the
 /// plain file icon.
-class EntryThumbnail extends StatelessWidget {
+class EntryThumbnail extends StatefulWidget {
   final String root;
   final String relPath;
   final EntryItem item;
@@ -31,12 +31,57 @@ class EntryThumbnail extends StatelessWidget {
     required this.size,
   });
 
+  @override
+  State<EntryThumbnail> createState() => _EntryThumbnailState();
+}
+
+class _EntryThumbnailState extends State<EntryThumbnail> {
   static final Map<String, Future<String>> _exports = {};
 
+  Future<File?>? _videoFuture;
+  Future<String>? _exportFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _initFutures();
+  }
+
+  @override
+  void didUpdateWidget(covariant EntryThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.root != widget.root ||
+        oldWidget.relPath != widget.relPath ||
+        oldWidget.item.name != widget.item.name) {
+      _initFutures();
+    }
+  }
+
+  void _initFutures() {
+    if (widget.item.isVideo) {
+      _videoFuture = VideoThumbnailService.instance.thumbnail(
+        root: widget.root,
+        path: widget.relPath,
+      );
+      _exportFuture = null;
+    } else if (widget.item.isImage && !isNativeRoot(widget.root)) {
+      _exportFuture = _export();
+      _videoFuture = null;
+    } else {
+      _videoFuture = null;
+      _exportFuture = null;
+    }
+  }
+
   Future<String> _export() {
-    final key = '$root\u0000$relPath';
+    final key = '${widget.root}\u0000${widget.relPath}';
     final existing = _exports[key];
     if (existing != null) return existing;
+
+    if (_exports.length > 500) {
+      _exports.remove(_exports.keys.first);
+    }
+
     final future = _doExport();
     _exports[key] = future;
     // A failed export should not poison the session: drop it so a later
@@ -51,7 +96,7 @@ class EntryThumbnail extends StatelessWidget {
     final base = await getTemporaryDirectory();
     final dir = Directory(joinNative(base.path, 'thumbs'));
     if (!dir.existsSync()) await dir.create(recursive: true);
-    return exportToNative(root: root, path: relPath, cacheDir: dir.path);
+    return exportToNative(root: widget.root, path: widget.relPath, cacheDir: dir.path);
   }
 
   Widget _image(File file, Widget fallback) {
@@ -59,10 +104,10 @@ class EntryThumbnail extends StatelessWidget {
       borderRadius: BorderRadius.circular(4),
       child: Image.file(
         file,
-        width: size,
-        height: size,
+        width: widget.size,
+        height: widget.size,
         fit: BoxFit.cover,
-        cacheWidth: (size * 2).round(),
+        cacheWidth: (widget.size * 2).round(),
         errorBuilder: (_, _, _) => fallback,
       ),
     );
@@ -71,24 +116,23 @@ class EntryThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fallback = SizedBox(
-      width: size,
-      height: size,
+      width: widget.size,
+      height: widget.size,
       child: Icon(
-        item.icon,
-        size: size * 0.62,
-        color: item.iconColor(context),
+        widget.item.icon,
+        size: widget.size * 0.62,
+        color: widget.item.iconColor(context),
       ),
     );
-    if (item.isDir) return fallback;
+    if (widget.item.isDir) return fallback;
 
-    if (item.isVideo) {
+    if (widget.item.isVideo) {
       return FutureBuilder<File?>(
-        future:
-            VideoThumbnailService.instance.thumbnail(root: root, path: relPath),
+        future: _videoFuture,
         builder: (ctx, snap) {
           if (!snap.hasData) return fallback;
           final img = _image(snap.data!, fallback);
-          if (size < 40) return img;
+          if (widget.size < 40) return img;
           return Stack(
             children: [
               img,
@@ -108,14 +152,14 @@ class EntryThumbnail extends StatelessWidget {
       );
     }
 
-    if (!item.isImage) return fallback;
+    if (!widget.item.isImage) return fallback;
 
-    if (isNativeRoot(root)) {
-      return _image(File(joinNative(root, relPath)), fallback);
+    if (isNativeRoot(widget.root)) {
+      return _image(File(joinNative(widget.root, widget.relPath)), fallback);
     }
 
     return FutureBuilder<String>(
-      future: _export(),
+      future: _exportFuture,
       builder: (ctx, snap) {
         if (!snap.hasData) return fallback;
         return _image(File(snap.data!), fallback);

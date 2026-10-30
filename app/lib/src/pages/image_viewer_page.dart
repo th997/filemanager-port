@@ -68,6 +68,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   /// Cache path per entry index, filled in lazily for remote images.
   final Map<int, String> _localPaths = {};
+  final Map<int, Future<String>> _inFlightPaths = {};
 
   @override
   void initState() {
@@ -357,26 +358,37 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Future<String> _localPathFor(int index) {
     final cached = _localPaths[index];
     if (cached != null) return Future.value(cached);
+    final inFlight = _inFlightPaths[index];
+    if (inFlight != null) return inFlight;
 
     final entry = _entries[index];
     if (entry.localPath != null) {
       _localPaths[index] = entry.localPath!;
       return Future.value(entry.localPath!);
     }
+
+    final Future<String> fut;
     final resolver = entry.resolvePath;
     if (resolver != null) {
-      return resolver().then((path) {
+      fut = resolver().then((path) {
         if (path == null) throw StateError('Cannot read ${entry.name}');
         _localPaths[index] = path;
         return path;
       });
+    } else {
+      fut = FileOpenService.instance
+          .nativePath(entry.root!, entry.remotePath!)
+          .then((path) {
+        _localPaths[index] = path;
+        return path;
+      });
     }
-    return FileOpenService.instance
-        .nativePath(entry.root!, entry.remotePath!)
-        .then((path) {
-      _localPaths[index] = path;
-      return path;
+
+    _inFlightPaths[index] = fut;
+    fut.whenComplete(() {
+      _inFlightPaths.remove(index);
     });
+    return fut;
   }
 
   Widget _buildImageAt(int index, {required bool interactive}) {

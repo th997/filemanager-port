@@ -2998,6 +2998,7 @@ class BrowserPageState extends State<BrowserPage> {
   int _filteredCacheLength = -1;
   String _filteredCacheQuery = '';
   bool _filteredCacheShowHidden = false;
+  BigInt _cachedTotalListedBytes = BigInt.zero;
 
   List<EntryItem> get _filteredAndSortedEntries {
     final cached = _filteredCache;
@@ -3009,10 +3010,14 @@ class BrowserPageState extends State<BrowserPage> {
       return cached;
     }
     final query = _filterQuery.toLowerCase();
+    BigInt totalBytes = BigInt.zero;
     final result = _entries.where((e) {
       if (!_showHidden && e.hidden) return false;
       if (query.isNotEmpty && !e.name.toLowerCase().contains(query)) {
         return false;
+      }
+      if (!e.isDir && e.size != null) {
+        totalBytes += e.size!;
       }
       return true;
     }).toList();
@@ -3021,6 +3026,7 @@ class BrowserPageState extends State<BrowserPage> {
     _filteredCacheLength = _entries.length;
     _filteredCacheQuery = _filterQuery;
     _filteredCacheShowHidden = _showHidden;
+    _cachedTotalListedBytes = totalBytes;
     return result;
   }
 
@@ -4006,22 +4012,32 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Bytes of the files currently listed; folders are skipped because their
   /// size is unknown until they are walked.
+  int _selectedCacheCount = -1;
+  int _selectedCacheEntriesLen = -1;
+  BigInt _selectedBytesCache = BigInt.zero;
+
   BigInt get _selectedBytes {
+    if (_selectedPaths.isEmpty) return BigInt.zero;
+    if (_selectedCacheCount == _selectedPaths.length &&
+        _selectedCacheEntriesLen == _entries.length) {
+      return _selectedBytesCache;
+    }
     var total = BigInt.zero;
     for (final e in _entries) {
       if (_selectedPaths.contains(_fullEntryPath(e)) && !e.isDir && e.size != null) {
         total += e.size!;
       }
     }
+    _selectedCacheCount = _selectedPaths.length;
+    _selectedCacheEntriesLen = _entries.length;
+    _selectedBytesCache = total;
     return total;
   }
 
   BigInt get _totalListedBytes {
-    BigInt total = BigInt.zero;
-    for (final e in _filteredAndSortedEntries) {
-      if (!e.isDir && e.size != null) total += e.size!;
-    }
-    return total;
+    // Reading _filteredAndSortedEntries warms _cachedTotalListedBytes
+    _filteredAndSortedEntries;
+    return _cachedTotalListedBytes;
   }
 
   String _formatBytes(BigInt bytes) {
@@ -4424,10 +4440,12 @@ class BrowserPageState extends State<BrowserPage> {
             final path = _fullEntryPath(item);
             final isSelected = _selectedPaths.contains(path);
 
-            return _draggableTile(
-              item: item,
-              path: path,
-              child: GestureDetector(
+            return KeyedSubtree(
+              key: ValueKey(path),
+              child: _draggableTile(
+                item: item,
+                path: path,
+                child: GestureDetector(
               onSecondaryTapDown: (details) {
                 _lastItemSecondaryTap = DateTime.now();
                 if (Platform.isIOS || Platform.isAndroid) {
@@ -4504,6 +4522,7 @@ class BrowserPageState extends State<BrowserPage> {
                 ),
               ),
               ),
+            ),
             );
           },
                   ),
@@ -4571,70 +4590,73 @@ class BrowserPageState extends State<BrowserPage> {
           final path = _fullEntryPath(item);
           final isSelected = _selectedPaths.contains(path);
 
-          return _draggableTile(
-            item: item,
-            path: path,
-            child: GestureDetector(
-            onSecondaryTapDown: (details) {
-              _lastItemSecondaryTap = DateTime.now();
-              if (Platform.isIOS || Platform.isAndroid) {
-                _showEntryActions(item);
-              } else {
-                _showContextMenu(context, details.globalPosition, item);
-              }
-            },
-            child: ListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-              minVerticalPadding: 0,
-              minLeadingWidth: 20,
-              minTileHeight: 34,
-              selected: isSelected,
-              leading: _isSelecting
-                  ? Checkbox(
-                      value: isSelected,
-                      onChanged: (_) => _toggleSelect(path),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (item.isImage || item.isVideo)
-                          EntryThumbnail(
-                            root: _root,
-                            relPath: path,
-                            item: item,
-                            size: 28,
-                          )
-                        else
-                          Icon(item.icon, color: item.iconColor(ctx), size: 18),
-                        if (item.isSymlink)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 2),
-                            child: Icon(Icons.link, size: 11, color: Colors.grey.shade600),
-                          ),
-                      ],
-                    ),
-              title: _buildItemNameText(
-                item.name,
-                TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
+          return KeyedSubtree(
+            key: ValueKey(path),
+            child: _draggableTile(
+              item: item,
+              path: path,
+              child: GestureDetector(
+              onSecondaryTapDown: (details) {
+                _lastItemSecondaryTap = DateTime.now();
+                if (Platform.isIOS || Platform.isAndroid) {
+                  _showEntryActions(item);
+                } else {
+                  _showContextMenu(context, details.globalPosition, item);
+                }
+              },
+              child: ListTile(
+                dense: true,
+                visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                minVerticalPadding: 0,
+                minLeadingWidth: 20,
+                minTileHeight: 34,
+                selected: isSelected,
+                leading: _isSelecting
+                    ? Checkbox(
+                        value: isSelected,
+                        onChanged: (_) => _toggleSelect(path),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (item.isImage || item.isVideo)
+                            EntryThumbnail(
+                              root: _root,
+                              relPath: path,
+                              item: item,
+                              size: 28,
+                            )
+                          else
+                            Icon(item.icon, color: item.iconColor(ctx), size: 18),
+                          if (item.isSymlink)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2),
+                              child: Icon(Icons.link, size: 11, color: Colors.grey.shade600),
+                            ),
+                        ],
+                      ),
+                title: _buildItemNameText(
+                  item.name,
+                  TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
+                subtitle: Text(
+                  item.isDir
+                      ? item.formattedModified
+                      : '${item.formattedSize}  •  ${item.formattedModified}',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
+                onTap: () => _handleTileTap(item, i),
+                onLongPress: () => _showEntryActions(item),
               ),
-              subtitle: Text(
-                item.isDir
-                    ? item.formattedModified
-                    : '${item.formattedSize}  •  ${item.formattedModified}',
-                style: const TextStyle(fontSize: 11),
               ),
-              trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
-              onTap: () => _handleTileTap(item, i),
-              onLongPress: () => _showEntryActions(item),
-            ),
             ),
           );
         },

@@ -19,201 +19,112 @@ class EntryItem {
     return DateTime.fromMillisecondsSinceEpoch(millis.toInt());
   }
 
+  static const Set<String> _archiveExtensions = {
+    'zip', 'apk', 'jar', 'tar', 'tgz', '7z',
+  };
+  static const Set<String> _textExtensions = {
+    'txt', 'md', 'markdown', 'json', 'jsonc', 'json5', 'geojson', 'lock', 'yaml', 'yml', 'xml', 'rs', 'dart', 'c', 'cpp',
+    'h', 'hpp', 'py', 'js', 'ts', 'html', 'css', 'toml', 'sh', 'log', 'ini',
+    'cfg', 'csv', 'java', 'kt', 'go', 'swift', 'sql', 'properties', 'diff',
+    'patch', 'conf', 'gradle', 'dockerfile',
+  };
+  static const Set<String> _imageExtensions = {
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif',
+  };
+  static const Set<String> _videoExtensions = {
+    'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', '3gp', 'm4v', 'ts', 'wmv',
+    'rmvb', 'rm', 'vob', 'ogv', 'm2ts', 'mts', 'f4v', 'asf', 'divx', 'mpg', 'mpeg',
+  };
+  static const Set<String> _audioExtensions = {
+    'mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'opus', 'wma', 'amr', 'ape',
+    'alac', 'aiff', 'mka', 'oga', 'wv', 'mid',
+  };
+
+  String get extension {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+
   bool get isArchive {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.zip') ||
-        lower.endsWith('.apk') ||
-        lower.endsWith('.jar') ||
-        lower.endsWith('.tar') ||
-        lower.endsWith('.tar.gz') ||
-        lower.endsWith('.tgz') ||
-        lower.endsWith('.7z');
+    final ext = extension;
+    if (_archiveExtensions.contains(ext)) return true;
+    if (ext == 'gz' && name.toLowerCase().endsWith('.tar.gz')) return true;
+    return false;
   }
 
-  bool get isText {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.txt') ||
-        lower.endsWith('.md') ||
-        lower.endsWith('.json') ||
-        lower.endsWith('.jsonc') ||
-        lower.endsWith('.json5') ||
-        lower.endsWith('.geojson') ||
-        lower.endsWith('.lock') ||
-        lower.endsWith('.yaml') ||
-        lower.endsWith('.yml') ||
-        lower.endsWith('.xml') ||
-        lower.endsWith('.rs') ||
-        lower.endsWith('.dart') ||
-        lower.endsWith('.c') ||
-        lower.endsWith('.cpp') ||
-        lower.endsWith('.h') ||
-        lower.endsWith('.py') ||
-        lower.endsWith('.js') ||
-        lower.endsWith('.ts') ||
-        lower.endsWith('.html') ||
-        lower.endsWith('.css') ||
-        lower.endsWith('.toml') ||
-        lower.endsWith('.sh') ||
-        lower.endsWith('.log') ||
-        lower.endsWith('.ini') ||
-        lower.endsWith('.cfg') ||
-        lower.endsWith('.csv') ||
-        lower.endsWith('.java') ||
-        lower.endsWith('.kt') ||
-        lower.endsWith('.go') ||
-        lower.endsWith('.swift') ||
-        lower.endsWith('.sql') ||
-        lower.endsWith('.properties') ||
-        lower.endsWith('.diff') ||
-        lower.endsWith('.patch') ||
-        lower.endsWith('.conf') ||
-        lower.endsWith('.gradle') ||
-        lower.endsWith('.dockerfile');
-  }
-
-  bool get isImage {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png') ||
-        lower.endsWith('.gif') ||
-        lower.endsWith('.webp') ||
-        lower.endsWith('.bmp') ||
-        lower.endsWith('.heic') ||
-        lower.endsWith('.heif');
-  }
-
-  bool get isVideo {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.mp4') ||
-        lower.endsWith('.mkv') ||
-        lower.endsWith('.avi') ||
-        lower.endsWith('.mov') ||
-        lower.endsWith('.webm') ||
-        lower.endsWith('.flv') ||
-        lower.endsWith('.3gp') ||
-        lower.endsWith('.m4v') ||
-        lower.endsWith('.ts') ||
-        lower.endsWith('.wmv') ||
-        lower.endsWith('.rmvb') ||
-        lower.endsWith('.rm') ||
-        lower.endsWith('.vob') ||
-        lower.endsWith('.ogv') ||
-        lower.endsWith('.m2ts') ||
-        lower.endsWith('.mts') ||
-        lower.endsWith('.f4v') ||
-        lower.endsWith('.asf') ||
-        lower.endsWith('.divx') ||
-        lower.endsWith('.mpg') ||
-        lower.endsWith('.mpeg');
-  }
-
-  bool get isAudio {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.mp3') ||
-        lower.endsWith('.flac') ||
-        lower.endsWith('.wav') ||
-        lower.endsWith('.ogg') ||
-        lower.endsWith('.m4a') ||
-        lower.endsWith('.aac') ||
-        lower.endsWith('.opus') ||
-        lower.endsWith('.wma') ||
-        lower.endsWith('.amr') ||
-        lower.endsWith('.ape') ||
-        lower.endsWith('.alac') ||
-        lower.endsWith('.aiff') ||
-        lower.endsWith('.mka') ||
-        lower.endsWith('.oga') ||
-        lower.endsWith('.wv') ||
-        lower.endsWith('.mid');
-  }
-
+  bool get isText => _textExtensions.contains(extension);
+  bool get isImage => _imageExtensions.contains(extension);
+  bool get isVideo => _videoExtensions.contains(extension);
+  bool get isAudio => _audioExtensions.contains(extension);
   bool get isMedia => isVideo || isAudio;
+  bool get isPdf => extension == 'pdf';
+  bool get isMarkdown => extension == 'md' || extension == 'markdown';
+  bool get isHtml => extension == 'html' || extension == 'htm' || extension == 'xhtml';
 
-  bool get isPdf => name.toLowerCase().endsWith('.pdf');
-
-  bool get isMarkdown {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.md') || lower.endsWith('.markdown');
-  }
-
-  bool get isHtml {
-    final lower = name.toLowerCase();
-    return lower.endsWith('.html') ||
-        lower.endsWith('.htm') ||
-        lower.endsWith('.xhtml');
-  }
+  static const Map<String, String> _mimeTypes = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'bmp': 'image/bmp',
+    'heic': 'image/heic',
+    'heif': 'image/heif',
+    'svg': 'image/svg+xml',
+    'mp4': 'video/mp4',
+    'm4v': 'video/x-m4v',
+    'mkv': 'video/x-matroska',
+    'webm': 'video/webm',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'flv': 'video/x-flv',
+    '3gp': 'video/3gpp',
+    'wmv': 'video/x-ms-wmv',
+    'ts': 'video/mp2t',
+    'rmvb': 'video/vnd.rn-realvideo',
+    'rm': 'application/vnd.rn-realmedia',
+    'vob': 'video/dvd',
+    'ogv': 'video/ogg',
+    'm2ts': 'video/mp2t',
+    'mts': 'video/mp2t',
+    'f4v': 'video/x-f4v',
+    'asf': 'video/x-ms-asf',
+    'mpg': 'video/mpeg',
+    'mpeg': 'video/mpeg',
+    'mp3': 'audio/mpeg',
+    'flac': 'audio/flac',
+    'wav': 'audio/wav',
+    'ogg': 'audio/ogg',
+    'm4a': 'audio/mp4',
+    'aac': 'audio/aac',
+    'opus': 'audio/opus',
+    'wma': 'audio/x-ms-wma',
+    'amr': 'audio/amr',
+    'pdf': 'application/pdf',
+    'zip': 'application/zip',
+    'apk': 'application/vnd.android.package-archive',
+    'jar': 'application/java-archive',
+    '7z': 'application/x-7z-compressed',
+    'tar': 'application/x-tar',
+    'gz': 'application/gzip',
+    'txt': 'text/plain',
+    'md': 'text/markdown',
+    'html': 'text/html',
+    'htm': 'text/html',
+    'json': 'application/json',
+    'xml': 'text/xml',
+    'csv': 'text/csv',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  };
 
   /// Best-effort MIME type for handing the file to another app.
-  String get mimeType {
-    final lower = name.toLowerCase();
-    const types = {
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'png': 'image/png',
-      'gif': 'image/gif',
-      'webp': 'image/webp',
-      'bmp': 'image/bmp',
-      'heic': 'image/heic',
-      'heif': 'image/heif',
-      'svg': 'image/svg+xml',
-      'mp4': 'video/mp4',
-      'm4v': 'video/x-m4v',
-      'mkv': 'video/x-matroska',
-      'webm': 'video/webm',
-      'avi': 'video/x-msvideo',
-      'mov': 'video/quicktime',
-      'flv': 'video/x-flv',
-      '3gp': 'video/3gpp',
-      'wmv': 'video/x-ms-wmv',
-      'ts': 'video/mp2t',
-      'rmvb': 'video/vnd.rn-realvideo',
-      'rm': 'application/vnd.rn-realmedia',
-      'vob': 'video/dvd',
-      'ogv': 'video/ogg',
-      'm2ts': 'video/mp2t',
-      'mts': 'video/mp2t',
-      'f4v': 'video/x-f4v',
-      'asf': 'video/x-ms-asf',
-      'mpg': 'video/mpeg',
-      'mpeg': 'video/mpeg',
-      'mp3': 'audio/mpeg',
-      'flac': 'audio/flac',
-      'wav': 'audio/wav',
-      'ogg': 'audio/ogg',
-      'm4a': 'audio/mp4',
-      'aac': 'audio/aac',
-      'opus': 'audio/opus',
-      'wma': 'audio/x-ms-wma',
-      'amr': 'audio/amr',
-      'pdf': 'application/pdf',
-      'zip': 'application/zip',
-      'apk': 'application/vnd.android.package-archive',
-      'jar': 'application/java-archive',
-      '7z': 'application/x-7z-compressed',
-      'tar': 'application/x-tar',
-      'gz': 'application/gzip',
-      'txt': 'text/plain',
-      'md': 'text/markdown',
-      'html': 'text/html',
-      'htm': 'text/html',
-      'json': 'application/json',
-      'xml': 'text/xml',
-      'csv': 'text/csv',
-      'doc': 'application/msword',
-      'docx':
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'xls': 'application/vnd.ms-excel',
-      'xlsx':
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'ppt': 'application/vnd.ms-powerpoint',
-      'pptx':
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    };
-    final dot = lower.lastIndexOf('.');
-    if (dot < 0) return 'application/octet-stream';
-    return types[lower.substring(dot + 1)] ?? 'application/octet-stream';
-  }
+  String get mimeType => _mimeTypes[extension] ?? 'application/octet-stream';
 
   String get formattedSize {
     if (isDir) return '--';
@@ -241,19 +152,13 @@ class EntryItem {
 
   IconData get icon {
     if (isDir) return Icons.folder;
-    if (isImage) return Icons.image;
-    final lower = name.toLowerCase();
-    if (isVideo) return Icons.play_circle_fill;
-    if (isAudio) return Icons.music_note;
-    if (isArchive) {
-      return Icons.archive;
-    }
-    if (lower.endsWith('.pdf')) {
-      return Icons.menu_book;
-    }
-    if (isText) {
-      return Icons.article;
-    }
+    final ext = extension;
+    if (_imageExtensions.contains(ext)) return Icons.image;
+    if (_videoExtensions.contains(ext)) return Icons.play_circle_fill;
+    if (_audioExtensions.contains(ext)) return Icons.music_note;
+    if (isArchive) return Icons.archive;
+    if (ext == 'pdf') return Icons.menu_book;
+    if (_textExtensions.contains(ext)) return Icons.article;
     return Icons.insert_drive_file;
   }
 
@@ -264,17 +169,17 @@ class EntryItem {
     // colors that read well on white (purple, blue-grey, amber 800) sink
     // into dark surfaces, so dark mode gets the 200/300-level tints.
     final dark = scheme.brightness == Brightness.dark;
+    final ext = extension;
     if (isArchive) {
       return dark ? const Color(0xFFFFB74D) : Colors.amber.shade800;
     }
-    if (isImage) return dark ? const Color(0xFFCE93D8) : Colors.purple;
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.pdf')) {
+    if (_imageExtensions.contains(ext)) return dark ? const Color(0xFFCE93D8) : Colors.purple;
+    if (ext == 'pdf') {
       return dark ? const Color(0xFFEF9A9A) : Colors.red;
     }
-    if (isVideo) return dark ? const Color(0xFFFFAB91) : Colors.deepOrange;
-    if (isAudio) return dark ? const Color(0xFF80CBC4) : Colors.teal;
-    if (isText) return dark ? const Color(0xFFB0BEC5) : Colors.blueGrey;
+    if (_videoExtensions.contains(ext)) return dark ? const Color(0xFFFFAB91) : Colors.deepOrange;
+    if (_audioExtensions.contains(ext)) return dark ? const Color(0xFF80CBC4) : Colors.teal;
+    if (_textExtensions.contains(ext)) return dark ? const Color(0xFFB0BEC5) : Colors.blueGrey;
     return scheme.onSurfaceVariant;
   }
 }

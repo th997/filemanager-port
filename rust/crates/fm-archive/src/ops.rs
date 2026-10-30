@@ -203,12 +203,14 @@ fn extract_inner(
                         std::fs::create_dir_all(parent).map_err(backend_err)?;
                     }
                     created.track_file(&target);
-                    let mut out = File::create(&target).map_err(backend_err)?;
+                    let out = File::create(&target).map_err(backend_err)?;
+                    let mut out = std::io::BufWriter::with_capacity(128 * 1024, out);
                     let mut writer = CountingWriter {
                         inner: &mut out,
                         budget: budget.clone(),
                     };
                     std::io::copy(&mut entry, &mut writer).map_err(backend_err)?;
+                    writer.flush().map_err(backend_err)?;
                     drop(writer);
                     #[cfg(unix)]
                     if let Some(mode) = entry.unix_mode() {
@@ -225,7 +227,7 @@ fn extract_inner(
         ArchiveFormat::Tar => {
             let file = File::open(archive_path).map_err(backend_err)?;
             let reader = CountingReader {
-                inner: file,
+                inner: std::io::BufReader::with_capacity(128 * 1024, file),
                 budget: tar_stream_budget(budget),
             };
             let mut archive = tar::Archive::new(reader);
@@ -233,7 +235,7 @@ fn extract_inner(
         }
         ArchiveFormat::TarGz => {
             let file = File::open(archive_path).map_err(backend_err)?;
-            let gz = flate2::read::GzDecoder::new(file);
+            let gz = flate2::read::GzDecoder::new(std::io::BufReader::with_capacity(128 * 1024, file));
             let reader = CountingReader {
                 inner: gz,
                 budget: tar_stream_budget(budget),
@@ -273,12 +275,14 @@ fn extract_inner(
                             std::fs::create_dir_all(parent).map_err(sevenz_rust::Error::io)?;
                         }
                         created.track_file(&target);
-                        let mut file = File::create(&target).map_err(sevenz_rust::Error::io)?;
+                        let file = File::create(&target).map_err(sevenz_rust::Error::io)?;
+                        let mut file = std::io::BufWriter::with_capacity(128 * 1024, file);
                         let mut limited = CountingReader {
                             inner: reader,
                             budget: budget.clone(),
                         };
                         std::io::copy(&mut limited, &mut file).map_err(sevenz_rust::Error::io)?;
+                        file.flush().map_err(sevenz_rust::Error::io)?;
                     }
                     Ok(true)
                 },
@@ -356,7 +360,7 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
         path: fm_core::VfsPath::root(),
         source: e,
     })?;
-    let mut zip = zip::ZipWriter::new(file);
+    let mut zip = zip::ZipWriter::new(std::io::BufWriter::with_capacity(128 * 1024, file));
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o755);
@@ -382,10 +386,11 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
                     path: fm_core::VfsPath::root(),
                     source: std::io::Error::other(e.to_string()),
                 })?;
-            let mut f = File::open(source).map_err(|e| VfsError::Backend {
+            let f = File::open(source).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
                 source: e,
             })?;
+            let mut f = std::io::BufReader::with_capacity(128 * 1024, f);
             std::io::copy(&mut f, &mut zip).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
                 source: e,
@@ -395,9 +400,13 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
         }
     }
 
-    zip.finish().map_err(|e| VfsError::Backend {
+    let mut inner = zip.finish().map_err(|e| VfsError::Backend {
         path: fm_core::VfsPath::root(),
         source: std::io::Error::other(e.to_string()),
+    })?;
+    inner.flush().map_err(|e| VfsError::Backend {
+        path: fm_core::VfsPath::root(),
+        source: e,
     })?;
 
     Ok(())
@@ -458,10 +467,11 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
                     path: fm_core::VfsPath::root(),
                     source: std::io::Error::other(e.to_string()),
                 })?;
-            let mut f = File::open(&path).map_err(|e| VfsError::Backend {
+            let f = File::open(&path).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
                 source: e,
             })?;
+            let mut f = std::io::BufReader::with_capacity(128 * 1024, f);
             std::io::copy(&mut f, zip).map_err(|e| VfsError::Backend {
                 path: fm_core::VfsPath::root(),
                 source: e,

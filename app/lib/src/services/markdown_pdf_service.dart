@@ -55,13 +55,7 @@ class MarkdownPdfService {
     final candidatePaths = [
       '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
       '/Library/Fonts/Arial Unicode.ttf',
-      'C:\\Windows\\Fonts\\msyh.ttc',
-      'C:\\Windows\\Fonts\\simsun.ttc',
-      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-      '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
-      '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
       '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-      '/system/fonts/NotoSansCJK-Regular.ttc',
       '/system/fonts/DroidSansFallback.ttf',
     ];
 
@@ -69,9 +63,19 @@ class MarkdownPdfService {
       try {
         final file = File(path);
         if (file.existsSync()) {
-          final bytes = file.readAsBytesSync();
-          _cachedSystemFont = pw.Font.ttf(bytes.buffer.asByteData());
-          return _cachedSystemFont;
+          // Verify TTF header (starts with 0x00010000 or 'true') before parsing
+          final raf = file.openSync(mode: FileMode.read);
+          final header = raf.readSync(4);
+          raf.closeSync();
+          if (header.length == 4) {
+            final isTtf = (header[0] == 0x00 && header[1] == 0x01 && header[2] == 0x00 && header[3] == 0x00) ||
+                (header[0] == 0x74 && header[1] == 0x72 && header[2] == 0x75 && header[3] == 0x65);
+            if (isTtf) {
+              final bytes = file.readAsBytesSync();
+              _cachedSystemFont = pw.Font.ttf(bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes));
+              return _cachedSystemFont;
+            }
+          }
         }
       } catch (_) {}
     }

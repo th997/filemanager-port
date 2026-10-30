@@ -206,46 +206,51 @@ impl Vfs for LocalFs {
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
         let native = self.resolve(dir)?;
-        let mut reader = tokio::fs::read_dir(&native)
-            .await
-            .map_err(|error| self.io_error(dir, error))?;
-        let mut entries = Vec::new();
-        while let Some(item) = reader
-            .next_entry()
-            .await
-            .map_err(|error| self.io_error(dir, error))?
-        {
-            let name = item.file_name().to_string_lossy().into_owned();
-            let child = dir.join(name.clone());
-            // Follow symlinks so links to directories list as directories and
-            // links to files report the target's size. `DirEntry::metadata`
-            // does not follow links, which made every link look like a plain
-            // file the UI could not open. Broken links fall back to link
-            // metadata and stay `EntryKind::Symlink`.
-            let (metadata, is_symlink) =
-                match tokio::fs::symlink_metadata(item.path()).await {
-                    Ok(link_meta) => {
-                        let is_link = link_meta.file_type().is_symlink();
-                        // Follow the link so it lists and opens like its
-                        // target, but remember that it is a link so the UI
-                        // can mark it. Broken links keep the link metadata.
-                        let resolved = if is_link {
-                            tokio::fs::metadata(item.path()).await.ok()
-                        } else {
-                            None
-                        };
-                        (resolved.unwrap_or(link_meta), is_link)
-                    }
+        let dir_clone = dir.clone();
+        tokio::task::spawn_blocking(move || {
+            let read_dir = std::fs::read_dir(&native).map_err(|error| VfsError::Backend {
+                path: dir_clone.clone(),
+                source: error,
+            })?;
+            let mut entries = Vec::new();
+            for item_res in read_dir {
+                let item = match item_res {
+                    Ok(i) => i,
                     Err(_) => continue,
                 };
-            entries.push(entry_from_metadata(child, name, &metadata, is_symlink));
-        }
-        entries.sort_by(|a, b| {
-            let a_dir = a.kind == EntryKind::Dir;
-            let b_dir = b.kind == EntryKind::Dir;
-            b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))
-        });
-        Ok(entries)
+                let name = item.file_name().to_string_lossy().into_owned();
+                let child = dir_clone.join(name.clone());
+
+                let file_type = item.file_type().ok();
+                let is_symlink = file_type.map(|ft| ft.is_symlink()).unwrap_or(false);
+
+                let metadata = if is_symlink {
+                    // Follow symlink to get target metadata; if broken, keep symlink metadata
+                    std::fs::metadata(item.path())
+                        .or_else(|_| std::fs::symlink_metadata(item.path()))
+                        .ok()
+                } else {
+                    item.metadata().ok()
+                };
+
+                let Some(meta) = metadata else {
+                    continue;
+                };
+
+                entries.push(entry_from_metadata(child, name, &meta, is_symlink));
+            }
+            entries.sort_by(|a, b| {
+                let a_dir = a.kind == EntryKind::Dir;
+                let b_dir = b.kind == EntryKind::Dir;
+                b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))
+            });
+            Ok(entries)
+        })
+        .await
+        .map_err(|join_err| VfsError::Backend {
+            path: dir.clone(),
+            source: std::io::Error::other(join_err.to_string()),
+        })?
     }
 
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {

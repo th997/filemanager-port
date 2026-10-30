@@ -143,6 +143,12 @@ class HighlightService {
     return _extensions[lower.substring(dot + 1)];
   }
 
+  String? _cachedCode;
+  String? _cachedFileName;
+  Brightness? _cachedBrightness;
+  double? _cachedFontSize;
+  TextSpan? _cachedResult;
+
   /// Highlighted spans for `code`, or `null` when the language is unknown.
   TextSpan? spanFor(
     String code,
@@ -150,8 +156,22 @@ class HighlightService {
     Brightness brightness, {
     double fontSize = 13.0,
   }) {
+    if ((identical(code, _cachedCode) || code == _cachedCode) &&
+        fileName == _cachedFileName &&
+        brightness == _cachedBrightness &&
+        fontSize == _cachedFontSize) {
+      return _cachedResult;
+    }
+
     final language = languageFor(fileName);
-    if (language == null) return null;
+    if (language == null) {
+      _cachedCode = code;
+      _cachedFileName = fileName;
+      _cachedBrightness = brightness;
+      _cachedFontSize = fontSize;
+      _cachedResult = null;
+      return null;
+    }
 
     final theme = brightness == Brightness.dark ? _darkTheme : _lightTheme;
     final base = TextStyle(
@@ -175,9 +195,21 @@ class HighlightService {
       final result = _highlight.highlight(code: code, language: language);
       final renderer = TextSpanRenderer(base, theme);
       result.render(renderer);
-      return renderer.span ?? TextSpan(text: code, style: base);
+      final span = renderer.span ?? TextSpan(text: code, style: base);
+      _cachedCode = code;
+      _cachedFileName = fileName;
+      _cachedBrightness = brightness;
+      _cachedFontSize = fontSize;
+      _cachedResult = span;
+      return span;
     } catch (_) {
-      return TextSpan(text: code, style: base);
+      final span = TextSpan(text: code, style: base);
+      _cachedCode = code;
+      _cachedFileName = fileName;
+      _cachedBrightness = brightness;
+      _cachedFontSize = fontSize;
+      _cachedResult = span;
+      return span;
     }
   }
 

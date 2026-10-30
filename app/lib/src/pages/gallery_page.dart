@@ -421,10 +421,14 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   String _monthLabel(DateTime? d) =>
       d == null ? 'Unknown date' : '${_monthNames[d.month - 1]} ${d.year}';
 
-  /// Month-grouped grid: photos are newest-first, so equal labels are
-  /// contiguous and each group becomes a header + one SliverGrid.
-  List<Widget> _buildSlivers() {
-    final slivers = <Widget>[];
+  List<({String label, int startIndex, List<_Photo> slice})>? _groupedPhotos;
+  int _lastGroupedLength = -1;
+
+  List<({String label, int startIndex, List<_Photo> slice})> _getGroupedPhotos() {
+    if (_groupedPhotos != null && _lastGroupedLength == _photos.length) {
+      return _groupedPhotos!;
+    }
+    final groups = <({String label, int startIndex, List<_Photo> slice})>[];
     var i = 0;
     while (i < _photos.length) {
       final label = _monthLabel(_photos[i].takenAt);
@@ -432,14 +436,30 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       while (j < _photos.length && _monthLabel(_photos[j].takenAt) == label) {
         j++;
       }
-      final slice = _photos.sublist(i, j);
-      final startIndex = i;
+      groups.add((
+        label: label,
+        startIndex: i,
+        slice: _photos.sublist(i, j),
+      ));
+      i = j;
+    }
+    _lastGroupedLength = _photos.length;
+    _groupedPhotos = groups;
+    return groups;
+  }
+
+  /// Month-grouped grid: photos are newest-first, so equal labels are
+  /// contiguous and each group becomes a header + one SliverGrid.
+  List<Widget> _buildSlivers() {
+    final slivers = <Widget>[];
+    final groups = _getGroupedPhotos();
+    for (final group in groups) {
       slivers.add(
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
             child: Text(
-              label,
+              group.label,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
           ),
@@ -455,13 +475,12 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               crossAxisSpacing: 4,
             ),
             delegate: SliverChildBuilderDelegate(
-              (ctx, k) => _buildTile(slice[k], startIndex + k),
-              childCount: slice.length,
+              (ctx, k) => _buildTile(group.slice[k], group.startIndex + k),
+              childCount: group.slice.length,
             ),
           ),
         ),
       );
-      i = j;
     }
     if (_loadingMore) {
       slivers.add(

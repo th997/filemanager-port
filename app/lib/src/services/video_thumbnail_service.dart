@@ -36,6 +36,23 @@ class VideoThumbnailService {
     final key = '$root\u0000$path';
     final existing = _cache[key];
     if (existing != null) return existing;
+
+    // Fast-path: if thumbnail already exists on disk, return immediately
+    // without queuing through the serialized media_kit Player pipeline.
+    final dir = Directory('${Directory.systemTemp.path}/fm_video_thumbs');
+    final out = File('${dir.path}/${key.hashCode.abs()}.jpg');
+    try {
+      if (out.existsSync() && out.lengthSync() > 0) {
+        final fut = Future<File?>.value(out);
+        _cache[key] = fut;
+        return fut;
+      }
+    } catch (_) {}
+
+    if (_cache.length > 500) {
+      _cache.remove(_cache.keys.first);
+    }
+
     final future = _enqueue(() => _grab(root, path, key));
     _cache[key] = future;
     // Failures are not memoised: the next build may retry.

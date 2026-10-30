@@ -318,9 +318,15 @@ async fn stream_into(
     let mut reader = src_vfs.open_read(src_path).await?;
     let mut writer = dst_vfs.open_write(tmp_path, WriteMode::Truncate).await?;
 
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut unreported: u64 = 0;
+    const PROGRESS_BATCH: u64 = 256 * 1024;
     loop {
         if cancel.is_cancelled() {
+            if unreported > 0 {
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                p.completed += unreported;
+            }
             return Err(VfsError::Unsupported { operation: "cancelled" });
         }
         let n = reader.read(&mut buf).await.map_err(|e| VfsError::Backend {
@@ -338,8 +344,16 @@ async fn stream_into(
                 source: e,
             })?;
 
+        unreported += n as u64;
+        if unreported >= PROGRESS_BATCH {
+            let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+            p.completed += unreported;
+            unreported = 0;
+        }
+    }
+    if unreported > 0 {
         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-        p.completed += n as u64;
+        p.completed += unreported;
     }
     writer.flush().await.map_err(|e| VfsError::Backend {
         path: tmp_path.clone(),

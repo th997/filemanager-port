@@ -92,6 +92,8 @@ impl Database {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute_batch(
             "
+            PRAGMA synchronous = NORMAL;
+
             CREATE TABLE IF NOT EXISTS remotes (
                 id TEXT PRIMARY KEY,
                 kind TEXT NOT NULL,
@@ -124,6 +126,11 @@ impl Database {
                 size INTEGER NOT NULL,
                 deleted_at INTEGER NOT NULL
             );
+
+            CREATE INDEX IF NOT EXISTS idx_history_loc_path ON history(location, path);
+            CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at);
+            CREATE INDEX IF NOT EXISTS idx_bookmarks_loc_path ON bookmarks(location, path);
+            CREATE INDEX IF NOT EXISTS idx_recycle_bin_deleted ON recycle_bin(deleted_at);
             ",
         )?;
         Ok(())

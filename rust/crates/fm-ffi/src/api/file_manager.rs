@@ -70,61 +70,69 @@ pub struct PagedEntriesDto {
 }
 
 /// Natural (human) ordering: case-insensitive, digit runs compare
-/// numerically — a direct port of the `_naturalCompare` the Dart side used
-/// to apply to whichever page happened to be loaded.
-fn natural_compare(a: &str, b: &str) -> std::cmp::Ordering {
-    fn runs(s: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut cur = String::new();
-        let mut cur_digit: Option<bool> = None;
-        for ch in s.to_lowercase().chars() {
-            let d = ch.is_ascii_digit();
-            match cur_digit {
-                Some(cd) if cd == d => cur.push(ch),
-                _ => {
-                    if !cur.is_empty() {
-                        out.push(std::mem::take(&mut cur));
-                    }
-                    cur.push(ch);
-                    cur_digit = Some(d);
+/// numerically. Uses zero heap allocations by streaming sub-slices.
+fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
+    fn next_chunk<'a>(s: &mut &'a str) -> Option<(&'a str, bool)> {
+        if s.is_empty() {
+            return None;
+        }
+        let first = s.chars().next()?;
+        let is_digit = first.is_ascii_digit();
+        let end = s
+            .char_indices()
+            .find(|&(_, ch)| ch.is_ascii_digit() != is_digit)
+            .map(|(idx, _)| idx)
+            .unwrap_or(s.len());
+        let chunk = &s[..end];
+        *s = &s[end..];
+        Some((chunk, is_digit))
+    }
+
+    loop {
+        match (next_chunk(&mut a), next_chunk(&mut b)) {
+            (Some((pa, true)), Some((pb, true))) => {
+                let na: Option<u128> = pa.parse().ok();
+                let nb: Option<u128> = pb.parse().ok();
+                let cmp = match (na, nb) {
+                    (Some(x), Some(y)) => x.cmp(&y),
+                    _ => pa.cmp(pb),
+                };
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
                 }
             }
-        }
-        if !cur.is_empty() {
-            out.push(cur);
-        }
-        out
-    }
-    let ra = runs(a);
-    let rb = runs(b);
-    for (pa, pb) in ra.iter().zip(rb.iter()) {
-        let num = |p: &String| -> Option<u128> {
-            if p.chars().all(|c| c.is_ascii_digit()) {
-                p.parse().ok()
-            } else {
-                None
+            (Some((pa, _)), Some((pb, _))) => {
+                let cmp = pa
+                    .chars()
+                    .map(|c| c.to_ascii_lowercase())
+                    .cmp(pb.chars().map(|c| c.to_ascii_lowercase()));
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
             }
-        };
-        let cmp = match (num(pa), num(pb)) {
-            (Some(x), Some(y)) => x.cmp(&y),
-            _ => pa.cmp(pb),
-        };
-        if cmp != std::cmp::Ordering::Equal {
-            return cmp;
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (None, None) => return std::cmp::Ordering::Equal,
         }
     }
-    ra.len().cmp(&rb.len())
 }
 
-fn extension_of(e: &EntryDto) -> String {
+fn extension_of(e: &EntryDto) -> &str {
     if e.is_dir {
-        return String::new();
+        return "";
     }
     e.name
         .rsplit('.')
         .next()
         .unwrap_or(&e.name)
-        .to_lowercase()
+}
+
+fn compare_extensions(a: &EntryDto, b: &EntryDto) -> std::cmp::Ordering {
+    let ea = extension_of(a);
+    let eb = extension_of(b);
+    ea.chars()
+        .map(|c| c.to_ascii_lowercase())
+        .cmp(eb.chars().map(|c| c.to_ascii_lowercase()))
 }
 
 /// Sort a full folder listing the way the UI promises: directories first
@@ -146,8 +154,7 @@ fn sort_dtos(entries: &mut [EntryDto], sort_by: &str, ascending: bool) {
                 .modified_millis
                 .unwrap_or(0)
                 .cmp(&b.modified_millis.unwrap_or(0)),
-            "type" => extension_of(a)
-                .cmp(&extension_of(b))
+            "type" => compare_extensions(a, b)
                 .then_with(|| natural_compare(&a.name, &b.name)),
             _ => natural_compare(&a.name, &b.name),
         };
