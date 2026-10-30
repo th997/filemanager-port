@@ -190,6 +190,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _scrollToMatch(offset);
   }
 
+  void _openFind({bool replace = false}) {
+    if (_mode == TextFileMode.preview) {
+      _setMode(TextFileMode.code);
+    }
+    setState(() {
+      _showFind = true;
+      if (replace && !widget.readOnly) _showReplace = true;
+    });
+    _findFocusNode.requestFocus();
+    _updateMatches();
+  }
+
   void _updateMatches() {
     final query = _findController.text;
     _matchIndices.clear();
@@ -204,8 +216,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
         start = index + lowerQuery.length;
       }
     }
-    if (_currentMatchIndex >= _matchIndices.length) {
-      _currentMatchIndex = _matchIndices.isEmpty ? 0 : _matchIndices.length - 1;
+    if (_matchIndices.isEmpty) {
+      _currentMatchIndex = 0;
+    } else if (_currentMatchIndex >= _matchIndices.length) {
+      _currentMatchIndex = 0;
     }
     _selectCurrentMatch();
     if (_showFind && query.isNotEmpty) {
@@ -360,28 +374,55 @@ class _TextEditorPageState extends State<TextEditorPage> {
         height: 1.35,
       );
 
-      final queryLen = _findController.text.length;
-      final lineEnd = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
-      final subtext = text.substring(0, lineEnd == -1 ? text.length : lineEnd);
-
-      final painter = TextPainter(
-        text: TextSpan(text: subtext, style: textStyle),
-        textDirection: TextDirection.ltr,
-      );
       final mediaWidth = MediaQuery.of(context).size.width;
       final viewWidth = mediaWidth > 32 ? mediaWidth - 32 : mediaWidth;
-      painter.layout(maxWidth: _wordWrap ? viewWidth : double.infinity);
+      final lineHeight = _fontSize * 1.35;
+      const contentPadding = 16.0;
 
-      final caretOffset = painter.getOffsetForCaret(
-        TextPosition(offset: charIndex),
-        Rect.zero,
-      );
+      double caretDy = 0.0;
+      double caretDx = 0.0;
+
+      if (!_wordWrap && _mode == TextFileMode.code) {
+        // Fast O(1) path for non-wrapping code view: each line is exactly lineHeight tall
+        int lineCount = 0;
+        int lineStart = 0;
+        for (int i = 0; i < charIndex; i++) {
+          if (text.codeUnitAt(i) == 10) {
+            lineCount++;
+            lineStart = i + 1;
+          }
+        }
+        caretDy = lineCount * lineHeight;
+
+        final linePrefix = text.substring(lineStart, charIndex);
+        final linePainter = TextPainter(
+          text: TextSpan(text: linePrefix, style: textStyle),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        caretDx = linePainter.width;
+      } else {
+        // Wrapping mode (or edit mode): layout text up to the line containing charIndex
+        final queryLen = _findController.text.length;
+        final nextNewline = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
+        final lineEnd = nextNewline == -1 ? text.length : (nextNewline + 1).clamp(0, text.length);
+        final subtext = text.substring(0, lineEnd);
+
+        final painter = TextPainter(
+          text: TextSpan(text: subtext, style: textStyle),
+          textDirection: TextDirection.ltr,
+        );
+        painter.layout(maxWidth: viewWidth);
+
+        final caretOffset = painter.getOffsetForCaret(
+          TextPosition(offset: charIndex),
+          Rect.zero,
+        );
+        caretDy = caretOffset.dy;
+        caretDx = caretOffset.dx;
+      }
 
       final viewport = activeVerticalController.position.viewportDimension;
-      final lineHeight = _fontSize * 1.35;
-      const topPadding = 16.0;
-
-      final targetY = ((topPadding + caretOffset.dy) - (viewport - lineHeight) / 2).clamp(
+      final targetY = ((contentPadding + caretDy) - (viewport - lineHeight) / 2).clamp(
         0.0,
         activeVerticalController.position.maxScrollExtent,
       );
@@ -394,7 +435,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
       if (!_wordWrap && activeHorizontalController != null && activeHorizontalController.hasClients) {
         final hViewport = activeHorizontalController.position.viewportDimension;
-        final targetX = ((topPadding + caretOffset.dx) - (hViewport / 2)).clamp(
+        final targetX = ((contentPadding + caretDx) - (hViewport / 2)).clamp(
           0.0,
           activeHorizontalController.position.maxScrollExtent,
         );
@@ -578,22 +619,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
         // reloading is the only way to see it without leaving the page.
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): _reload,
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _reload,
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
-          setState(() => _showFind = true);
-          _findFocusNode.requestFocus();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
-          setState(() => _showFind = true);
-          _findFocusNode.requestFocus();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyH, control: true): () {
-          if (widget.readOnly) return;
-          setState(() {
-            _showFind = true;
-            _showReplace = true;
-          });
-          _findFocusNode.requestFocus();
-        },
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyH, control: true): () => _openFind(replace: true),
+        const SingleActivator(LogicalKeyboardKey.keyH, meta: true): () => _openFind(replace: true),
         const SingleActivator(LogicalKeyboardKey.keyG, control: true): _showGoToLineDialog,
         const SingleActivator(LogicalKeyboardKey.keyG, meta: true): _showGoToLineDialog,
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
@@ -707,9 +736,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     if (_showFind) {
                       _closeFind();
                     } else {
-                      setState(() => _showFind = true);
-                      _findFocusNode.requestFocus();
-                      _updateMatches();
+                      _openFind();
                     }
                   },
                 ),
@@ -1400,7 +1427,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
     Widget textWidget = SelectableText.rich(
       resultSpan,
-      key: ValueKey('code_view_${_showFind}_${_currentMatchIndex}_${_findController.text}'),
+      key: const ValueKey('code_view'),
     );
 
     if (!_wordWrap) {
@@ -1439,6 +1466,71 @@ class _SpanWalker {
   });
 
   TextSpan walk(TextSpan span) {
+    final text = span.text;
+    List<InlineSpan>? pieceSpans;
+
+    if (text != null && text.isNotEmpty) {
+      final spanStart = _globalOffset;
+      final spanEnd = spanStart + text.length;
+      _globalOffset = spanEnd;
+
+      final qLen = query.length;
+      final intersecting = <int>[];
+      for (final m in matches) {
+        if (m + qLen <= spanStart) continue;
+        if (m >= spanEnd) break;
+        intersecting.add(m);
+      }
+
+      if (intersecting.isNotEmpty) {
+        final cutPoints = <int>{0, text.length};
+        for (final m in intersecting) {
+          final relStart = (m - spanStart).clamp(0, text.length);
+          final relEnd = (m + qLen - spanStart).clamp(0, text.length);
+          cutPoints.add(relStart);
+          cutPoints.add(relEnd);
+        }
+        final sortedCuts = cutPoints.toList()..sort();
+
+        pieceSpans = <InlineSpan>[];
+        final parentStyle = span.style ?? baseStyle;
+
+        for (int i = 0; i < sortedCuts.length - 1; i++) {
+          final start = sortedCuts[i];
+          final end = sortedCuts[i + 1];
+          if (start >= end) continue;
+          final pieceText = text.substring(start, end);
+          final pieceGlobalStart = spanStart + start;
+          final pieceGlobalEnd = spanStart + end;
+
+          int matchedAt = -1;
+          for (final m in intersecting) {
+            if (pieceGlobalStart >= m && pieceGlobalEnd <= m + qLen) {
+              matchedAt = m;
+              break;
+            }
+          }
+
+          if (matchedAt != -1) {
+            final isCurrent = matchedAt == currentOffset;
+            pieceSpans.add(TextSpan(
+              text: pieceText,
+              style: parentStyle.copyWith(
+                backgroundColor: isCurrent ? const Color(0xFFFF6D00) : const Color(0xFFFFEB3B),
+                color: isCurrent ? Colors.white : Colors.black,
+                fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
+              ),
+            ));
+          } else {
+            pieceSpans.add(TextSpan(
+              text: pieceText,
+              style: parentStyle,
+            ));
+          }
+        }
+      }
+    }
+
     List<InlineSpan>? newChildren;
     if (span.children != null && span.children!.isNotEmpty) {
       newChildren = [];
@@ -1451,94 +1543,27 @@ class _SpanWalker {
       }
     }
 
-    final text = span.text;
-    if (text == null || text.isEmpty) {
+    if (pieceSpans != null) {
+      if (newChildren != null) {
+        pieceSpans.addAll(newChildren);
+      }
       return TextSpan(
+        children: pieceSpans,
+        style: span.style,
+        recognizer: span.recognizer,
+      );
+    }
+
+    if (newChildren != null) {
+      return TextSpan(
+        text: text,
         children: newChildren,
         style: span.style,
         recognizer: span.recognizer,
       );
     }
 
-    final spanStart = _globalOffset;
-    final spanEnd = spanStart + text.length;
-    _globalOffset = spanEnd;
-
-    final qLen = query.length;
-    final intersecting = <int>[];
-    for (final m in matches) {
-      if (m + qLen <= spanStart) continue;
-      if (m >= spanEnd) break;
-      intersecting.add(m);
-    }
-
-    if (intersecting.isEmpty) {
-      if (newChildren != null) {
-        return TextSpan(
-          text: text,
-          children: newChildren,
-          style: span.style,
-          recognizer: span.recognizer,
-        );
-      }
-      return span;
-    }
-
-    final cutPoints = <int>{0, text.length};
-    for (final m in intersecting) {
-      final relStart = (m - spanStart).clamp(0, text.length);
-      final relEnd = (m + qLen - spanStart).clamp(0, text.length);
-      cutPoints.add(relStart);
-      cutPoints.add(relEnd);
-    }
-    final sortedCuts = cutPoints.toList()..sort();
-
-    final pieceSpans = <TextSpan>[];
-    final parentStyle = span.style ?? baseStyle;
-
-    for (int i = 0; i < sortedCuts.length - 1; i++) {
-      final start = sortedCuts[i];
-      final end = sortedCuts[i + 1];
-      if (start >= end) continue;
-      final pieceText = text.substring(start, end);
-      final pieceGlobalStart = spanStart + start;
-      final pieceGlobalEnd = spanStart + end;
-
-      int matchedAt = -1;
-      for (final m in intersecting) {
-        if (pieceGlobalStart >= m && pieceGlobalEnd <= m + qLen) {
-          matchedAt = m;
-          break;
-        }
-      }
-
-      if (matchedAt != -1) {
-        final isCurrent = matchedAt == currentOffset;
-        pieceSpans.add(TextSpan(
-          text: pieceText,
-          style: parentStyle.copyWith(
-            backgroundColor: isCurrent ? const Color(0xFFFF6D00) : const Color(0xFFFFEB3B),
-            color: isCurrent ? Colors.white : Colors.black,
-            fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
-          ),
-        ));
-      } else {
-        pieceSpans.add(TextSpan(
-          text: pieceText,
-          style: parentStyle,
-        ));
-      }
-    }
-
-    if (newChildren != null) {
-      pieceSpans.addAll(newChildren.whereType<TextSpan>());
-    }
-
-    return TextSpan(
-      children: pieceSpans,
-      style: span.style,
-      recognizer: span.recognizer,
-    );
+    return span;
   }
 }
 
