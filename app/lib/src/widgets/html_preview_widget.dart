@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -19,6 +20,7 @@ class HtmlPreviewWidget extends StatefulWidget {
   final bool isDirty;
   final double fontSize;
   final void Function(WebViewController controller)? onControllerCreated;
+  final VoidCallback? onOpenInBrowser;
 
   const HtmlPreviewWidget({
     super.key,
@@ -28,6 +30,7 @@ class HtmlPreviewWidget extends StatefulWidget {
     this.isDirty = false,
     this.fontSize = 13.0,
     this.onControllerCreated,
+    this.onOpenInBrowser,
   });
 
   @override
@@ -51,6 +54,56 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
       _initWebView();
     } else {
       _loadingNotifier.value = false;
+      _initBaseUrl();
+    }
+  }
+
+  Future<void> _initBaseUrl() async {
+    try {
+      final base = await startMediaStream(root: widget.root);
+      final cleanPath = widget.path.replaceAll(r'\', '/').replaceFirst(RegExp(r'^/+'), '');
+      final encodedSegments = cleanPath.split('/').map(Uri.encodeComponent).join('/');
+      if (mounted) {
+        setState(() {
+          _streamUrl = '$base$encodedSegments';
+        });
+      }
+    } catch (_) {}
+  }
+
+  Uri? _resolveBaseUrl() {
+    if (_streamUrl != null && _streamUrl!.isNotEmpty) {
+      return Uri.tryParse(_streamUrl!);
+    }
+    if (isNativeRoot(widget.root)) {
+      try {
+        final fullPath = joinNative(widget.root, widget.path);
+        final dir = File(fullPath).parent.path;
+        return Uri.file(dir.endsWith('/') ? dir : '$dir/');
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  Future<bool> _handleUrlTap(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    if (Platform.isLinux) {
+      try {
+        await Process.start('gio', ['open', url], mode: ProcessStartMode.detached);
+        return true;
+      } catch (_) {
+        try {
+          await Process.start('xdg-open', [url], mode: ProcessStartMode.detached);
+          return true;
+        } catch (_) {}
+      }
+    }
+    try {
+      final res = await OpenFilex.open(url);
+      return res.type == ResultType.done;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -64,7 +117,13 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
   @override
   void didUpdateWidget(covariant HtmlPreviewWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_isWebViewSupported || _controller == null) return;
+    if (!_isWebViewSupported) {
+      if (widget.root != oldWidget.root || widget.path != oldWidget.path) {
+        _initBaseUrl();
+      }
+      return;
+    }
+    if (_controller == null) return;
 
     if (widget.root != oldWidget.root || widget.path != oldWidget.path) {
       _initWebView();
@@ -418,25 +477,78 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
   @override
   Widget build(BuildContext context) {
     if (!_isWebViewSupported) {
+      final theme = Theme.of(context);
+      final isDark = theme.brightness == Brightness.dark;
+      final bgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+      final textColor = isDark ? const Color(0xFFE0E0E0) : Colors.black87;
+
       return Container(
-        color: Colors.white,
+        color: bgColor,
         width: double.infinity,
         height: double.infinity,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: HtmlWidget(
-            widget.rawHtml,
-            textStyle: TextStyle(
-              fontSize: widget.fontSize + 2,
-              color: Colors.black87,
+        child: Column(
+          children: [
+            if (widget.onOpenInBrowser != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF2A2D32) : const Color(0xFFF1F5F9),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: isDark ? const Color(0xFF3E4451) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '桌面端为精简 HTML 预览。如需完整的 JS/CSS 样式效果，可在浏览器中打开。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: widget.onOpenInBrowser,
+                      icon: const Icon(Icons.open_in_browser, size: 16),
+                      label: const Text('用浏览器打开', style: TextStyle(fontSize: 12)),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: HtmlWidget(
+                  widget.rawHtml,
+                  baseUrl: _resolveBaseUrl(),
+                  textStyle: TextStyle(
+                    fontSize: widget.fontSize + 2,
+                    color: textColor,
+                  ),
+                  onTapImage: (imageMetadata) {
+                    final src = imageMetadata.sources.firstOrNull?.url;
+                    if (src != null && src.isNotEmpty) {
+                      _openSingleImage(src, imageMetadata.alt ?? '');
+                    }
+                  },
+                  onTapUrl: _handleUrlTap,
+                ),
+              ),
             ),
-            onTapImage: (imageMetadata) {
-              final src = imageMetadata.sources.firstOrNull?.url;
-              if (src != null && src.isNotEmpty) {
-                _openSingleImage(src, imageMetadata.alt ?? '');
-              }
-            },
-          ),
+          ],
         ),
       );
     }

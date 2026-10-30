@@ -65,6 +65,7 @@ pub async fn start_http_share(
     let app = Router::new()
         .route("/", get(handle_index))
         .route("/api/list", get(handle_list_root))
+        .route("/api/list/", get(handle_list_root))
         .route("/api/list/{*subpath}", get(handle_list_sub))
         .route("/download/{*subpath}", get(handle_download))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth))
@@ -178,33 +179,251 @@ fn unauthorized_response() -> Response {
 
 async fn handle_index() -> Html<&'static str> {
     Html(r###"<!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LAN File Sharing</title>
+    <title>文件共享 - LAN File Sharing</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; }
-        h1 { margin-top: 0; color: #1976D2; font-size: 24px; }
-        ul { list-style: none; padding: 0; margin: 0; }
-        li { padding: 12px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; }
-        li:hover { background: #fafafa; }
-        a { text-decoration: none; color: #333; font-weight: 500; }
-        a:hover { color: #1976D2; }
-        .size { color: #888; font-size: 13px; }
-        .folder { color: #f57c00; margin-right: 8px; }
-        .file { color: #1976D2; margin-right: 8px; }
+        :root {
+            --bg-page: #f8fafc;
+            --bg-card: #ffffff;
+            --border-color: #e2e8f0;
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --item-hover: #f1f5f9;
+            --badge-bg: #e0e7ff;
+            --badge-text: #3730a3;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-page: #0f172a;
+                --bg-card: #1e293b;
+                --border-color: #334155;
+                --text-main: #f8fafc;
+                --text-sub: #94a3b8;
+                --primary: #3b82f6;
+                --primary-hover: #60a5fa;
+                --item-hover: #293548;
+                --badge-bg: #1e3a8a;
+                --badge-text: #bfdbfe;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 24px 16px;
+            background: var(--bg-page);
+            color: var(--text-main);
+            transition: background-color 0.2s ease;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            border: 1px solid var(--border-color);
+            padding: 24px 28px;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-main);
+        }
+        .search-box {
+            position: relative;
+            flex-grow: 1;
+            max-width: 320px;
+            min-width: 200px;
+        }
+        .search-input {
+            width: 100%;
+            padding: 8px 12px 8px 32px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-page);
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .search-input:focus {
+            border-color: var(--primary);
+        }
+        .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-sub);
+            font-size: 13px;
+        }
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 10px 14px;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        .breadcrumb-item {
+            color: var(--primary);
+            text-decoration: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+        .breadcrumb-sep {
+            color: var(--text-sub);
+            font-size: 12px;
+        }
+        .breadcrumb-current {
+            color: var(--text-sub);
+            font-weight: 600;
+        }
+        ul.file-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        li.file-item {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.15s ease;
+            gap: 12px;
+        }
+        li.file-item:last-child {
+            border-bottom: none;
+        }
+        li.file-item:hover {
+            background: var(--item-hover);
+        }
+        .item-main {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+            text-decoration: none;
+            color: var(--text-main);
+            cursor: pointer;
+        }
+        .item-main:hover .item-name {
+            color: var(--primary);
+        }
+        .item-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .item-name {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: color 0.15s;
+        }
+        .item-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .item-size {
+            font-size: 13px;
+            color: var(--text-sub);
+            font-variant-numeric: tabular-nums;
+            min-width: 70px;
+            text-align: right;
+        }
+        .btn-download {
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: var(--primary);
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: background 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn-download:hover {
+            background: var(--primary-hover);
+        }
+        .empty-state {
+            padding: 36px 16px;
+            text-align: center;
+            color: var(--text-sub);
+            font-size: 14px;
+        }
+        .footer-info {
+            margin-top: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-sub);
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📁 LAN File Sharing</h1>
-        <div id="path-bar" style="margin-bottom: 16px; color: #666; font-size: 14px;">/</div>
-        <ul id="file-list">Loading...</ul>
+        <header>
+            <h1>📁 局域网文件共享</h1>
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="filter-input" class="search-input" placeholder="筛选当前目录文件..." />
+            </div>
+        </header>
+
+        <div class="breadcrumb" id="breadcrumb-bar">
+            <span class="breadcrumb-item" data-path="">根目录</span>
+        </div>
+
+        <ul class="file-list" id="file-list">
+            <li class="empty-state">正在加载文件列表...</li>
+        </ul>
+
+        <div class="footer-info">
+            <span id="item-count-text">0 项内容</span>
+            <span>FileManager LAN Share</span>
+        </div>
     </div>
+
     <script>
         let currentPath = '';
+        let allItems = [];
+
         function escapeHtml(str) {
             return String(str)
                 .replace(/&/g, '&amp;')
@@ -213,32 +432,150 @@ async fn handle_index() -> Html<&'static str> {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
-        async function loadDir(path) {
-            currentPath = path;
-            document.getElementById('path-bar').innerText = '/' + path;
-            const res = await fetch('/api/list/' + encodeURI(path));
-            if (!res.ok) { document.getElementById('file-list').innerHTML = '<li>Error loading directory</li>'; return; }
-            const items = await res.json();
-            let html = '';
-            if (path) {
-                const parts = path.split('/').filter(Boolean);
-                parts.pop();
-                const parent = parts.join('/');
-                const parentEsc = encodeURIComponent(parent);
-                html += `<li><a href="#" onclick="loadDir(decodeURIComponent('${parentEsc}'))">⬅️ [.. Back]</a><span></span></li>`;
-            }
-            for (const item of items) {
-                const safeName = escapeHtml(item.name);
-                const encodedPath = encodeURIComponent(item.path);
-                if (item.is_dir) {
-                    html += `<li><a href="#" onclick="loadDir(decodeURIComponent('${encodedPath}'))"><span class="folder">📁</span>${safeName}</a><span class="size">Folder</span></li>`;
-                } else {
-                    const sizeStr = item.size ? (item.size > 1048576 ? (item.size/1048576).toFixed(1) + ' MB' : (item.size/1024).toFixed(1) + ' KB') : '-';
-                    html += `<li><a href="/download/${encodeURI(item.path)}" target="_blank"><span class="file">📄</span>${safeName}</a><span class="size">${sizeStr}</span></li>`;
+
+        function formatSize(bytes) {
+            if (bytes == null || bytes === undefined) return '-';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+            return (bytes / 1073741824).toFixed(2) + ' GB';
+        }
+
+        function getFileIcon(name, isDir) {
+            if (isDir) return '📁';
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return '🖼️';
+            if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv'].includes(ext)) return '🎬';
+            if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'].includes(ext)) return '🎵';
+            if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(ext)) return '📦';
+            if (['html', 'htm', 'js', 'css', 'json', 'xml', 'rs', 'dart', 'py', 'c', 'cpp', 'java', 'ts'].includes(ext)) return '💻';
+            if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md'].includes(ext)) return '📄';
+            return '📄';
+        }
+
+        function buildListUrl(path) {
+            const clean = (path || '').replace(/^\/+|\/+$/g, '');
+            if (!clean) return '/api/list';
+            return '/api/list/' + clean.split('/').map(encodeURIComponent).join('/');
+        }
+
+        function buildDownloadUrl(path) {
+            const clean = (path || '').replace(/^\/+|\/+$/g, '');
+            return '/download/' + clean.split('/').map(encodeURIComponent).join('/');
+        }
+
+        function renderBreadcrumbs(path) {
+            const bar = document.getElementById('breadcrumb-bar');
+            const clean = (path || '').replace(/^\/+|\/+$/g, '');
+            let html = '<span class="breadcrumb-item" data-path="">根目录</span>';
+            if (clean) {
+                const parts = clean.split('/');
+                let accum = '';
+                for (let i = 0; i < parts.length; i++) {
+                    accum = accum ? (accum + '/' + parts[i]) : parts[i];
+                    html += '<span class="breadcrumb-sep">/</span>';
+                    if (i === parts.length - 1) {
+                        html += `<span class="breadcrumb-current">${escapeHtml(parts[i])}</span>`;
+                    } else {
+                        html += `<span class="breadcrumb-item" data-path="${escapeHtml(accum)}">${escapeHtml(parts[i])}</span>`;
+                    }
                 }
             }
-            document.getElementById('file-list').innerHTML = html || '<li>(Empty folder)</li>';
+            bar.innerHTML = html;
         }
+
+        function renderItems(filterText) {
+            const listEl = document.getElementById('file-list');
+            const query = (filterText || '').trim().toLowerCase();
+            const filtered = query
+                ? allItems.filter(item => item.name.toLowerCase().includes(query))
+                : allItems;
+
+            document.getElementById('item-count-text').innerText = `${filtered.length} 项内容`;
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = query
+                    ? '<li class="empty-state">没有找到匹配的文件</li>'
+                    : '<li class="empty-state">文件夹为空</li>';
+                return;
+            }
+
+            let html = '';
+            for (const item of filtered) {
+                const icon = getFileIcon(item.name, item.is_dir);
+                const safeName = escapeHtml(item.name);
+                const safePath = escapeHtml(item.path);
+
+                if (item.is_dir) {
+                    html += `
+                        <li class="file-item">
+                            <div class="item-main folder-link" data-path="${safePath}">
+                                <span class="item-icon">${icon}</span>
+                                <span class="item-name">${safeName}</span>
+                            </div>
+                            <div class="item-actions">
+                                <span class="item-size">文件夹</span>
+                            </div>
+                        </li>
+                    `;
+                } else {
+                    const dlUrl = buildDownloadUrl(item.path);
+                    const sizeStr = formatSize(item.size);
+                    html += `
+                        <li class="file-item">
+                            <a class="item-main" href="${dlUrl}" target="_blank">
+                                <span class="item-icon">${icon}</span>
+                                <span class="item-name">${safeName}</span>
+                            </a>
+                            <div class="item-actions">
+                                <span class="item-size">${sizeStr}</span>
+                                <a class="btn-download" href="${dlUrl}" download="${safeName}">下载</a>
+                            </div>
+                        </li>
+                    `;
+                }
+            }
+            listEl.innerHTML = html;
+        }
+
+        async function loadDir(path) {
+            currentPath = (path || '').replace(/^\/+|\/+$/g, '');
+            renderBreadcrumbs(currentPath);
+            document.getElementById('file-list').innerHTML = '<li class="empty-state">正在加载文件列表...</li>';
+
+            try {
+                const res = await fetch(buildListUrl(currentPath));
+                if (!res.ok) {
+                    document.getElementById('file-list').innerHTML = '<li class="empty-state" style="color:#ef4444;">加载目录失败（HTTP ' + res.status + '）</li>';
+                    return;
+                }
+                allItems = await res.json();
+                document.getElementById('filter-input').value = '';
+                renderItems('');
+            } catch (err) {
+                document.getElementById('file-list').innerHTML = '<li class="empty-state" style="color:#ef4444;">网络请求出错：' + escapeHtml(err.message) + '</li>';
+            }
+        }
+
+        document.getElementById('breadcrumb-bar').addEventListener('click', (e) => {
+            const target = e.target.closest('.breadcrumb-item');
+            if (target) {
+                loadDir(target.getAttribute('data-path') || '');
+            }
+        });
+
+        document.getElementById('file-list').addEventListener('click', (e) => {
+            const folderLink = e.target.closest('.folder-link');
+            if (folderLink) {
+                e.preventDefault();
+                loadDir(folderLink.getAttribute('data-path') || '');
+            }
+        });
+
+        document.getElementById('filter-input').addEventListener('input', (e) => {
+            renderItems(e.target.value);
+        });
+
         loadDir('');
     </script>
 </body>

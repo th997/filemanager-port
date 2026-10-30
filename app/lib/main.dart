@@ -7,7 +7,6 @@ import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
 import 'src/services/external_file_service.dart';
-import 'src/services/permission_service.dart';
 import 'src/services/platform_paths.dart';
 import 'src/services/preferences_service.dart';
 import 'src/services/storage_service.dart';

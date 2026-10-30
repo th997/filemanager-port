@@ -6,6 +6,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../rust/api/file_manager.dart';
+import '../services/file_open_service.dart';
 import '../services/highlight_service.dart';
 import '../services/markdown_pdf_service.dart';
 import '../services/preferences_service.dart';
@@ -596,6 +597,43 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _saveViewPreferences();
   }
 
+  Future<void> _openInBrowser() async {
+    if (_isDirty) {
+      final shouldSave = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Save Changes?'),
+          content: const Text('Do you want to save your changes before opening in the external browser?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Open without Saving'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Save and Open'),
+            ),
+          ],
+        ),
+      );
+      if (shouldSave == true) {
+        await _save();
+      }
+    }
+    try {
+      await FileOpenService.instance.openWith(widget.root, widget.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open in browser: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
   void _setMode(TextFileMode mode) {
     if (mode == TextFileMode.preview && !_isMarkdown && !_isHtml) return;
     if (mode == TextFileMode.edit && widget.readOnly) return;
@@ -747,6 +785,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     onPressed: () => _setMode(
                       _mode == TextFileMode.preview ? TextFileMode.code : TextFileMode.preview,
                     ),
+                  ),
+                if (_isHtml)
+                  IconButton(
+                    icon: const Icon(Icons.open_in_browser),
+                    tooltip: '在系统浏览器中打开 (Open in Browser)',
+                    onPressed: _openInBrowser,
                   ),
                 if (_isMarkdown && _mode == TextFileMode.preview) ...[
                   PopupMenuButton<MarkdownThemeType>(
@@ -917,6 +961,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         _saveViewPreferences();
                       } else if (val == 'goto_line') {
                         _showGoToLineDialog();
+                      } else if (val == 'open_in_browser') {
+                        _openInBrowser();
                       } else if (val == 'reload') {
                         _reload();
                       } else if (val == 'copy_all') {
@@ -927,6 +973,17 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       }
                     },
                     itemBuilder: (ctx) => [
+                      if (_isHtml)
+                        const PopupMenuItem(
+                          value: 'open_in_browser',
+                          child: Row(
+                            children: [
+                              Icon(Icons.open_in_browser, size: 20),
+                              SizedBox(width: 8),
+                              Text('在系统浏览器中打开'),
+                            ],
+                          ),
+                        ),
                       const PopupMenuItem(
                         value: 'reload',
                         child: Row(
@@ -1358,6 +1415,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           isDirty: _isDirty,
           fontSize: _fontSize,
           onControllerCreated: (controller) => _webViewController = controller,
+          onOpenInBrowser: _openInBrowser,
         );
       case TextFileMode.code:
         return _buildCodeView();
