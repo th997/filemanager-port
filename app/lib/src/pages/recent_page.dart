@@ -33,17 +33,34 @@ class _RecentPageState extends State<RecentPage> {
     super.dispose();
   }
 
+  List<HistoryDto>? _visibleHistoryCache;
+  List<HistoryDto>? _lastHistory;
+  List<RemoteConfigDto>? _lastRemotes;
+  String? _lastSearchQuery;
+
   /// Filtering by title or full location, since either is what a user
   /// remembers about a past visit.
   List<HistoryDto> get _visibleHistory {
+    if (_visibleHistoryCache != null &&
+        identical(_lastHistory, _history) &&
+        identical(_lastRemotes, _remotes) &&
+        _lastSearchQuery == _searchQuery) {
+      return _visibleHistoryCache!;
+    }
     final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) return _history;
-    return _history
-        .where((h) =>
-            _displayTitle(h).toLowerCase().contains(query) ||
-            h.path.toLowerCase().contains(query) ||
-            _rootLabel(h.root).toLowerCase().contains(query))
-        .toList();
+    final list = query.isEmpty
+        ? _history
+        : _history
+            .where((h) =>
+                _displayTitle(h).toLowerCase().contains(query) ||
+                h.path.toLowerCase().contains(query) ||
+                _rootLabel(h.root).toLowerCase().contains(query))
+            .toList();
+    _lastHistory = _history;
+    _lastRemotes = _remotes;
+    _lastSearchQuery = _searchQuery;
+    _visibleHistoryCache = list;
+    return list;
   }
 
   Future<void> _loadHistory() async {
@@ -310,6 +327,7 @@ class _RecentPageState extends State<RecentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleHistory = _visibleHistory;
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
@@ -374,7 +392,7 @@ class _RecentPageState extends State<RecentPage> {
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: _loadHistory,
-                    child: _visibleHistory.isEmpty
+                    child: visibleHistory.isEmpty
                         ? LayoutBuilder(
                             builder: (context, constraints) => SingleChildScrollView(
                               physics: const AlwaysScrollableScrollPhysics(),
@@ -393,9 +411,9 @@ class _RecentPageState extends State<RecentPage> {
                         : ListView.builder(
                             physics: const AlwaysScrollableScrollPhysics(),
                             padding: AppUiTokens.pagePadding,
-                            itemCount: _visibleHistory.length,
+                            itemCount: visibleHistory.length,
                             itemBuilder: (ctx, i) {
-                              final h = _visibleHistory[i];
+                              final h = visibleHistory[i];
                               final title = _displayTitle(h);
                               final rootLabel = _rootLabel(h.root);
                               final sub = h.path.isEmpty ? rootLabel : '$rootLabel/${h.path}';

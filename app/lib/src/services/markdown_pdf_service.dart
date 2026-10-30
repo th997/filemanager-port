@@ -329,9 +329,13 @@ class MarkdownPdfService {
         final itemText = trimmed.substring(2).trim();
         int leadingSpaces = 0;
         for (int c = 0; c < line.length; c++) {
-          if (line[c] == ' ') leadingSpaces++;
-          else if (line[c] == '\t') leadingSpaces += 2;
-          else break;
+          if (line[c] == ' ') {
+            leadingSpaces++;
+          } else if (line[c] == '\t') {
+            leadingSpaces += 2;
+          } else {
+            break;
+          }
         }
         final indentPadding = 12.0 + (leadingSpaces ~/ 2) * 10.0;
 
@@ -375,9 +379,13 @@ class MarkdownPdfService {
         final itemText = numMatch.group(2)!;
         int leadingSpaces = 0;
         for (int c = 0; c < line.length; c++) {
-          if (line[c] == ' ') leadingSpaces++;
-          else if (line[c] == '\t') leadingSpaces += 2;
-          else break;
+          if (line[c] == ' ') {
+            leadingSpaces++;
+          } else if (line[c] == '\t') {
+            leadingSpaces += 2;
+          } else {
+            break;
+          }
         }
         final indentPadding = 12.0 + (leadingSpaces ~/ 2) * 10.0;
 
@@ -700,7 +708,9 @@ class MarkdownPdfService {
 
     for (int r = 2; r < tableLines.length; r++) {
       final cells = parseRow(tableLines[r]);
-      while (cells.length < numCols) cells.add('');
+      while (cells.length < numCols) {
+        cells.add('');
+      }
       final truncatedCells = cells.take(numCols).toList();
 
       final rowBg = (r % 2 == 1 && themeConfig != null)

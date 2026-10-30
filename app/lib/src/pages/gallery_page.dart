@@ -508,6 +508,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                   photo.file!,
                   fit: BoxFit.cover,
                   cacheWidth: 220,
+                  cacheHeight: 220,
                   errorBuilder: (_, _, _) => _brokenThumb(),
                 ),
           Material(
@@ -572,6 +573,8 @@ class _AssetThumbState extends State<_AssetThumb> {
         return Image.memory(
           bytes,
           fit: BoxFit.cover,
+          cacheWidth: 220,
+          cacheHeight: 220,
           gaplessPlayback: true,
           errorBuilder: (_, _, _) => Container(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,

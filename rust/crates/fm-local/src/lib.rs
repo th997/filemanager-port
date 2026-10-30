@@ -9,6 +9,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 pub struct LocalFs {
     root: PathBuf,
+    canonical_root: Option<PathBuf>,
     capabilities: Capabilities,
 }
 
@@ -32,15 +33,21 @@ impl LocalFs {
     }
 
     pub fn new(root: impl Into<PathBuf>) -> Self {
+        let root = root.into();
+        let canonical_root = root.canonicalize().ok();
         Self {
-            root: root.into(),
+            root,
+            canonical_root,
             capabilities: Capabilities::READ_WRITE,
         }
     }
 
     pub fn read_only(root: impl Into<PathBuf>) -> Self {
+        let root = root.into();
+        let canonical_root = root.canonicalize().ok();
         Self {
-            root: root.into(),
+            root,
+            canonical_root,
             capabilities: Capabilities::READ_ONLY,
         }
     }
@@ -112,8 +119,9 @@ impl LocalFs {
         // Without a canonical root there is nothing to verify against —
         // e.g. the root does not exist yet, in which case nothing inside
         // it can be a planted symlink either.
-        let Ok(canonical_root) = self.root.canonicalize() else {
-            return Ok(());
+        let canonical_root = match &self.canonical_root {
+            Some(cr) => cr,
+            None => return Ok(()),
         };
         let mut existing = if include_final || path.is_root() {
             native.to_path_buf()

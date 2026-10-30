@@ -3013,7 +3013,7 @@ class BrowserPageState extends State<BrowserPage> {
     BigInt totalBytes = BigInt.zero;
     final result = _entries.where((e) {
       if (!_showHidden && e.hidden) return false;
-      if (query.isNotEmpty && !e.name.toLowerCase().contains(query)) {
+      if (query.isNotEmpty && !e.nameLower.contains(query)) {
         return false;
       }
       if (!e.isDir && e.size != null) {
@@ -4023,9 +4023,27 @@ class BrowserPageState extends State<BrowserPage> {
       return _selectedBytesCache;
     }
     var total = BigInt.zero;
-    for (final e in _entries) {
-      if (_selectedPaths.contains(_fullEntryPath(e)) && !e.isDir && e.size != null) {
-        total += e.size!;
+    if (_selectedPaths.length * 4 < _entries.length) {
+      final prefixLen = _relPath.isEmpty ? 0 : _relPath.length + 1;
+      final selectedNames = <String>{};
+      for (final p in _selectedPaths) {
+        if (_relPath.isEmpty) {
+          if (!p.contains('/')) selectedNames.add(p);
+        } else if (p.startsWith('$_relPath/')) {
+          final rest = p.substring(prefixLen);
+          if (!rest.contains('/')) selectedNames.add(rest);
+        }
+      }
+      for (final e in _entries) {
+        if (selectedNames.contains(e.name) && !e.isDir && e.size != null) {
+          total += e.size!;
+        }
+      }
+    } else {
+      for (final e in _entries) {
+        if (_selectedPaths.contains(_fullEntryPath(e)) && !e.isDir && e.size != null) {
+          total += e.size!;
+        }
       }
     }
     _selectedCacheCount = _selectedPaths.length;

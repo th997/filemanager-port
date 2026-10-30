@@ -61,7 +61,8 @@ impl ArchiveFs {
             path: VfsPath::root(),
             source: e,
         })?;
-        let mut zip = zip::ZipArchive::new(file).map_err(|e| VfsError::Backend {
+        let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
+        let mut zip = zip::ZipArchive::new(buffered).map_err(|e| VfsError::Backend {
             path: VfsPath::root(),
             source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
         })?;
@@ -374,7 +375,8 @@ impl ArchiveFs {
                     path: path.clone(),
                     source: e,
                 })?;
-                let mut zip = zip::ZipArchive::new(file).map_err(|e| VfsError::Backend {
+                let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
+                let mut zip = zip::ZipArchive::new(buffered).map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
                 })?;
@@ -394,7 +396,8 @@ impl ArchiveFs {
                     path: path.clone(),
                     source: e,
                 })?;
-                let mut archive = tar::Archive::new(file);
+                let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
+                let mut archive = tar::Archive::new(buffered);
                 let mut entries = archive.entries().map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
@@ -415,7 +418,8 @@ impl ArchiveFs {
                     path: path.clone(),
                     source: e,
                 })?;
-                let gz = flate2::read::GzDecoder::new(file);
+                let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
+                let gz = flate2::read::GzDecoder::new(buffered);
                 let mut archive = tar::Archive::new(gz);
                 let mut entries = archive.entries().map_err(|e| VfsError::Backend {
                     path: path.clone(),

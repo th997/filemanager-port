@@ -199,8 +199,9 @@ mod db_integration_tests {
         db.save_remote(&record).unwrap();
 
         // The raw column must not contain the password.
-        let raw = std::fs::read(&db_file).unwrap();
-        let raw_text = String::from_utf8_lossy(&raw);
+        let raw = std::fs::read(&db_file).unwrap_or_default();
+        let wal = std::fs::read(dir.join("test.db-wal")).unwrap_or_default();
+        let raw_text = format!("{}{}", String::from_utf8_lossy(&raw), String::from_utf8_lossy(&wal));
         assert!(!raw_text.contains("hunter2"), "plaintext leaked into DB file");
         assert!(raw_text.contains("enc:v1:"));
 

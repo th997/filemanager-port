@@ -88,7 +88,8 @@ impl VfsPath {
     }
 
     pub fn join(&self, name: impl Into<String>) -> Self {
-        let mut segments = self.segments.clone();
+        let mut segments = Vec::with_capacity(self.segments.len() + 1);
+        segments.extend_from_slice(&self.segments);
         segments.push(name.into());
         Self { segments }
     }
@@ -112,13 +113,14 @@ impl VfsPath {
     /// Render with `/` separators. Display and native-path conversion only;
     /// do not parse the result back to recover identity.
     pub fn to_slash_string(&self) -> String {
-        let mut out = String::new();
+        if self.segments.is_empty() {
+            return "/".to_string();
+        }
+        let total_len = self.segments.iter().map(|s| s.len() + 1).sum::<usize>();
+        let mut out = String::with_capacity(total_len);
         for segment in &self.segments {
             out.push('/');
             out.push_str(segment);
-        }
-        if out.is_empty() {
-            out.push('/');
         }
         out
     }
@@ -126,7 +128,14 @@ impl VfsPath {
 
 impl fmt::Display for VfsPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_slash_string())
+        if self.segments.is_empty() {
+            return f.write_str("/");
+        }
+        for segment in &self.segments {
+            f.write_str("/")?;
+            f.write_str(segment)?;
+        }
+        Ok(())
     }
 }
 

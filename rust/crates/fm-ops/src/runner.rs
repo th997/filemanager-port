@@ -137,7 +137,11 @@ pub async fn total_bytes(vfs: &dyn Vfs, path: &VfsPath) -> u64 {
     };
     let mut total = 0;
     for child in children {
-        total += Box::pin(total_bytes(vfs, &child.path)).await;
+        if child.kind == EntryKind::Dir && !child.is_symlink {
+            total += Box::pin(total_bytes(vfs, &child.path)).await;
+        } else {
+            total += child.size.unwrap_or(0);
+        }
     }
     total
 }

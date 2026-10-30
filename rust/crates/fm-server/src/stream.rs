@@ -26,9 +26,10 @@ use tokio_util::io::ReaderStream;
 /// and loopback streaming responsive even at high bitrate and fast playback rates.
 const STREAM_BUFFER: usize = 256 * 1024;
 
-/// In-memory prefetch capacity per stream (16 MiB). Decouples remote backend reads
-/// (e.g. SFTP over WAN) from loopback socket polling so AVPlayer is never starved by network jitter.
-const PREFETCH_CAPACITY: usize = 16 * 1024 * 1024;
+/// In-memory prefetch capacity per stream (4 MiB). Decouples remote backend reads
+/// (e.g. SFTP over WAN) from loopback socket polling so AVPlayer is never starved by network jitter,
+/// while preventing multiple concurrent stream ranges from ballooning memory.
+const PREFETCH_CAPACITY: usize = 4 * 1024 * 1024;
 
 pub struct StreamServer {
     pub port: u16,

@@ -125,10 +125,15 @@ class _TextEditorPageState extends State<TextEditorPage> {
       return;
     }
     final offset = sel.baseOffset;
-    final prefix = text.substring(0, offset);
-    final lines = prefix.split('\n');
-    final newLine = lines.length;
-    final newCol = lines.last.length + 1;
+    int newLine = 1;
+    int lastNewline = -1;
+    for (int i = 0; i < offset; i++) {
+      if (text.codeUnitAt(i) == 10) {
+        newLine++;
+        lastNewline = i;
+      }
+    }
+    final newCol = offset - lastNewline;
     if (_cursorLine != newLine || _cursorCol != newCol) {
       setState(() {
         _cursorLine = newLine;
@@ -139,7 +144,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   Future<void> _showGoToLineDialog() async {
     final text = _controller.text;
-    final totalLines = text.isEmpty ? 1 : text.split('\n').length;
+    int totalLines = text.isEmpty ? 1 : 1;
+    if (text.isNotEmpty) {
+      for (int i = 0; i < text.length; i++) {
+        if (text.codeUnitAt(i) == 10) totalLines++;
+      }
+    }
     final ctrl = TextEditingController();
     final String? input;
     try {

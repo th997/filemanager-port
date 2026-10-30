@@ -92,7 +92,10 @@ impl Database {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute_batch(
             "
+            PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
+            PRAGMA cache_size = -2000;
+            PRAGMA temp_store = MEMORY;
 
             CREATE TABLE IF NOT EXISTS remotes (
                 id TEXT PRIMARY KEY,

@@ -42,9 +42,18 @@ class _RemotesPageState extends State<RemotesPage> {
     super.dispose();
   }
 
+  List<RemoteConfigDto>? _visibleRemotesCache;
+  List<RemoteConfigDto>? _lastRemotes;
+  String? _lastSearchQuery;
+
   /// Alphabetical, so a saved connection does not drift around the list as
   /// new ones are added.
   List<RemoteConfigDto> get _visibleRemotes {
+    if (_visibleRemotesCache != null &&
+        identical(_lastRemotes, _remotes) &&
+        _lastSearchQuery == _searchQuery) {
+      return _visibleRemotesCache!;
+    }
     final q = _searchQuery.trim().toLowerCase();
     final list = q.isEmpty
         ? [..._remotes]
@@ -56,6 +65,9 @@ class _RemotesPageState extends State<RemotesPage> {
                 sub.toLowerCase().contains(q);
           }).toList();
     list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    _lastRemotes = _remotes;
+    _lastSearchQuery = _searchQuery;
+    _visibleRemotesCache = list;
     return list;
   }
 

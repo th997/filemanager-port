@@ -4,20 +4,21 @@ import '../rust/api/file_manager.dart';
 class EntryItem {
   final EntryDto dto;
 
-  const EntryItem(this.dto);
+  EntryItem(this.dto);
 
   String get name => dto.name;
+  late final String nameLower = name.toLowerCase();
   String get path => dto.path;
   bool get isDir => dto.isDir;
   BigInt? get size => dto.size;
   bool get hidden => dto.hidden;
   bool get isSymlink => dto.isSymlink;
 
-  DateTime? get modified {
+  late final DateTime? modified = () {
     final millis = dto.modifiedMillis;
     if (millis == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(millis.toInt());
-  }
+  }();
 
   static const Set<String> _archiveExtensions = {
     'zip', 'apk', 'jar', 'tar', 'tgz', '7z',
@@ -40,16 +41,16 @@ class EntryItem {
     'alac', 'aiff', 'mka', 'oga', 'wv', 'mid',
   };
 
-  String get extension {
+  late final String extension = () {
     final dot = name.lastIndexOf('.');
     if (dot < 0 || dot == name.length - 1) return '';
     return name.substring(dot + 1).toLowerCase();
-  }
+  }();
 
   bool get isArchive {
     final ext = extension;
     if (_archiveExtensions.contains(ext)) return true;
-    if (ext == 'gz' && name.toLowerCase().endsWith('.tar.gz')) return true;
+    if (ext == 'gz' && nameLower.endsWith('.tar.gz')) return true;
     return false;
   }
 
@@ -126,7 +127,7 @@ class EntryItem {
   /// Best-effort MIME type for handing the file to another app.
   String get mimeType => _mimeTypes[extension] ?? 'application/octet-stream';
 
-  String get formattedSize {
+  late final String formattedSize = () {
     if (isDir) return '--';
     final s = size;
     if (s == null) return 'Unknown';
@@ -137,9 +138,9 @@ class EntryItem {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
+  }();
 
-  String get formattedModified {
+  late final String formattedModified = () {
     final m = modified;
     if (m == null) return '--';
     final y = m.year.toString().padLeft(4, '0');
@@ -148,7 +149,7 @@ class EntryItem {
     final h = m.hour.toString().padLeft(2, '0');
     final mi = m.minute.toString().padLeft(2, '0');
     return '$y-$mo-$d $h:$mi';
-  }
+  }();
 
   IconData get icon {
     if (isDir) return Icons.folder;

@@ -409,21 +409,45 @@ class _TrashPageState extends State<TrashPage> {
     }
   }
 
+  List<TrashItemDto>? _displayedItemsCache;
+  List<TrashItemDto>? _lastItems;
+  String? _lastSearchQuery;
+  BigInt? _cachedTotalSize;
+
   /// Bytes held by everything in the bin, so the header answers "how much
   /// space can I get back?" before deleting anything.
-  BigInt get _totalSize =>
-      _items.fold(BigInt.zero, (sum, item) => sum + item.size);
+  BigInt get _totalSize {
+    if (_cachedTotalSize != null && identical(_lastItems, _items)) {
+      return _cachedTotalSize!;
+    }
+    _cachedTotalSize = _items.fold<BigInt>(BigInt.zero, (sum, item) => sum + item.size);
+    return _cachedTotalSize!;
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final displayedItems = (_searchQuery.isEmpty
+  List<TrashItemDto> get _displayedItems {
+    if (_displayedItemsCache != null &&
+        identical(_lastItems, _items) &&
+        _lastSearchQuery == _searchQuery) {
+      return _displayedItemsCache!;
+    }
+    final q = _searchQuery.trim().toLowerCase();
+    final list = (q.isEmpty
         ? [..._items]
         : _items
             .where((item) =>
-                item.originalPath.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                _displayName(item).toLowerCase().contains(_searchQuery.toLowerCase()))
+                item.originalPath.toLowerCase().contains(q) ||
+                _displayName(item).toLowerCase().contains(q))
             .toList())
       ..sort((a, b) => b.deletedMillis.compareTo(a.deletedMillis));
+    _lastItems = _items;
+    _lastSearchQuery = _searchQuery;
+    _displayedItemsCache = list;
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayedItems = _displayedItems;
 
     return AppSwipeBack(
       child: Scaffold(

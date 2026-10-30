@@ -56,9 +56,20 @@ class _BookmarksPageState extends State<BookmarksPage> {
     }
   }
 
+  List<BookmarkDto>? _visibleBookmarksCache;
+  List<BookmarkDto>? _lastBookmarks;
+  List<RemoteConfigDto>? _lastRemotes;
+  String? _lastSearchQuery;
+
   /// Sorted by name so the list is predictable between visits; the backend
   /// returns them in creation order.
   List<BookmarkDto> get _visibleBookmarks {
+    if (_visibleBookmarksCache != null &&
+        identical(_lastBookmarks, _bookmarks) &&
+        identical(_lastRemotes, _remotes) &&
+        _lastSearchQuery == _searchQuery) {
+      return _visibleBookmarksCache!;
+    }
     final query = _searchQuery.trim().toLowerCase();
     final list = query.isEmpty
         ? [..._bookmarks]
@@ -71,6 +82,10 @@ class _BookmarksPageState extends State<BookmarksPage> {
     list.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
+    _lastBookmarks = _bookmarks;
+    _lastRemotes = _remotes;
+    _lastSearchQuery = _searchQuery;
+    _visibleBookmarksCache = list;
     return list;
   }
 
@@ -293,6 +308,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleBookmarks = _visibleBookmarks;
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
@@ -352,7 +368,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 Expanded(
                   child: RefreshIndicator(
               onRefresh: _loadBookmarks,
-              child: _visibleBookmarks.isEmpty
+              child: visibleBookmarks.isEmpty
                   ? LayoutBuilder(
                       builder: (context, constraints) => SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
@@ -371,9 +387,9 @@ class _BookmarksPageState extends State<BookmarksPage> {
                   : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: AppUiTokens.pagePadding,
-                      itemCount: _visibleBookmarks.length,
+                      itemCount: visibleBookmarks.length,
                       itemBuilder: (ctx, i) {
-                        final b = _visibleBookmarks[i];
+                        final b = visibleBookmarks[i];
                         return Card(
                           child: ListTile(
                             leading: const AppCircleBadge(

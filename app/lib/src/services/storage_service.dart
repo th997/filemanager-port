@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -47,13 +48,13 @@ class StorageService {
   Future<void> saveRemote(rem_api.RemoteConfigDto config) async {
     ensureInitialized();
     await rem_api.saveRemote(dbPath: dbPath, config: config);
-    await _syncRemotesBackup();
+    unawaited(_syncRemotesBackup());
   }
 
   Future<void> deleteRemote(String id) async {
     ensureInitialized();
     await rem_api.deleteRemote(dbPath: dbPath, id: id);
-    await _syncRemotesBackup();
+    unawaited(_syncRemotesBackup());
   }
 
   Future<bool> testConnection(rem_api.RemoteConfigDto config) async {
@@ -155,13 +156,13 @@ class StorageService {
   Future<void> addBookmark({required String name, required String root, required String path}) async {
     ensureInitialized();
     await meta_api.addBookmark(dbPath: dbPath, name: name, root: root, path: path);
-    await _syncBookmarksBackup();
+    unawaited(_syncBookmarksBackup());
   }
 
   Future<void> deleteBookmark(String id) async {
     ensureInitialized();
     await meta_api.deleteBookmark(dbPath: dbPath, id: id);
-    await _syncBookmarksBackup();
+    unawaited(_syncBookmarksBackup());
   }
 
   Future<void> renameBookmark({
