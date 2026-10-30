@@ -33,9 +33,7 @@ fn encode_path(path: &VfsPath) -> String {
 fn decode_path(stored: &str) -> VfsPath {
     if stored.starts_with('[') {
         if let Ok(segments) = serde_json::from_str::<Vec<String>>(stored) {
-            return segments
-                .iter()
-                .fold(VfsPath::root(), |p, s| p.join(s.clone()));
+            return VfsPath::new(segments);
         }
     }
     VfsPath::from_slash_path(stored)
@@ -248,10 +246,11 @@ impl Database {
 
     // History
     pub fn record_history(&self, entry: &HistoryEntry) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let tx = conn.transaction()?;
         // Revisiting a folder moves its existing row instead of appending a
         // duplicate, so Recent shows each location once, most recent first.
-        conn.execute(
+        tx.execute(
             "DELETE FROM history WHERE location = ?1 AND (path = ?2 OR path = ?3)",
             params![
                 entry.location.0,
@@ -259,7 +258,7 @@ impl Database {
                 encode_path(&entry.path)
             ],
         )?;
-        conn.execute(
+        tx.execute(
             "INSERT INTO history (location, path, visited_at) VALUES (?1, ?2, ?3)",
             params![
                 entry.location.0,
@@ -268,15 +267,13 @@ impl Database {
             ],
         )?;
 
-        // Keep LRU max 100 entries
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))?;
-        if count > 100 {
-            conn.execute(
-                "DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY visited_at ASC LIMIT ?1)",
-                params![count - 100],
-            )?;
-        }
+        // Keep LRU max 100 entries via single index-backed subquery
+        tx.execute(
+            "DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY visited_at DESC LIMIT 100)",
+            [],
+        )?;
 
+        tx.commit()?;
         Ok(())
     }
 

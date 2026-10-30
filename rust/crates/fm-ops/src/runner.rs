@@ -181,18 +181,40 @@ pub async fn copy_recursive(
     cancel: &CancellationToken,
     policy: ConflictPolicy,
 ) -> VfsResult<()> {
+    copy_recursive_impl(
+        src_vfs, src_path, None, dst_vfs, dst_path, progress, cancel, policy,
+    )
+    .await
+}
+
+async fn copy_recursive_impl(
+    src_vfs: &dyn Vfs,
+    src_path: &VfsPath,
+    known_stat: Option<(EntryKind, bool)>,
+    dst_vfs: &dyn Vfs,
+    dst_path: &VfsPath,
+    progress: &Arc<Mutex<TaskProgress>>,
+    cancel: &CancellationToken,
+    policy: ConflictPolicy,
+) -> VfsResult<()> {
     if cancel.is_cancelled() {
         return Err(VfsError::Unsupported { operation: "cancelled" });
     }
 
-    let stat = src_vfs.stat(src_path).await?;
+    let (kind, is_symlink) = match known_stat {
+        Some(s) => s,
+        None => {
+            let stat = src_vfs.stat(src_path).await?;
+            (stat.kind, stat.is_symlink)
+        }
+    };
     {
         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
         p.state = TaskState::Running;
         p.current = Some(src_path.clone());
     }
 
-    if stat.is_symlink && stat.kind == EntryKind::Dir {
+    if is_symlink && kind == EntryKind::Dir {
         // Never recurse through a symlink: the target may live outside the
         // tree being copied or point back into it, nesting without bound.
         // There is no cross-VFS primitive to reproduce the link itself, so
@@ -200,7 +222,7 @@ pub async fn copy_recursive(
         return Ok(());
     }
 
-    if stat.kind == EntryKind::Dir {
+    if kind == EntryKind::Dir {
         if let Err(e) = dst_vfs.mkdir(dst_path).await {
             // An already-existing directory is fine; any other failure
             // (permission, read-only backend, a file in the way) is real
@@ -222,8 +244,15 @@ pub async fn copy_recursive(
             }
             let child_src = child.path.clone();
             let child_dst = dst_path.join(child.name.clone());
-            Box::pin(copy_recursive(
-                src_vfs, &child_src, dst_vfs, &child_dst, progress, cancel, policy,
+            Box::pin(copy_recursive_impl(
+                src_vfs,
+                &child_src,
+                Some((child.kind, child.is_symlink)),
+                dst_vfs,
+                &child_dst,
+                progress,
+                cancel,
+                policy,
             ))
             .await?;
         }
@@ -380,6 +409,16 @@ pub async fn delete_recursive(
     progress: &Arc<Mutex<TaskProgress>>,
     cancel: &CancellationToken,
 ) -> VfsResult<()> {
+    delete_recursive_impl(vfs, path, None, progress, cancel).await
+}
+
+async fn delete_recursive_impl(
+    vfs: &dyn Vfs,
+    path: &VfsPath,
+    known_stat: Option<(EntryKind, bool)>,
+    progress: &Arc<Mutex<TaskProgress>>,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
     if cancel.is_cancelled() {
         return Err(VfsError::Unsupported { operation: "cancelled" });
     }
@@ -390,17 +429,30 @@ pub async fn delete_recursive(
         p.current = Some(path.clone());
     }
 
-    let stat = vfs.stat(path).await?;
+    let (kind, is_symlink) = match known_stat {
+        Some(s) => s,
+        None => {
+            let stat = vfs.stat(path).await?;
+            (stat.kind, stat.is_symlink)
+        }
+    };
     // A symlinked directory is removed as a link, never traversed: the
     // entries under it belong to the link target, which may be anywhere —
     // including outside the tree the user selected for deletion.
-    if stat.kind == EntryKind::Dir && !stat.is_symlink {
+    if kind == EntryKind::Dir && !is_symlink {
         let children = vfs.list(path).await?;
         for child in children {
             if cancel.is_cancelled() {
                 return Err(VfsError::Unsupported { operation: "cancelled" });
             }
-            Box::pin(delete_recursive(vfs, &child.path, progress, cancel)).await?;
+            Box::pin(delete_recursive_impl(
+                vfs,
+                &child.path,
+                Some((child.kind, child.is_symlink)),
+                progress,
+                cancel,
+            ))
+            .await?;
         }
     }
 

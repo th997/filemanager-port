@@ -102,10 +102,16 @@ fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
                 }
             }
             (Some((pa, _)), Some((pb, _))) => {
-                let cmp = pa
-                    .chars()
-                    .map(|c| c.to_ascii_lowercase())
-                    .cmp(pb.chars().map(|c| c.to_ascii_lowercase()));
+                let cmp = if pa.is_ascii() && pb.is_ascii() {
+                    pa.as_bytes()
+                        .iter()
+                        .map(u8::to_ascii_lowercase)
+                        .cmp(pb.as_bytes().iter().map(u8::to_ascii_lowercase))
+                } else {
+                    pa.chars()
+                        .map(|c| c.to_ascii_lowercase())
+                        .cmp(pb.chars().map(|c| c.to_ascii_lowercase()))
+                };
                 if cmp != std::cmp::Ordering::Equal {
                     return cmp;
                 }
@@ -130,9 +136,16 @@ fn extension_of(e: &EntryDto) -> &str {
 fn compare_extensions(a: &EntryDto, b: &EntryDto) -> std::cmp::Ordering {
     let ea = extension_of(a);
     let eb = extension_of(b);
-    ea.chars()
-        .map(|c| c.to_ascii_lowercase())
-        .cmp(eb.chars().map(|c| c.to_ascii_lowercase()))
+    if ea.is_ascii() && eb.is_ascii() {
+        ea.as_bytes()
+            .iter()
+            .map(u8::to_ascii_lowercase)
+            .cmp(eb.as_bytes().iter().map(u8::to_ascii_lowercase))
+    } else {
+        ea.chars()
+            .map(|c| c.to_ascii_lowercase())
+            .cmp(eb.chars().map(|c| c.to_ascii_lowercase()))
+    }
 }
 
 /// Sort a full folder listing the way the UI promises: directories first
@@ -140,7 +153,7 @@ fn compare_extensions(a: &EntryDto, b: &EntryDto) -> std::cmp::Ordering {
 /// Dart over only the pages fetched so far, so "sort by size" in a large
 /// folder actually sorted just the first hundred entries.
 fn sort_dtos(entries: &mut [EntryDto], sort_by: &str, ascending: bool) {
-    entries.sort_by(|a, b| {
+    entries.sort_unstable_by(|a, b| {
         if a.is_dir != b.is_dir {
             return if a.is_dir {
                 std::cmp::Ordering::Less

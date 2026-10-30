@@ -314,7 +314,7 @@ impl ArchiveFs {
 
     fn sort_directories(&mut self) {
         for list in self.dir_entries.values_mut() {
-            list.sort_by(|a, b| {
+            list.sort_unstable_by(|a, b| {
                 let a_dir = a.kind == EntryKind::Dir;
                 let b_dir = b.kind == EntryKind::Dir;
                 b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))

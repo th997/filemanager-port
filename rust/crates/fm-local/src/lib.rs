@@ -247,7 +247,7 @@ impl Vfs for LocalFs {
 
                 entries.push(entry_from_metadata(child, name, &meta, is_symlink));
             }
-            entries.sort_by(|a, b| {
+            entries.sort_unstable_by(|a, b| {
                 let a_dir = a.kind == EntryKind::Dir;
                 let b_dir = b.kind == EntryKind::Dir;
                 b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))

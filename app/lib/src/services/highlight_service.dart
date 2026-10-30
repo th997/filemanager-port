@@ -133,7 +133,15 @@ class HighlightService {
   };
 
   String? languageFor(String fileName) {
-    final cleanName = fileName.split('?').first.split('/').last.split('\\').last;
+    var end = fileName.indexOf('?');
+    if (end < 0) end = fileName.length;
+    var start = end;
+    while (start > 0) {
+      final ch = fileName.codeUnitAt(start - 1);
+      if (ch == 47 || ch == 92) break;
+      start--;
+    }
+    final cleanName = fileName.substring(start, end);
     final lower = cleanName.toLowerCase();
     if (lower == 'dockerfile') return 'dockerfile';
     if (lower == 'makefile') return 'bash';

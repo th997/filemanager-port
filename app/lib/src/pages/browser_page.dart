@@ -3030,6 +3030,20 @@ class BrowserPageState extends State<BrowserPage> {
     return result;
   }
 
+  String? _lastRelPathForSegments;
+  List<String> _cachedRelPathSegments = const [];
+
+  List<String> get _relPathSegments {
+    if (identical(_lastRelPathForSegments, _relPath) || _lastRelPathForSegments == _relPath) {
+      return _cachedRelPathSegments;
+    }
+    _lastRelPathForSegments = _relPath;
+    _cachedRelPathSegments = _relPath.isEmpty
+        ? const []
+        : _relPath.split('/').where((s) => s.isNotEmpty).toList();
+    return _cachedRelPathSegments;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_splitActive) {
@@ -3061,7 +3075,7 @@ class BrowserPageState extends State<BrowserPage> {
       );
     }
 
-    final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
+    final segments = _relPathSegments;
 
     // Back first leaves selection/search/address, then walks up the directory tree.
     // At the top level the platform handles it (exit or tab switch).
@@ -3952,43 +3966,43 @@ class BrowserPageState extends State<BrowserPage> {
                   ),
                   for (int i = 0; i < segments.length; i++) ...[
                     const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
-                    DragTarget<({String root, List<String> paths})>(
-                      onAcceptWithDetails: (d) =>
-                          _acceptDrop(d.data, segments.sublist(0, i + 1).join('/')),
-                      builder: (ctx, candidate, rejected) => InkWell(
-                      borderRadius: BorderRadius.circular(4),
-                      onTap: () {
-                        final next = segments.sublist(0, i + 1).join('/');
-                        if (next != _relPath) {
-                          _pushHistory();
-                          setState(() => _relPath = next);
-                          if (_scrollController.hasClients) {
-                            _scrollController.jumpTo(0);
-                          }
-                          _load();
-                        }
-                      },
-                      onLongPress: () {
-                        final next = segments.sublist(0, i + 1).join('/');
-                        final full = isNativeRoot(_root) ? joinNative(_root, next) : '$_root/$next';
-                        Clipboard.setData(ClipboardData(text: full));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Copied path: $full')),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        child: Text(
-                          segments[i],
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: i == segments.length - 1 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                            fontWeight: i == segments.length - 1 ? FontWeight.bold : FontWeight.normal,
+                    () {
+                      final segPath = segments.take(i + 1).join('/');
+                      return DragTarget<({String root, List<String> paths})>(
+                        onAcceptWithDetails: (d) => _acceptDrop(d.data, segPath),
+                        builder: (ctx, candidate, rejected) => InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () {
+                            if (segPath != _relPath) {
+                              _pushHistory();
+                              setState(() => _relPath = segPath);
+                              if (_scrollController.hasClients) {
+                                _scrollController.jumpTo(0);
+                              }
+                              _load();
+                            }
+                          },
+                          onLongPress: () {
+                            final full = isNativeRoot(_root) ? joinNative(_root, segPath) : '$_root/$segPath';
+                            Clipboard.setData(ClipboardData(text: full));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Copied path: $full')),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              segments[i],
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: i == segments.length - 1 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
+                                fontWeight: i == segments.length - 1 ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      ),
-                    ),
+                      );
+                    }(),
                   ],
                 ],
               ),
@@ -4215,6 +4229,7 @@ class BrowserPageState extends State<BrowserPage> {
   Widget _buildItemNameText(
     String name,
     TextStyle baseStyle, {
+    String? lowerName,
     int maxLines = 1,
     TextAlign textAlign = TextAlign.start,
   }) {
@@ -4229,14 +4244,14 @@ class BrowserPageState extends State<BrowserPage> {
       );
     }
 
-    final lowerName = name.toLowerCase();
+    final lower = lowerName ?? name.toLowerCase();
     final lowerQuery = query.toLowerCase();
     final spans = <TextSpan>[];
     final highlightColor = Theme.of(context).colorScheme.primary;
     var start = 0;
 
     while (start < name.length) {
-      final matchIdx = lowerName.indexOf(lowerQuery, start);
+      final matchIdx = lower.indexOf(lowerQuery, start);
       if (matchIdx == -1) {
         spans.add(TextSpan(text: name.substring(start)));
         break;
@@ -4511,6 +4526,7 @@ class BrowserPageState extends State<BrowserPage> {
                                 fontWeight: FontWeight.w600,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
+                              lowerName: item.nameLower,
                               maxLines: 2,
                               textAlign: TextAlign.center,
                             ),
@@ -4663,6 +4679,7 @@ class BrowserPageState extends State<BrowserPage> {
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
+                  lowerName: item.nameLower,
                 ),
                 subtitle: Text(
                   item.isDir

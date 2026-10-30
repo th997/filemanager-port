@@ -316,7 +316,7 @@ impl OpendalFs {
             });
         }
 
-        entries.sort_by(|a, b| {
+        entries.sort_unstable_by(|a, b| {
             let a_dir = a.kind == EntryKind::Dir;
             let b_dir = b.kind == EntryKind::Dir;
             b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))
@@ -423,7 +423,7 @@ impl OpendalFs {
 
         let has_more = lister.next().await.is_some();
 
-        entries.sort_by(|a, b| {
+        entries.sort_unstable_by(|a, b| {
             let a_dir = a.kind == EntryKind::Dir;
             let b_dir = b.kind == EntryKind::Dir;
             b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))

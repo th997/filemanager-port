@@ -17,6 +17,7 @@ use tokio_util::io::ReaderStream;
 
 pub struct ServerState {
     pub root_dir: PathBuf,
+    pub canonical_root: Option<PathBuf>,
     pub password: Option<String>,
     pub read_only: bool,
 }
@@ -56,8 +57,10 @@ pub async fn start_http_share(
         .map_err(|e| e.to_string())?
         .port();
 
+    let canonical_root = root_dir.canonicalize().ok();
     let state = Arc::new(ServerState {
         root_dir,
+        canonical_root,
         password,
         read_only,
     });
@@ -609,7 +612,8 @@ async fn handle_list_internal(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let target_dir = resolve_path(&state.root_dir, subpath).map_err(|_| StatusCode::FORBIDDEN)?;
+    let target_dir = resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), subpath)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
     let mut reader = tokio::fs::read_dir(target_dir)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -641,7 +645,7 @@ async fn handle_list_internal(
         });
     }
 
-    items.sort_by(|a, b| {
+    items.sort_unstable_by(|a, b| {
         b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name))
     });
 
@@ -649,13 +653,16 @@ async fn handle_list_internal(
 }
 
 fn percent_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 3);
-    for b in s.as_bytes() {
-        if b.is_ascii_alphanumeric() || matches!(*b, b'-' | b'_' | b'.' | b'~') {
-            out.push(*b as char);
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(bytes.len() + 8);
+    for &b in bytes {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
         } else {
-            use std::fmt::Write;
-            let _ = write!(out, "%{:02X}", b);
+            out.push('%');
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0F) as usize] as char);
         }
     }
     out
@@ -671,7 +678,8 @@ async fn handle_download(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let file_path = resolve_path(&state.root_dir, &subpath).map_err(|_| StatusCode::FORBIDDEN)?;
+    let file_path = resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), &subpath)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
     let file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let total_size = metadata.len();
@@ -702,7 +710,12 @@ async fn handle_download(
     Ok(response)
 }
 
+#[cfg(test)]
 fn resolve_path(root: &Path, rel: &str) -> Result<PathBuf, ()> {
+    resolve_path_inner(root, None, rel)
+}
+
+fn resolve_path_inner(root: &Path, canonical_root: Option<&Path>, rel: &str) -> Result<PathBuf, ()> {
     let mut target = root.to_path_buf();
     for seg in rel.split('/') {
         if seg.is_empty() || seg == "." {
@@ -713,9 +726,15 @@ fn resolve_path(root: &Path, rel: &str) -> Result<PathBuf, ()> {
         }
         target.push(seg);
     }
-    if let (Ok(c_root), Ok(c_target)) = (root.canonicalize(), target.canonicalize()) {
-        if !c_target.starts_with(&c_root) {
-            return Err(());
+    if let Ok(c_target) = target.canonicalize() {
+        if let Some(c_root) = canonical_root {
+            if !c_target.starts_with(c_root) {
+                return Err(());
+            }
+        } else if let Ok(c_root) = root.canonicalize() {
+            if !c_target.starts_with(&c_root) {
+                return Err(());
+            }
         }
     }
     Ok(target)

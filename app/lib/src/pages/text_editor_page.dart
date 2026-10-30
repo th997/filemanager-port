@@ -74,6 +74,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
   int _cursorLine = 1;
   int _cursorCol = 1;
   WebViewController? _webViewController;
+  String? _cachedStatsText;
+  int _cachedLines = 1;
+  int? _cachedWords = 0;
 
   String get _lowerName => widget.fileName.toLowerCase();
   bool get _isMarkdown => _lowerName.endsWith('.md') || _lowerName.endsWith('.markdown');
@@ -190,13 +193,17 @@ class _TextEditorPageState extends State<TextEditorPage> {
       return;
     }
 
-    final lines = text.split('\n');
-    final clampedLine = targetLine.clamp(1, lines.length);
+    int currentLine = 1;
     int offset = 0;
-    for (int i = 0; i < clampedLine - 1; i++) {
-      offset += lines[i].length + 1;
+    for (int i = 0; i < text.length; i++) {
+      if (currentLine >= targetLine) break;
+      if (text.codeUnitAt(i) == 10) {
+        currentLine++;
+        offset = i + 1;
+      }
     }
-    final lineEnd = offset + lines[clampedLine - 1].length;
+    int lineEnd = text.indexOf('\n', offset);
+    if (lineEnd == -1) lineEnd = text.length;
     _controller.selection = TextSelection(baseOffset: offset, extentOffset: lineEnd);
     _scrollToMatch(offset);
   }
@@ -1257,12 +1264,22 @@ class _TextEditorPageState extends State<TextEditorPage> {
   void _showDocumentStats() {
     HapticFeedback.mediumImpact();
     final text = _controller.text;
-    final lines = text.isEmpty ? 1 : text.split('\n').length;
+    int lines = text.isEmpty ? 1 : 1;
+    int crlfCount = 0;
+    int lfCount = 0;
+    for (int i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == 10) {
+        lines++;
+        if (i > 0 && text.codeUnitAt(i - 1) == 13) {
+          crlfCount++;
+        } else {
+          lfCount++;
+        }
+      }
+    }
     final words = RegExp(r'[\w一-龥]+').allMatches(text).length;
     final chars = text.length;
     final bytes = utf8.encode(text).length;
-    final crlfCount = RegExp(r'\r\n').allMatches(text).length;
-    final lfCount = RegExp(r'[^\r]\n').allMatches(text).length;
     final lineEnding = crlfCount > lfCount ? 'CRLF (Windows)' : 'LF (Unix)';
 
     showModalBottomSheet(
@@ -1335,13 +1352,36 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   Widget _buildStatusBar() {
     final text = _controller.text;
-    final lines = text.isEmpty ? 1 : text.split('\n').length;
     final chars = text.length;
-    // Counting words on every cursor move is wasted work on a large file, so
-    // the count is skipped past a size where it would stall typing.
-    final words = chars > 200000
-        ? null
-        : text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    if (_cachedStatsText != text) {
+      _cachedStatsText = text;
+      if (text.isEmpty) {
+        _cachedLines = 1;
+        _cachedWords = 0;
+      } else {
+        int lines = 1;
+        int words = 0;
+        bool inWord = false;
+        final countWords = chars <= 200000;
+        for (int i = 0; i < text.length; i++) {
+          final code = text.codeUnitAt(i);
+          if (code == 10) lines++;
+          if (countWords) {
+            final isSpace = code <= 32;
+            if (isSpace) {
+              inWord = false;
+            } else if (!inWord) {
+              inWord = true;
+              words++;
+            }
+          }
+        }
+        _cachedLines = lines;
+        _cachedWords = countWords ? words : null;
+      }
+    }
+    final lines = _cachedLines;
+    final words = _cachedWords;
     final modeLabel = widget.readOnly
         ? 'Read-only location'
         : _mode == TextFileMode.preview
