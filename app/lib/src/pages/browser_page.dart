@@ -2065,8 +2065,8 @@ class BrowserPageState extends State<BrowserPage> {
     } else {
       final isWindows = srcRoot.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(srcRoot);
       final parts = srcRoot.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
-      if (parts.isEmpty) {
-        _showError(isZh ? '不能上传根目录' : 'Cannot upload root directory');
+      if (parts.isEmpty || srcRoot == PlatformPaths.defaultRoot() || (isNativeRoot(srcRoot) && parts.length <= 2)) {
+        _showError(isZh ? '请选择需要上传的具体文件夹' : 'Please select a specific folder to upload');
         return;
       }
       folderName = parts.last;

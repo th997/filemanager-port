@@ -214,11 +214,19 @@ async fn copy_recursive_impl(
         p.current = Some(src_path.clone());
     }
 
-    if is_symlink && kind == EntryKind::Dir {
-        // Never recurse through a symlink: the target may live outside the
+    if is_symlink && (kind == EntryKind::Dir || kind == EntryKind::Symlink) {
+        // Never recurse through a directory symlink: the target may live outside the
         // tree being copied or point back into it, nesting without bound.
-        // There is no cross-VFS primitive to reproduce the link itself, so
-        // the linked tree is skipped.
+        // Also skip broken symlinks which cannot be read as regular files.
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+        p.skipped += 1;
+        return Ok(());
+    }
+
+    if kind == EntryKind::Other {
+        // Unix domain sockets, FIFOs, special device nodes cannot be streamed.
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+        p.skipped += 1;
         return Ok(());
     }
 
@@ -244,7 +252,7 @@ async fn copy_recursive_impl(
             }
             let child_src = child.path.clone();
             let child_dst = dst_path.join(child.name.clone());
-            Box::pin(copy_recursive_impl(
+            if let Err(e) = Box::pin(copy_recursive_impl(
                 src_vfs,
                 &child_src,
                 Some((child.kind, child.is_symlink)),
@@ -254,7 +262,16 @@ async fn copy_recursive_impl(
                 cancel,
                 policy,
             ))
-            .await?;
+            .await {
+                if cancel.is_cancelled() {
+                    return Err(e);
+                }
+                // An unreadable file or permission error on a single file within a folder
+                // should not discard and abort the entire folder copy.
+                eprintln!("copy error on {child_src}: {e}");
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                p.skipped += 1;
+            }
         }
     } else {
         copy_single_file(src_vfs, src_path, dst_vfs, dst_path, progress, cancel, policy).await?;
@@ -306,7 +323,7 @@ async fn copy_single_file(
     let tmp_path = target
         .parent()
         .unwrap_or_else(VfsPath::root)
-        .join(format!(".{dst_name}.fm-part"));
+        .join(format!("{dst_name}.fm-part"));
 
     if let Err(e) =
         stream_into(src_vfs, src_path, dst_vfs, &tmp_path, progress, cancel).await
@@ -321,19 +338,21 @@ async fn copy_single_file(
             // Some backends refuse to rename onto an existing file; retry
             // once after removing it — but never remove a directory to
             // make room for a file.
-            let dst_is_file = dst_vfs
+            let dst_is_dir = dst_vfs
                 .stat(&target)
                 .await
-                .map(|s| s.kind != EntryKind::Dir)
+                .map(|s| s.kind == EntryKind::Dir)
                 .unwrap_or(false);
-            if !dst_is_file {
+            if dst_is_dir {
                 let _ = dst_vfs.remove(&tmp_path).await;
                 return Err(first_err);
             }
             let _ = dst_vfs.remove(&target).await;
             if dst_vfs.rename(&tmp_path, &target).await.is_err() {
                 let _ = dst_vfs.remove(&tmp_path).await;
-                return Err(first_err);
+                // If rename still failed (e.g. backend lacks rename capability or refuses temp file rename),
+                // fallback to streaming directly into target.
+                return stream_into(src_vfs, src_path, dst_vfs, &target, progress, cancel).await;
             }
             Ok(())
         }

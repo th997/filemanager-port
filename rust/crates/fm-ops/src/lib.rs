@@ -236,4 +236,55 @@ mod tests {
         .unwrap();
         assert_eq!(std::fs::read(dst_dir.path().join("file.txt")).unwrap(), b"new");
     }
+
+    #[tokio::test]
+    async fn copy_folder_with_broken_symlink_skips_and_completes() {
+        use fm_local::LocalFs;
+        use std::sync::{Arc, Mutex};
+        use tokio_util::sync::CancellationToken;
+
+        let src_dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(src_dir.path().join("good.txt"), b"good file").unwrap();
+        std::fs::create_dir(src_dir.path().join("sub")).unwrap();
+        std::fs::write(src_dir.path().join("sub").join("nested.txt"), b"nested file").unwrap();
+
+        #[cfg(unix)]
+        {
+            let _ = std::os::unix::fs::symlink(
+                "/nonexistent/path/that/does/not/exist",
+                src_dir.path().join("broken_link"),
+            );
+        }
+
+        let src_fs = LocalFs::new(src_dir.path());
+        let dst_fs = LocalFs::new(dst_dir.path());
+
+        let progress = Arc::new(Mutex::new(TaskProgress::pending()));
+        let cancel = CancellationToken::new();
+
+        copy_recursive(
+            &src_fs,
+            &VfsPath::root(),
+            &dst_fs,
+            &VfsPath::root(),
+            &progress,
+            &cancel,
+            ConflictPolicy::Overwrite,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read(dst_dir.path().join("good.txt")).unwrap(),
+            b"good file"
+        );
+        assert_eq!(
+            std::fs::read(dst_dir.path().join("sub").join("nested.txt")).unwrap(),
+            b"nested file"
+        );
+        #[cfg(unix)]
+        assert!(progress.lock().unwrap().skipped >= 1);
+    }
 }

@@ -122,21 +122,21 @@ async fn test_http_share_upload_folder_and_files() {
     ];
     let body_bytes = build_multipart_body(boundary, files);
 
-    let (upload_status, _, upload_body) = post_multipart(port, "/api/upload", boundary, &body_bytes);
+    let (upload_status, _, upload_body) = post_multipart(port, "/api/upload?dir=testdir", boundary, &body_bytes);
     assert_eq!(upload_status, 200);
     assert!(upload_body.contains("\"success\":true"));
     assert!(upload_body.contains("\"uploaded_files\":3"));
 
     // Verify files and directories created on disk
-    let readme_path = temp.path().join("my_folder").join("docs").join("readme.txt");
+    let readme_path = temp.path().join("testdir").join("my_folder").join("docs").join("readme.txt");
     assert!(readme_path.exists());
     assert_eq!(std::fs::read_to_string(readme_path).unwrap(), "readme contents");
 
-    let logo_path = temp.path().join("my_folder").join("images").join("logo.png");
+    let logo_path = temp.path().join("testdir").join("my_folder").join("images").join("logo.png");
     assert!(logo_path.exists());
     assert_eq!(std::fs::read(logo_path).unwrap(), b"fake png data");
 
-    let root_file_path = temp.path().join("root_file.txt");
+    let root_file_path = temp.path().join("testdir").join("root_file.txt");
     assert!(root_file_path.exists());
     assert_eq!(std::fs::read_to_string(root_file_path).unwrap(), "root content");
 

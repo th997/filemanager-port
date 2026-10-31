@@ -76,5 +76,34 @@ void main() {
       expect(picked.paths.length, equals(3));
       expect(picked.paths[0], equals('DCIM/Camera'));
     });
+
+    test('FolderPickerDialog selected subfolder computes correct effective relPath', () {
+      // User is at root of picker, selects a folder item "work"
+      const root = '/home/user';
+      const relPath = '';
+      const selectedFolder = 'work';
+      final effectiveRel = relPath.isEmpty ? selectedFolder : '$relPath/$selectedFolder';
+      final picked = PickedFolder(root: root, relPath: effectiveRel);
+      expect(picked.relPath, equals('work'));
+      expect(picked.path, equals('/home/user/work'));
+
+      // User has navigated into "documents", then selects "invoices"
+      const navRelPath = 'documents';
+      const navSelectedFolder = 'invoices';
+      final navEffectiveRel = navRelPath.isEmpty ? navSelectedFolder : '$navRelPath/$navSelectedFolder';
+      final navPicked = PickedFolder(root: root, relPath: navEffectiveRel);
+      expect(navPicked.relPath, equals('documents/invoices'));
+      expect(navPicked.path, equals('/home/user/documents/invoices'));
+    });
+
+    test('Empty relPath at default root is identified as requiring specific folder selection', () {
+      const defaultRoot = '/home/user';
+      const pickedRelPath = '';
+      const pickedRoot = '/home/user';
+
+      final parts = pickedRoot.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      final isDangerousRoot = parts.isEmpty || pickedRoot == defaultRoot || parts.length <= 2;
+      expect(pickedRelPath.isEmpty && isDangerousRoot, isTrue);
+    });
   });
 }

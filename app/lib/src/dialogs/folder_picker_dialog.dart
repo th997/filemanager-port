@@ -66,6 +66,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   bool _showHidden = false;
   final TextEditingController _filterController = TextEditingController();
   String _filterQuery = '';
+  String? _selectedFolder;
 
   @override
   void initState() {
@@ -85,6 +86,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     setState(() {
       _loading = true;
       _error = null;
+      _selectedFolder = null;
     });
     try {
       final entries = await listDir(root: _root, path: _relPath);
@@ -112,6 +114,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   void _open(String name) {
     setState(() {
       _relPath = _relPath.isEmpty ? name : '$_relPath/$name';
+      _selectedFolder = null;
       _filterQuery = '';
       _filterController.clear();
     });
@@ -133,6 +136,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       segments.removeLast();
       setState(() {
         _relPath = segments.join('/');
+        _selectedFolder = null;
         _filterQuery = '';
         _filterController.clear();
       });
@@ -148,6 +152,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         setState(() {
           _root = newRoot;
           _relPath = '';
+          _selectedFolder = null;
           _filterQuery = '';
           _filterController.clear();
         });
@@ -156,6 +161,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         setState(() {
           _root = '/';
           _relPath = '';
+          _selectedFolder = null;
           _filterQuery = '';
           _filterController.clear();
         });
@@ -387,12 +393,17 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                                 itemBuilder: (context, index) {
                                   final folder = filtered[index];
                                   final isHidden = folder.hidden;
+                                  final isSelected = _selectedFolder == folder.name;
                                   return ListTile(
                                     dense: true,
+                                    selected: isSelected,
+                                    selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
                                     leading: Icon(
                                       isHidden ? Icons.folder_outlined : Icons.folder,
                                       size: 20,
-                                      color: isHidden ? Colors.grey : Colors.amber,
+                                      color: isHidden
+                                          ? Colors.grey
+                                          : (isSelected ? Theme.of(context).colorScheme.primary : Colors.amber),
                                     ),
                                     title: Text(
                                       folder.name,
@@ -400,7 +411,16 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                                       overflow: TextOverflow.ellipsis,
                                       style: isHidden ? TextStyle(color: Theme.of(context).colorScheme.outline) : null,
                                     ),
-                                    onTap: () => _open(folder.name),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.chevron_right, size: 20),
+                                      tooltip: 'Open',
+                                      onPressed: () => _open(folder.name),
+                                    ),
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedFolder = isSelected ? null : folder.name;
+                                      });
+                                    },
                                   );
                                 },
                               );
@@ -420,10 +440,27 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           // path it cannot use.
           onPressed: _loading || _error != null
               ? null
-              : () => Navigator.of(context).pop(
-                    PickedFolder(root: _root, relPath: _relPath),
-                  ),
-          child: Text(widget.confirmLabel ?? 'Use this folder'),
+              : () {
+                  final effectiveRel = _selectedFolder != null
+                      ? (_relPath.isEmpty ? _selectedFolder! : '$_relPath/$_selectedFolder')
+                      : _relPath;
+                  Navigator.of(context).pop(
+                    PickedFolder(root: _root, relPath: effectiveRel),
+                  );
+                },
+          child: Text(() {
+            if (_selectedFolder != null) {
+              final label = widget.confirmLabel;
+              if (label != null && label.contains('上传')) {
+                return '上传 "$_selectedFolder"';
+              }
+              if (label != null && label.toLowerCase().contains('upload')) {
+                return 'Upload "$_selectedFolder"';
+              }
+              return '选择 "$_selectedFolder"';
+            }
+            return widget.confirmLabel ?? 'Use this folder';
+          }()),
         ),
       ],
     );

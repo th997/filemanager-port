@@ -81,7 +81,14 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
       },
       // The task registry can drop a finished task before the terminal event
       // arrives; without this the dialog would stay open forever.
-      onDone: () => _pop(false),
+      // However, if the task failed, keep the dialog open so the user can inspect
+      // the error and choose Retry or Close, instead of flashing and disappearing.
+      onDone: () {
+        if (_dismissed || !mounted) return;
+        if (_latest?.state != 'failed' && _latest?.error == null) {
+          _pop(false);
+        }
+      },
     );
   }
 
