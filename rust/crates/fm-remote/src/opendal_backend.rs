@@ -6,6 +6,9 @@ use fm_vfs::{Vfs, VfsError, VfsResult};
 use futures_util::StreamExt;
 use opendal::services::{Oss, S3, Webdav};
 use opendal::{EntryMode, Operator};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::SystemTime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
@@ -437,10 +440,26 @@ impl OpendalFs {
         let meta = match self.operator.stat(&op_path).await {
             Ok(meta) => meta,
             Err(e) if e.kind() == opendal::ErrorKind::NotFound => {
+                let op_dir = Self::to_opendal_dir_path(path);
+                // For WebDAV collections and directories with trailing slash
+                if let Ok(dir_meta) = self.operator.stat(&op_dir).await {
+                    let name = path.name().unwrap_or("").to_string();
+                    let modified = dir_meta.last_modified().map(SystemTime::from);
+                    return Ok(Entry {
+                        name: name.clone(),
+                        path: path.clone(),
+                        kind: EntryKind::Dir,
+                        size: None,
+                        modified,
+                        mode: None,
+                        hidden: name.starts_with('.'),
+                        is_symlink: false,
+                        mime: None,
+                    });
+                }
                 // Object stores have no directory inodes: a "directory" only
                 // exists as a common prefix of its children. Treat a path with
                 // children as a directory instead of reporting NotFound.
-                let op_dir = Self::to_opendal_dir_path(path);
                 let mut lister = self.operator.lister(&op_dir).await.map_err(|e| {
                     VfsError::Backend {
                         path: path.clone(),
@@ -590,6 +609,16 @@ impl OpendalFs {
                 });
             }
         }
+        if self.kind == LocationKind::WebDav {
+            // OpenDAL's WebDAV writer is a OneShotWriter that rejects multiple incremental writes.
+            // Spool incoming writes into a buffer / temporary file and write all at once upon shutdown.
+            return Ok(Box::new(WebdavSpoolWriter::new(
+                self.operator.clone(),
+                op_path,
+                path.clone(),
+            )));
+        }
+
         let writer = if mode == WriteMode::Append {
             self.operator.writer_with(&op_path).append(true).await
         } else {
@@ -647,5 +676,103 @@ impl OpendalFs {
                 source: std::io::Error::other(e.to_string()),
             }),
         }
+    }
+}
+
+/// A spooling writer for WebDAV to bridge tokio `AsyncWrite` chunked streams
+/// into OpenDAL's `OneShotWriter` which requires all content at once.
+struct WebdavSpoolWriter {
+    operator: Operator,
+    op_path: String,
+    path: VfsPath,
+    mem_buf: Vec<u8>,
+    temp_file: Option<tempfile::NamedTempFile>,
+    shutdown_fut: Option<Pin<Box<dyn Future<Output = std::io::Result<()>> + Send>>>,
+}
+
+impl WebdavSpoolWriter {
+    fn new(operator: Operator, op_path: String, path: VfsPath) -> Self {
+        Self {
+            operator,
+            op_path,
+            path,
+            mem_buf: Vec::with_capacity(256 * 1024),
+            temp_file: None,
+            shutdown_fut: None,
+        }
+    }
+}
+
+const MEM_SPOOL_LIMIT: usize = 16 * 1024 * 1024; // 16 MB in-memory buffer before spilling to disk
+
+impl AsyncWrite for WebdavSpoolWriter {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        use std::io::Write;
+        let this = self.as_mut().get_mut();
+        if let Some(file) = &mut this.temp_file {
+            let n = file.write(buf)?;
+            return Poll::Ready(Ok(n));
+        }
+
+        if this.mem_buf.len() + buf.len() > MEM_SPOOL_LIMIT {
+            let mut file = tempfile::NamedTempFile::new()?;
+            file.write_all(&this.mem_buf)?;
+            this.mem_buf.clear();
+            this.mem_buf.shrink_to_fit();
+            let n = file.write(buf)?;
+            this.temp_file = Some(file);
+            return Poll::Ready(Ok(n));
+        }
+
+        this.mem_buf.extend_from_slice(buf);
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        use std::io::Write;
+        let this = self.as_mut().get_mut();
+        if let Some(file) = &mut this.temp_file {
+            file.flush()?;
+        }
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.as_mut().get_mut();
+        if this.shutdown_fut.is_none() {
+            let op = this.operator.clone();
+            let op_path = this.op_path.clone();
+            let path = this.path.clone();
+
+            let load_data: std::io::Result<Vec<u8>> = if let Some(mut file) = this.temp_file.take() {
+                use std::io::{Read, Seek, SeekFrom};
+                file.seek(SeekFrom::Start(0))?;
+                let mut v = Vec::new();
+                file.read_to_end(&mut v)?;
+                Ok(v)
+            } else {
+                Ok(std::mem::take(&mut this.mem_buf))
+            };
+
+            this.shutdown_fut = Some(Box::pin(async move {
+                let data = load_data?;
+                op.write(&op_path, data).await.map_err(|e| {
+                    std::io::Error::other(format!("WebDAV write to {path} failed: {e}"))
+                })?;
+                Ok(())
+            }));
+        }
+
+        this.shutdown_fut.as_mut().unwrap().as_mut().poll(cx)
     }
 }

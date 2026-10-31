@@ -1,6 +1,6 @@
 use crate::registry::VfsRegistry;
 use fm_archive::ops::{create_zip, extract_archive};
-use fm_core::VfsPath;
+use fm_core::{EntryKind, VfsPath};
 use fm_ops::{
     copy_recursive, delete_recursive, total_bytes, ConflictPolicy, TaskManager, TaskProgress,
     TaskState,
@@ -243,7 +243,8 @@ pub async fn start_copy_task(
                 )
                 .await
                 {
-                    if created {
+                    let is_dir = dst_vfs.stat(&dst_p).await.map(|s| s.kind == EntryKind::Dir).unwrap_or(false);
+                    if created && !is_dir {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
                     failures.push(format!("{file_name}: {e}"));
@@ -330,7 +331,8 @@ pub async fn start_move_task(
                 )
                 .await
                 {
-                    if created {
+                    let is_dir = dst_vfs.stat(&dst_p).await.map(|s| s.kind == EntryKind::Dir).unwrap_or(false);
+                    if created && !is_dir {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
                     failures.push(format!("{file_name}: {e}"));

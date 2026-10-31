@@ -252,7 +252,7 @@ async fn copy_recursive_impl(
             }
             let child_src = child.path.clone();
             let child_dst = dst_path.join(child.name.clone());
-            if let Err(e) = Box::pin(copy_recursive_impl(
+            Box::pin(copy_recursive_impl(
                 src_vfs,
                 &child_src,
                 Some((child.kind, child.is_symlink)),
@@ -262,16 +262,7 @@ async fn copy_recursive_impl(
                 cancel,
                 policy,
             ))
-            .await {
-                if cancel.is_cancelled() {
-                    return Err(e);
-                }
-                // An unreadable file or permission error on a single file within a folder
-                // should not discard and abort the entire folder copy.
-                eprintln!("copy error on {child_src}: {e}");
-                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-                p.skipped += 1;
-            }
+            .await?;
         }
     } else {
         copy_single_file(src_vfs, src_path, dst_vfs, dst_path, progress, cancel, policy).await?;

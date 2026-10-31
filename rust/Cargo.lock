@@ -1302,6 +1302,7 @@ dependencies = [
  "sha2 0.11.1",
  "smb2",
  "suppaftp",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
