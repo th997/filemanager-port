@@ -163,6 +163,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   void _zoomBy(double factor) {
     final current = _transformationController.value;
     final scale = current.getMaxScaleOnAxis();
+    if (scale <= 0.0001 || scale.isNaN) return;
     final newScale = (scale * factor).clamp(0.2, 6.0);
     final ratio = newScale / scale;
     setState(() {
@@ -219,6 +220,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       if (dimensions == null && stat.size <= 32 * 1024 * 1024) {
         final image = await decodeImageFromList(bytes);
         dimensions = Size(image.width.toDouble(), image.height.toDouble());
+        image.dispose();
       }
     } catch (_) {}
 
@@ -581,6 +583,30 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       setState(() {
         _entries.removeAt(_index);
         _localPaths.remove(_index);
+        _inFlightPaths.remove(_index);
+        final newLocal = <int, String>{};
+        _localPaths.forEach((k, v) {
+          if (k < _index) {
+            newLocal[k] = v;
+          } else if (k > _index) {
+            newLocal[k - 1] = v;
+          }
+        });
+        _localPaths
+          ..clear()
+          ..addAll(newLocal);
+
+        final newInFlight = <int, Future<String>>{};
+        _inFlightPaths.forEach((k, v) {
+          if (k < _index) {
+            newInFlight[k] = v;
+          } else if (k > _index) {
+            newInFlight[k - 1] = v;
+          }
+        });
+        _inFlightPaths
+          ..clear()
+          ..addAll(newInFlight);
       });
 
       if (_entries.isEmpty) {

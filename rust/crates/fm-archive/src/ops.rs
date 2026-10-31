@@ -396,7 +396,18 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
                 source: e,
             })?;
         } else if source.is_dir() {
-            add_dir_to_zip(&mut zip, source, source, options, dest_canon.as_deref())?;
+            let base_dir = source.parent().unwrap_or_else(|| Path::new(""));
+            let dir_name = source
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("folder");
+            let dir_entry = format!("{dir_name}/");
+            zip.add_directory(&dir_entry, options)
+                .map_err(|e| VfsError::Backend {
+                    path: fm_core::VfsPath::root(),
+                    source: std::io::Error::other(e.to_string()),
+                })?;
+            add_dir_to_zip(&mut zip, base_dir, source, options, dest_canon.as_deref())?;
         }
     }
 
@@ -506,6 +517,30 @@ mod tests {
             .collect();
         assert!(names.iter().any(|n| n.ends_with("file1.txt")));
         assert!(!names.iter().any(|n| n.ends_with("archive.zip")));
+    }
+
+    #[test]
+    fn test_create_zip_preserves_dir_name_and_handles_multiple_dirs() {
+        let dir = tempdir().unwrap();
+        let folder1 = dir.path().join("folder1");
+        let folder2 = dir.path().join("folder2");
+        std::fs::create_dir(&folder1).unwrap();
+        std::fs::create_dir(&folder2).unwrap();
+        std::fs::write(folder1.join("same_name.txt"), "content 1").unwrap();
+        std::fs::write(folder2.join("same_name.txt"), "content 2").unwrap();
+
+        let dest_zip = dir.path().join("multi.zip");
+        create_zip(&[&folder1, &folder2], &dest_zip).unwrap();
+
+        let file = File::open(&dest_zip).unwrap();
+        let mut zip = zip::ZipArchive::new(file).unwrap();
+        let names: Vec<String> = (0..zip.len())
+            .map(|i| zip.by_index(i).unwrap().name().unwrap().to_string())
+            .collect();
+        assert!(names.contains(&"folder1/".to_string()));
+        assert!(names.contains(&"folder1/same_name.txt".to_string()));
+        assert!(names.contains(&"folder2/".to_string()));
+        assert!(names.contains(&"folder2/same_name.txt".to_string()));
     }
 }
 

@@ -121,6 +121,8 @@ fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
         }
     }
 
+    let mut first_numeric_tie_break = std::cmp::Ordering::Equal;
+
     loop {
         match (next_chunk(&mut a), next_chunk(&mut b)) {
             (Some((pa, true)), Some((pb, true))) => {
@@ -132,6 +134,9 @@ fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
                 };
                 if cmp != std::cmp::Ordering::Equal {
                     return cmp;
+                }
+                if first_numeric_tie_break == std::cmp::Ordering::Equal && pa != pb {
+                    first_numeric_tie_break = pa.len().cmp(&pb.len()).then_with(|| pa.cmp(pb));
                 }
             }
             (Some((pa, _)), Some((pb, _))) => {
@@ -155,7 +160,7 @@ fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
             }
             (Some(_), None) => return std::cmp::Ordering::Greater,
             (None, Some(_)) => return std::cmp::Ordering::Less,
-            (None, None) => return std::cmp::Ordering::Equal,
+            (None, None) => return first_numeric_tie_break,
         }
     }
 }
@@ -164,10 +169,10 @@ fn extension_of(e: &EntryDto) -> &str {
     if e.is_dir {
         return "";
     }
-    e.name
-        .rsplit('.')
-        .next()
-        .unwrap_or(&e.name)
+    match e.name.rfind('.') {
+        Some(idx) if idx > 0 => &e.name[idx + 1..],
+        _ => "",
+    }
 }
 
 fn compare_extensions(a: &EntryDto, b: &EntryDto) -> std::cmp::Ordering {
@@ -207,7 +212,8 @@ fn sort_dtos(entries: &mut [EntryDto], sort_by: &str, ascending: bool) {
             "type" => compare_extensions(a, b)
                 .then_with(|| natural_compare(&a.name, &b.name)),
             _ => natural_compare(&a.name, &b.name),
-        };
+        }
+        .then_with(|| a.name.cmp(&b.name));
         if ascending {
             cmp
         } else {
@@ -560,6 +566,8 @@ mod tests {
         assert_eq!(natural_compare("File1", "file1"), Ordering::Equal);
         assert_eq!(natural_compare("a", "a1"), Ordering::Less);
         assert_eq!(natural_compare("img_9", "img_10"), Ordering::Less);
+        assert_eq!(natural_compare("file1", "file01"), Ordering::Less);
+        assert_eq!(natural_compare("file01", "file1"), Ordering::Greater);
     }
 
     #[test]
@@ -580,11 +588,13 @@ mod tests {
         let mut v = vec![
             dto("b.txt", false, None, None),
             dto("x.md", false, None, None),
+            dto("Makefile", false, None, None),
+            dto(".bashrc", false, None, None),
             dto("a.txt", false, None, None),
         ];
         sort_dtos(&mut v, "type", true);
         let names: Vec<&str> = v.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, vec!["x.md", "a.txt", "b.txt"]);
+        assert_eq!(names, vec![".bashrc", "Makefile", "x.md", "a.txt", "b.txt"]);
     }
 
     #[test]

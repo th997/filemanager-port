@@ -554,14 +554,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
       if (!isWrapping) {
         caretDy = targetLine * lineHeight;
-        final linePrefix = text.substring(lineStart, charIndex.clamp(lineStart, text.length));
-        final linePainter = TextPainter(
-          text: TextSpan(text: linePrefix, style: textStyle),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        caretDx = linePainter.width;
+        final linePrefixLen = charIndex.clamp(lineStart, text.length) - lineStart;
+        caretDx = linePrefixLen * _getCharWidth(textStyle);
       } else {
-        if (_mode == TextFileMode.edit || !_isLargeDocument(text)) {
+        if (!_isLargeDocument(text)) {
           final renderBox = context.findRenderObject() as RenderBox?;
           final availableWidth = (renderBox != null && renderBox.hasSize)
               ? renderBox.size.width
@@ -585,7 +581,28 @@ class _TextEditorPageState extends State<TextEditorPage> {
           caretDy = caretOffset.dy;
           caretDx = caretOffset.dx;
         } else {
-          caretDy = targetLine * lineHeight;
+          final renderBox = context.findRenderObject() as RenderBox?;
+          final availableWidth = (renderBox != null && renderBox.hasSize)
+              ? renderBox.size.width
+              : MediaQuery.of(context).size.width;
+          final viewWidth = (availableWidth - 32.0).clamp(100.0, double.infinity);
+          final charWidth = _getCharWidth(textStyle);
+          final charsPerLine = (viewWidth / charWidth).floor().clamp(1, 10000);
+
+          int visualLines = 0;
+          if (_cachedLinesList != null) {
+            final maxLine = targetLine.clamp(0, _cachedLinesList!.length);
+            for (var i = 0; i < maxLine; i++) {
+              final len = _cachedLinesList![i].length;
+              visualLines += (len == 0) ? 1 : ((len + charsPerLine - 1) ~/ charsPerLine).clamp(1, 1000);
+            }
+          } else {
+            visualLines = targetLine;
+          }
+          final offsetInLine = (charIndex - lineStart).clamp(0, 100000);
+          visualLines += (offsetInLine ~/ charsPerLine);
+          caretDy = visualLines * lineHeight;
+          caretDx = (offsetInLine % charsPerLine) * charWidth;
         }
       }
 

@@ -27,15 +27,14 @@ fn finish(
     result: Result<(), String>,
 ) {
     let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+    if cancel.is_cancelled() {
+        p.state = TaskState::Cancelled;
+        p.error = None;
+        return;
+    }
     match result {
         Ok(()) => {
-            if p.state != TaskState::Cancelled {
-                p.state = TaskState::Completed;
-            }
-        }
-        Err(_) if cancel.is_cancelled() => {
-            p.state = TaskState::Cancelled;
-            p.error = None;
+            p.state = TaskState::Completed;
         }
         Err(e) => {
             p.state = TaskState::Failed;
@@ -283,6 +282,21 @@ pub async fn start_move_task(
 
             let policy = parse_policy(&conflict_policy);
             let total_items = src_paths.len();
+            let is_same_fs = src_root.trim_end_matches('/') == dst_root.trim_end_matches('/')
+                && src_vfs.capabilities().rename;
+
+            if !is_same_fs {
+                let mut total = 0u64;
+                for src in &src_paths {
+                    total += total_bytes(src_vfs.as_ref(), &VfsPath::from_slash_path(src)).await;
+                }
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                p.total = Some(total);
+            } else {
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                p.total = Some(total_items as u64);
+            }
+
             let mut failures: Vec<String> = Vec::new();
             for src in &src_paths {
                 if cancel.is_cancelled() {
@@ -291,8 +305,10 @@ pub async fn start_move_task(
                 let src_p = VfsPath::from_slash_path(src);
                 let file_name = src_p.name().unwrap_or("file");
                 let dst_p = dst_base.join(file_name);
-                if src_root.trim_end_matches('/') == dst_root.trim_end_matches('/') {
+                if is_same_fs {
                     if dst_p == src_p {
+                        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                        p.completed += 1;
                         continue;
                     }
                     if dst_p.starts_with(&src_p) {
@@ -302,14 +318,40 @@ pub async fn start_move_task(
                         continue;
                     }
                     // The rename fast path must honour the conflict policy:
-                    // renaming onto an existing name would silently replace
-                    // it on most backends, so only take the shortcut when
-                    // overwriting is allowed or the name is free.
                     let dst_taken = dst_vfs.stat(&dst_p).await.is_ok();
-                    if (!dst_taken || policy == ConflictPolicy::Overwrite)
-                        && src_vfs.capabilities().rename
-                        && src_vfs.rename(&src_p, &dst_p).await.is_ok()
-                    {
+                    let target_p = match policy {
+                        ConflictPolicy::Skip => {
+                            if dst_taken {
+                                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                                p.skipped += 1;
+                                p.completed += 1;
+                                continue;
+                            }
+                            dst_p.clone()
+                        }
+                        ConflictPolicy::Overwrite => {
+                            if dst_taken {
+                                let _ = dst_vfs.remove(&dst_p).await;
+                            }
+                            dst_p.clone()
+                        }
+                        ConflictPolicy::Rename => {
+                            if dst_taken {
+                                generate_copy_path(
+                                    dst_vfs.as_ref(),
+                                    &dst_base,
+                                    src_vfs.as_ref(),
+                                    &src_p,
+                                    file_name,
+                                )
+                                .await
+                            } else {
+                                dst_p.clone()
+                            }
+                        }
+                    };
+
+                    if src_vfs.rename(&src_p, &target_p).await.is_ok() {
                         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
                         p.completed += 1;
                         continue;
@@ -353,7 +395,8 @@ pub async fn start_move_task(
                 if let Err(e) =
                     delete_recursive(src_vfs.as_ref(), &src_p, &progress, &cancel).await
                 {
-                    if created {
+                    let is_dir = dst_vfs.stat(&dst_p).await.map(|s| s.kind == EntryKind::Dir).unwrap_or(false);
+                    if created && !is_dir {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
                     failures.push(format!("{file_name}: copied but source not removed: {e}"));
@@ -420,7 +463,7 @@ pub async fn start_compress_task(
     let tid = task_id.clone();
     tokio::spawn(async move {
         if cancel.is_cancelled() {
-            finish(&progress, &cancel, Ok(()));
+            finish(&progress, &cancel, Err("cancelled".into()));
             return;
         }
         let root = PathBuf::from(src_root);
@@ -466,7 +509,7 @@ pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result
     let tid = task_id.clone();
     tokio::spawn(async move {
         if cancel.is_cancelled() {
-            finish(&progress, &cancel, Ok(()));
+            finish(&progress, &cancel, Err("cancelled".into()));
             return;
         }
         let src = PathBuf::from(archive_path);

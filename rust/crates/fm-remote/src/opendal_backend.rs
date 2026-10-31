@@ -646,13 +646,19 @@ impl OpendalFs {
 
     async fn remove_impl(&self, path: &VfsPath) -> VfsResult<()> {
         let op_path = Self::to_opendal_path(path);
-        self.operator
-            .delete(&op_path)
-            .await
-            .map_err(|e| VfsError::Backend {
-                path: path.clone(),
-                source: std::io::Error::other(e.to_string()),
-            })
+        let op_dir = Self::to_opendal_dir_path(path);
+
+        let res = self.operator.delete(&op_path).await;
+        if !op_dir.is_empty() && op_dir != op_path {
+            let dir_res = self.operator.delete(&op_dir).await;
+            if res.is_err() && dir_res.is_ok() {
+                return Ok(());
+            }
+        }
+        res.map_err(|e| VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::other(e.to_string()),
+        })
     }
 
     async fn rename_impl(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
@@ -662,14 +668,69 @@ impl OpendalFs {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == opendal::ErrorKind::Unsupported => {
                 // S3 and OSS lack native rename; fallback to server-side copy + delete
-                self.operator.copy(&op_from, &op_to).await.map_err(|e| VfsError::Backend {
-                    path: from.clone(),
-                    source: std::io::Error::other(e.to_string()),
-                })?;
-                self.operator.delete(&op_from).await.map_err(|e| VfsError::Backend {
-                    path: from.clone(),
-                    source: std::io::Error::other(e.to_string()),
-                })
+                // Check if this is a directory rename
+                let from_dir = Self::to_opendal_dir_path(from);
+                let to_dir = Self::to_opendal_dir_path(to);
+                let is_dir = if let Ok(meta) = self.operator.stat(&from_dir).await {
+                    meta.mode() == opendal::EntryMode::DIR
+                } else {
+                    false
+                };
+
+                if is_dir {
+                    // Copy all objects under from_dir to to_dir
+                    let mut lister = self
+                        .operator
+                        .lister_with(&from_dir)
+                        .recursive(true)
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: from.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
+
+                    let mut to_delete = Vec::new();
+                    while let Some(item_res) = lister.next().await {
+                        let item = item_res.map_err(|e| VfsError::Backend {
+                            path: from.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
+                        let item_path = item.path().to_string();
+                        if let Some(rel) = item_path.strip_prefix(&from_dir) {
+                            let dst_item = format!("{to_dir}{rel}");
+                            if item.metadata().mode() == opendal::EntryMode::DIR {
+                                let _ = self.operator.create_dir(&dst_item).await;
+                            } else {
+                                self.operator.copy(&item_path, &dst_item).await.map_err(|e| {
+                                    VfsError::Backend {
+                                        path: from.clone(),
+                                        source: std::io::Error::other(e.to_string()),
+                                    }
+                                })?;
+                            }
+                            to_delete.push(item_path);
+                        }
+                    }
+
+                    // Also create destination directory marker if needed
+                    let _ = self.operator.create_dir(&to_dir).await;
+                    to_delete.push(from_dir.clone());
+                    to_delete.push(op_from.clone());
+
+                    for p in to_delete {
+                        let _ = self.operator.delete(&p).await;
+                    }
+                    Ok(())
+                } else {
+                    self.operator.copy(&op_from, &op_to).await.map_err(|e| VfsError::Backend {
+                        path: from.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })?;
+                    self.operator.delete(&op_from).await.map_err(|e| VfsError::Backend {
+                        path: from.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })
+                }
             }
             Err(e) => Err(VfsError::Backend {
                 path: from.clone(),
