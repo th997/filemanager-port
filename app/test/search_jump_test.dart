@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:filemanager/src/services/highlight_service.dart';
+import 'package:filemanager/src/pages/text_editor_page.dart';
 
 // Test the TextSpan highlighting and splitting algorithm
 void main() {
@@ -41,6 +42,64 @@ void main() {
       expect(calculateDy(line0), equals(0));
       expect(calculateDy(line1), equals(lineHeight.round()));
       expect(calculateDy(line3), equals((3 * lineHeight).round()));
+    });
+
+    testWidgets('SyntaxHighlightingEditingController highlights search matches with high performance', (tester) async {
+      final controller = SyntaxHighlightingEditingController(
+        text: 'hello world! hello flutter! hello test!',
+        fileName: 'sample.txt',
+        brightnessProvider: () => Brightness.light,
+      );
+
+      final matches = <int>[0, 13, 28];
+      controller.updateSearch(
+        query: 'hello',
+        matches: matches,
+        currentMatch: 1, // Second match is current
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) {
+                final span = controller.buildTextSpan(
+                  context: ctx,
+                  withComposing: false,
+                );
+                expect(span, isNotNull);
+
+                // Collect background colors of all leaf spans
+                final colors = <Color>[];
+                void extractColors(InlineSpan s) {
+                  if (s is TextSpan) {
+                    if (s.style?.backgroundColor != null) {
+                      colors.add(s.style!.backgroundColor!);
+                    }
+                    if (s.children != null) {
+                      for (final c in s.children!) {
+                        extractColors(c);
+                      }
+                    }
+                  }
+                }
+                extractColors(span);
+
+                // Should have 3 highlighted matches: 2 yellow, 1 orange (current)
+                expect(colors.length, equals(3));
+                expect(colors[0], equals(const Color(0xFFFFEB3B))); // first match is yellow
+                expect(colors[1], equals(const Color(0xFFFF6D00))); // current match is orange
+                expect(colors[2], equals(const Color(0xFFFFEB3B))); // third match is yellow
+
+                return RichText(text: span);
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(RichText), findsOneWidget);
+      controller.dispose();
     });
   });
 }

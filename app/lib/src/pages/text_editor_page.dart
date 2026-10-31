@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -71,6 +72,32 @@ class _TextEditorPageState extends State<TextEditorPage> {
   final ScrollController _editScrollController = ScrollController();
   final List<int> _matchIndices = [];
   int _currentMatchIndex = 0;
+  Timer? _findDebounce;
+  String _lastFindQuery = '';
+  String? _cachedDocForLower;
+  String? _cachedDocLower;
+
+  String _getDocLower(String doc) {
+    if (identical(doc, _cachedDocForLower) || doc == _cachedDocForLower) {
+      if (_cachedDocLower != null) return _cachedDocLower!;
+    }
+    _cachedDocForLower = doc;
+    _cachedDocLower = doc.toLowerCase();
+    return _cachedDocLower!;
+  }
+
+  void _onFindChanged(String query) {
+    _findDebounce?.cancel();
+    if (query.isEmpty) {
+      _updateMatches(jumpToMatch: false);
+      return;
+    }
+    _findDebounce = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      _updateMatches(jumpToMatch: true);
+    });
+  }
+
   int _cursorLine = 1;
   int _cursorCol = 1;
   WebViewController? _webViewController;
@@ -102,6 +129,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   @override
   void dispose() {
+    _findDebounce?.cancel();
     _controller.removeListener(_updateCursorPosition);
     _controller.dispose();
     _findController.dispose();
@@ -205,7 +233,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     int lineEnd = text.indexOf('\n', offset);
     if (lineEnd == -1) lineEnd = text.length;
     _controller.selection = TextSelection(baseOffset: offset, extentOffset: lineEnd);
-    _scrollToMatch(offset);
+    _scrollToMatch(offset, force: true);
   }
 
   void _openFind({bool replace = false}) {
@@ -217,17 +245,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (replace && !widget.readOnly) _showReplace = true;
     });
     _findFocusNode.requestFocus();
-    _updateMatches();
+    _updateMatches(jumpToMatch: false);
   }
 
-  void _updateMatches() {
+  void _updateMatches({bool jumpToMatch = true}) {
     final query = _findController.text;
+    _lastFindQuery = query;
     _matchIndices.clear();
     if (query.isNotEmpty) {
-      final lowerText = _controller.text.toLowerCase();
+      final text = _controller.text;
+      final lowerText = _getDocLower(text);
       final lowerQuery = query.toLowerCase();
       int start = 0;
-      while (true) {
+      const int maxMatches = 10000;
+      while (_matchIndices.length < maxMatches) {
         final index = lowerText.indexOf(lowerQuery, start);
         if (index == -1) break;
         _matchIndices.add(index);
@@ -239,7 +270,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
     } else if (_currentMatchIndex >= _matchIndices.length) {
       _currentMatchIndex = 0;
     }
-    _selectCurrentMatch();
+    if (jumpToMatch && _matchIndices.isNotEmpty) {
+      _selectCurrentMatch();
+    }
     if (_showFind && query.isNotEmpty) {
       _controller.updateSearch(
         query: query,
@@ -253,6 +286,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   void _closeFind() {
+    _findDebounce?.cancel();
     setState(() {
       _showFind = false;
       _showReplace = false;
@@ -263,6 +297,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   void _nextMatch() {
+    _findDebounce?.cancel();
     if (_matchIndices.isEmpty) return;
     setState(() {
       _currentMatchIndex = (_currentMatchIndex + 1) % _matchIndices.length;
@@ -276,6 +311,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   void _prevMatch() {
+    _findDebounce?.cancel();
     if (_matchIndices.isEmpty) return;
     setState(() {
       _currentMatchIndex = (_currentMatchIndex - 1 + _matchIndices.length) % _matchIndices.length;
@@ -306,16 +342,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
         idx + query.length > text.length ||
         text.substring(idx, idx + query.length).toLowerCase() !=
             query.toLowerCase()) {
-      _updateMatches(); // stale indices — rescan instead of corrupting text
+      _updateMatches(jumpToMatch: true); // stale indices — rescan instead of corrupting text
       return;
     }
+    _cachedDocForLower = null;
+    _cachedDocLower = null;
     _controller.value = _controller.value.copyWith(
       text: text.replaceRange(idx, idx + query.length, replacement),
       selection:
           TextSelection.collapsed(offset: idx + replacement.length),
     );
     setState(() => _isDirty = true);
-    _updateMatches();
+    _updateMatches(jumpToMatch: true);
   }
 
   void _replaceAll() {
@@ -325,7 +363,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     if (query.isEmpty) return;
     final replacement = _replaceController.text;
     final text = _controller.text;
-    final lowerText = text.toLowerCase();
+    final lowerText = _getDocLower(text);
     final lowerQuery = query.toLowerCase();
     final buf = StringBuffer();
     var start = 0;
@@ -340,12 +378,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     if (count == 0) return;
     buf.write(text.substring(start));
+    _cachedDocForLower = null;
+    _cachedDocLower = null;
     _controller.value = _controller.value.copyWith(
       text: buf.toString(),
       selection: const TextSelection.collapsed(offset: 0),
     );
     setState(() => _isDirty = true);
-    _updateMatches();
+    _updateMatches(jumpToMatch: false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -355,15 +395,15 @@ class _TextEditorPageState extends State<TextEditorPage> {
     );
   }
 
-  void _selectCurrentMatch() {
+  void _selectCurrentMatch({bool forceScroll = false}) {
     if (_matchIndices.isEmpty) return;
     final idx = _matchIndices[_currentMatchIndex];
     final len = _findController.text.length;
     _controller.selection = TextSelection(baseOffset: idx, extentOffset: idx + len);
-    _scrollToMatch(idx);
+    _scrollToMatch(idx, force: forceScroll);
   }
 
-  void _scrollToMatch(int charIndex) {
+  void _scrollToMatch(int charIndex, {bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final text = _controller.text;
@@ -400,8 +440,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
       double caretDy = 0.0;
       double caretDx = 0.0;
 
-      if (!_wordWrap && _mode == TextFileMode.code) {
-        // Fast O(1) path for non-wrapping code view: each line is exactly lineHeight tall
+      if (!_wordWrap) {
+        // Fast O(N) single-pass path for non-wrapping code and edit views:
+        // Each line is exactly lineHeight tall
         int lineCount = 0;
         int lineStart = 0;
         for (int i = 0; i < charIndex; i++) {
@@ -419,49 +460,88 @@ class _TextEditorPageState extends State<TextEditorPage> {
         )..layout();
         caretDx = linePainter.width;
       } else {
-        // Wrapping mode (or edit mode): layout text up to the line containing charIndex
+        // Wrapping mode
         final queryLen = _findController.text.length;
         final nextNewline = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
         final lineEnd = nextNewline == -1 ? text.length : (nextNewline + 1).clamp(0, text.length);
-        final subtext = text.substring(0, lineEnd);
 
-        final painter = TextPainter(
-          text: TextSpan(text: subtext, style: textStyle),
-          textDirection: TextDirection.ltr,
-        );
-        painter.layout(maxWidth: viewWidth);
+        if (lineEnd <= 8000) {
+          final subtext = text.substring(0, lineEnd);
+          final painter = TextPainter(
+            text: TextSpan(text: subtext, style: textStyle),
+            textDirection: TextDirection.ltr,
+          );
+          painter.layout(maxWidth: viewWidth);
 
-        final caretOffset = painter.getOffsetForCaret(
-          TextPosition(offset: charIndex),
-          Rect.zero,
-        );
-        caretDy = caretOffset.dy;
-        caretDx = caretOffset.dx;
+          final caretOffset = painter.getOffsetForCaret(
+            TextPosition(offset: charIndex),
+            Rect.zero,
+          );
+          caretDy = caretOffset.dy;
+          caretDx = caretOffset.dx;
+        } else {
+          // Fast monospace estimation for large documents to avoid multi-hundred millisecond layout freezes
+          final charPainter = TextPainter(
+            text: TextSpan(text: 'X', style: textStyle),
+            textDirection: TextDirection.ltr,
+          )..layout();
+          final charWidth = charPainter.width > 0 ? charPainter.width : 7.8;
+          final charsPerLine = (viewWidth / charWidth).floor().clamp(1, 1000);
+
+          int visualLines = 0;
+          int lineStart = 0;
+          for (int i = 0; i < charIndex; i++) {
+            if (text.codeUnitAt(i) == 10) {
+              final lineLength = i - lineStart;
+              visualLines += lineLength == 0 ? 1 : ((lineLength + charsPerLine - 1) ~/ charsPerLine).clamp(1, 1000);
+              lineStart = i + 1;
+            }
+          }
+          final currentLineChars = charIndex - lineStart;
+          final extraWrappedLines = currentLineChars ~/ charsPerLine;
+          visualLines += extraWrappedLines;
+          caretDy = visualLines * lineHeight;
+          caretDx = (currentLineChars % charsPerLine) * charWidth;
+        }
       }
 
       final viewport = activeVerticalController.position.viewportDimension;
-      final targetY = ((contentPadding + caretDy) - (viewport - lineHeight) / 2).clamp(
-        0.0,
-        activeVerticalController.position.maxScrollExtent,
-      );
+      final currentY = activeVerticalController.position.pixels;
+      final targetMatchY = contentPadding + caretDy;
+      final isComfortablyVisible = targetMatchY >= (currentY + 32) &&
+          (targetMatchY + lineHeight) <= (currentY + viewport - 32);
 
-      activeVerticalController.animateTo(
-        targetY,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
+      if (force || !isComfortablyVisible) {
+        final targetY = ((targetMatchY) - (viewport - lineHeight) / 2).clamp(
+          0.0,
+          activeVerticalController.position.maxScrollExtent,
+        );
+
+        activeVerticalController.animateTo(
+          targetY,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        );
+      }
 
       if (!_wordWrap && activeHorizontalController != null && activeHorizontalController.hasClients) {
         final hViewport = activeHorizontalController.position.viewportDimension;
-        final targetX = ((contentPadding + caretDx) - (hViewport / 2)).clamp(
-          0.0,
-          activeHorizontalController.position.maxScrollExtent,
-        );
-        activeHorizontalController.animateTo(
-          targetX,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-        );
+        final currentX = activeHorizontalController.position.pixels;
+        final targetMatchX = contentPadding + caretDx;
+        final isHorizontallyVisible = targetMatchX >= (currentX + 32) &&
+            targetMatchX <= (currentX + hViewport - 32);
+
+        if (force || !isHorizontallyVisible) {
+          final targetX = ((targetMatchX) - (hViewport / 2)).clamp(
+            0.0,
+            activeHorizontalController.position.maxScrollExtent,
+          );
+          activeHorizontalController.animateTo(
+            targetX,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+          );
+        }
       }
     });
   }
@@ -475,6 +555,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
     try {
       final content = await readTextFile(root: widget.root, path: widget.path);
       if (mounted) {
+        _cachedDocForLower = null;
+        _cachedDocLower = null;
         setState(() {
           _controller.text = content;
           _loading = false;
@@ -1177,14 +1259,22 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         icon: const Icon(Icons.clear, size: 16),
                         tooltip: 'Clear',
                         onPressed: () {
+                          _findDebounce?.cancel();
                           _findController.clear();
-                          _updateMatches();
+                          _updateMatches(jumpToMatch: false);
                         },
                       )
                     : null,
               ),
-              onChanged: (_) => _updateMatches(),
-              onSubmitted: (_) => _nextMatch(),
+              onChanged: _onFindChanged,
+              onSubmitted: (_) {
+                _findDebounce?.cancel();
+                if (_findController.text != _lastFindQuery) {
+                  _updateMatches(jumpToMatch: true);
+                } else {
+                  _nextMatch();
+                }
+              },
             ),
           ),
           if (_findController.text.isNotEmpty)
@@ -1193,7 +1283,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
               child: Text(
                 _matchIndices.isEmpty
                     ? '0/0'
-                    : '${_currentMatchIndex + 1}/${_matchIndices.length}',
+                    : '${_currentMatchIndex + 1}/${_matchIndices.length >= 10000 ? '10000+' : _matchIndices.length}',
                 style: const TextStyle(fontSize: 12),
               ),
             ),
@@ -1492,8 +1582,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ),
             onChanged: (_) {
               if (!_isDirty) setState(() => _isDirty = true);
+              _cachedDocForLower = null;
+              _cachedDocLower = null;
               if (_showFind && _findController.text.isNotEmpty) {
-                _updateMatches();
+                _findDebounce?.cancel();
+                _findDebounce = Timer(const Duration(milliseconds: 300), () {
+                  if (!mounted) return;
+                  _updateMatches(jumpToMatch: false);
+                });
               }
             },
           ),
@@ -1565,6 +1661,7 @@ class _SpanWalker {
   final int currentOffset;
   final TextStyle baseStyle;
   int _globalOffset = 0;
+  int _matchPointer = 0;
 
   _SpanWalker({
     required this.query,
@@ -1583,11 +1680,17 @@ class _SpanWalker {
       _globalOffset = spanEnd;
 
       final qLen = query.length;
+      while (_matchPointer < matches.length && matches[_matchPointer] + qLen <= spanStart) {
+        _matchPointer++;
+      }
+
       final intersecting = <int>[];
-      for (final m in matches) {
-        if (m + qLen <= spanStart) continue;
+      var cursor = _matchPointer;
+      while (cursor < matches.length) {
+        final m = matches[cursor];
         if (m >= spanEnd) break;
         intersecting.add(m);
+        cursor++;
       }
 
       if (intersecting.isNotEmpty) {
