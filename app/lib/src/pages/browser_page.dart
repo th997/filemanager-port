@@ -1610,6 +1610,7 @@ class BrowserPageState extends State<BrowserPage> {
       return;
     }
     HapticFeedback.mediumImpact();
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final action = await showMenu<String>(
       context: context,
       constraints: BoxConstraints(
@@ -1624,38 +1625,49 @@ class BrowserPageState extends State<BrowserPage> {
       ),
       items: [
         if (_canWrite)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'new_folder',
             child: Row(
               children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text('New Folder'),
+                const Icon(Icons.create_new_folder, size: 18),
+                const SizedBox(width: 8),
+                Text(isZh ? '新建文件夹' : 'New Folder'),
               ],
             ),
           ),
         if (_canWrite)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'new_file',
             child: Row(
               children: [
-                Icon(Icons.note_add_outlined, size: 18),
-                SizedBox(width: 8),
-                Text('New Text File'),
+                const Icon(Icons.note_add_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text(isZh ? '新建文本文件' : 'New Text File'),
               ],
             ),
           ),
-        if (_canWrite)
-          const PopupMenuItem(
+        if (_canWrite) ...[
+          PopupMenuItem(
             value: 'upload',
             child: Row(
               children: [
-                Icon(Icons.cloud_upload_outlined, size: 18),
-                SizedBox(width: 8),
-                Text('Upload Files'),
+                const Icon(Icons.cloud_upload_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text(isZh ? '上传文件' : 'Upload Files'),
               ],
             ),
           ),
+          PopupMenuItem(
+            value: 'upload_folder',
+            child: Row(
+              children: [
+                const Icon(Icons.drive_folder_upload_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text(isZh ? '上传文件夹' : 'Upload Folder'),
+              ],
+            ),
+          ),
+        ],
         if (_clipboard != null && _canWrite)
           PopupMenuItem(
             value: 'paste',
@@ -1731,6 +1743,9 @@ class BrowserPageState extends State<BrowserPage> {
         break;
       case 'upload':
         _uploadFiles();
+        break;
+      case 'upload_folder':
+        _uploadFolder();
         break;
       case 'paste':
         _paste();
@@ -1995,9 +2010,10 @@ class BrowserPageState extends State<BrowserPage> {
 
   // File Operations
   Future<void> _uploadFiles() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final picked = await FilePickerDialog.show(
       context,
-      title: 'Upload Files to Current Folder',
+      title: isZh ? '上传文件/文件夹到当前目录' : 'Upload Items to Current Folder',
     );
     if (picked == null || picked.paths.isEmpty || !mounted) return;
 
@@ -2013,17 +2029,81 @@ class BrowserPageState extends State<BrowserPage> {
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        'Uploading ${picked.paths.length} item(s)…',
+        isZh ? '正在上传 ${picked.paths.length} 项…' : 'Uploading ${picked.paths.length} item(s)…',
         onRetry: startTask,
       );
       if (mounted) _load(refresh: true);
       if (completed == true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Uploaded ${picked.paths.length} item(s)')),
+          SnackBar(
+            content: Text(isZh ? '已上传 ${picked.paths.length} 项' : 'Uploaded ${picked.paths.length} item(s)'),
+          ),
         );
       }
     } catch (e) {
-      _showError('Upload failed: $e');
+      _showError(isZh ? '上传失败: $e' : 'Upload failed: $e');
+    }
+  }
+
+  Future<void> _uploadFolder() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final picked = await FolderPickerDialog.show(
+      context,
+      title: isZh ? '选择要上传的文件夹' : 'Select Folder to Upload',
+      initialRoot: PlatformPaths.defaultRoot(),
+      confirmLabel: isZh ? '上传此文件夹' : 'Upload this folder',
+    );
+    if (picked == null || !mounted) return;
+
+    String srcRoot = picked.root;
+    List<String> srcPaths;
+    String folderName;
+
+    if (picked.relPath.isNotEmpty) {
+      srcPaths = [picked.relPath];
+      folderName = picked.relPath.split('/').where((s) => s.isNotEmpty).last;
+    } else {
+      final isWindows = srcRoot.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(srcRoot);
+      final parts = srcRoot.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      if (parts.isEmpty) {
+        _showError(isZh ? '不能上传根目录' : 'Cannot upload root directory');
+        return;
+      }
+      folderName = parts.last;
+      parts.removeLast();
+      if (parts.isEmpty) {
+        srcRoot = isWindows ? '$folderName\\' : '/';
+      } else {
+        srcRoot = isWindows ? parts.join('\\') : '/${parts.join('/')}';
+      }
+      srcPaths = [folderName];
+    }
+
+    try {
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: srcRoot,
+            srcPaths: srcPaths,
+            dstRoot: _root,
+            dstDir: _relPath,
+          );
+      final taskId = await startTask();
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        isZh ? '正在上传文件夹 "$folderName"…' : 'Uploading folder "$folderName"…',
+        onRetry: startTask,
+      );
+      if (mounted) _load(refresh: true);
+      if (completed == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isZh ? '已上传文件夹 "$folderName"' : 'Uploaded folder "$folderName"'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(isZh ? '上传文件夹失败: $e' : 'Upload folder failed: $e');
     }
   }
 
@@ -3562,8 +3642,10 @@ class BrowserPageState extends State<BrowserPage> {
       // Upload lived only in the empty-space right-click menu, so a full
       // list (no blank area to click) had no discoverable way in at all.
       // Phones get it from the overflow menu to keep the icon row narrow.
-      if (_canWrite && !compact)
+      if (_canWrite && !compact) ...[
         action(Icons.cloud_upload_outlined, isZh ? '上传文件' : 'Upload files', _uploadFiles),
+        action(Icons.drive_folder_upload_outlined, isZh ? '上传文件夹' : 'Upload folder', _uploadFolder),
+      ],
       if (!compact) ...[
         action(
           _isSearching ? Icons.search_off : Icons.search,
@@ -3665,6 +3747,8 @@ class BrowserPageState extends State<BrowserPage> {
             _saveViewPreferences();
           } else if (val == 'upload') {
             _uploadFiles();
+          } else if (val == 'upload_folder') {
+            _uploadFolder();
           } else if (val == 'new_folder') {
             _createFolder();
           }
@@ -3680,6 +3764,16 @@ class BrowserPageState extends State<BrowserPage> {
                   const Icon(Icons.cloud_upload_outlined, size: 18),
                   const SizedBox(width: 8),
                   Text(isZh ? '上传文件' : 'Upload files'),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'upload_folder',
+              child: Row(
+                children: [
+                  const Icon(Icons.drive_folder_upload_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(isZh ? '上传文件夹' : 'Upload folder'),
                 ],
               ),
             ),

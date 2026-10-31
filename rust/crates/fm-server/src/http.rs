@@ -1,17 +1,18 @@
 //! Axum-based HTTP local network sharing server with web UI and media streaming.
 
-use axum::extract::{Path as AxumPath, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Multipart, Path as AxumPath, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, Response};
 use base64::Engine as _;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{body::Body, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
 
@@ -33,6 +34,24 @@ pub struct FileItem {
 #[derive(Deserialize)]
 pub struct AuthQuery {
     pub token: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    pub token: Option<String>,
+    pub dir: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ConfigResponse {
+    pub read_only: bool,
+}
+
+#[derive(Serialize)]
+pub struct UploadResponse {
+    pub success: bool,
+    pub uploaded_files: usize,
+    pub message: String,
 }
 
 pub struct RunningServer {
@@ -67,10 +86,13 @@ pub async fn start_http_share(
 
     let app = Router::new()
         .route("/", get(handle_index))
+        .route("/api/config", get(handle_config))
+        .route("/api/upload", post(handle_upload))
         .route("/api/list", get(handle_list_root))
         .route("/api/list/", get(handle_list_root))
         .route("/api/list/{*subpath}", get(handle_list_sub))
         .route("/download/{*subpath}", get(handle_download))
+        .layer(DefaultBodyLimit::disable())
         .layer(middleware::from_fn_with_state(state.clone(), require_auth))
         .with_state(state);
 
@@ -397,17 +419,144 @@ async fn handle_index() -> Html<&'static str> {
             font-size: 12px;
             color: var(--text-sub);
         }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .upload-buttons {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary, .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+        }
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+        .btn-secondary {
+            background: var(--bg-page);
+            color: var(--text-main);
+            border-color: var(--border-color);
+        }
+        .btn-secondary:hover {
+            background: var(--item-hover);
+        }
+        .upload-status {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        .upload-status-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            border-radius: 3px;
+            transition: width 0.15s ease;
+        }
+        .drop-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(2px);
+        }
+        .drop-overlay.active {
+            display: flex;
+        }
+        .drop-overlay-box {
+            background: var(--bg-card);
+            padding: 32px 48px;
+            border-radius: 16px;
+            border: 2px dashed var(--primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            pointer-events: none;
+        }
+        .drop-icon {
+            font-size: 40px;
+        }
+        .drop-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📁 局域网文件共享</h1>
-            <div class="search-box">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="filter-input" class="search-input" placeholder="筛选当前目录文件..." />
+            <div class="header-right">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="filter-input" class="search-input" placeholder="筛选当前目录文件..." />
+                </div>
+                <div class="upload-buttons" id="upload-buttons">
+                    <button class="btn-primary" id="btn-upload-file" title="上传单个或多个文件">
+                        <span>📄 上传文件</span>
+                    </button>
+                    <button class="btn-secondary" id="btn-upload-folder" title="选择文件夹并递归上传内部所有文件">
+                        <span>📁 上传文件夹</span>
+                    </button>
+                    <input type="file" id="file-input" multiple style="display:none;" />
+                    <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none;" />
+                </div>
             </div>
         </header>
+
+        <div class="upload-status" id="upload-status" style="display:none;">
+            <div class="upload-status-info">
+                <span id="upload-status-text">正在上传...</span>
+                <span id="upload-status-percent">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
 
         <div class="breadcrumb" id="breadcrumb-bar">
             <span class="breadcrumb-item" data-path="">根目录</span>
@@ -579,10 +728,286 @@ async fn handle_index() -> Html<&'static str> {
             renderItems(e.target.value);
         });
 
+        async function checkConfig() {
+            try {
+                const res = await fetch('/api/config');
+                if (res.ok) {
+                    const cfg = await res.json();
+                    if (cfg.read_only) {
+                        const btns = document.getElementById('upload-buttons');
+                        if (btns) btns.style.display = 'none';
+                    }
+                }
+            } catch (_) {}
+        }
+
+        document.getElementById('btn-upload-file').addEventListener('click', () => {
+            document.getElementById('file-input').click();
+        });
+
+        document.getElementById('btn-upload-folder').addEventListener('click', () => {
+            document.getElementById('folder-input').click();
+        });
+
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                const filesToUpload = Array.from(e.target.files).map(f => ({
+                    file: f,
+                    relPath: f.name
+                }));
+                uploadFiles(filesToUpload);
+                e.target.value = '';
+            }
+        });
+
+        document.getElementById('folder-input').addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                const filesToUpload = Array.from(e.target.files).map(f => ({
+                    file: f,
+                    relPath: f.webkitRelativePath || f.name
+                }));
+                uploadFiles(filesToUpload);
+                e.target.value = '';
+            }
+        });
+
+        async function getFilesFromEntry(entry, path = '') {
+            if (entry.isFile) {
+                return new Promise((resolve) => {
+                    entry.file(f => {
+                        resolve([{ file: f, relPath: (path ? path + '/' : '') + f.name }]);
+                    }, () => resolve([]));
+                });
+            } else if (entry.isDirectory) {
+                const dirReader = entry.createReader();
+                const entries = await new Promise((resolve) => {
+                    let all = [];
+                    function readBatch() {
+                        dirReader.readEntries((results) => {
+                            if (!results || results.length === 0) {
+                                resolve(all);
+                            } else {
+                                all = all.concat(results);
+                                readBatch();
+                            }
+                        }, () => resolve(all));
+                    }
+                    readBatch();
+                });
+                let list = [];
+                const nextPath = path ? (path + '/' + entry.name) : entry.name;
+                for (const child of entries) {
+                    const sub = await getFilesFromEntry(child, nextPath);
+                    list = list.concat(sub);
+                }
+                return list;
+            }
+            return [];
+        }
+
+        let dragCounter = 0;
+        const dropOverlay = document.getElementById('drop-overlay');
+
+        window.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            dragCounter++;
+            if (dropOverlay) dropOverlay.classList.add('active');
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                if (dropOverlay) dropOverlay.classList.remove('active');
+            }
+        });
+
+        window.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        window.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dragCounter = 0;
+            if (dropOverlay) dropOverlay.classList.remove('active');
+
+            const items = e.dataTransfer && e.dataTransfer.items;
+            let filesToUpload = [];
+
+            if (items && items.length > 0 && items[0].webkitGetAsEntry) {
+                for (let i = 0; i < items.length; i++) {
+                    const entry = items[i].webkitGetAsEntry();
+                    if (entry) {
+                        const sub = await getFilesFromEntry(entry);
+                        filesToUpload = filesToUpload.concat(sub);
+                    }
+                }
+            } else if (e.dataTransfer && e.dataTransfer.files) {
+                filesToUpload = Array.from(e.dataTransfer.files).map(f => ({
+                    file: f,
+                    relPath: f.name
+                }));
+            }
+
+            if (filesToUpload.length > 0) {
+                uploadFiles(filesToUpload);
+            }
+        });
+
+        function uploadFiles(fileList) {
+            if (!fileList || fileList.length === 0) return;
+
+            const statusEl = document.getElementById('upload-status');
+            const textEl = document.getElementById('upload-status-text');
+            const percentEl = document.getElementById('upload-status-percent');
+            const fillEl = document.getElementById('progress-fill');
+
+            statusEl.style.display = 'block';
+            textEl.style.color = '';
+            textEl.innerText = `正在准备上传 ${fileList.length} 个文件...`;
+            percentEl.innerText = '0%';
+            fillEl.style.width = '0%';
+
+            const formData = new FormData();
+            for (const item of fileList) {
+                formData.append('files', item.file, item.relPath);
+            }
+
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
+            let url = '/api/upload?dir=' + encodeURIComponent(currentPath);
+            if (token) {
+                url += '&token=' + encodeURIComponent(token);
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = Math.round((event.loaded / event.total) * 100);
+                    fillEl.style.width = percent + '%';
+                    percentEl.innerText = percent + '%';
+                    textEl.innerText = `正在上传 (${formatSize(event.loaded)} / ${formatSize(event.total)})...`;
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    textEl.innerText = `上传成功（共 ${fileList.length} 个文件）`;
+                    percentEl.innerText = '100%';
+                    fillEl.style.width = '100%';
+                    loadDir(currentPath);
+                    setTimeout(() => {
+                        statusEl.style.display = 'none';
+                    }, 3000);
+                } else {
+                    textEl.innerText = `上传失败（HTTP ${xhr.status}）：${xhr.responseText || '请重试'}`;
+                    textEl.style.color = '#ef4444';
+                }
+            };
+
+            xhr.onerror = () => {
+                textEl.innerText = '网络连接异常，上传失败';
+                textEl.style.color = '#ef4444';
+            };
+
+            xhr.open('POST', url, true);
+            xhr.send(formData);
+        }
+
+        checkConfig();
         loadDir('');
     </script>
+    <div id="drop-overlay" class="drop-overlay">
+        <div class="drop-overlay-box">
+            <span class="drop-icon">📥</span>
+            <span class="drop-text">释放鼠标以上传文件或文件夹到当前目录</span>
+        </div>
+    </div>
 </body>
 </html>"###)
+}
+
+async fn handle_config(
+    State(state): State<Arc<ServerState>>,
+) -> Json<ConfigResponse> {
+    Json(ConfigResponse {
+        read_only: state.read_only,
+    })
+}
+
+async fn handle_upload(
+    headers: HeaderMap,
+    Query(query): Query<UploadQuery>,
+    State(state): State<Arc<ServerState>>,
+    mut multipart: Multipart,
+) -> Result<Json<UploadResponse>, (StatusCode, &'static str)> {
+    let auth_query = AuthQuery {
+        token: query.token.clone(),
+    };
+    if !check_auth(&headers, &auth_query, &state) {
+        return Err((StatusCode::UNAUTHORIZED, "Unauthorized"));
+    }
+
+    if state.read_only {
+        return Err((StatusCode::FORBIDDEN, "Server is read-only"));
+    }
+
+    let base_dir = query.dir.as_deref().unwrap_or("").trim_matches('/');
+    let mut uploaded_count = 0;
+
+    while let Ok(Some(mut field)) = multipart.next_field().await {
+        let file_name = match field.file_name() {
+            Some(name) if !name.trim().is_empty() => name.to_string(),
+            _ => continue,
+        };
+
+        let normalized_file_path = file_name.replace('\\', "/");
+        let combined_rel = if base_dir.is_empty() {
+            normalized_file_path
+        } else {
+            format!("{base_dir}/{}", normalized_file_path.trim_start_matches('/'))
+        };
+
+        let target_path = resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), &combined_rel)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid file path"))?;
+
+        if let Some(parent) = target_path.parent() {
+            if !parent.exists() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create directory"))?;
+            }
+            if let Ok(c_parent) = parent.canonicalize() {
+                let root_canon = state.canonical_root.as_deref().unwrap_or(&state.root_dir);
+                if !c_parent.starts_with(root_canon) {
+                    return Err((StatusCode::FORBIDDEN, "Path traverses outside root"));
+                }
+            }
+        }
+
+        let mut file = tokio::fs::File::create(&target_path)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create destination file"))?;
+
+        while let Ok(Some(chunk)) = field.chunk().await {
+            file.write_all(&chunk)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to write file data"))?;
+        }
+
+        file.flush()
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to flush file"))?;
+
+        uploaded_count += 1;
+    }
+
+    Ok(Json(UploadResponse {
+        success: true,
+        uploaded_files: uploaded_count,
+        message: format!("Successfully uploaded {uploaded_count} file(s)"),
+    }))
 }
 
 async fn handle_list_root(

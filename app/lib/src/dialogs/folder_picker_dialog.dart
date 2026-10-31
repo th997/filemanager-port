@@ -25,12 +25,14 @@ class FolderPickerDialog extends StatefulWidget {
   final String title;
   final String initialRoot;
   final String initialPath;
+  final String? confirmLabel;
 
   const FolderPickerDialog({
     super.key,
     required this.title,
     required this.initialRoot,
     this.initialPath = '',
+    this.confirmLabel,
   });
 
   static Future<PickedFolder?> show(
@@ -38,6 +40,7 @@ class FolderPickerDialog extends StatefulWidget {
     required String title,
     required String initialRoot,
     String initialPath = '',
+    String? confirmLabel,
   }) {
     return showDialog<PickedFolder>(
       context: context,
@@ -45,6 +48,7 @@ class FolderPickerDialog extends StatefulWidget {
         title: title,
         initialRoot: initialRoot,
         initialPath: initialPath,
+        confirmLabel: confirmLabel,
       ),
     );
   }
@@ -419,7 +423,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
               : () => Navigator.of(context).pop(
                     PickedFolder(root: _root, relPath: _relPath),
                   ),
-          child: const Text('Use this folder'),
+          child: Text(widget.confirmLabel ?? 'Use this folder'),
         ),
       ],
     );

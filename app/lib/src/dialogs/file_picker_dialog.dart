@@ -144,9 +144,16 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     });
   }
 
-  /// Files the list is actually showing. "Select All" has to work on these:
-  /// with a filter typed it used to select every file in the folder, so the
-  /// upload included files the user never saw.
+  /// Items the list is actually showing. "Select All" has to work on these:
+  /// with a filter typed it used to select every file/folder, so the
+  /// upload included items the user never saw.
+  List<EntryItem> get _visibleFolders {
+    final query = _filterQuery.toLowerCase();
+    return query.isEmpty
+        ? _folders
+        : _folders.where((f) => f.name.toLowerCase().contains(query)).toList();
+  }
+
   List<EntryItem> get _visibleFiles {
     final query = _filterQuery.toLowerCase();
     return query.isEmpty
@@ -154,18 +161,20 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
         : _files.where((f) => f.name.toLowerCase().contains(query)).toList();
   }
 
-  void _selectAllFiles() {
+  List<EntryItem> get _visibleItems => [..._visibleFolders, ..._visibleFiles];
+
+  void _selectAll() {
     setState(() {
-      final visible = _visibleFiles;
-      final allSelected =
-          visible.isNotEmpty && visible.every((f) => _selectedPaths.contains(_fullPath(f)));
+      final visible = _visibleItems;
+      final allSelected = visible.isNotEmpty &&
+          visible.every((item) => _selectedPaths.contains(_fullPath(item)));
       if (allSelected) {
-        for (final f in visible) {
-          _selectedPaths.remove(_fullPath(f));
+        for (final item in visible) {
+          _selectedPaths.remove(_fullPath(item));
         }
       } else {
-        for (final f in visible) {
-          _selectedPaths.add(_fullPath(f));
+        for (final item in visible) {
+          _selectedPaths.add(_fullPath(item));
         }
       }
     });
@@ -250,27 +259,27 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                       _showHidden = !_showHidden;
                       if (!_showHidden) {
                         _selectedPaths.removeWhere((p) =>
-                            _files.any((f) => f.hidden && _fullPath(f) == p));
+                            [..._folders, ..._files].any((f) => f.hidden && _fullPath(f) == p));
                       }
                     });
                     _load();
                   },
                 ),
-                if (_visibleFiles.isNotEmpty)
+                if (_visibleItems.isNotEmpty)
                   TextButton.icon(
                     icon: Icon(
-                      _visibleFiles.every((f) => _selectedPaths.contains(_fullPath(f)))
+                      _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
                           ? Icons.deselect
                           : Icons.select_all,
                       size: 16,
                     ),
                     label: Text(
-                      _visibleFiles.every((f) => _selectedPaths.contains(_fullPath(f)))
+                      _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
                           ? 'Deselect All'
                           : 'Select All',
                       style: const TextStyle(fontSize: 12),
                     ),
-                    onPressed: _selectAllFiles,
+                    onPressed: _selectAll,
                   ),
               ],
             ),
@@ -346,11 +355,21 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                                 itemBuilder: (context, index) {
                                   if (index < displayedFolders.length) {
                                     final folder = displayedFolders[index];
+                                    final isSelected = _selectedPaths.contains(_fullPath(folder));
                                     return ListTile(
                                       dense: true,
-                                      leading: Icon(
-                                        folder.hidden ? Icons.folder_outlined : Icons.folder,
-                                        color: folder.hidden ? Colors.grey : Colors.amber,
+                                      leading: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Checkbox(
+                                            value: isSelected,
+                                            onChanged: (_) => _toggleSelect(folder),
+                                          ),
+                                          Icon(
+                                            folder.hidden ? Icons.folder_outlined : Icons.folder,
+                                            color: folder.hidden ? Colors.grey : Colors.amber,
+                                          ),
+                                        ],
                                       ),
                                       title: Text(
                                         folder.name,
@@ -358,7 +377,15 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                                             ? TextStyle(color: Theme.of(context).colorScheme.outline)
                                             : null,
                                       ),
-                                      trailing: const Icon(Icons.chevron_right, size: 16),
+                                      subtitle: Text(
+                                        Localizations.localeOf(context).languageCode == 'zh' ? '文件夹' : 'Folder',
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
+                                      trailing: IconButton(
+                                        icon: const Icon(Icons.chevron_right, size: 18),
+                                        tooltip: 'Open folder',
+                                        onPressed: () => _openFolder(folder.name),
+                                      ),
                                       onTap: () => _openFolder(folder.name),
                                     );
                                   }
@@ -412,7 +439,11 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
         ),
         FilledButton.icon(
           icon: const Icon(Icons.upload, size: 18),
-          label: Text('Upload (${_selectedPaths.length})'),
+          label: Text(
+            Localizations.localeOf(context).languageCode == 'zh'
+                ? '上传 (${_selectedPaths.length})'
+                : 'Upload (${_selectedPaths.length})',
+          ),
           onPressed: _selectedPaths.isEmpty
               ? null
               : () {
