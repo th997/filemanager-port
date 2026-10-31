@@ -77,18 +77,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
   String? _cachedDocForLower;
   String? _cachedDocLower;
 
-  String? _cachedLinesText;
-  List<String>? _cachedLinesList;
-
-  List<String> _getLines(String text) {
-    if (identical(text, _cachedLinesText) || text == _cachedLinesText) {
-      if (_cachedLinesList != null) return _cachedLinesList!;
-    }
-    _cachedLinesText = text;
-    _cachedLinesList = text.split('\n');
-    return _cachedLinesList!;
-  }
-
   String _getDocLower(String doc) {
     if (identical(doc, _cachedDocForLower) || doc == _cachedDocForLower) {
       if (_cachedDocLower != null) return _cachedDocLower!;
@@ -104,9 +92,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _updateMatches(jumpToMatch: false);
       return;
     }
-    _findDebounce = Timer(const Duration(milliseconds: 120), () {
+    _findDebounce = Timer(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      _updateMatches(jumpToMatch: true);
+      _updateMatches(jumpToMatch: true, forceScroll: false);
     });
   }
 
@@ -260,7 +248,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _updateMatches(jumpToMatch: false);
   }
 
-  void _updateMatches({bool jumpToMatch = true}) {
+  void _updateMatches({bool jumpToMatch = true, bool forceScroll = false}) {
     final query = _findController.text;
     _lastFindQuery = query;
     _matchIndices.clear();
@@ -279,11 +267,17 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     if (_matchIndices.isEmpty) {
       _currentMatchIndex = 0;
-    } else if (_currentMatchIndex >= _matchIndices.length) {
-      _currentMatchIndex = 0;
+    } else {
+      final currentOffset = _controller.selection.baseOffset;
+      if (currentOffset > 0) {
+        final nearest = _matchIndices.indexWhere((idx) => idx >= currentOffset);
+        _currentMatchIndex = nearest != -1 ? nearest : 0;
+      } else {
+        _currentMatchIndex = 0;
+      }
     }
     if (jumpToMatch && _matchIndices.isNotEmpty) {
-      _selectCurrentMatch();
+      _selectCurrentMatch(forceScroll: forceScroll);
     }
     if (_showFind && query.isNotEmpty) {
       _controller.updateSearch(
@@ -314,7 +308,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     setState(() {
       _currentMatchIndex = (_currentMatchIndex + 1) % _matchIndices.length;
     });
-    _selectCurrentMatch();
+    _selectCurrentMatch(forceScroll: true);
     _controller.updateSearch(
       query: _findController.text,
       matches: _matchIndices,
@@ -328,7 +322,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     setState(() {
       _currentMatchIndex = (_currentMatchIndex - 1 + _matchIndices.length) % _matchIndices.length;
     });
-    _selectCurrentMatch();
+    _selectCurrentMatch(forceScroll: true);
     _controller.updateSearch(
       query: _findController.text,
       matches: _matchIndices,
@@ -354,20 +348,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
         idx + query.length > text.length ||
         text.substring(idx, idx + query.length).toLowerCase() !=
             query.toLowerCase()) {
-      _updateMatches(jumpToMatch: true); // stale indices — rescan instead of corrupting text
+      _updateMatches(jumpToMatch: true, forceScroll: true); // stale indices — rescan instead of corrupting text
       return;
     }
     _cachedDocForLower = null;
     _cachedDocLower = null;
-    _cachedLinesText = null;
-    _cachedLinesList = null;
     _controller.value = _controller.value.copyWith(
       text: text.replaceRange(idx, idx + query.length, replacement),
       selection:
           TextSelection.collapsed(offset: idx + replacement.length),
     );
     setState(() => _isDirty = true);
-    _updateMatches(jumpToMatch: true);
+    _updateMatches(jumpToMatch: true, forceScroll: true);
   }
 
   void _replaceAll() {
@@ -394,8 +386,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
     buf.write(text.substring(start));
     _cachedDocForLower = null;
     _cachedDocLower = null;
-    _cachedLinesText = null;
-    _cachedLinesList = null;
     _controller.value = _controller.value.copyWith(
       text: buf.toString(),
       selection: const TextSelection.collapsed(offset: 0),
@@ -448,16 +438,25 @@ class _TextEditorPageState extends State<TextEditorPage> {
         height: 1.35,
       );
 
-      final mediaWidth = MediaQuery.of(context).size.width;
-      final viewWidth = mediaWidth > 32 ? mediaWidth - 32 : mediaWidth;
-      final lineHeight = _fontSize * 1.35;
+      final metricPainter = TextPainter(
+        text: TextSpan(text: 'M', style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final lineHeight = metricPainter.preferredLineHeight;
+
+      final renderBox = context.findRenderObject() as RenderBox?;
+      final availableWidth = (renderBox != null && renderBox.hasSize)
+          ? renderBox.size.width
+          : MediaQuery.of(context).size.width;
+      final viewWidth = (availableWidth - 32.0).clamp(100.0, double.infinity);
       const contentPadding = 16.0;
 
+      final isWrapping = (_mode == TextFileMode.edit) || _wordWrap;
       double caretDy = 0.0;
       double caretDx = 0.0;
 
-      if (!_wordWrap) {
-        // Fast O(N) single-pass path for non-wrapping code and edit views:
+      if (!isWrapping) {
+        // Fast O(N) single-pass path for non-wrapping code view:
         // Each line is exactly lineHeight tall
         int lineCount = 0;
         int lineStart = 0;
@@ -476,56 +475,31 @@ class _TextEditorPageState extends State<TextEditorPage> {
         )..layout();
         caretDx = linePainter.width;
       } else {
-        // Wrapping mode
+        // Wrapping mode (edit view or code view with wordWrap enabled):
+        // Layout preceding text up to the end of the current line for exact caret coordinates
         final queryLen = _findController.text.length;
         final nextNewline = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
         final lineEnd = nextNewline == -1 ? text.length : (nextNewline + 1).clamp(0, text.length);
+        final subtext = text.substring(0, lineEnd);
+        final painter = TextPainter(
+          text: TextSpan(text: subtext, style: textStyle),
+          textDirection: TextDirection.ltr,
+        );
+        painter.layout(maxWidth: viewWidth);
 
-        if (lineEnd <= 8000) {
-          final subtext = text.substring(0, lineEnd);
-          final painter = TextPainter(
-            text: TextSpan(text: subtext, style: textStyle),
-            textDirection: TextDirection.ltr,
-          );
-          painter.layout(maxWidth: viewWidth);
-
-          final caretOffset = painter.getOffsetForCaret(
-            TextPosition(offset: charIndex),
-            Rect.zero,
-          );
-          caretDy = caretOffset.dy;
-          caretDx = caretOffset.dx;
-        } else {
-          // Fast monospace estimation for large documents to avoid multi-hundred millisecond layout freezes
-          final charPainter = TextPainter(
-            text: TextSpan(text: 'X', style: textStyle),
-            textDirection: TextDirection.ltr,
-          )..layout();
-          final charWidth = charPainter.width > 0 ? charPainter.width : 7.8;
-          final charsPerLine = (viewWidth / charWidth).floor().clamp(1, 1000);
-
-          int visualLines = 0;
-          int lineStart = 0;
-          for (int i = 0; i < charIndex; i++) {
-            if (text.codeUnitAt(i) == 10) {
-              final lineLength = i - lineStart;
-              visualLines += lineLength == 0 ? 1 : ((lineLength + charsPerLine - 1) ~/ charsPerLine).clamp(1, 1000);
-              lineStart = i + 1;
-            }
-          }
-          final currentLineChars = charIndex - lineStart;
-          final extraWrappedLines = currentLineChars ~/ charsPerLine;
-          visualLines += extraWrappedLines;
-          caretDy = visualLines * lineHeight;
-          caretDx = (currentLineChars % charsPerLine) * charWidth;
-        }
+        final caretOffset = painter.getOffsetForCaret(
+          TextPosition(offset: charIndex),
+          Rect.zero,
+        );
+        caretDy = caretOffset.dy;
+        caretDx = caretOffset.dx;
       }
 
       final viewport = activeVerticalController.position.viewportDimension;
       final currentY = activeVerticalController.position.pixels;
       final targetMatchY = contentPadding + caretDy;
-      final isComfortablyVisible = targetMatchY >= (currentY + 32) &&
-          (targetMatchY + lineHeight) <= (currentY + viewport - 32);
+      final isComfortablyVisible = targetMatchY >= (currentY + 40) &&
+          (targetMatchY + lineHeight) <= (currentY + viewport - 40);
 
       if (force || !isComfortablyVisible) {
         final targetY = ((targetMatchY) - (viewport - lineHeight) / 2).clamp(
@@ -540,7 +514,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
         );
       }
 
-      if (!_wordWrap && activeHorizontalController != null && activeHorizontalController.hasClients) {
+      if (!isWrapping && activeHorizontalController != null && activeHorizontalController.hasClients) {
         final hViewport = activeHorizontalController.position.viewportDimension;
         final currentX = activeHorizontalController.position.pixels;
         final targetMatchX = contentPadding + caretDx;
@@ -573,8 +547,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (mounted) {
         _cachedDocForLower = null;
         _cachedDocLower = null;
-        _cachedLinesText = null;
-        _cachedLinesList = null;
         // Large preview files (> 128KB) automatically switch to code mode to avoid
         // freezing the UI isolate on complex markdown AST rendering.
         if (content.length > 128 * 1024 && _mode == TextFileMode.preview) {
@@ -785,6 +757,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
         const SingleActivator(LogicalKeyboardKey.keyH, meta: true): () => _openFind(replace: true),
         const SingleActivator(LogicalKeyboardKey.keyG, control: true): _showGoToLineDialog,
         const SingleActivator(LogicalKeyboardKey.keyG, meta: true): _showGoToLineDialog,
+        const SingleActivator(LogicalKeyboardKey.f3): _nextMatch,
+        const SingleActivator(LogicalKeyboardKey.f3, shift: true): _prevMatch,
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
           if (_mode == TextFileMode.edit && _undoController.value.canUndo) {
             _undoController.undo();
@@ -1293,7 +1267,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
               onSubmitted: (_) {
                 _findDebounce?.cancel();
                 if (_findController.text != _lastFindQuery) {
-                  _updateMatches(jumpToMatch: true);
+                  _updateMatches(jumpToMatch: true, forceScroll: true);
                 } else {
                   _nextMatch();
                 }
@@ -1607,8 +1581,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
               if (!_isDirty) setState(() => _isDirty = true);
               _cachedDocForLower = null;
               _cachedDocLower = null;
-              _cachedLinesText = null;
-              _cachedLinesList = null;
               if (_showFind && _findController.text.isNotEmpty) {
                 _findDebounce?.cancel();
                 _findDebounce = Timer(const Duration(milliseconds: 300), () {
@@ -1637,18 +1609,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
       fontSize: _fontSize,
       height: 1.35,
     );
-
-    // If syntax highlighting was bypassed (e.g. large file, data dump, plain text),
-    // and the file has many lines, use the high-performance virtualized line list.
-    // This allows opening files of any size (even 100,000+ lines) instantly with 0ms freeze.
-    final lines = _getLines(text);
-    if (span == null && (lines.length > 300 || text.length > 32 * 1024)) {
-      return _buildVirtualizedCodeView(
-        lines: lines,
-        baseStyle: baseStyle,
-        background: background,
-      );
-    }
 
     TextSpan resultSpan = span ?? TextSpan(text: text, style: baseStyle);
 
@@ -1689,89 +1649,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
         padding: const EdgeInsets.all(16),
         child: textWidget,
       ),
-    );
-  }
-
-  Widget _buildVirtualizedCodeView({
-    required List<String> lines,
-    required TextStyle baseStyle,
-    required Color background,
-  }) {
-    final lineHeight = _fontSize * 1.35;
-    return Container(
-      color: background,
-      width: double.infinity,
-      child: SelectionArea(
-        child: ListView.builder(
-          controller: _codeScrollController,
-          padding: const EdgeInsets.all(16),
-          itemCount: lines.length,
-          itemExtent: !_wordWrap ? lineHeight : null,
-          itemBuilder: (context, index) {
-            final lineText = lines[index];
-            Widget lineContent;
-            if (_showFind && _findController.text.isNotEmpty && _matchIndices.isNotEmpty) {
-              lineContent = _buildHighlightedLine(lineText, baseStyle);
-            } else {
-              lineContent = Text(
-                lineText.isEmpty ? ' ' : lineText,
-                style: baseStyle,
-                softWrap: _wordWrap,
-              );
-            }
-
-            if (!_wordWrap) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                child: lineContent,
-              );
-            }
-            return lineContent;
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHighlightedLine(String lineText, TextStyle baseStyle) {
-    final query = _findController.text;
-    final lowerLine = lineText.toLowerCase();
-    final lowerQuery = query.toLowerCase();
-    if (!lowerLine.contains(lowerQuery)) {
-      return Text(
-        lineText.isEmpty ? ' ' : lineText,
-        style: baseStyle,
-        softWrap: _wordWrap,
-      );
-    }
-
-    final spans = <InlineSpan>[];
-    int start = 0;
-    while (true) {
-      final idx = lowerLine.indexOf(lowerQuery, start);
-      if (idx == -1) {
-        if (start < lineText.length) {
-          spans.add(TextSpan(text: lineText.substring(start), style: baseStyle));
-        }
-        break;
-      }
-      if (idx > start) {
-        spans.add(TextSpan(text: lineText.substring(start, idx), style: baseStyle));
-      }
-      spans.add(TextSpan(
-        text: lineText.substring(idx, idx + query.length),
-        style: baseStyle.copyWith(
-          backgroundColor: const Color(0xFFFFEB3B),
-          color: Colors.black,
-          fontWeight: FontWeight.w600,
-        ),
-      ));
-      start = idx + query.length;
-    }
-    return Text.rich(
-      TextSpan(children: spans),
-      softWrap: _wordWrap,
     );
   }
 }
