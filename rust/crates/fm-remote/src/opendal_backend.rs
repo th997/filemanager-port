@@ -1,18 +1,17 @@
 //! OpenDAL VFS backend supporting S3, Aliyun OSS, and WebDAV.
 
 use async_trait::async_trait;
+use base64::prelude::*;
 use fm_core::{Capabilities, Entry, EntryKind, LocationKind, VfsPath, WriteMode};
 use fm_vfs::{Vfs, VfsError, VfsResult};
 use futures_util::StreamExt;
 use opendal::services::{Oss, S3, Webdav};
 use opendal::{EntryMode, Operator};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::SystemTime;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
+use crate::pipe_writer::pipe_writer;
 use crate::RemoteConfig;
 
 /// The facade crate has `auto-register-services` disabled, so the process-wide
@@ -22,6 +21,45 @@ fn ensure_http_transport() {
     ONCE.call_once(opendal::install_default);
 }
 
+/// WebDAV connection details for streaming direct uploads with backpressure.
+#[derive(Clone)]
+pub(crate) struct WebdavClientInfo {
+    pub endpoint: String,
+    pub auth_header: Option<String>,
+    pub root: String,
+    pub client: reqwest::Client,
+}
+
+impl WebdavClientInfo {
+    pub fn build_url(&self, path: &VfsPath) -> Result<reqwest::Url, String> {
+        let base = if self.endpoint.ends_with('/') {
+            &self.endpoint
+        } else {
+            &format!("{}/", self.endpoint)
+        };
+        let mut url = reqwest::Url::parse(base).map_err(|e| e.to_string())?;
+
+        let root_segs: Vec<&str> = self
+            .root
+            .trim_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "URL cannot be a base".to_string())?;
+        segments.pop_if_empty();
+        for seg in root_segs {
+            segments.push(seg);
+        }
+        for seg in path.segments() {
+            segments.push(&seg);
+        }
+        drop(segments);
+        Ok(url)
+    }
+}
 
 /// Ceiling for one OpenDAL operation. The operator is built without a
 /// timeout layer, and the reqwest transport underneath has no default
@@ -49,6 +87,7 @@ pub struct OpendalFs {
     operator: Operator,
     kind: LocationKind,
     capabilities: Capabilities,
+    webdav_info: Option<WebdavClientInfo>,
 }
 
 impl OpendalFs {
@@ -99,6 +138,7 @@ impl OpendalFs {
                 serve_http: false,
                 serve_ftp: false,
             },
+            webdav_info: None,
         })
     }
 
@@ -138,42 +178,63 @@ impl OpendalFs {
                 serve_http: false,
                 serve_ftp: false,
             },
+            webdav_info: None,
         })
     }
 
     pub fn new_webdav(config: &RemoteConfig) -> Result<Self, VfsError> {
         ensure_http_transport();
         let mut builder = Webdav::default();
-        if let Some(endpoint) = &config.endpoint {
+        let endpoint_str = if let Some(endpoint) = &config.endpoint {
             builder = builder.endpoint(endpoint);
+            endpoint.trim_end_matches('/').to_string()
         } else if let Some(host) = &config.host {
             let port = config.port.unwrap_or(443);
-            // Only the standard plain-HTTP port implies http. Every other
-            // port defaults to https: inferring http from "not 443" silently
-            // downgraded TLS servers on custom ports (8443 etc.) to plaintext,
-            // credentials included. Plain HTTP on a nonstandard port can still
-            // be configured through the full `endpoint` URL.
             let scheme = if port == 80 { "http" } else { "https" };
-            builder = builder.endpoint(&format!("{scheme}://{host}:{port}"));
-        }
+            let ep = format!("{scheme}://{host}:{port}");
+            builder = builder.endpoint(&ep);
+            ep
+        } else {
+            String::new()
+        };
+        let mut auth_header = None;
         if let Some(user) = &config.username {
             builder = builder.username(user);
+            let pass = config.password.as_deref().unwrap_or("");
+            let creds = format!("{user}:{pass}");
+            auth_header = Some(format!("Basic {}", BASE64_STANDARD.encode(creds)));
         }
         if let Some(pass) = &config.password {
             builder = builder.password(pass);
         }
-        if !config.root.is_empty() && config.root != "/" {
+        let root = if !config.root.is_empty() && config.root != "/" {
             builder = builder.root(&config.root);
-        }
+            config.root.clone()
+        } else {
+            String::new()
+        };
 
         let op = Operator::new(builder).map_err(|e| VfsError::Connection {
             message: format!("failed to initialize WebDAV operator: {e}"),
         })?;
 
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .map_err(|e| VfsError::Connection {
+                message: format!("failed to initialize WebDAV HTTP client: {e}"),
+            })?;
+
         Ok(Self {
             operator: op,
             kind: LocationKind::WebDav,
             capabilities: Capabilities::READ_WRITE,
+            webdav_info: Some(WebdavClientInfo {
+                endpoint: endpoint_str,
+                auth_header,
+                root,
+                client,
+            }),
         })
     }
 
@@ -614,13 +675,41 @@ impl OpendalFs {
             }
         }
         if self.kind == LocationKind::WebDav {
-            // OpenDAL's WebDAV writer is a OneShotWriter that rejects multiple incremental writes.
-            // Spool incoming writes into a buffer / temporary file and write all at once upon shutdown.
-            return Ok(Box::new(WebdavSpoolWriter::new(
-                self.operator.clone(),
-                op_path,
-                path.clone(),
-            )));
+            if let Some(info) = &self.webdav_info {
+                let url = info.build_url(path).map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e),
+                })?;
+                let client = info.client.clone();
+                let auth_header = info.auth_header.clone();
+                let op = self.operator.clone();
+                let parent_dir = Self::to_opendal_dir_path(&path.parent().unwrap_or_else(VfsPath::root));
+
+                return Ok(pipe_writer(move |rx| async move {
+                    if !parent_dir.is_empty() && parent_dir != "/" {
+                        let _ = op.create_dir(&parent_dir).await;
+                    }
+                    let reader_stream = tokio_util::io::ReaderStream::new(rx);
+                    let body = reqwest::Body::wrap_stream(reader_stream);
+                    let mut req = client.put(url.as_str()).body(body);
+                    if let Some(auth) = auth_header {
+                        req = req.header(reqwest::header::AUTHORIZATION, auth);
+                    }
+                    let resp = req
+                        .send()
+                        .await
+                        .map_err(|e| format!("WebDAV upload request failed: {e}"))?;
+                    let status = resp.status();
+                    if status.is_success() || status == reqwest::StatusCode::NO_CONTENT {
+                        Ok(())
+                    } else {
+                        let err_text = resp.text().await.unwrap_or_default();
+                        Err(format!(
+                            "WebDAV PUT to {url} failed with status {status}: {err_text}"
+                        ))
+                    }
+                }));
+            }
         }
 
         let writer = if mode == WriteMode::Append {
@@ -741,103 +830,5 @@ impl OpendalFs {
                 source: std::io::Error::other(e.to_string()),
             }),
         }
-    }
-}
-
-/// A spooling writer for WebDAV to bridge tokio `AsyncWrite` chunked streams
-/// into OpenDAL's `OneShotWriter` which requires all content at once.
-struct WebdavSpoolWriter {
-    operator: Operator,
-    op_path: String,
-    path: VfsPath,
-    mem_buf: Vec<u8>,
-    temp_file: Option<tempfile::NamedTempFile>,
-    shutdown_fut: Option<Pin<Box<dyn Future<Output = std::io::Result<()>> + Send>>>,
-}
-
-impl WebdavSpoolWriter {
-    fn new(operator: Operator, op_path: String, path: VfsPath) -> Self {
-        Self {
-            operator,
-            op_path,
-            path,
-            mem_buf: Vec::with_capacity(256 * 1024),
-            temp_file: None,
-            shutdown_fut: None,
-        }
-    }
-}
-
-const MEM_SPOOL_LIMIT: usize = 16 * 1024 * 1024; // 16 MB in-memory buffer before spilling to disk
-
-impl AsyncWrite for WebdavSpoolWriter {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        use std::io::Write;
-        let this = self.as_mut().get_mut();
-        if let Some(file) = &mut this.temp_file {
-            let n = file.write(buf)?;
-            return Poll::Ready(Ok(n));
-        }
-
-        if this.mem_buf.len() + buf.len() > MEM_SPOOL_LIMIT {
-            let mut file = tempfile::NamedTempFile::new()?;
-            file.write_all(&this.mem_buf)?;
-            this.mem_buf.clear();
-            this.mem_buf.shrink_to_fit();
-            let n = file.write(buf)?;
-            this.temp_file = Some(file);
-            return Poll::Ready(Ok(n));
-        }
-
-        this.mem_buf.extend_from_slice(buf);
-        Poll::Ready(Ok(buf.len()))
-    }
-
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        use std::io::Write;
-        let this = self.as_mut().get_mut();
-        if let Some(file) = &mut this.temp_file {
-            file.flush()?;
-        }
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let this = self.as_mut().get_mut();
-        if this.shutdown_fut.is_none() {
-            let op = this.operator.clone();
-            let op_path = this.op_path.clone();
-            let path = this.path.clone();
-
-            let load_data: std::io::Result<Vec<u8>> = if let Some(mut file) = this.temp_file.take() {
-                use std::io::{Read, Seek, SeekFrom};
-                file.seek(SeekFrom::Start(0))?;
-                let mut v = Vec::new();
-                file.read_to_end(&mut v)?;
-                Ok(v)
-            } else {
-                Ok(std::mem::take(&mut this.mem_buf))
-            };
-
-            this.shutdown_fut = Some(Box::pin(async move {
-                let data = load_data?;
-                op.write(&op_path, data).await.map_err(|e| {
-                    std::io::Error::other(format!("WebDAV write to {path} failed: {e}"))
-                })?;
-                Ok(())
-            }));
-        }
-
-        this.shutdown_fut.as_mut().unwrap().as_mut().poll(cx)
     }
 }

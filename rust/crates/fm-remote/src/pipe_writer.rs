@@ -24,8 +24,45 @@ impl AsyncWrite for PipeWriter {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
+        if let Some(rx) = this.result.as_mut() {
+            if let Poll::Ready(res) = Pin::new(rx).poll(cx) {
+                this.result = None;
+                this.done = true;
+                match res {
+                    Ok(Ok(())) => {
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "upload task completed prematurely",
+                        )));
+                    }
+                    Ok(Err(e)) => return Poll::Ready(Err(io::Error::other(e))),
+                    Err(_) => {
+                        return Poll::Ready(Err(io::Error::other(
+                            "upload task ended unexpectedly",
+                        )));
+                    }
+                }
+            }
+        }
         match this.tx.as_mut() {
-            Some(tx) => Pin::new(tx).poll_write(cx, buf),
+            Some(tx) => match Pin::new(tx).poll_write(cx, buf) {
+                Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe => {
+                    if let Some(mut rx) = this.result.take() {
+                        if let Poll::Ready(res) = Pin::new(&mut rx).poll(cx) {
+                            this.done = true;
+                            match res {
+                                Ok(Err(task_err)) => return Poll::Ready(Err(io::Error::other(task_err))),
+                                Err(_) => return Poll::Ready(Err(io::Error::other("upload task ended unexpectedly"))),
+                                _ => {}
+                            }
+                        } else {
+                            this.result = Some(rx);
+                        }
+                    }
+                    Poll::Ready(Err(e))
+                }
+                other => other,
+            },
             None => Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 "writer already shut down",
@@ -35,6 +72,21 @@ impl AsyncWrite for PipeWriter {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
+        if let Some(rx) = this.result.as_mut() {
+            if let Poll::Ready(res) = Pin::new(rx).poll(cx) {
+                this.result = None;
+                this.done = true;
+                match res {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => return Poll::Ready(Err(io::Error::other(e))),
+                    Err(_) => {
+                        return Poll::Ready(Err(io::Error::other(
+                            "upload task ended unexpectedly",
+                        )));
+                    }
+                }
+            }
+        }
         match this.tx.as_mut() {
             Some(tx) => Pin::new(tx).poll_flush(cx),
             None => Poll::Ready(Ok(())),
