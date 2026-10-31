@@ -117,6 +117,27 @@ class BrowserPageState extends State<BrowserPage> {
     prefs.setBool(_prefSortAsc, _sortAsc);
   }
   String _filterQuery = '';
+  String _cachedLastFilterQuery = '';
+  String _cachedTrimmedFilterQuery = '';
+  String _cachedLowerFilterQuery = '';
+
+  String get _trimmedFilterQuery {
+    if (_cachedLastFilterQuery != _filterQuery) {
+      _cachedLastFilterQuery = _filterQuery;
+      _cachedTrimmedFilterQuery = _filterQuery.trim();
+      _cachedLowerFilterQuery = _cachedTrimmedFilterQuery.toLowerCase();
+    }
+    return _cachedTrimmedFilterQuery;
+  }
+
+  String get _lowerFilterQuery {
+    if (_cachedLastFilterQuery != _filterQuery) {
+      _cachedLastFilterQuery = _filterQuery;
+      _cachedTrimmedFilterQuery = _filterQuery.trim();
+      _cachedLowerFilterQuery = _cachedTrimmedFilterQuery.toLowerCase();
+    }
+    return _cachedLowerFilterQuery;
+  }
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   // Recursive search (Rust side) state: results for the current query,
@@ -189,29 +210,12 @@ class BrowserPageState extends State<BrowserPage> {
 
   String get _selectedSummary {
     final count = _selectedPaths.length;
-    BigInt totalBytes = BigInt.zero;
-    for (final e in _entries) {
-      if (_selectedPaths.contains(_fullEntryPath(e))) {
-        if (!e.isDir && e.size != null) {
-          totalBytes += e.size!;
-        }
-      }
-    }
+    if (count == 0) return 'Select items';
+    final totalBytes = _selectedBytes;
     if (totalBytes > BigInt.zero) {
-      final bytes = totalBytes.toDouble();
-      String sizeStr;
-      if (bytes < 1024) {
-        sizeStr = '${bytes.toInt()} B';
-      } else if (bytes < 1024 * 1024) {
-        sizeStr = '${(bytes / 1024).toStringAsFixed(1)} KB';
-      } else if (bytes < 1024 * 1024 * 1024) {
-        sizeStr = '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-      } else {
-        sizeStr = '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-      }
-      return '$count selected ($sizeStr)';
+      return '$count selected (${_formatBytes(totalBytes)})';
     }
-    return count == 0 ? 'Select items' : '$count selected';
+    return '$count selected';
   }
 
   // Pagination state
@@ -4233,7 +4237,7 @@ class BrowserPageState extends State<BrowserPage> {
     int maxLines = 1,
     TextAlign textAlign = TextAlign.start,
   }) {
-    final query = _filterQuery.trim();
+    final query = _trimmedFilterQuery;
     if (query.isEmpty) {
       return Text(
         name,
@@ -4245,7 +4249,7 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     final lower = lowerName ?? name.toLowerCase();
-    final lowerQuery = query.toLowerCase();
+    final lowerQuery = _lowerFilterQuery;
     final spans = <TextSpan>[];
     final highlightColor = Theme.of(context).colorScheme.primary;
     var start = 0;
@@ -4473,7 +4477,7 @@ class BrowserPageState extends State<BrowserPage> {
             final path = _fullEntryPath(item);
             final isSelected = _selectedPaths.contains(path);
 
-            return KeyedSubtree(
+            return RepaintBoundary(
               key: ValueKey(path),
               child: _draggableTile(
                 item: item,
@@ -4624,7 +4628,7 @@ class BrowserPageState extends State<BrowserPage> {
           final path = _fullEntryPath(item);
           final isSelected = _selectedPaths.contains(path);
 
-          return KeyedSubtree(
+          return RepaintBoundary(
             key: ValueKey(path),
             child: _draggableTile(
               item: item,

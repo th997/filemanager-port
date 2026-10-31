@@ -254,6 +254,9 @@ class _TrashPageState extends State<TrashPage> {
 
   Future<void> _restore(TrashItemDto item) async {
     final name = _displayName(item);
+    setState(() {
+      _items.removeWhere((i) => i.id == item.id);
+    });
     try {
       await StorageService.instance.restoreTrashItem(item.id);
     } catch (e) {
@@ -268,7 +271,6 @@ class _TrashPageState extends State<TrashPage> {
       }
       return;
     }
-    _load();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Restored "$name"')),
@@ -294,9 +296,13 @@ class _TrashPageState extends State<TrashPage> {
       ),
     );
     if (confirm == true) {
+      setState(() {
+        _items.removeWhere((i) => i.id == item.id);
+      });
       try {
         await StorageService.instance.deleteTrashItem(item.id);
       } catch (e) {
+        _load();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -307,7 +313,6 @@ class _TrashPageState extends State<TrashPage> {
         }
         return;
       }
-      _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Deleted "$name"')),

@@ -1,7 +1,28 @@
 use crate::registry::VfsRegistry;
 use fm_core::{Capabilities, Entry, EntryKind, VfsPath, WriteMode};
+use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+#[derive(Clone)]
+struct DirCacheEntry {
+    created_at: Instant,
+    dtos: Vec<EntryDto>,
+}
+
+fn dir_cache() -> &'static Mutex<HashMap<(String, String, String, bool), DirCacheEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<(String, String, String, bool), DirCacheEntry>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn invalidate_dir_cache(root: &str) {
+    let mut cache = dir_cache().lock();
+    cache.retain(|(r, _, _, _), _| r != root);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CapabilitiesDto {
@@ -76,16 +97,28 @@ fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
         if s.is_empty() {
             return None;
         }
-        let first = s.chars().next()?;
-        let is_digit = first.is_ascii_digit();
-        let end = s
-            .char_indices()
-            .find(|&(_, ch)| ch.is_ascii_digit() != is_digit)
-            .map(|(idx, _)| idx)
-            .unwrap_or(s.len());
-        let chunk = &s[..end];
-        *s = &s[end..];
-        Some((chunk, is_digit))
+        if s.is_ascii() {
+            let bytes = s.as_bytes();
+            let is_digit = bytes[0].is_ascii_digit();
+            let end = bytes
+                .iter()
+                .position(|&b| b.is_ascii_digit() != is_digit)
+                .unwrap_or(bytes.len());
+            let chunk = &s[..end];
+            *s = &s[end..];
+            Some((chunk, is_digit))
+        } else {
+            let first = s.chars().next()?;
+            let is_digit = first.is_ascii_digit();
+            let end = s
+                .char_indices()
+                .find(|&(_, ch)| ch.is_ascii_digit() != is_digit)
+                .map(|(idx, _)| idx)
+                .unwrap_or(s.len());
+            let chunk = &s[..end];
+            *s = &s[end..];
+            Some((chunk, is_digit))
+        }
     }
 
     loop {
@@ -103,10 +136,14 @@ fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
             }
             (Some((pa, _)), Some((pb, _))) => {
                 let cmp = if pa.is_ascii() && pb.is_ascii() {
-                    pa.as_bytes()
-                        .iter()
-                        .map(u8::to_ascii_lowercase)
-                        .cmp(pb.as_bytes().iter().map(u8::to_ascii_lowercase))
+                    if pa.eq_ignore_ascii_case(pb) {
+                        std::cmp::Ordering::Equal
+                    } else {
+                        pa.as_bytes()
+                            .iter()
+                            .map(u8::to_ascii_lowercase)
+                            .cmp(pb.as_bytes().iter().map(u8::to_ascii_lowercase))
+                    }
                 } else {
                     pa.chars()
                         .map(|c| c.to_ascii_lowercase())
@@ -214,16 +251,49 @@ pub async fn list_dir_paged(
     sort_by: String,
     sort_ascending: bool,
 ) -> Result<PagedEntriesDto, String> {
-    let backend = VfsRegistry::global().get_or_create(&root).await?;
-    let vfs_path = VfsPath::from_slash_path(&path);
-    // Sorting must see the whole folder: the VFS paged helper materialises
-    // the full list anyway, so sort first, then slice out the page.
-    let all = backend
-        .list(&vfs_path)
-        .await
-        .map_err(|error| error.to_string())?;
-    let mut dtos: Vec<EntryDto> = all.into_iter().map(EntryDto::from).collect();
-    sort_dtos(&mut dtos, &sort_by, sort_ascending);
+    let cache_key = (root.clone(), path.clone(), sort_by.clone(), sort_ascending);
+    let ttl = Duration::from_secs(5);
+    let now = Instant::now();
+
+    let cached_dtos = {
+        let mut cache = dir_cache().lock();
+        cache.retain(|_, entry| now.duration_since(entry.created_at) < ttl);
+        if page > 1 {
+            cache.get(&cache_key).and_then(|entry| {
+                if now.duration_since(entry.created_at) < ttl {
+                    Some(entry.dtos.clone())
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        }
+    };
+
+    let dtos = match cached_dtos {
+        Some(dtos) => dtos,
+        None => {
+            let backend = VfsRegistry::global().get_or_create(&root).await?;
+            let vfs_path = VfsPath::from_slash_path(&path);
+            let all = backend
+                .list(&vfs_path)
+                .await
+                .map_err(|error| error.to_string())?;
+            let mut dtos: Vec<EntryDto> = all.into_iter().map(EntryDto::from).collect();
+            sort_dtos(&mut dtos, &sort_by, sort_ascending);
+
+            let mut cache = dir_cache().lock();
+            cache.insert(
+                cache_key,
+                DirCacheEntry {
+                    created_at: now,
+                    dtos: dtos.clone(),
+                },
+            );
+            dtos
+        }
+    };
 
     let total = dtos.len() as u32;
     let page = page.max(1);
@@ -243,6 +313,24 @@ pub async fn list_dir_paged(
         has_more,
         total,
     })
+}
+
+fn contains_ignore_case(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        let needle_bytes = needle_lower.as_bytes();
+        let haystack_bytes = haystack.as_bytes();
+        if needle_bytes.len() > haystack_bytes.len() {
+            return false;
+        }
+        haystack_bytes
+            .windows(needle_bytes.len())
+            .any(|window| window.eq_ignore_ascii_case(needle_bytes))
+    } else {
+        haystack.to_lowercase().contains(needle_lower)
+    }
 }
 
 /// Recursive name search under `path`. Added because the UI's "search"
@@ -289,7 +377,7 @@ pub async fn search_entries(
             let descend =
                 child.kind == EntryKind::Dir && !child.is_symlink && depth < MAX_DEPTH;
             let child_path = child.path.clone();
-            if child.name.to_lowercase().contains(&needle) {
+            if contains_ignore_case(&child.name, &needle) {
                 results.push(EntryDto::from(child));
                 if results.len() >= max_results {
                     break;
@@ -316,13 +404,17 @@ pub async fn stat_entry(root: String, path: String) -> Result<EntryDto, String> 
 pub async fn create_dir(root: String, path: String) -> Result<(), String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
-    backend.mkdir(&vfs_path).await.map_err(|e| e.to_string())
+    backend.mkdir(&vfs_path).await.map_err(|e| e.to_string())?;
+    invalidate_dir_cache(&root);
+    Ok(())
 }
 
 pub async fn remove_entry(root: String, path: String) -> Result<(), String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
-    backend.remove(&vfs_path).await.map_err(|e| e.to_string())
+    backend.remove(&vfs_path).await.map_err(|e| e.to_string())?;
+    invalidate_dir_cache(&root);
+    Ok(())
 }
 
 pub async fn rename_entry(root: String, from: String, to: String) -> Result<(), String> {
@@ -332,7 +424,9 @@ pub async fn rename_entry(root: String, from: String, to: String) -> Result<(), 
     backend
         .rename(&from_path, &to_path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    invalidate_dir_cache(&root);
+    Ok(())
 }
 
 /// Upper bound for opening a file in the text editor. The old code read
@@ -373,6 +467,7 @@ pub async fn read_text_file(root: String, path: String) -> Result<String, String
 /// Drop a cached backend so the next access rebuilds it from stored config.
 #[flutter_rust_bridge::frb(sync)]
 pub fn invalidate_root(root: String) {
+    invalidate_dir_cache(&root);
     VfsRegistry::global().invalidate(&root);
 }
 
@@ -403,6 +498,7 @@ pub async fn write_text_file(root: String, path: String, content: String) -> Res
     writer.flush().await.map_err(|e| e.to_string())?;
     // Remote writers commit the object on shutdown; flush alone is not enough.
     writer.shutdown().await.map_err(|e| e.to_string())?;
+    invalidate_dir_cache(&root);
     Ok(())
 }
 
@@ -489,5 +585,15 @@ mod tests {
         sort_dtos(&mut v, "type", true);
         let names: Vec<&str> = v.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, vec!["x.md", "a.txt", "b.txt"]);
+    }
+
+    #[test]
+    fn test_contains_ignore_case() {
+        assert!(super::contains_ignore_case("hello_world.txt", "world"));
+        assert!(super::contains_ignore_case("PHOTO_2026.JPG", "photo"));
+        assert!(super::contains_ignore_case("PHOTO_2026.JPG", "2026"));
+        assert!(!super::contains_ignore_case("PHOTO_2026.JPG", "png"));
+        assert!(super::contains_ignore_case("中文测试.txt", "中文"));
+        assert!(!super::contains_ignore_case("中文测试.txt", "英文"));
     }
 }

@@ -35,12 +35,14 @@ class _BookmarksPageState extends State<BookmarksPage> {
 
   Future<void> _loadBookmarks() async {
     try {
-      final bms = await StorageService.instance.getBookmarks();
-      final rems = await StorageService.instance.getRemotes();
+      final results = await Future.wait([
+        StorageService.instance.getBookmarks(),
+        StorageService.instance.getRemotes(),
+      ]);
       if (!mounted) return;
       setState(() {
-        _bookmarks = bms;
-        _remotes = rems;
+        _bookmarks = results[0] as List<BookmarkDto>;
+        _remotes = results[1] as List<RemoteConfigDto>;
         _loading = false;
       });
     } catch (e) {
@@ -262,10 +264,15 @@ class _BookmarksPageState extends State<BookmarksPage> {
 
   /// Removes without a confirmation dialog; the snackbar carries the undo.
   Future<void> _deleteBookmark(BookmarkDto bm) async {
+    final original = _bookmarks;
+    setState(() {
+      _bookmarks = _bookmarks.where((b) => b.id != bm.id).toList();
+    });
     try {
       await StorageService.instance.deleteBookmark(bm.id);
     } catch (e) {
       if (!mounted) return;
+      setState(() => _bookmarks = original);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Could not remove bookmark: $e'),
@@ -274,7 +281,6 @@ class _BookmarksPageState extends State<BookmarksPage> {
       );
       return;
     }
-    await _loadBookmarks();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

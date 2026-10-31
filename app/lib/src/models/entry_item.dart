@@ -1,6 +1,17 @@
 import 'package:flutter/material.dart';
 import '../rust/api/file_manager.dart';
 
+enum EntryCategory {
+  dir,
+  archive,
+  image,
+  video,
+  audio,
+  pdf,
+  text,
+  other,
+}
+
 class EntryItem {
   final EntryDto dto;
 
@@ -47,19 +58,27 @@ class EntryItem {
     return name.substring(dot + 1).toLowerCase();
   }();
 
-  bool get isArchive {
+  late final EntryCategory category = () {
+    if (isDir) return EntryCategory.dir;
     final ext = extension;
-    if (_archiveExtensions.contains(ext)) return true;
-    if (ext == 'gz' && nameLower.endsWith('.tar.gz')) return true;
-    return false;
-  }
+    if (_archiveExtensions.contains(ext) || (ext == 'gz' && nameLower.endsWith('.tar.gz'))) {
+      return EntryCategory.archive;
+    }
+    if (_imageExtensions.contains(ext)) return EntryCategory.image;
+    if (_videoExtensions.contains(ext)) return EntryCategory.video;
+    if (_audioExtensions.contains(ext)) return EntryCategory.audio;
+    if (ext == 'pdf') return EntryCategory.pdf;
+    if (_textExtensions.contains(ext)) return EntryCategory.text;
+    return EntryCategory.other;
+  }();
 
-  bool get isText => _textExtensions.contains(extension);
-  bool get isImage => _imageExtensions.contains(extension);
-  bool get isVideo => _videoExtensions.contains(extension);
-  bool get isAudio => _audioExtensions.contains(extension);
-  bool get isMedia => isVideo || isAudio;
-  bool get isPdf => extension == 'pdf';
+  bool get isArchive => category == EntryCategory.archive;
+  bool get isText => category == EntryCategory.text;
+  bool get isImage => category == EntryCategory.image;
+  bool get isVideo => category == EntryCategory.video;
+  bool get isAudio => category == EntryCategory.audio;
+  bool get isMedia => category == EntryCategory.video || category == EntryCategory.audio;
+  bool get isPdf => category == EntryCategory.pdf;
   bool get isMarkdown => extension == 'md' || extension == 'markdown';
   bool get isHtml => extension == 'html' || extension == 'htm' || extension == 'xhtml';
 
@@ -152,35 +171,50 @@ class EntryItem {
   }();
 
   IconData get icon {
-    if (isDir) return Icons.folder;
-    final ext = extension;
-    if (_imageExtensions.contains(ext)) return Icons.image;
-    if (_videoExtensions.contains(ext)) return Icons.play_circle_fill;
-    if (_audioExtensions.contains(ext)) return Icons.music_note;
-    if (isArchive) return Icons.archive;
-    if (ext == 'pdf') return Icons.menu_book;
-    if (_textExtensions.contains(ext)) return Icons.article;
-    return Icons.insert_drive_file;
+    switch (category) {
+      case EntryCategory.dir:
+        return Icons.folder;
+      case EntryCategory.image:
+        return Icons.image;
+      case EntryCategory.video:
+        return Icons.play_circle_fill;
+      case EntryCategory.audio:
+        return Icons.music_note;
+      case EntryCategory.archive:
+        return Icons.archive;
+      case EntryCategory.pdf:
+        return Icons.menu_book;
+      case EntryCategory.text:
+        return Icons.article;
+      case EntryCategory.other:
+        return Icons.insert_drive_file;
+    }
   }
 
   Color iconColor(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    if (isDir) return scheme.primary;
+    if (category == EntryCategory.dir) return scheme.primary;
     // File-type hues, in a light and a dark variant: the mid-tone palette
     // colors that read well on white (purple, blue-grey, amber 800) sink
     // into dark surfaces, so dark mode gets the 200/300-level tints.
     final dark = scheme.brightness == Brightness.dark;
-    final ext = extension;
-    if (isArchive) {
-      return dark ? const Color(0xFFFFB74D) : Colors.amber.shade800;
+    switch (category) {
+      case EntryCategory.dir:
+        return scheme.primary;
+      case EntryCategory.archive:
+        return dark ? const Color(0xFFFFB74D) : Colors.amber.shade800;
+      case EntryCategory.image:
+        return dark ? const Color(0xFFCE93D8) : Colors.purple;
+      case EntryCategory.pdf:
+        return dark ? const Color(0xFFEF9A9A) : Colors.red;
+      case EntryCategory.video:
+        return dark ? const Color(0xFFFFAB91) : Colors.deepOrange;
+      case EntryCategory.audio:
+        return dark ? const Color(0xFF80CBC4) : Colors.teal;
+      case EntryCategory.text:
+        return dark ? const Color(0xFFB0BEC5) : Colors.blueGrey;
+      case EntryCategory.other:
+        return scheme.onSurfaceVariant;
     }
-    if (_imageExtensions.contains(ext)) return dark ? const Color(0xFFCE93D8) : Colors.purple;
-    if (ext == 'pdf') {
-      return dark ? const Color(0xFFEF9A9A) : Colors.red;
-    }
-    if (_videoExtensions.contains(ext)) return dark ? const Color(0xFFFFAB91) : Colors.deepOrange;
-    if (_audioExtensions.contains(ext)) return dark ? const Color(0xFF80CBC4) : Colors.teal;
-    if (_textExtensions.contains(ext)) return dark ? const Color(0xFFB0BEC5) : Colors.blueGrey;
-    return scheme.onSurfaceVariant;
   }
 }

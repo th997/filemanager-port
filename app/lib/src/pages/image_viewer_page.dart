@@ -206,20 +206,19 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     try {
       if (stat.size <= 32 * 1024 * 1024) {
         bytes = await file.readAsBytes();
-        final image = await decodeImageFromList(bytes);
-        dimensions = Size(image.width.toDouble(), image.height.toDouble());
       } else {
-        // Details probe only: fully decoding a huge image just to
-        // learn its dimensions duplicates the displayed bitmap in
-        // memory (a 200 MP photo is ~800 MB decoded) and can OOM the
-        // app. Read just the head — enough for the EXIF block, which
-        // lives at the start of the file.
+        // Read just the head — enough for header parsing and EXIF
         final raf = await file.open();
         try {
           bytes = await raf.read(256 * 1024);
         } finally {
           await raf.close();
         }
+      }
+      dimensions = _parseImageDimensions(bytes);
+      if (dimensions == null && stat.size <= 32 * 1024 * 1024) {
+        final image = await decodeImageFromList(bytes);
+        dimensions = Size(image.width.toDouble(), image.height.toDouble());
       }
     } catch (_) {}
 
@@ -328,6 +327,59 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     } catch (_) {
       return null;
     }
+  }
+
+  static Size? _parseImageDimensions(Uint8List bytes) {
+    if (bytes.length < 16) return null;
+    // PNG: 8-byte signature: 137 80 78 71 13 10 26 10
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+      if (bytes.length >= 24) {
+        final w = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+        final h = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+        if (w > 0 && h > 0) return Size(w.toDouble(), h.toDouble());
+      }
+    }
+    // GIF: GIF87a or GIF89a
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) {
+      if (bytes.length >= 10) {
+        final w = bytes[6] | (bytes[7] << 8);
+        final h = bytes[8] | (bytes[9] << 8);
+        if (w > 0 && h > 0) return Size(w.toDouble(), h.toDouble());
+      }
+    }
+    // BMP: BM
+    if (bytes[0] == 0x42 && bytes[1] == 0x4D) {
+      if (bytes.length >= 26) {
+        final w = bytes[18] | (bytes[19] << 8) | (bytes[20] << 16) | (bytes[21] << 24);
+        final h = (bytes[22] | (bytes[23] << 8) | (bytes[24] << 16) | (bytes[25] << 24)).abs();
+        if (w > 0 && h > 0) return Size(w.toDouble(), h.toDouble());
+      }
+    }
+    // JPEG: 0xFF, 0xD8
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+      var offset = 2;
+      while (offset + 4 < bytes.length) {
+        if (bytes[offset] != 0xFF) break;
+        final marker = bytes[offset + 1];
+        offset += 2;
+        if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2) {
+          if (offset + 7 <= bytes.length) {
+            final h = (bytes[offset + 3] << 8) | bytes[offset + 4];
+            final w = (bytes[offset + 5] << 8) | bytes[offset + 6];
+            if (w > 0 && h > 0) return Size(w.toDouble(), h.toDouble());
+          }
+          break;
+        } else if (marker == 0xD9 || marker == 0xDA) {
+          break;
+        } else {
+          if (offset + 2 > bytes.length) break;
+          final len = (bytes[offset] << 8) | bytes[offset + 1];
+          if (len < 2) break;
+          offset += len;
+        }
+      }
+    }
+    return null;
   }
 
   Widget _detailRow(String label, String value) {

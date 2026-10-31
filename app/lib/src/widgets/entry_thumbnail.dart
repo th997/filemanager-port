@@ -92,11 +92,20 @@ class _EntryThumbnailState extends State<EntryThumbnail> {
     return future;
   }
 
+  static Future<String>? _thumbsDirFuture;
+
+  static Future<String> _getThumbsDir() {
+    return _thumbsDirFuture ??= () async {
+      final base = await getTemporaryDirectory();
+      final dir = Directory(joinNative(base.path, 'thumbs'));
+      if (!dir.existsSync()) await dir.create(recursive: true);
+      return dir.path;
+    }();
+  }
+
   Future<String> _doExport() async {
-    final base = await getTemporaryDirectory();
-    final dir = Directory(joinNative(base.path, 'thumbs'));
-    if (!dir.existsSync()) await dir.create(recursive: true);
-    return exportToNative(root: widget.root, path: widget.relPath, cacheDir: dir.path);
+    final dirPath = await _getThumbsDir();
+    return exportToNative(root: widget.root, path: widget.relPath, cacheDir: dirPath);
   }
 
   Widget _image(File file, Widget fallback) {

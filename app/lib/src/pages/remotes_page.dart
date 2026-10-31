@@ -89,11 +89,14 @@ class _RemotesPageState extends State<RemotesPage> {
       setState(() {
         _remotes = rems;
         _loading = false;
+        for (final r in rems) {
+          _status[r.id] = _ConnStatus.checking;
+        }
       });
       // Probe reachability in the background so the list shows live
       // status dots without blocking the page on slow servers.
       for (final r in rems) {
-        _probeStatus(r);
+        _probeStatus(r, skipInitialSetState: true);
       }
     } catch (e) {
       // Without this the page stays on its spinner after a storage failure.
@@ -108,10 +111,12 @@ class _RemotesPageState extends State<RemotesPage> {
     }
   }
 
-  Future<void> _probeStatus(RemoteConfigDto remote) async {
-    if (_status[remote.id] == _ConnStatus.checking) return;
-    if (mounted) {
-      setState(() => _status[remote.id] = _ConnStatus.checking);
+  Future<void> _probeStatus(RemoteConfigDto remote, {bool skipInitialSetState = false}) async {
+    if (!skipInitialSetState) {
+      if (_status[remote.id] == _ConnStatus.checking) return;
+      if (mounted) {
+        setState(() => _status[remote.id] = _ConnStatus.checking);
+      }
     }
     bool ok;
     try {

@@ -497,28 +497,30 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 
   Widget _buildTile(_Photo photo, int index) {
     final thumb = photo.asset;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          thumb != null
-              ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
-              : Image.file(
-                  photo.file!,
-                  fit: BoxFit.cover,
-                  cacheWidth: 220,
-                  cacheHeight: 220,
-                  errorBuilder: (_, _, _) => _brokenThumb(),
-                ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => _open(index),
-              onLongPress: () => _showPhotoActionSheet(index),
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            thumb != null
+                ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
+                : Image.file(
+                    photo.file!,
+                    fit: BoxFit.cover,
+                    cacheWidth: 220,
+                    cacheHeight: 220,
+                    errorBuilder: (_, _, _) => _brokenThumb(),
+                  ),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _open(index),
+                onLongPress: () => _showPhotoActionSheet(index),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -542,9 +544,22 @@ class _AssetThumb extends StatefulWidget {
 }
 
 class _AssetThumbState extends State<_AssetThumb> {
-  late final Future<Uint8List?> _data = widget.asset.thumbnailDataWithSize(
-    const ThumbnailSize.square(220),
-  );
+  static final Map<String, Future<Uint8List?>> _thumbCache = {};
+
+  late final Future<Uint8List?> _data = _getThumb(widget.asset);
+
+  static Future<Uint8List?> _getThumb(AssetEntity asset) {
+    final existing = _thumbCache[asset.id];
+    if (existing != null) return existing;
+    if (_thumbCache.length > 500) {
+      _thumbCache.remove(_thumbCache.keys.first);
+    }
+    final future = asset.thumbnailDataWithSize(
+      const ThumbnailSize.square(220),
+    );
+    _thumbCache[asset.id] = future;
+    return future;
+  }
 
   @override
   Widget build(BuildContext context) {

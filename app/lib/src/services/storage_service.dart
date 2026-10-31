@@ -262,30 +262,50 @@ class StorageService {
     } catch (_) {}
   }
 
+  int? _cachedTrashCount;
+
+  void invalidateTrashCount() {
+    _cachedTrashCount = null;
+  }
+
+  Future<int> getTrashCount() async {
+    if (_cachedTrashCount != null) {
+      return _cachedTrashCount!;
+    }
+    final items = await getTrashItems();
+    return items.length;
+  }
+
   // Trash
   Future<List<meta_api.TrashItemDto>> getTrashItems() async {
     ensureInitialized();
-    return await meta_api.listTrash(dbPath: dbPath);
+    final items = await meta_api.listTrash(dbPath: dbPath);
+    _cachedTrashCount = items.length;
+    return items;
   }
 
   Future<void> moveToTrash(String sourcePath) async {
     ensureInitialized();
     await meta_api.moveToTrash(dbPath: dbPath, sourcePath: sourcePath);
+    _cachedTrashCount = (_cachedTrashCount != null ? _cachedTrashCount! + 1 : null);
   }
 
   Future<void> restoreTrashItem(String id) async {
     ensureInitialized();
     await meta_api.restoreTrashItem(dbPath: dbPath, id: id);
+    _cachedTrashCount = (_cachedTrashCount != null && _cachedTrashCount! > 0 ? _cachedTrashCount! - 1 : 0);
   }
 
   Future<void> deleteTrashItem(String id) async {
     ensureInitialized();
     await meta_api.deleteTrashItem(dbPath: dbPath, id: id);
+    _cachedTrashCount = (_cachedTrashCount != null && _cachedTrashCount! > 0 ? _cachedTrashCount! - 1 : 0);
   }
 
   Future<void> clearTrash() async {
     ensureInitialized();
     await meta_api.clearTrash(dbPath: dbPath);
+    _cachedTrashCount = 0;
   }
 
   // Serialization helpers

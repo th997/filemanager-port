@@ -420,20 +420,26 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   Future<void> _tunePlayerProperties() async {
     final dynamic platform = _player.platform;
     if (platform != null) {
+      final isAudio = _track.isAudio;
+      final maxBytes = isAudio ? '${16 * 1024 * 1024}' : '${128 * 1024 * 1024}';
+      final maxBackBytes = isAudio ? '${8 * 1024 * 1024}' : '${64 * 1024 * 1024}';
       try {
-        await platform.setProperty('cache-pause', 'no');
-        await platform.setProperty('cache-pause-wait', '0');
-        await platform.setProperty('cache-pause-initial', 'no');
-        await platform.setProperty('cache-on-disk', 'no');
-        await platform.setProperty('video-sync', 'display-resample');
-        await platform.setProperty('demuxer-readahead-secs', '120');
-        await platform.setProperty('demuxer-max-bytes', '${128 * 1024 * 1024}');
-        await platform.setProperty('demuxer-max-back-bytes', '${64 * 1024 * 1024}');
-        await platform.setProperty('network-timeout', '60');
-        await platform.setProperty('framedrop', 'vo');
-        await platform.setProperty('hr-seek-framedrop', 'yes');
-        await platform.setProperty('audio-buffer', '0.5');
-        await platform.setProperty('keep-open-pause', 'no');
+        final futures = <Future<dynamic>>[
+          platform.setProperty('cache-pause', 'no') as Future<dynamic>,
+          platform.setProperty('cache-pause-wait', '0') as Future<dynamic>,
+          platform.setProperty('cache-pause-initial', 'no') as Future<dynamic>,
+          platform.setProperty('cache-on-disk', 'no') as Future<dynamic>,
+          platform.setProperty('video-sync', 'display-resample') as Future<dynamic>,
+          platform.setProperty('demuxer-readahead-secs', '120') as Future<dynamic>,
+          platform.setProperty('demuxer-max-bytes', maxBytes) as Future<dynamic>,
+          platform.setProperty('demuxer-max-back-bytes', maxBackBytes) as Future<dynamic>,
+          platform.setProperty('network-timeout', '60') as Future<dynamic>,
+          platform.setProperty('framedrop', 'vo') as Future<dynamic>,
+          platform.setProperty('hr-seek-framedrop', 'yes') as Future<dynamic>,
+          platform.setProperty('audio-buffer', '0.5') as Future<dynamic>,
+          platform.setProperty('keep-open-pause', 'no') as Future<dynamic>,
+        ];
+        await Future.wait(futures);
       } catch (_) {}
     }
   }

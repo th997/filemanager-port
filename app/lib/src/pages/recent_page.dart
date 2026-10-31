@@ -65,12 +65,14 @@ class _RecentPageState extends State<RecentPage> {
 
   Future<void> _loadHistory() async {
     try {
-      final hist = await StorageService.instance.getHistory();
-      final rems = await StorageService.instance.getRemotes();
+      final results = await Future.wait([
+        StorageService.instance.getHistory(),
+        StorageService.instance.getRemotes(),
+      ]);
       if (!mounted) return;
       setState(() {
-        _history = hist;
-        _remotes = rems;
+        _history = results[0] as List<HistoryDto>;
+        _remotes = results[1] as List<RemoteConfigDto>;
         _loading = false;
       });
     } catch (e) {
@@ -133,12 +135,14 @@ class _RecentPageState extends State<RecentPage> {
   /// offers an undo.
   Future<void> _removeEntry(HistoryDto h, String title) async {
     final index = _history.indexOf(h);
+    setState(() {
+      _history = _history.where((item) => !(item.root == h.root && item.path == h.path)).toList();
+    });
     try {
       await StorageService.instance.removeHistoryEntry(root: h.root, path: h.path);
     } catch (e) {
-      // Without this the row stayed put with no explanation and the tap
-      // looked ignored.
       if (!mounted) return;
+      _loadHistory();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Could not remove "$title": $e'),
@@ -147,7 +151,6 @@ class _RecentPageState extends State<RecentPage> {
       );
       return;
     }
-    await _loadHistory();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

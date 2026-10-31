@@ -26,6 +26,12 @@ class VideoThumbnailService {
   Future<void> _queue = Future<void>.value();
   Timer? _idleTimer;
 
+  static final String _thumbsDirPath = '${Directory.systemTemp.path}/fm_video_thumbs';
+
+  static String _thumbFileName(String key) {
+    return '${key.hashCode.abs()}.jpg';
+  }
+
   Future<File?> thumbnail({required String root, required String path}) {
     // Only local native roots should ever generate video thumbnails.
     // Remote SFTP/WebDAV/SMB must NEVER stream entire files in background.
@@ -39,8 +45,7 @@ class VideoThumbnailService {
 
     // Fast-path: if thumbnail already exists on disk, return immediately
     // without queuing through the serialized media_kit Player pipeline.
-    final dir = Directory('${Directory.systemTemp.path}/fm_video_thumbs');
-    final out = File('${dir.path}/${key.hashCode.abs()}.jpg');
+    final out = File('$_thumbsDirPath/${_thumbFileName(key)}');
     try {
       if (out.existsSync() && out.lengthSync() > 0) {
         final fut = Future<File?>.value(out);
@@ -75,9 +80,11 @@ class VideoThumbnailService {
 
   Future<File?> _grab(String root, String path, String key) async {
     try {
-      final dir = Directory('${Directory.systemTemp.path}/fm_video_thumbs');
-      await dir.create(recursive: true);
-      final out = File('${dir.path}/${key.hashCode.abs()}.jpg');
+      final dir = Directory(_thumbsDirPath);
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      final out = File('$_thumbsDirPath/${_thumbFileName(key)}');
       if (await out.exists() && await out.length() > 0) return out;
 
       final String uri;
@@ -107,7 +114,10 @@ class VideoThumbnailService {
           ? const Duration(seconds: 2)
           : Duration(milliseconds: (dur.inMilliseconds * 0.25).round());
       await player.seek(target);
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+      // Wait for seek to complete with a short timeout instead of a fixed 400ms delay
+      await player.stream.position
+          .firstWhere((p) => p >= target)
+          .timeout(const Duration(milliseconds: 250), onTimeout: () => target);
       final bytes = await player
           .screenshot(format: 'image/jpeg')
           .timeout(const Duration(seconds: 4));

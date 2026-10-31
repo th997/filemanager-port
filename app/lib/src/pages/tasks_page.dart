@@ -54,7 +54,25 @@ class _TasksPageState extends State<TasksPage> {
         _speeds.putIfAbsent(t.id, SpeedEstimator.new).add(t.completed);
       }
     }
-    if (mounted) setState(() => _tasks = tasks);
+    if (!_tasksEqual(_tasks, tasks)) {
+      if (mounted) setState(() => _tasks = tasks);
+    }
+  }
+
+  bool _tasksEqual(List<TaskProgressDto> a, List<TaskProgressDto> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final ta = a[i];
+      final tb = b[i];
+      if (ta.id != tb.id ||
+          ta.state != tb.state ||
+          ta.completed != tb.completed ||
+          ta.total != tb.total) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool _isTerminal(TaskProgressDto t) =>

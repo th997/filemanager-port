@@ -194,17 +194,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // A failing metadata read used to leave the cards showing stale counts
     // with no hint that they were stale.
     try {
-      final rems = await StorageService.instance.getRemotes();
-      final bms = await StorageService.instance.getBookmarks();
-      final hist = await StorageService.instance.getHistory();
-      final trash = await StorageService.instance.getTrashItems();
+      final results = await Future.wait([
+        StorageService.instance.getRemotes(),
+        StorageService.instance.getBookmarks(),
+        StorageService.instance.getHistory(),
+        StorageService.instance.getTrashCount(),
+      ]);
 
       if (mounted) {
         setState(() {
-          _remotes = rems;
-          _bookmarks = bms;
-          _history = hist;
-          _trashCount = trash.length;
+          _remotes = results[0] as List<RemoteConfigDto>;
+          _bookmarks = results[1] as List<BookmarkDto>;
+          _history = results[2] as List<HistoryDto>;
+          _trashCount = results[3] as int;
         });
       }
     } catch (e) {
