@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart' show Color, TextStyle;
 import 'package:markdown/markdown.dart' as md;
 import 'package:pdf/pdf.dart';
@@ -44,42 +45,222 @@ class MarkdownPdfService {
     extensionSet: md.ExtensionSet.gitHubFlavored,
   );
 
-  static pw.Font? _cachedSystemFont;
-  static bool _systemFontSearched = false;
+  static pw.Font? _cachedCjkFont;
+  static bool _cjkFontSearched = false;
 
-  /// Attempts to find a local TrueType font supporting Unicode/CJK characters.
-  static pw.Font? _loadSystemFont() {
-    if (_systemFontSearched) return _cachedSystemFont;
-    _systemFontSearched = true;
+  static pw.Font? _cachedLatinFont;
+  static pw.Font? _cachedLatinBoldFont;
+  static bool _latinFontSearched = false;
 
-    final candidatePaths = [
-      '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
-      '/Library/Fonts/Arial Unicode.ttf',
-      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-      '/system/fonts/DroidSansFallback.ttf',
-    ];
+  @visibleForTesting
+  static void resetFontCache() {
+    _cachedCjkFont = null;
+    _cjkFontSearched = false;
+    _cachedLatinFont = null;
+    _cachedLatinBoldFont = null;
+    _latinFontSearched = false;
+  }
 
-    for (final path in candidatePaths) {
+  /// Attempts to parse a TrueType file (.ttf) and optionally verifies CJK glyph support.
+  static pw.Font? _tryLoadTtf(File file, {required bool requireCjk}) {
+    try {
+      if (!file.existsSync()) return null;
+      final bytes = file.readAsBytesSync();
+      if (bytes.length < 12) return null;
+      final byteData = bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes);
+      final tag = byteData.getUint32(0);
+      // TrueType font magic: 0x00010000 or 'true' (0x74727565)
+      if (tag != 0x00010000 && tag != 0x74727565) {
+        return null;
+      }
+      final parser = TtfParser(byteData);
+      if (requireCjk) {
+        // Verify font contains common CJK Unified Ideographs: U+4E2D ('中') or U+6587 ('文')
+        if (!parser.charToGlyphIndexMap.containsKey(0x4e2d) &&
+            !parser.charToGlyphIndexMap.containsKey(0x6587)) {
+          return null;
+        }
+      }
+      return pw.Font.ttf(byteData);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Checks if a TTF font contains standard ASCII Latin characters and digits.
+  static bool _fontHasAscii(pw.Font font) {
+    if (font is pw.TtfFont) {
       try {
-        final file = File(path);
-        if (file.existsSync()) {
-          // Verify TTF header (starts with 0x00010000 or 'true') before parsing
-          final raf = file.openSync(mode: FileMode.read);
-          final header = raf.readSync(4);
-          raf.closeSync();
-          if (header.length == 4) {
-            final isTtf = (header[0] == 0x00 && header[1] == 0x01 && header[2] == 0x00 && header[3] == 0x00) ||
-                (header[0] == 0x74 && header[1] == 0x72 && header[2] == 0x75 && header[3] == 0x65);
-            if (isTtf) {
-              final bytes = file.readAsBytesSync();
-              _cachedSystemFont = pw.Font.ttf(bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes));
-              return _cachedSystemFont;
+        final parser = TtfParser(font.data);
+        return parser.charToGlyphIndexMap.containsKey(0x41) && // 'A'
+               parser.charToGlyphIndexMap.containsKey(0x61) && // 'a'
+               parser.charToGlyphIndexMap.containsKey(0x31);   // '1'
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// Candidate paths for TrueType CJK fonts across supported operating systems.
+  static List<String> _getCjkFontCandidates() {
+    final candidates = <String>[];
+
+    if (Platform.isLinux) {
+      try {
+        final result = Process.runSync('fc-list', [':lang=zh:fontformat=TrueType', 'file']);
+        if (result.exitCode == 0 && result.stdout is String) {
+          for (final line in const LineSplitter().convert(result.stdout as String)) {
+            var path = line.trim();
+            if (path.endsWith(':')) path = path.substring(0, path.length - 1).trim();
+            if (path.endsWith('.ttf') && !candidates.contains(path)) {
+              candidates.add(path);
             }
           }
         }
       } catch (_) {}
+
+      candidates.addAll([
+        '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
+        '/usr/share/fonts/truetype/droid/DroidSansFallback.ttf',
+        '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf',
+        '/usr/share/fonts/truetype/wqy/wqy-microhei.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSerifSC-Regular.ttf',
+        '/usr/share/fonts/google-noto-cjk/NotoSansSC-Regular.ttf',
+        '/usr/share/fonts/opentype/noto/NotoSansSC-Regular.ttf',
+      ]);
+    } else if (Platform.isWindows) {
+      final winDir = Platform.environment['WINDIR'] ??
+          Platform.environment['SystemRoot'] ??
+          r'C:\Windows';
+      final fontsDir = '$winDir\\Fonts';
+      candidates.addAll([
+        '$fontsDir\\simhei.ttf',
+        '$fontsDir\\msyh.ttf',
+        '$fontsDir\\simfang.ttf',
+        '$fontsDir\\simkai.ttf',
+        '$fontsDir\\arialuni.ttf',
+      ]);
+    } else if (Platform.isMacOS) {
+      candidates.addAll([
+        '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+        '/Library/Fonts/Arial Unicode.ttf',
+        '/Library/Fonts/Microsoft/SimHei.ttf',
+      ]);
+    } else if (Platform.isAndroid) {
+      candidates.addAll([
+        '/system/fonts/DroidSansFallback.ttf',
+        '/system/fonts/NotoSansSC-Regular.ttf',
+      ]);
+    }
+
+    return candidates;
+  }
+
+  /// Candidate paths for TrueType Latin fonts across supported operating systems.
+  static List<String> _getLatinFontCandidates({bool bold = false}) {
+    final candidates = <String>[];
+    if (Platform.isLinux) {
+      if (bold) {
+        candidates.addAll([
+          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+          '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+          '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+        ]);
+      } else {
+        candidates.addAll([
+          '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+          '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+          '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+        ]);
+      }
+    } else if (Platform.isWindows) {
+      final winDir = Platform.environment['WINDIR'] ??
+          Platform.environment['SystemRoot'] ??
+          r'C:\Windows';
+      final fontsDir = '$winDir\\Fonts';
+      if (bold) {
+        candidates.addAll([
+          '$fontsDir\\arialbd.ttf',
+          '$fontsDir\\segoeuib.ttf',
+          '$fontsDir\\calibrib.ttf',
+        ]);
+      } else {
+        candidates.addAll([
+          '$fontsDir\\arial.ttf',
+          '$fontsDir\\segoeui.ttf',
+          '$fontsDir\\calibri.ttf',
+        ]);
+      }
+    } else if (Platform.isMacOS) {
+      if (bold) {
+        candidates.addAll([
+          '/System/Library/Fonts/HelveticaBold.ttf',
+          '/Library/Fonts/Arial Bold.ttf',
+        ]);
+      } else {
+        candidates.addAll([
+          '/System/Library/Fonts/Helvetica.ttf',
+          '/Library/Fonts/Arial.ttf',
+        ]);
+      }
+    } else if (Platform.isAndroid) {
+      if (bold) {
+        candidates.addAll([
+          '/system/fonts/Roboto-Bold.ttf',
+        ]);
+      } else {
+        candidates.addAll([
+          '/system/fonts/Roboto-Regular.ttf',
+        ]);
+      }
+    }
+    return candidates;
+  }
+
+  /// Attempts to find a local TrueType font supporting Unicode/CJK characters.
+  static pw.Font? _loadSystemCjkFont() {
+    if (_cjkFontSearched) return _cachedCjkFont;
+    _cjkFontSearched = true;
+
+    for (final path in _getCjkFontCandidates()) {
+      final font = _tryLoadTtf(File(path), requireCjk: true);
+      if (font != null) {
+        _cachedCjkFont = font;
+        return _cachedCjkFont;
+      }
     }
     return null;
+  }
+
+  static void _ensureLatinFontsLoaded() {
+    if (_latinFontSearched) return;
+    _latinFontSearched = true;
+
+    for (final path in _getLatinFontCandidates(bold: false)) {
+      final font = _tryLoadTtf(File(path), requireCjk: false);
+      if (font != null) {
+        _cachedLatinFont = font;
+        break;
+      }
+    }
+
+    for (final path in _getLatinFontCandidates(bold: true)) {
+      final font = _tryLoadTtf(File(path), requireCjk: false);
+      if (font != null) {
+        _cachedLatinBoldFont = font;
+        break;
+      }
+    }
+  }
+
+  static pw.Font? _loadSystemLatinFont() {
+    _ensureLatinFontsLoaded();
+    return _cachedLatinFont;
+  }
+
+  static pw.Font? _loadSystemLatinBoldFont() {
+    _ensureLatinFontsLoaded();
+    return _cachedLatinBoldFont;
   }
 
   /// Generates a PDF byte stream from Markdown text, themed with [themeConfig].
@@ -90,46 +271,61 @@ class MarkdownPdfService {
     PdfMarginMode marginMode = PdfMarginMode.standard,
     pw.Font? customRegularFont,
     pw.Font? customBoldFont,
+    List<pw.Font>? customFontFallback,
   }) async {
     final pdf = pw.Document(title: title);
 
     pw.Font? regularFont = customRegularFont;
     pw.Font? boldFont = customBoldFont;
+    final List<pw.Font> fontFallback = customFontFallback != null
+        ? List<pw.Font>.from(customFontFallback)
+        : <pw.Font>[];
 
-    // 1. Try local system CJK font (instant, offline capable)
-    if (regularFont == null || boldFont == null) {
-      final systemFont = _loadSystemFont();
-      if (systemFont != null) {
-        regularFont ??= systemFont;
-        boldFont ??= systemFont;
+    // 1. Resolve CJK font (local system TrueType CJK font or Google Fonts fallback)
+    pw.Font? cjkFont;
+    if (customFontFallback == null) {
+      cjkFont = _loadSystemCjkFont();
+      if (cjkFont == null) {
+        try {
+          cjkFont = await PdfGoogleFonts.notoSansSCRegular().timeout(
+            const Duration(seconds: 4),
+          );
+        } catch (_) {}
+      }
+      if (cjkFont != null) {
+        _cachedCjkFont ??= cjkFont;
+        fontFallback.add(cjkFont);
       }
     }
 
-    // 2. Try Google Fonts download with timeout
+    // 2. Resolve regular and bold base fonts
     if (regularFont == null || boldFont == null) {
-      try {
-        regularFont ??= await PdfGoogleFonts.notoSansSCRegular().timeout(
-          const Duration(seconds: 4),
-        );
-        boldFont ??= await PdfGoogleFonts.notoSansSCBold().timeout(
-          const Duration(seconds: 4),
-        );
-      } catch (_) {}
-    }
+      final latinFont = _loadSystemLatinFont();
+      final latinBoldFont = _loadSystemLatinBoldFont();
 
-    // 3. Fallback to standard Helvetica
-    regularFont ??= pw.Font.helvetica();
-    boldFont ??= pw.Font.helveticaBold();
+      if (latinFont != null) {
+        regularFont ??= latinFont;
+        boldFont ??= latinBoldFont ?? latinFont;
+      } else if (cjkFont != null && _fontHasAscii(cjkFont)) {
+        regularFont ??= cjkFont;
+        boldFont ??= cjkFont;
+      } else {
+        regularFont ??= pw.Font.helvetica();
+        boldFont ??= pw.Font.helveticaBold();
+      }
+    }
 
     final theme = pw.ThemeData.withFont(
       base: regularFont,
       bold: boldFont,
+      fontFallback: fontFallback,
     );
 
     final widgets = _parseMarkdownToPdfWidgets(
       markdown,
       regularFont,
       boldFont,
+      fontFallback,
       themeConfig,
       marginMode.spacingScale,
     );
@@ -161,6 +357,7 @@ class MarkdownPdfService {
     String markdown,
     pw.Font regularFont,
     pw.Font boldFont,
+    List<pw.Font> fontFallback,
     MarkdownThemeConfig? themeConfig,
     double scale,
   ) {
@@ -190,7 +387,7 @@ class MarkdownPdfService {
         } else {
           inCodeBlock = false;
           result.add(
-            _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig, scale),
+            _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, fontFallback, themeConfig, scale),
           );
           codeBuffer.clear();
           codeLang = null;
@@ -228,6 +425,7 @@ class MarkdownPdfService {
               trimmed.substring(2).trim(),
               regularFont: regularFont,
               boldFont: boldFont,
+              fontFallback: fontFallback,
               themeConfig: themeConfig,
               fontSize: 20,
               textColor: h1Color,
@@ -245,6 +443,7 @@ class MarkdownPdfService {
               trimmed.substring(3).trim(),
               regularFont: regularFont,
               boldFont: boldFont,
+              fontFallback: fontFallback,
               themeConfig: themeConfig,
               fontSize: 16,
               textColor: h2Color,
@@ -262,6 +461,7 @@ class MarkdownPdfService {
               trimmed.substring(4).trim(),
               regularFont: regularFont,
               boldFont: boldFont,
+              fontFallback: fontFallback,
               themeConfig: themeConfig,
               fontSize: 13,
               textColor: h3Color,
@@ -279,6 +479,7 @@ class MarkdownPdfService {
               trimmed.substring(5).trim(),
               regularFont: regularFont,
               boldFont: boldFont,
+              fontFallback: fontFallback,
               themeConfig: themeConfig,
               fontSize: 11,
               textColor: h3Color,
@@ -307,6 +508,7 @@ class MarkdownPdfService {
             tableLines,
             regularFont,
             boldFont,
+            fontFallback,
             themeConfig,
             scale,
           );
@@ -320,7 +522,7 @@ class MarkdownPdfService {
       // Blockquotes & Callouts
       if (trimmed.startsWith('>')) {
         final quoteText = trimmed.substring(1).trim();
-        result.add(_buildBlockquote(quoteText, regularFont, boldFont, themeConfig, scale));
+        result.add(_buildBlockquote(quoteText, regularFont, boldFont, fontFallback, themeConfig, scale));
         continue;
       }
 
@@ -359,6 +561,7 @@ class MarkdownPdfService {
                     itemText,
                     regularFont: regularFont,
                     boldFont: boldFont,
+                    fontFallback: fontFallback,
                     themeConfig: themeConfig,
                     fontSize: 10,
                     textColor: textColor,
@@ -401,6 +604,7 @@ class MarkdownPdfService {
                     '$numStr.',
                     style: pw.TextStyle(
                       font: boldFont,
+                      fontFallback: fontFallback,
                       fontSize: 10,
                       color: textColor,
                     ),
@@ -411,6 +615,7 @@ class MarkdownPdfService {
                     itemText,
                     regularFont: regularFont,
                     boldFont: boldFont,
+                    fontFallback: fontFallback,
                     themeConfig: themeConfig,
                     fontSize: 10,
                     textColor: textColor,
@@ -432,6 +637,7 @@ class MarkdownPdfService {
             trimmed,
             regularFont: regularFont,
             boldFont: boldFont,
+            fontFallback: fontFallback,
             themeConfig: themeConfig,
             fontSize: 10,
             textColor: textColor,
@@ -443,7 +649,7 @@ class MarkdownPdfService {
 
     if (inCodeBlock && codeBuffer.isNotEmpty) {
       result.add(
-        _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, themeConfig, scale),
+        _buildCodeBlock(codeBuffer.join('\n'), codeLang, regularFont, fontFallback, themeConfig, scale),
       );
     }
 
@@ -454,6 +660,7 @@ class MarkdownPdfService {
     String code,
     String? lang,
     pw.Font font,
+    List<pw.Font> fontFallback,
     MarkdownThemeConfig? themeConfig,
     double scale,
   ) {
@@ -476,6 +683,7 @@ class MarkdownPdfService {
         code,
         lang,
         font,
+        fontFallback,
         defaultCodeColor,
         themeConfig.highlightTheme,
       );
@@ -485,6 +693,7 @@ class MarkdownPdfService {
         code,
         style: pw.TextStyle(
           font: font,
+          fontFallback: fontFallback,
           fontSize: 8.5,
           lineSpacing: 2,
           color: defaultCodeColor,
@@ -511,6 +720,7 @@ class MarkdownPdfService {
                 lang.toUpperCase(),
                 style: pw.TextStyle(
                   font: font,
+                  fontFallback: fontFallback,
                   fontSize: 7,
                   color: langColor,
                 ),
@@ -526,11 +736,13 @@ class MarkdownPdfService {
     String code,
     String? lang,
     pw.Font font,
+    List<pw.Font> fontFallback,
     PdfColor defaultColor,
     Map<String, TextStyle> highlightTheme,
   ) {
     final baseStyle = pw.TextStyle(
       font: font,
+      fontFallback: fontFallback,
       fontSize: 8.5,
       lineSpacing: 2,
       color: defaultColor,
@@ -569,6 +781,7 @@ class MarkdownPdfService {
     String text,
     pw.Font regularFont,
     pw.Font boldFont,
+    List<pw.Font> fontFallback,
     MarkdownThemeConfig? themeConfig,
     double scale,
   ) {
@@ -631,6 +844,7 @@ class MarkdownPdfService {
               title,
               style: pw.TextStyle(
                 font: boldFont,
+                fontFallback: fontFallback,
                 fontSize: 9,
                 color: accent,
               ),
@@ -639,6 +853,7 @@ class MarkdownPdfService {
             cleanText,
             regularFont: regularFont,
             boldFont: boldFont,
+            fontFallback: fontFallback,
             themeConfig: themeConfig,
             fontSize: 9.5,
             textColor: quoteTextColor,
@@ -653,6 +868,7 @@ class MarkdownPdfService {
     List<String> tableLines,
     pw.Font regularFont,
     pw.Font boldFont,
+    List<pw.Font> fontFallback,
     MarkdownThemeConfig? themeConfig,
     double scale,
   ) {
@@ -696,6 +912,7 @@ class MarkdownPdfService {
               h,
               regularFont: regularFont,
               boldFont: boldFont,
+              fontFallback: fontFallback,
               themeConfig: themeConfig,
               fontSize: 9,
               textColor: textColor,
@@ -727,6 +944,7 @@ class MarkdownPdfService {
                 c,
                 regularFont: regularFont,
                 boldFont: boldFont,
+                fontFallback: fontFallback,
                 themeConfig: themeConfig,
                 fontSize: 8.5,
                 textColor: textColor,
@@ -750,6 +968,7 @@ class MarkdownPdfService {
     String text, {
     required pw.Font regularFont,
     required pw.Font boldFont,
+    required List<pw.Font> fontFallback,
     required MarkdownThemeConfig? themeConfig,
     required double fontSize,
     required PdfColor textColor,
@@ -759,6 +978,7 @@ class MarkdownPdfService {
   }) {
     final baseStyle = pw.TextStyle(
       font: isBold ? boldFont : regularFont,
+      fontFallback: fontFallback,
       fontSize: fontSize,
       color: textColor,
       lineSpacing: lineSpacing,
@@ -790,6 +1010,7 @@ class MarkdownPdfService {
             baseStyle: baseStyle,
             regularFont: regularFont,
             boldFont: boldFont,
+            fontFallback: fontFallback,
             themeConfig: themeConfig,
           ),
         );
@@ -812,6 +1033,7 @@ class MarkdownPdfService {
     required pw.TextStyle baseStyle,
     required pw.Font regularFont,
     required pw.Font boldFont,
+    required List<pw.Font> fontFallback,
     required MarkdownThemeConfig? themeConfig,
   }) {
     if (node is md.Text) {
@@ -880,6 +1102,7 @@ class MarkdownPdfService {
             baseStyle: childStyle,
             regularFont: regularFont,
             boldFont: boldFont,
+            fontFallback: fontFallback,
             themeConfig: themeConfig,
           ),
         );
@@ -897,6 +1120,9 @@ class MarkdownPdfService {
     required String title,
     MarkdownThemeConfig? themeConfig,
     PdfMarginMode marginMode = PdfMarginMode.standard,
+    pw.Font? customRegularFont,
+    pw.Font? customBoldFont,
+    List<pw.Font>? customFontFallback,
   }) async {
     await Printing.layoutPdf(
       onLayout: (format) => generatePdf(
@@ -904,6 +1130,9 @@ class MarkdownPdfService {
         title: title,
         themeConfig: themeConfig,
         marginMode: marginMode,
+        customRegularFont: customRegularFont,
+        customBoldFont: customBoldFont,
+        customFontFallback: customFontFallback,
       ),
       name: '$title.pdf',
     );
@@ -915,12 +1144,18 @@ class MarkdownPdfService {
     required String title,
     MarkdownThemeConfig? themeConfig,
     PdfMarginMode marginMode = PdfMarginMode.standard,
+    pw.Font? customRegularFont,
+    pw.Font? customBoldFont,
+    List<pw.Font>? customFontFallback,
   }) async {
     final bytes = await generatePdf(
       markdown: markdown,
       title: title,
       themeConfig: themeConfig,
       marginMode: marginMode,
+      customRegularFont: customRegularFont,
+      customBoldFont: customBoldFont,
+      customFontFallback: customFontFallback,
     );
     await Printing.sharePdf(
       bytes: bytes,

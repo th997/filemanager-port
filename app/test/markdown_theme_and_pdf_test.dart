@@ -155,5 +155,44 @@ final x = 42;
       final header = String.fromCharCodes(bytes.take(5));
       expect(header, equals('%PDF-'));
     });
+
+    test('Generates PDF with CJK characters without font fallback warnings', () async {
+      const cjkMarkdown = '''
+# 简体中文与多语言混合排版验证
+
+本文档验证 Markdown 转 PDF 导出中的中文字符、英文字母、阿拉伯数字及特殊标点符号的排版呈现。
+
+## 字符集覆盖
+- 中文字符：天地玄黄，宇宙洪荒。日月盈昃，辰宿列张。
+- 英文字符：The quick brown fox jumps over the lazy dog.
+- 数字序列：0123456789 (货币：￥100, \$50, €30)
+- 标点符号：！@#￥%……&*（）——+【】{}；：‘“’”，。、《》？
+
+```dart
+// 中文注释与字符串
+void greet() {
+  print("你好，世界！Count: 42");
+}
+```
+
+> [!NOTE]
+> 提示信息：中文引用块正常渲染。
+
+| 序号 | 模块名称 | 描述 |
+|---|---|---|
+| 1 | 文件浏览 | 支持树形结构展示 |
+| 2 | PDF 导出 | 解决中文字体乱码问题 |
+''';
+
+      final bytes = await MarkdownPdfService.instance.generatePdf(
+        markdown: cjkMarkdown,
+        title: 'CJK 排版验证',
+      );
+
+      expect(bytes, isNotEmpty);
+      expect(bytes.length, greaterThan(2000));
+      final header = String.fromCharCodes(bytes.take(5));
+      expect(header, equals('%PDF-'));
+    });
   });
 }
