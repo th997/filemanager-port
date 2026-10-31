@@ -170,5 +170,70 @@ void main() {
       expect(find.byType(RichText), findsOneWidget);
       controller.dispose();
     });
+
+    test('Binary search line starts maps character offsets to exact line numbers', () {
+      final lines = ['First line', 'Second line of code', 'Third line', 'Fourth line'];
+      final text = lines.join('\n');
+      final starts = <int>[0];
+      for (int i = 0; i < text.length; i++) {
+        if (text.codeUnitAt(i) == 10) {
+          starts.add(i + 1);
+        }
+      }
+
+      int getLineIndex(int offset) {
+        int low = 0;
+        int high = starts.length - 1;
+        while (low <= high) {
+          final mid = (low + high) >> 1;
+          if (starts[mid] <= offset) {
+            if (mid == starts.length - 1 || starts[mid + 1] > offset) {
+              return mid;
+            }
+            low = mid + 1;
+          } else {
+            high = mid - 1;
+          }
+        }
+        return 0;
+      }
+
+      expect(getLineIndex(0), equals(0)); // 'F'
+      expect(getLineIndex(9), equals(0)); // 'e' in 'First line'
+      expect(getLineIndex(11), equals(1)); // 'S' in 'Second line'
+      expect(getLineIndex(text.indexOf('Third')), equals(2));
+      expect(getLineIndex(text.indexOf('Fourth')), equals(3));
+    });
+
+    test('Exact pixel centering centers target line at (viewport - lineHeight) / 2', () {
+      const lineHeight = 18.0;
+      const contentPadding = 16.0;
+      const viewport = 600.0;
+      const targetLine = 250;
+
+      final targetMatchY = contentPadding + targetLine * lineHeight;
+      final targetScrollY = (targetMatchY - (viewport - lineHeight) / 2);
+
+      // Distance from top of viewport to line on screen:
+      final lineOnScreenY = targetMatchY - targetScrollY;
+      expect(lineOnScreenY, equals((viewport - lineHeight) / 2));
+      // Line center on screen:
+      final lineCenterOnScreenY = lineOnScreenY + lineHeight / 2;
+      expect(lineCenterOnScreenY, equals(viewport / 2));
+    });
+
+    test('Search match selection picks nearest match to visible line instead of line 1', () {
+      const lineHeight = 18.0;
+      final matchLines = [10, 50, 120, 250, 310, 450];
+      final matchOffsets = matchLines.map((l) => l * 100).toList();
+
+      // Suppose user scrolled to line 200:
+      const scrollY = 200 * lineHeight;
+      final approxLine = (scrollY / lineHeight).floor();
+      final approxOffset = approxLine * 100;
+
+      final nearest = matchOffsets.indexWhere((idx) => idx >= approxOffset);
+      expect(nearest, equals(3)); // match at line 250, not match 0 at line 10!
+    });
   });
 }

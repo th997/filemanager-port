@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -57,7 +58,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   static const _prefMarkdownTheme = 'markdown.theme';
   static const _prefPdfMargin = 'markdown.pdf_margin';
   double _fontSize = 13.0;
-  bool _wordWrap = true;
+  bool _wordWrap = false;
   MarkdownThemeType _markdownTheme = MarkdownThemeType.github;
   PdfMarginMode _pdfMargin = PdfMarginMode.standard;
   bool _showFind = false;
@@ -76,6 +77,86 @@ class _TextEditorPageState extends State<TextEditorPage> {
   String _lastFindQuery = '';
   String? _cachedDocForLower;
   String? _cachedDocLower;
+
+  String? _cachedLinesText;
+  List<String>? _cachedLinesList;
+  List<int>? _cachedLineStarts;
+  int _maxLineChars = 0;
+  double? _cachedCharWidth;
+  double? _cachedCharWidthFontSize;
+
+  void _clearLineCache() {
+    _cachedDocForLower = null;
+    _cachedDocLower = null;
+    _cachedLinesText = null;
+    _cachedLinesList = null;
+    _cachedLineStarts = null;
+    _maxLineChars = 0;
+  }
+
+  void _ensureLineCache(String text) {
+    if (identical(text, _cachedLinesText) || text == _cachedLinesText) {
+      if (_cachedLinesList != null && _cachedLineStarts != null) return;
+    }
+    _cachedLinesText = text;
+    final lines = <String>[];
+    final starts = <int>[0];
+    int start = 0;
+    int maxChars = 0;
+    for (int i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == 10) {
+        final line = text.substring(start, i);
+        lines.add(line);
+        if (line.length > maxChars) maxChars = line.length;
+        start = i + 1;
+        starts.add(start);
+      }
+    }
+    final lastLine = text.substring(start);
+    lines.add(lastLine);
+    if (lastLine.length > maxChars) maxChars = lastLine.length;
+    _cachedLinesList = lines;
+    _cachedLineStarts = starts;
+    _maxLineChars = maxChars;
+  }
+
+  int _getLineIndexForOffset(int charOffset) {
+    if (_cachedLineStarts == null || _cachedLineStarts!.isEmpty) return 0;
+    final starts = _cachedLineStarts!;
+    int low = 0;
+    int high = starts.length - 1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (starts[mid] <= charOffset) {
+        if (mid == starts.length - 1 || starts[mid + 1] > charOffset) {
+          return mid;
+        }
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return 0;
+  }
+
+  bool _isLargeDocument(String text) {
+    _ensureLineCache(text);
+    return (_cachedLinesList != null && _cachedLinesList!.length > 500) ||
+        text.length > 32 * 1024;
+  }
+
+  double _getCharWidth(TextStyle style) {
+    if (_cachedCharWidth != null && _cachedCharWidthFontSize == _fontSize) {
+      return _cachedCharWidth!;
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: 'M', style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    _cachedCharWidth = painter.width;
+    _cachedCharWidthFontSize = _fontSize;
+    return _cachedCharWidth!;
+  }
 
   String _getDocLower(String doc) {
     if (identical(doc, _cachedDocForLower) || doc == _cachedDocForLower) {
@@ -221,15 +302,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
       return;
     }
 
-    int currentLine = 1;
-    int offset = 0;
-    for (int i = 0; i < text.length; i++) {
-      if (currentLine >= targetLine) break;
-      if (text.codeUnitAt(i) == 10) {
-        currentLine++;
-        offset = i + 1;
-      }
-    }
+    _ensureLineCache(text);
+    final targetLineIdx = (targetLine - 1).clamp(0, (_cachedLinesList?.length ?? 1) - 1);
+    final offset = (_cachedLineStarts != null && targetLineIdx < _cachedLineStarts!.length)
+        ? _cachedLineStarts![targetLineIdx]
+        : 0;
     int lineEnd = text.indexOf('\n', offset);
     if (lineEnd == -1) lineEnd = text.length;
     _controller.selection = TextSelection(baseOffset: offset, extentOffset: lineEnd);
@@ -268,9 +345,31 @@ class _TextEditorPageState extends State<TextEditorPage> {
     if (_matchIndices.isEmpty) {
       _currentMatchIndex = 0;
     } else {
-      final currentOffset = _controller.selection.baseOffset;
-      if (currentOffset > 0) {
-        final nearest = _matchIndices.indexWhere((idx) => idx >= currentOffset);
+      int activeOffset = -1;
+      if (_mode == TextFileMode.code && _codeScrollController.hasClients) {
+        final textStyle = TextStyle(
+          fontFamily: 'monospace',
+          fontSize: _fontSize,
+          height: 1.35,
+        );
+        final metricPainter = TextPainter(
+          text: TextSpan(text: 'M', style: textStyle),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final lineHeight = metricPainter.preferredLineHeight;
+
+        _ensureLineCache(_controller.text);
+        final scrollY = _codeScrollController.offset;
+        final approxLine = (scrollY / lineHeight).floor().clamp(0, (_cachedLinesList?.length ?? 1) - 1);
+        activeOffset = (_cachedLineStarts != null && approxLine < _cachedLineStarts!.length)
+            ? _cachedLineStarts![approxLine]
+            : 0;
+      } else if (_mode == TextFileMode.edit) {
+        activeOffset = _controller.selection.baseOffset;
+      }
+
+      if (activeOffset > 0) {
+        final nearest = _matchIndices.indexWhere((idx) => idx >= activeOffset);
         _currentMatchIndex = nearest != -1 ? nearest : 0;
       } else {
         _currentMatchIndex = 0;
@@ -351,8 +450,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       _updateMatches(jumpToMatch: true, forceScroll: true); // stale indices — rescan instead of corrupting text
       return;
     }
-    _cachedDocForLower = null;
-    _cachedDocLower = null;
+    _clearLineCache();
     _controller.value = _controller.value.copyWith(
       text: text.replaceRange(idx, idx + query.length, replacement),
       selection:
@@ -384,8 +482,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     if (count == 0) return;
     buf.write(text.substring(start));
-    _cachedDocForLower = null;
-    _cachedDocLower = null;
+    _clearLineCache();
     _controller.value = _controller.value.copyWith(
       text: buf.toString(),
       selection: const TextSelection.collapsed(offset: 0),
@@ -444,55 +541,52 @@ class _TextEditorPageState extends State<TextEditorPage> {
       )..layout();
       final lineHeight = metricPainter.preferredLineHeight;
 
-      final renderBox = context.findRenderObject() as RenderBox?;
-      final availableWidth = (renderBox != null && renderBox.hasSize)
-          ? renderBox.size.width
-          : MediaQuery.of(context).size.width;
-      final viewWidth = (availableWidth - 32.0).clamp(100.0, double.infinity);
-      const contentPadding = 16.0;
+      _ensureLineCache(text);
+      final targetLine = _getLineIndexForOffset(charIndex);
+      final lineStart = _cachedLineStarts != null && targetLine < _cachedLineStarts!.length
+          ? _cachedLineStarts![targetLine]
+          : 0;
 
+      const contentPadding = 16.0;
       final isWrapping = (_mode == TextFileMode.edit) || _wordWrap;
       double caretDy = 0.0;
       double caretDx = 0.0;
 
       if (!isWrapping) {
-        // Fast O(N) single-pass path for non-wrapping code view:
-        // Each line is exactly lineHeight tall
-        int lineCount = 0;
-        int lineStart = 0;
-        for (int i = 0; i < charIndex; i++) {
-          if (text.codeUnitAt(i) == 10) {
-            lineCount++;
-            lineStart = i + 1;
-          }
-        }
-        caretDy = lineCount * lineHeight;
-
-        final linePrefix = text.substring(lineStart, charIndex);
+        caretDy = targetLine * lineHeight;
+        final linePrefix = text.substring(lineStart, charIndex.clamp(lineStart, text.length));
         final linePainter = TextPainter(
           text: TextSpan(text: linePrefix, style: textStyle),
           textDirection: TextDirection.ltr,
         )..layout();
         caretDx = linePainter.width;
       } else {
-        // Wrapping mode (edit view or code view with wordWrap enabled):
-        // Layout preceding text up to the end of the current line for exact caret coordinates
-        final queryLen = _findController.text.length;
-        final nextNewline = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
-        final lineEnd = nextNewline == -1 ? text.length : (nextNewline + 1).clamp(0, text.length);
-        final subtext = text.substring(0, lineEnd);
-        final painter = TextPainter(
-          text: TextSpan(text: subtext, style: textStyle),
-          textDirection: TextDirection.ltr,
-        );
-        painter.layout(maxWidth: viewWidth);
+        if (_mode == TextFileMode.edit || !_isLargeDocument(text)) {
+          final renderBox = context.findRenderObject() as RenderBox?;
+          final availableWidth = (renderBox != null && renderBox.hasSize)
+              ? renderBox.size.width
+              : MediaQuery.of(context).size.width;
+          final viewWidth = (availableWidth - 32.0).clamp(100.0, double.infinity);
 
-        final caretOffset = painter.getOffsetForCaret(
-          TextPosition(offset: charIndex),
-          Rect.zero,
-        );
-        caretDy = caretOffset.dy;
-        caretDx = caretOffset.dx;
+          final queryLen = _findController.text.length;
+          final nextNewline = text.indexOf('\n', (charIndex + queryLen).clamp(0, text.length));
+          final lineEnd = nextNewline == -1 ? text.length : (nextNewline + 1).clamp(0, text.length);
+          final subtext = text.substring(0, lineEnd);
+          final painter = TextPainter(
+            text: TextSpan(text: subtext, style: textStyle),
+            textDirection: TextDirection.ltr,
+          );
+          painter.layout(maxWidth: viewWidth);
+
+          final caretOffset = painter.getOffsetForCaret(
+            TextPosition(offset: charIndex),
+            Rect.zero,
+          );
+          caretDy = caretOffset.dy;
+          caretDx = caretOffset.dx;
+        } else {
+          caretDy = targetLine * lineHeight;
+        }
       }
 
       final viewport = activeVerticalController.position.viewportDimension;
@@ -545,8 +639,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     try {
       final content = await readTextFile(root: widget.root, path: widget.path);
       if (mounted) {
-        _cachedDocForLower = null;
-        _cachedDocLower = null;
+        _clearLineCache();
         // Large preview files (> 128KB) automatically switch to code mode to avoid
         // freezing the UI isolate on complex markdown AST rendering.
         if (content.length > 128 * 1024 && _mode == TextFileMode.preview) {
@@ -1579,8 +1672,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ),
             onChanged: (_) {
               if (!_isDirty) setState(() => _isDirty = true);
-              _cachedDocForLower = null;
-              _cachedDocLower = null;
+              _clearLineCache();
               if (_showFind && _findController.text.isNotEmpty) {
                 _findDebounce?.cancel();
                 _findDebounce = Timer(const Duration(milliseconds: 300), () {
@@ -1597,17 +1689,33 @@ class _TextEditorPageState extends State<TextEditorPage> {
   Widget _buildCodeView() {
     final text = _controller.text;
     final brightness = Theme.of(context).brightness;
+    final baseStyle = TextStyle(
+      fontFamily: 'monospace',
+      fontSize: _fontSize,
+      height: 1.35,
+    );
+    final background = HighlightService.instance.backgroundFor(brightness);
+
+    final metricPainter = TextPainter(
+      text: TextSpan(text: 'M', style: baseStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final lineHeight = metricPainter.preferredLineHeight;
+
+    if (_isLargeDocument(text)) {
+      return _buildVirtualizedCodeView(
+        lines: _cachedLinesList ?? text.split('\n'),
+        baseStyle: baseStyle,
+        background: background,
+        lineHeight: lineHeight,
+      );
+    }
+
     final span = HighlightService.instance.spanFor(
       text,
       widget.fileName,
       brightness,
       fontSize: _fontSize,
-    );
-    final background = HighlightService.instance.backgroundFor(brightness);
-    final baseStyle = TextStyle(
-      fontFamily: 'monospace',
-      fontSize: _fontSize,
-      height: 1.35,
     );
 
     TextSpan resultSpan = span ?? TextSpan(text: text, style: baseStyle);
@@ -1649,6 +1757,130 @@ class _TextEditorPageState extends State<TextEditorPage> {
         padding: const EdgeInsets.all(16),
         child: textWidget,
       ),
+    );
+  }
+
+  Widget _buildVirtualizedCodeView({
+    required List<String> lines,
+    required TextStyle baseStyle,
+    required Color background,
+    required double lineHeight,
+  }) {
+    final activeMatchOffset = (_showFind &&
+            _currentMatchIndex >= 0 &&
+            _currentMatchIndex < _matchIndices.length)
+        ? _matchIndices[_currentMatchIndex]
+        : -1;
+
+    Widget listView = SelectionArea(
+      child: ListView.builder(
+        controller: _codeScrollController,
+        padding: const EdgeInsets.all(16),
+        itemCount: lines.length,
+        itemExtent: !_wordWrap ? lineHeight : null,
+        itemBuilder: (context, index) {
+          final lineText = lines[index];
+          final lineStart = _cachedLineStarts != null && index < _cachedLineStarts!.length
+              ? _cachedLineStarts![index]
+              : 0;
+
+          if (_showFind && _findController.text.isNotEmpty && _matchIndices.isNotEmpty) {
+            return _buildHighlightedLine(
+              index,
+              lineText,
+              baseStyle,
+              lineStart,
+              activeMatchOffset,
+            );
+          }
+          return Text(
+            lineText.isEmpty ? ' ' : lineText,
+            style: baseStyle,
+            softWrap: _wordWrap,
+          );
+        },
+      ),
+    );
+
+    if (!_wordWrap) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final charWidth = _getCharWidth(baseStyle);
+          final estimatedContentWidth = (_maxLineChars * charWidth) + 64.0;
+          final totalWidth = max(constraints.maxWidth, estimatedContentWidth);
+
+          return Container(
+            color: background,
+            width: constraints.maxWidth,
+            height: constraints.maxHeight,
+            child: SingleChildScrollView(
+              controller: _codeHorizontalScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: totalWidth,
+                height: constraints.maxHeight,
+                child: listView,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return Container(
+      color: background,
+      width: double.infinity,
+      height: double.infinity,
+      child: listView,
+    );
+  }
+
+  Widget _buildHighlightedLine(
+    int lineIndex,
+    String lineText,
+    TextStyle baseStyle,
+    int lineStartOffset,
+    int activeMatchOffset,
+  ) {
+    final query = _findController.text;
+    final lowerLine = lineText.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    if (!lowerLine.contains(lowerQuery)) {
+      return Text(
+        lineText.isEmpty ? ' ' : lineText,
+        style: baseStyle,
+        softWrap: _wordWrap,
+      );
+    }
+
+    final spans = <InlineSpan>[];
+    int start = 0;
+    while (true) {
+      final idx = lowerLine.indexOf(lowerQuery, start);
+      if (idx == -1) {
+        if (start < lineText.length) {
+          spans.add(TextSpan(text: lineText.substring(start), style: baseStyle));
+        }
+        break;
+      }
+      if (idx > start) {
+        spans.add(TextSpan(text: lineText.substring(start, idx), style: baseStyle));
+      }
+      final globalOffset = lineStartOffset + idx;
+      final isCurrent = globalOffset == activeMatchOffset;
+      spans.add(TextSpan(
+        text: lineText.substring(idx, idx + query.length),
+        style: baseStyle.copyWith(
+          backgroundColor: isCurrent ? const Color(0xFFFF6D00) : const Color(0xFFFFEB3B),
+          color: isCurrent ? Colors.white : Colors.black,
+          fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
+        ),
+      ));
+      start = idx + query.length;
+    }
+    return Text.rich(
+      TextSpan(children: spans),
+      softWrap: _wordWrap,
     );
   }
 }
