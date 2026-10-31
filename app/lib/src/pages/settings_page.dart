@@ -42,6 +42,8 @@ class _SettingsPageState extends State<SettingsPage> {
   ThemeMode get currentThemeMode => _themeMode;
 
   String? _versionLabel;
+  String? _buildTimeLabel;
+  String? _platformLabel;
   int _cacheSizeBytes = 0;
   bool _clearingCache = false;
 
@@ -53,7 +55,50 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() => _versionLabel =
           'v${info.version} (build ${info.buildNumber}) • Rust Core');
     }).catchError((_) {});
+    _buildTimeLabel = _getBuildTime();
+    _platformLabel = _getPlatformLabel();
     _updateCacheSize();
+  }
+
+  String? _getBuildTime() {
+    const envBuildTime = String.fromEnvironment('BUILD_TIME');
+    if (envBuildTime.isNotEmpty) return envBuildTime;
+    try {
+      final exe = File(Platform.resolvedExecutable);
+      if (exe.existsSync()) {
+        final mtime = exe.lastModifiedSync().toLocal();
+        final y = mtime.year.toString();
+        final m = mtime.month.toString().padLeft(2, '0');
+        final d = mtime.day.toString().padLeft(2, '0');
+        final h = mtime.hour.toString().padLeft(2, '0');
+        final min = mtime.minute.toString().padLeft(2, '0');
+        final s = mtime.second.toString().padLeft(2, '0');
+        return '$y-$m-$d $h:$min:$s';
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String _getPlatformLabel() {
+    if (Platform.isLinux) {
+      try {
+        final osRelease = File('/etc/os-release');
+        if (osRelease.existsSync()) {
+          final lines = osRelease.readAsLinesSync();
+          for (final line in lines) {
+            if (line.startsWith('PRETTY_NAME=')) {
+              final pretty = line.substring('PRETTY_NAME='.length).replaceAll('"', '').trim();
+              if (pretty.isNotEmpty) {
+                return '$pretty (${Platform.version.contains('x64') || Platform.resolvedExecutable.contains('x64') ? 'x86_64' : 'Linux'})';
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      final firstPart = Platform.operatingSystemVersion.split(' ').first;
+      return 'Linux (${firstPart.isNotEmpty ? firstPart : 'x86_64'})';
+    }
+    return '${Platform.operatingSystem} (${Platform.operatingSystemVersion})';
   }
 
   Future<void> _updateCacheSize() async {
@@ -352,12 +397,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: Text(l10n.appTitle),
                   subtitle: Text(
                     '${_versionLabel ?? 'Rust Core'}\n'
-                    'Platform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})',
+                    '${_buildTimeLabel != null ? 'Build: $_buildTimeLabel\n' : ''}'
+                    'Platform: ${_platformLabel ?? Platform.operatingSystem}',
                     style: const TextStyle(fontSize: 10),
                   ),
                   trailing: const Icon(Icons.copy, size: 16),
                   onTap: () {
-                    final info = '${l10n.appTitle} ${_versionLabel ?? ""}\nPlatform: ${Platform.operatingSystem} (${Platform.operatingSystemVersion})';
+                    final info = '${l10n.appTitle} ${_versionLabel ?? ""}\n'
+                        '${_buildTimeLabel != null ? 'Build: $_buildTimeLabel\n' : ''}'
+                        'Platform: ${_platformLabel ?? Platform.operatingSystem}';
                     Clipboard.setData(ClipboardData(text: info));
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('App info copied to clipboard')),
