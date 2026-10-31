@@ -30,16 +30,35 @@ class _SpeedSample {
 /// and object storage multipart uploads.
 class SpeedEstimator {
   final Duration windowDuration;
+  final Duration initialWarmUp;
   final List<_SpeedSample> _samples = [];
   double? _smoothedSpeed;
+  DateTime? _firstTransferTime;
+  BigInt? _firstCompleted;
+  DateTime? _lastProgressChangeTime;
 
-  SpeedEstimator({this.windowDuration = const Duration(milliseconds: 2500)});
+  SpeedEstimator({
+    this.windowDuration = const Duration(milliseconds: 4500),
+    this.initialWarmUp = const Duration(milliseconds: 300),
+  });
 
   /// Feed a new sample; returns the smoothed speed in bytes/sec, or null
   /// until enough samples exist.
   double? add(BigInt completed) {
     final now = DateTime.now();
     _samples.add(_SpeedSample(now, completed));
+
+    if (_firstTransferTime == null) {
+      _firstTransferTime = now;
+      _firstCompleted = completed;
+      _lastProgressChangeTime = now;
+      return null;
+    }
+
+    // Track when progress last advanced
+    if (_samples.length >= 2 && completed > _samples[_samples.length - 2].completed) {
+      _lastProgressChangeTime = now;
+    }
 
     // Keep samples within the window plus one sample before cutoff so the
     // window span is at least windowDuration.
@@ -48,25 +67,65 @@ class SpeedEstimator {
       _samples.removeAt(0);
     }
 
-    if (_samples.length < 2) return null;
-
-    final oldest = _samples.first;
-    final dt = now.difference(oldest.time).inMilliseconds / 1000.0;
-    if (dt < 0.3) {
-      // Not enough elapsed time for a steady rate yet
+    final totalElapsed =
+        now.difference(_firstTransferTime!).inMilliseconds / 1000.0;
+    if (totalElapsed < initialWarmUp.inMilliseconds / 1000.0) {
+      // Warm-up period: do not report premature spike from initial buffer dump
       return _smoothedSpeed;
     }
 
-    final bytesDelta = (completed - oldest.completed).toDouble();
-    if (bytesDelta < 0) return _smoothedSpeed;
+    final oldest = _samples.first;
+    final windowDt = now.difference(oldest.time).inMilliseconds / 1000.0;
+    final windowBytesDelta = (completed - oldest.completed).toDouble();
 
-    final windowSpeed = bytesDelta / dt;
+    // In the first few seconds of a transfer, anchor against cumulative rate.
+    // This absorbs any initial socket buffer burst (e.g. 10MB loaded in 0.1s).
+    final cumulativeBytesDelta =
+        (completed - (_firstCompleted ?? BigInt.zero)).toDouble();
+    final cumulativeSpeed =
+        totalElapsed > 0.2 ? cumulativeBytesDelta / totalElapsed : null;
+
+    // Calculate window rate
+    double? currentRate;
+    if (windowDt >= 0.25 && windowBytesDelta > 0) {
+      currentRate = windowBytesDelta / windowDt;
+    }
+
+    // If in warm-up transition phase (< 4 seconds), prioritize cumulative rate anchor
+    if (totalElapsed < 4.0 && cumulativeSpeed != null) {
+      if (currentRate != null) {
+        currentRate = cumulativeSpeed * 0.7 + currentRate * 0.3;
+      } else {
+        currentRate = cumulativeSpeed;
+      }
+    }
+
+    if (currentRate == null || currentRate <= 0) {
+      // No progress in current window. Check how long since progress advanced:
+      final timeSinceProgress = _lastProgressChangeTime != null
+          ? now.difference(_lastProgressChangeTime!).inMilliseconds / 1000.0
+          : 0.0;
+
+      if (timeSinceProgress < 3.0 &&
+          _smoothedSpeed != null &&
+          _smoothedSpeed! > 0) {
+        // Chunks in flight (e.g. S3 5MB/8MB multipart upload, TCP ACKs).
+        // Hold the active transfer speed so it does not falsely plunge to 0 B/s.
+        return _smoothedSpeed;
+      } else if (_smoothedSpeed != null) {
+        // Prolonged stall (> 3.0 seconds): gently decay towards 0
+        _smoothedSpeed = _smoothedSpeed! * 0.8;
+        if (_smoothedSpeed! < 1024) _smoothedSpeed = null;
+        return _smoothedSpeed;
+      }
+      return null;
+    }
 
     if (_smoothedSpeed == null) {
-      _smoothedSpeed = windowSpeed;
+      _smoothedSpeed = currentRate;
     } else {
-      // 70% previous, 30% current window: eliminates jitter without sluggish lag
-      _smoothedSpeed = _smoothedSpeed! * 0.7 + windowSpeed * 0.3;
+      // Exponential moving average: 75% previous, 25% current
+      _smoothedSpeed = _smoothedSpeed! * 0.75 + currentRate * 0.25;
     }
 
     return _smoothedSpeed;

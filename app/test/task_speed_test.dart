@@ -66,5 +66,25 @@ void main() {
       // Uninitialized
       expect(estimator.speedText(), isNull);
     });
+
+    test('burst buffer fill followed by chunk pause is smoothed and does not collapse to 0', () async {
+      final estimator = SpeedEstimator();
+      estimator.add(BigInt.zero);
+
+      // Simulate 5MB initial chunk buffered in 350ms
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      final speed1 = estimator.add(BigInt.from(5242880)); // 5MB
+      expect(speed1, isNotNull);
+      // Cumulative rate anchor keeps it smooth and bounded (no 100MB/s fake burst)
+      expect(speed1! < 30 * 1024 * 1024, isTrue);
+
+      // Simulate in-flight network send of 5MB part taking 800ms
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      final speed2 = estimator.add(BigInt.from(5242880)); // still 5MB
+      expect(speed2, isNotNull);
+      // Speed should be held during chunk in-flight, NOT dropped to 0!
+      expect(speed2! > 1024 * 1024, isTrue);
+      expect(estimator.speedText(), isNot('0 B/s'));
+    });
   });
 }
