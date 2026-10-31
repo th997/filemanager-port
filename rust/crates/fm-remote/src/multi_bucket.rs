@@ -513,6 +513,10 @@ impl Vfs for MultiBucketFs {
         }
     }
 
+    fn prefers_direct_write(&self) -> bool {
+        matches!(self.kind, LocationKind::S3 | LocationKind::Oss)
+    }
+
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {
         if dir.is_root() {
             let buckets = self.get_bucket_names().await?;

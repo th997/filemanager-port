@@ -61,6 +61,16 @@ pub type VfsResult<T> = Result<T, VfsError>;
 pub trait Vfs: Send + Sync {
     fn capabilities(&self) -> Capabilities;
 
+    /// Whether this VFS prefers writing directly to the target path rather than
+    /// streaming into a `.fm-part` temporary file followed by a rename.
+    ///
+    /// Object storage backends (S3, OSS) lack atomic rename (requiring an expensive
+    /// server-side copy of the entire object) and already provide atomic writes
+    /// via multipart upload / PUT.
+    fn prefers_direct_write(&self) -> bool {
+        false
+    }
+
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>>;
 
     /// Paginated directory listing. Backends with native pagination or streaming

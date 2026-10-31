@@ -29,7 +29,7 @@ fn ensure_http_transport() {
 /// but never answers would hang the operation (and the UI waiting on
 /// it) forever. Other backends all have timeouts — FTP wraps every
 /// call, SMB sets a response timeout — this closes the same hole here.
-const OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+const OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 async fn timed<T>(
     op_name: &'static str,
@@ -203,6 +203,10 @@ impl OpendalFs {
 impl Vfs for OpendalFs {
     fn capabilities(&self) -> Capabilities {
         self.capabilities
+    }
+
+    fn prefers_direct_write(&self) -> bool {
+        matches!(self.kind, LocationKind::S3 | LocationKind::Oss)
     }
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {

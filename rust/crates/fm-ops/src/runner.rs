@@ -306,6 +306,17 @@ async fn copy_single_file(
         }
     }
 
+    // For backends that prefer direct write (such as object storage S3/OSS which lacks
+    // atomic rename and already provides atomic uploads natively via multipart):
+    // stream directly into target. This avoids expensive server-side copies and 100% hangs.
+    if dst_vfs.prefers_direct_write() {
+        if let Err(e) = stream_into(src_vfs, src_path, dst_vfs, &target, progress, cancel).await {
+            let _ = dst_vfs.remove(&target).await;
+            return Err(e);
+        }
+        return Ok(());
+    }
+
     // Stream into a sibling temp file and rename it over the destination
     // only once the copy is complete. Writing in place with Truncate meant
     // a cancelled or failed copy both destroyed the previous version and
@@ -342,7 +353,12 @@ async fn copy_single_file(
             if dst_vfs.rename(&tmp_path, &target).await.is_err() {
                 let _ = dst_vfs.remove(&tmp_path).await;
                 // If rename still failed (e.g. backend lacks rename capability or refuses temp file rename),
-                // fallback to streaming directly into target.
+                // rollback progress before streaming directly into target so progress doesn't stick at 100%.
+                let file_len = src_vfs.stat(src_path).await.map(|s| s.size.unwrap_or(0)).unwrap_or(0);
+                if file_len > 0 {
+                    let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                    p.completed = p.completed.saturating_sub(file_len);
+                }
                 return stream_into(src_vfs, src_path, dst_vfs, &target, progress, cancel).await;
             }
             Ok(())
