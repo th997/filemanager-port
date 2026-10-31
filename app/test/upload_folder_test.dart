@@ -1,9 +1,44 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:filemanager/src/dialogs/folder_picker_dialog.dart';
 import 'package:filemanager/src/dialogs/file_picker_dialog.dart';
+import 'package:filemanager/src/services/path_utils.dart';
 
 void main() {
   group('Upload Folder and Files Tests', () {
+    test('splitNativeFile splits Linux and Windows paths accurately', () {
+      final linux = splitNativeFile('/k/145233001_kjbbaishi/1a转存/2026/00643老姜高级盘口2.0系列/01-2.87选股法-2.mp4');
+      expect(linux.srcRoot, equals('/k/145233001_kjbbaishi/1a转存/2026/00643老姜高级盘口2.0系列'));
+      expect(linux.name, equals('01-2.87选股法-2.mp4'));
+
+      final rootFile = splitNativeFile('/video.mp4');
+      expect(rootFile.srcRoot, equals('/'));
+      expect(rootFile.name, equals('video.mp4'));
+
+      final win = splitNativeFile(r'D:\Movies\Action\film.mkv');
+      expect(win.srcRoot, equals(r'D:\Movies\Action'));
+      expect(win.name, equals('film.mkv'));
+
+      final winRootFile = splitNativeFile(r'C:\boot.ini');
+      expect(winRootFile.srcRoot, equals(r'C:\'));
+      expect(winRootFile.name, equals('boot.ini'));
+    });
+
+    test('splitPathToRootAndRel handles POSIX and Windows directories', () {
+      final linux = splitPathToRootAndRel('/k/145233001_kjbbaishi/1a转存');
+      expect(linux.root, equals('/'));
+      expect(linux.relPath, equals('k/145233001_kjbbaishi/1a转存'));
+
+      final win = splitPathToRootAndRel(r'D:\Work\Projects\App');
+      expect(win.root, equals(r'D:\'));
+      expect(win.relPath, equals(r'Work\Projects\App'));
+    });
+
+    test('shortDirectoryName extracts last two segments for compact chips', () {
+      expect(shortDirectoryName('/k/145233001_kjbbaishi/1a转存/2026/00643老姜高级盘口2.0系列'), equals('2026/00643老姜高级盘口2.0系列'));
+      expect(shortDirectoryName('/home/user/downloads'), equals('user/downloads'));
+      expect(shortDirectoryName('/downloads'), equals('downloads'));
+      expect(shortDirectoryName('/'), equals('/'));
+    });
     test('PickedFolder path computation', () {
       const folderWithRel = PickedFolder(root: '/home/user', relPath: 'documents/work');
       expect(folderWithRel.path, equals('/home/user/documents/work'));

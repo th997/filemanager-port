@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,6 +8,7 @@ import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
+import '../services/preferences_service.dart';
 
 /// Result of picking a destination folder.
 class PickedFolder {
@@ -38,16 +42,32 @@ class FolderPickerDialog extends StatefulWidget {
   static Future<PickedFolder?> show(
     BuildContext context, {
     required String title,
-    required String initialRoot,
+    String? initialRoot,
     String initialPath = '',
     String? confirmLabel,
   }) {
+    String root;
+    String path;
+    if (initialRoot != null && initialRoot != PlatformPaths.defaultRoot()) {
+      root = initialRoot;
+      path = initialPath;
+    } else {
+      final recentDirs = PreferencesService.instance.getRecentUploadDirs();
+      if (recentDirs.isNotEmpty) {
+        final split = splitPathToRootAndRel(recentDirs.first);
+        root = split.root;
+        path = split.relPath;
+      } else {
+        root = initialRoot ?? PlatformPaths.defaultRoot();
+        path = initialPath;
+      }
+    }
     return showDialog<PickedFolder>(
       context: context,
       builder: (_) => FolderPickerDialog(
         title: title,
-        initialRoot: initialRoot,
-        initialPath: initialPath,
+        initialRoot: root,
+        initialPath: path,
         confirmLabel: confirmLabel,
       ),
     );
@@ -231,23 +251,110 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
 
+  void _navigateTo(String fullPath) {
+    final split = splitPathToRootAndRel(fullPath);
+    setState(() {
+      _root = split.root;
+      _relPath = split.relPath;
+      _selectedFolder = null;
+      _filterQuery = '';
+      _filterController.clear();
+    });
+    _load();
+  }
+
+  Future<void> _switchToSystemPicker() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final initialDir = _currentPath.isNotEmpty && Directory(_currentPath).existsSync()
+        ? _currentPath
+        : null;
+    try {
+      final selectedPath = await getDirectoryPath(
+        initialDirectory: initialDir,
+        confirmButtonText: isZh ? '上传此文件夹' : 'Upload folder',
+      );
+      if (selectedPath == null || selectedPath.isEmpty || !mounted) return;
+
+      PreferencesService.instance.addRecentUploadDir(selectedPath);
+      final split = splitNativeFile(selectedPath);
+      Navigator.pop(
+        context,
+        PickedFolder(root: split.srcRoot, relPath: split.name),
+      );
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final recentDirs = isNativeRoot(_root)
+        ? PreferencesService.instance.getRecentUploadDirs()
+        : const <String>[];
     final quickTargets = PlatformPaths.quickTargets()
         .where((t) => isNativeRoot(t.root))
         .toList();
 
     return AlertDialog(
-      title: Text(widget.title),
+      title: Row(
+        children: [
+          Expanded(child: Text(widget.title)),
+          if (isNativeRoot(_root))
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_browser, size: 16),
+              label: Text(isZh ? '系统选择器' : 'System Picker'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+              onPressed: _switchToSystemPicker,
+            ),
+        ],
+      ),
       actionsOverflowButtonSpacing: 6,
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 420),
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 460),
         child: SizedBox(
           width: double.maxFinite,
-          height: 420,
+          height: 460,
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (recentDirs.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.history, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    isZh ? '最近目录:' : 'Recent:',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 32,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final dir in recentDirs)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.folder_outlined, size: 13),
+                          label: Text(
+                            shortDirectoryName(dir),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          tooltip: dir,
+                          onPressed: () => _navigateTo(dir),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             if (quickTargets.isNotEmpty)
               SizedBox(
                 height: 36,
@@ -444,6 +551,10 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                   final effectiveRel = _selectedFolder != null
                       ? (_relPath.isEmpty ? _selectedFolder! : '$_relPath/$_selectedFolder')
                       : _relPath;
+                  if (isNativeRoot(_root)) {
+                    final dirToSave = effectiveRel.isEmpty ? _root : joinNative(_root, effectiveRel);
+                    PreferencesService.instance.addRecentUploadDir(dirToSave);
+                  }
                   Navigator.of(context).pop(
                     PickedFolder(root: _root, relPath: effectiveRel),
                   );

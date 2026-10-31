@@ -267,7 +267,10 @@ impl Vfs for OpendalFs {
     }
 
     fn prefers_direct_write(&self) -> bool {
-        matches!(self.kind, LocationKind::S3 | LocationKind::Oss)
+        matches!(
+            self.kind,
+            LocationKind::S3 | LocationKind::Oss | LocationKind::WebDav
+        )
     }
 
     async fn list(&self, dir: &VfsPath) -> VfsResult<Vec<Entry>> {

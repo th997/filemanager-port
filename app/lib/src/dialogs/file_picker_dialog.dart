@@ -1,9 +1,14 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
+import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
+import '../services/preferences_service.dart';
 
 /// Result of picking files to upload.
 class PickedFiles {
@@ -30,15 +35,30 @@ class FilePickerDialog extends StatefulWidget {
     BuildContext context, {
     required String title,
     String? initialRoot,
-    String initialPath = '',
+    String? initialPath,
   }) {
-    final root = initialRoot ?? PlatformPaths.defaultRoot();
+    String root;
+    String path;
+    if (initialRoot != null) {
+      root = initialRoot;
+      path = initialPath ?? '';
+    } else {
+      final recentDirs = PreferencesService.instance.getRecentUploadDirs();
+      if (recentDirs.isNotEmpty) {
+        final split = splitPathToRootAndRel(recentDirs.first);
+        root = split.root;
+        path = split.relPath;
+      } else {
+        root = PlatformPaths.defaultRoot();
+        path = initialPath ?? '';
+      }
+    }
     return showDialog<PickedFiles>(
       context: context,
       builder: (_) => FilePickerDialog(
         title: title,
         initialRoot: root,
-        initialPath: initialPath,
+        initialPath: path,
       ),
     );
   }
@@ -182,23 +202,114 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
 
   String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
 
+  void _navigateTo(String fullPath) {
+    final split = splitPathToRootAndRel(fullPath);
+    setState(() {
+      _root = split.root;
+      _relPath = split.relPath;
+      _selectedPaths.clear();
+      _filterQuery = '';
+      _filterController.clear();
+    });
+    _load();
+  }
+
+  Future<void> _switchToSystemPicker() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final initialDir = _currentPath.isNotEmpty && Directory(_currentPath).existsSync()
+        ? _currentPath
+        : null;
+    try {
+      final files = await openFiles(
+        initialDirectory: initialDir,
+        confirmButtonText: isZh ? '上传' : 'Upload',
+      );
+      if (files.isEmpty || !mounted) return;
+
+      final byParent = <String, List<String>>{};
+      for (final f in files) {
+        final split = splitNativeFile(f.path);
+        byParent.putIfAbsent(split.srcRoot, () => []).add(split.name);
+        PreferencesService.instance.addRecentUploadDir(split.srcRoot);
+      }
+
+      if (byParent.isEmpty || !mounted) return;
+      final first = byParent.entries.first;
+      Navigator.pop(
+        context,
+        PickedFiles(root: first.key, paths: first.value),
+      );
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final recentDirs = PreferencesService.instance.getRecentUploadDirs();
     final quickTargets = PlatformPaths.quickTargets()
         .where((t) => t.root.startsWith('/') || t.root.contains(':'))
         .toList();
 
     return AlertDialog(
-      title: Text(widget.title),
+      title: Row(
+        children: [
+          Expanded(child: Text(widget.title)),
+          TextButton.icon(
+            icon: const Icon(Icons.open_in_browser, size: 16),
+            label: Text(isZh ? '系统选择器' : 'System Picker'),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+            onPressed: _switchToSystemPicker,
+          ),
+        ],
+      ),
       actionsOverflowButtonSpacing: 6,
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 480),
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 500),
         child: SizedBox(
           width: double.maxFinite,
-          height: 480,
+          height: 500,
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (recentDirs.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.history, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    isZh ? '最近目录:' : 'Recent:',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 32,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final dir in recentDirs)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.folder_outlined, size: 13),
+                          label: Text(
+                            shortDirectoryName(dir),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          tooltip: dir,
+                          onPressed: () => _navigateTo(dir),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             if (quickTargets.isNotEmpty)
               SizedBox(
                 height: 36,
@@ -447,6 +558,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
           onPressed: _selectedPaths.isEmpty
               ? null
               : () {
+                  final dirToSave = _relPath.isEmpty ? _root : joinNative(_root, _relPath);
+                  PreferencesService.instance.addRecentUploadDir(dirToSave);
                   Navigator.of(context).pop(
                     PickedFiles(root: _root, paths: _selectedPaths.toList()),
                   );

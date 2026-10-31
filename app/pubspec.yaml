@@ -68,6 +68,7 @@ dependencies:
   wakelock_plus: ^1.2.8
   pdf: ^3.13.1
   printing: ^5.15.1
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:

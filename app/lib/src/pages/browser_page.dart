@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1682,6 +1683,16 @@ class BrowserPageState extends State<BrowserPage> {
               ],
             ),
           ),
+          PopupMenuItem(
+            value: 'upload_inapp',
+            child: Row(
+              children: [
+                const Icon(Icons.folder_shared_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text(isZh ? '应用内浏览上传…' : 'Browse In-App to Upload…'),
+              ],
+            ),
+          ),
         ],
         if (_clipboard != null && _canWrite)
           PopupMenuItem(
@@ -1761,6 +1772,9 @@ class BrowserPageState extends State<BrowserPage> {
         break;
       case 'upload_folder':
         _uploadFolder();
+        break;
+      case 'upload_inapp':
+        _uploadFiles(forceInApp: true);
         break;
       case 'paste':
         _paste();
@@ -2024,7 +2038,7 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   // File Operations
-  Future<void> _uploadFiles() async {
+  Future<void> _uploadFiles({bool forceInApp = false}) async {
     if (_remotes.isEmpty) await _loadRemotesMetadata();
     if (!mounted) return;
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
@@ -2032,41 +2046,66 @@ class BrowserPageState extends State<BrowserPage> {
       _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再上传文件。' : 'You are at the multi-bucket root. Please enter a bucket first before uploading files.');
       return;
     }
+
+    if (PreferencesService.instance.useSystemPicker && !forceInApp) {
+      return _uploadFilesSystem();
+    }
+    return _uploadFilesInApp();
+  }
+
+  Future<void> _uploadFilesSystem() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final recentDirs = PreferencesService.instance.getRecentUploadDirs();
+    final initialDir = recentDirs.isNotEmpty ? recentDirs.first : null;
+
+    List<XFile> files;
+    try {
+      files = await openFiles(
+        initialDirectory: initialDir,
+        confirmButtonText: isZh ? '上传' : 'Upload',
+      );
+    } catch (_) {
+      return _uploadFilesInApp();
+    }
+    if (files.isEmpty || !mounted) return;
+
+    final byParent = <String, List<String>>{};
+    for (final f in files) {
+      final split = splitNativeFile(f.path);
+      byParent.putIfAbsent(split.srcRoot, () => []).add(split.name);
+      PreferencesService.instance.addRecentUploadDir(split.srcRoot);
+    }
+
+    for (final entry in byParent.entries) {
+      await _transfer(
+        srcRoot: entry.key,
+        paths: entry.value,
+        isCut: false,
+        destRel: _relPath,
+      );
+      if (!mounted) return;
+    }
+  }
+
+  Future<void> _uploadFilesInApp() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final picked = await FilePickerDialog.show(
       context,
       title: isZh ? '上传文件/文件夹到当前目录' : 'Upload Items to Current Folder',
     );
     if (picked == null || picked.paths.isEmpty || !mounted) return;
 
-    try {
-      Future<String> startTask() => TaskService.instance.copy(
-            srcRoot: picked.root,
-            srcPaths: picked.paths,
-            dstRoot: _root,
-            dstDir: _relPath,
-          );
-      final taskId = await startTask();
-      if (!mounted) return;
-      final completed = await TaskProgressDialog.show(
-        context,
-        taskId,
-        isZh ? '正在上传 ${picked.paths.length} 项…' : 'Uploading ${picked.paths.length} item(s)…',
-        onRetry: startTask,
-      );
-      if (mounted) _load(refresh: true);
-      if (completed == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isZh ? '已上传 ${picked.paths.length} 项' : 'Uploaded ${picked.paths.length} item(s)'),
-          ),
-        );
-      }
-    } catch (e) {
-      _showError(isZh ? '上传失败: $e' : 'Upload failed: $e');
-    }
+    PreferencesService.instance.addRecentUploadDir(picked.root);
+
+    await _transfer(
+      srcRoot: picked.root,
+      paths: picked.paths,
+      isCut: false,
+      destRel: _relPath,
+    );
   }
 
-  Future<void> _uploadFolder() async {
+  Future<void> _uploadFolder({bool forceInApp = false}) async {
     if (_remotes.isEmpty) await _loadRemotesMetadata();
     if (!mounted) return;
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
@@ -2074,6 +2113,42 @@ class BrowserPageState extends State<BrowserPage> {
       _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再上传文件夹。' : 'You are at the multi-bucket root. Please enter a bucket first before uploading a folder.');
       return;
     }
+
+    if (PreferencesService.instance.useSystemPicker && !forceInApp) {
+      return _uploadFolderSystem();
+    }
+    return _uploadFolderInApp();
+  }
+
+  Future<void> _uploadFolderSystem() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final recentDirs = PreferencesService.instance.getRecentUploadDirs();
+    final initialDir = recentDirs.isNotEmpty ? recentDirs.first : null;
+
+    String? selectedPath;
+    try {
+      selectedPath = await getDirectoryPath(
+        initialDirectory: initialDir,
+        confirmButtonText: isZh ? '上传此文件夹' : 'Upload folder',
+      );
+    } catch (_) {
+      return _uploadFolderInApp();
+    }
+    if (selectedPath == null || selectedPath.isEmpty || !mounted) return;
+
+    PreferencesService.instance.addRecentUploadDir(selectedPath);
+    final split = splitNativeFile(selectedPath);
+
+    await _transfer(
+      srcRoot: split.srcRoot,
+      paths: [split.name],
+      isCut: false,
+      destRel: _relPath,
+    );
+  }
+
+  Future<void> _uploadFolderInApp() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final picked = await FolderPickerDialog.show(
       context,
       title: isZh ? '选择要上传的文件夹' : 'Select Folder to Upload',
@@ -2084,11 +2159,9 @@ class BrowserPageState extends State<BrowserPage> {
 
     String srcRoot = picked.root;
     List<String> srcPaths;
-    String folderName;
 
     if (picked.relPath.isNotEmpty) {
       srcPaths = [picked.relPath];
-      folderName = picked.relPath.split('/').where((s) => s.isNotEmpty).last;
     } else {
       final isWindows = srcRoot.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(srcRoot);
       final parts = srcRoot.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
@@ -2096,7 +2169,7 @@ class BrowserPageState extends State<BrowserPage> {
         _showError(isZh ? '请选择需要上传的具体文件夹' : 'Please select a specific folder to upload');
         return;
       }
-      folderName = parts.last;
+      final folderName = parts.last;
       parts.removeLast();
       if (parts.isEmpty) {
         srcRoot = isWindows ? '$folderName\\' : '/';
@@ -2106,32 +2179,14 @@ class BrowserPageState extends State<BrowserPage> {
       srcPaths = [folderName];
     }
 
-    try {
-      Future<String> startTask() => TaskService.instance.copy(
-            srcRoot: srcRoot,
-            srcPaths: srcPaths,
-            dstRoot: _root,
-            dstDir: _relPath,
-          );
-      final taskId = await startTask();
-      if (!mounted) return;
-      final completed = await TaskProgressDialog.show(
-        context,
-        taskId,
-        isZh ? '正在上传文件夹 "$folderName"…' : 'Uploading folder "$folderName"…',
-        onRetry: startTask,
-      );
-      if (mounted) _load(refresh: true);
-      if (completed == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isZh ? '已上传文件夹 "$folderName"' : 'Uploaded folder "$folderName"'),
-          ),
-        );
-      }
-    } catch (e) {
-      _showError(isZh ? '上传文件夹失败: $e' : 'Upload folder failed: $e');
-    }
+    PreferencesService.instance.addRecentUploadDir(picked.path);
+
+    await _transfer(
+      srcRoot: srcRoot,
+      paths: srcPaths,
+      isCut: false,
+      destRel: _relPath,
+    );
   }
 
   Future<void> _downloadSelected() async {
@@ -3849,6 +3904,8 @@ class BrowserPageState extends State<BrowserPage> {
             _uploadFiles();
           } else if (val == 'upload_folder') {
             _uploadFolder();
+          } else if (val == 'upload_inapp') {
+            _uploadFiles(forceInApp: true);
           } else if (val == 'new_folder') {
             _createFolder();
           }
@@ -3874,6 +3931,16 @@ class BrowserPageState extends State<BrowserPage> {
                   const Icon(Icons.drive_folder_upload_outlined, size: 18),
                   const SizedBox(width: 8),
                   Text(isZh ? '上传文件夹' : 'Upload folder'),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'upload_inapp',
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_shared_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(isZh ? '应用内浏览上传…' : 'Browse in-app to upload…'),
                 ],
               ),
             ),

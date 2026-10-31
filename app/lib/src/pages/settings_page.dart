@@ -335,20 +335,52 @@ class _SettingsPageState extends State<SettingsPage> {
 
           _buildSectionHeader(context, l10n.browserSection),
           Card(
-            child: SwitchListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
-              minTileHeight: 40,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              secondary: const AppCircleBadge(
-                icon: Icons.vertical_align_bottom,
-                color: Colors.teal,
-              ),
-              title: Text(l10n.toolbarAtBottom),
-              subtitle: Text(l10n.toolbarAtBottomDesc,
-                  style: const TextStyle(fontSize: 10)),
-              value: PreferencesService.toolbarAtBottom.value,
-              onChanged: _setToolbarAtBottom,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                  minTileHeight: 40,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  secondary: const AppCircleBadge(
+                    icon: Icons.open_in_browser,
+                    color: Colors.blue,
+                  ),
+                  title: Text(
+                    Localizations.localeOf(context).languageCode == 'zh'
+                        ? '上传使用系统文件选择器'
+                        : 'Use System Picker for Upload',
+                  ),
+                  subtitle: Text(
+                    Localizations.localeOf(context).languageCode == 'zh'
+                        ? '直接调用系统原生文件管理器，支持系统书签与路径粘贴'
+                        : 'Invoke native OS file dialog with system bookmarks',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                  value: PreferencesService.instance.useSystemPicker,
+                  onChanged: (val) {
+                    setState(() {
+                      PreferencesService.instance.useSystemPicker = val;
+                    });
+                  },
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                  minTileHeight: 40,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  secondary: const AppCircleBadge(
+                    icon: Icons.vertical_align_bottom,
+                    color: Colors.teal,
+                  ),
+                  title: Text(l10n.toolbarAtBottom),
+                  subtitle: Text(l10n.toolbarAtBottomDesc,
+                      style: const TextStyle(fontSize: 10)),
+                  value: PreferencesService.toolbarAtBottom.value,
+                  onChanged: _setToolbarAtBottom,
+                ),
+              ],
             ),
           ),
 

@@ -43,6 +43,49 @@ class PreferencesService {
     toolbarAtBottom.value = getBool(prefToolbarBottom) ?? false;
   }
 
+  static const String prefUseSystemPicker = 'upload.use_system_picker';
+  static const String prefRecentUploadDirs = 'upload.recent_directories';
+
+  bool get useSystemPicker {
+    final val = getBool(prefUseSystemPicker);
+    if (val != null) return val;
+    // Default to true on Desktop (Linux, Windows, macOS), false on mobile
+    return Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+  }
+
+  set useSystemPicker(bool value) => setBool(prefUseSystemPicker, value);
+
+  List<String> getRecentUploadDirs() {
+    final raw = getString(prefRecentUploadDirs);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .map((e) => e.toString())
+            .where((p) => p.isNotEmpty && Directory(p).existsSync())
+            .toList();
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  void addRecentUploadDir(String dir) {
+    if (dir.isEmpty) return;
+    final normalized = dir.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    if (normalized.isEmpty) return;
+
+    final current = getRecentUploadDirs().toList();
+    current.removeWhere(
+      (p) => p.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '') == normalized,
+    );
+    current.insert(0, normalized);
+    if (current.length > 8) {
+      current.removeRange(8, current.length);
+    }
+    setString(prefRecentUploadDirs, jsonEncode(current));
+  }
+
   String? getString(String key) => _values[key];
 
   bool? getBool(String key) {
