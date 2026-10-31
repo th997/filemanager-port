@@ -190,6 +190,22 @@ pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsEr
 
 /// Create a new bucket in S3.
 pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(), VfsError> {
+    if bucket.len() < 3 || bucket.len() > 63 {
+        return Err(VfsError::Connection {
+            message: format!("S3 存储桶名称长度必须在 3 到 63 个字符之间 (S3 bucket name must be 3-63 characters): '{bucket}'"),
+        });
+    }
+    if bucket.chars().any(|c| c.is_ascii_uppercase()) {
+        return Err(VfsError::Connection {
+            message: format!("S3 存储桶名称不能包含大写字母 (S3 bucket name cannot contain uppercase letters): '{bucket}'"),
+        });
+    }
+    if !bucket.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.') {
+        return Err(VfsError::Connection {
+            message: format!("S3 存储桶名称仅支持小写字母、数字、连字符和点 (S3 bucket name only allows lowercase, digits, hyphens, dots): '{bucket}'"),
+        });
+    }
+
     let (base_url, host_header) = get_s3_base_and_host(config)?;
     let region = config.region.as_deref().unwrap_or("us-east-1");
     let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -571,6 +587,12 @@ impl Vfs for MultiBucketFs {
             })
         } else if path.segments().len() == 1 {
             let bucket = &path.segments()[0];
+            let buckets = self.get_bucket_names().await?;
+            if !buckets.iter().any(|b| b == bucket) {
+                return Err(VfsError::NotFound {
+                    path: path.clone(),
+                });
+            }
             Ok(Entry {
                 name: bucket.clone(),
                 path: path.clone(),
@@ -645,8 +667,14 @@ impl Vfs for MultiBucketFs {
                 path: path.clone(),
                 source: std::io::Error::new(
                     std::io::ErrorKind::IsADirectory,
-                    "cannot write to bucket root",
+                    "多存储桶根目录无法直接存储文件，请先进入具体的存储桶 (Cannot write to bucket root, please select a bucket first)",
                 ),
+            });
+        }
+        let buckets = self.get_bucket_names().await?;
+        if !buckets.iter().any(|b| b == bucket) {
+            return Err(VfsError::NotFound {
+                path: VfsPath::new([bucket]),
             });
         }
         let bucket_fs = self.get_or_create_bucket_fs(bucket)?;

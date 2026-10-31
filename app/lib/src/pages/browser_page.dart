@@ -189,6 +189,19 @@ class BrowserPageState extends State<BrowserPage> {
     return null;
   }
 
+  bool get _isAtMultiBucketRoot {
+    if (_relPath.isNotEmpty && _relPath != '/') return false;
+    if (!_root.startsWith('remote://')) return false;
+    final remoteId = _root.substring('remote://'.length);
+    final remote = _findRemote(remoteId);
+    if (remote == null) return false;
+    final k = remote.kind.toLowerCase();
+    if (k == 's3' || k == 'oss') {
+      return remote.bucket == null || remote.bucket!.trim().isEmpty;
+    }
+    return false;
+  }
+
   // Multi-selection state
   bool _isSelecting = false;
 
@@ -1629,13 +1642,13 @@ class BrowserPageState extends State<BrowserPage> {
             value: 'new_folder',
             child: Row(
               children: [
-                const Icon(Icons.create_new_folder, size: 18),
+                Icon(_isAtMultiBucketRoot ? Icons.create_new_folder_outlined : Icons.create_new_folder, size: 18),
                 const SizedBox(width: 8),
-                Text(isZh ? '新建文件夹' : 'New Folder'),
+                Text(_isAtMultiBucketRoot ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket') : (isZh ? '新建文件夹' : 'New Folder')),
               ],
             ),
           ),
-        if (_canWrite)
+        if (_canWrite && !_isAtMultiBucketRoot)
           PopupMenuItem(
             value: 'new_file',
             child: Row(
@@ -2010,7 +2023,13 @@ class BrowserPageState extends State<BrowserPage> {
 
   // File Operations
   Future<void> _uploadFiles() async {
+    if (_remotes.isEmpty) await _loadRemotesMetadata();
+    if (!mounted) return;
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    if (_isAtMultiBucketRoot) {
+      _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再上传文件。' : 'You are at the multi-bucket root. Please enter a bucket first before uploading files.');
+      return;
+    }
     final picked = await FilePickerDialog.show(
       context,
       title: isZh ? '上传文件/文件夹到当前目录' : 'Upload Items to Current Folder',
@@ -2046,7 +2065,13 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _uploadFolder() async {
+    if (_remotes.isEmpty) await _loadRemotesMetadata();
+    if (!mounted) return;
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    if (_isAtMultiBucketRoot) {
+      _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再上传文件夹。' : 'You are at the multi-bucket root. Please enter a bucket first before uploading a folder.');
+      return;
+    }
     final picked = await FolderPickerDialog.show(
       context,
       title: isZh ? '选择要上传的文件夹' : 'Select Folder to Upload',
@@ -2183,30 +2208,36 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _createFolder() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final isBucket = _isAtMultiBucketRoot;
     final ctrl = TextEditingController();
     final String? name;
     try {
       name = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('New Folder'),
+          title: Text(isBucket ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket') : (isZh ? '新建文件夹' : 'New Folder')),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Folder Name', border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: isBucket ? (isZh ? '存储桶名称' : 'Bucket Name') : (isZh ? '文件夹名称' : 'Folder Name'),
+              hintText: isBucket ? (isZh ? '仅支持小写字母、数字和连字符 (3-63字符)' : 'Lowercase letters, numbers, hyphens (3-63 chars)') : null,
+              border: const OutlineInputBorder(),
+            ),
             onSubmitted: (v) {
               if (v.trim().isNotEmpty) Navigator.of(ctx).pop(v.trim());
             },
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(isZh ? '取消' : 'Cancel')),
             ListenableBuilder(
               listenable: ctrl,
               builder: (ctx, _) => FilledButton(
                 onPressed: ctrl.text.trim().isEmpty
                     ? null
                     : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: const Text('Create'),
+                child: Text(isZh ? '创建' : 'Create'),
               ),
             ),
           ],
@@ -2217,13 +2248,24 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     if (name != null && name.isNotEmpty) {
+      if (isBucket) {
+        final valid = RegExp(r'^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$').hasMatch(name) && !name.contains('..');
+        if (!valid) {
+          if (mounted) {
+            _showError(isZh
+                ? '存储桶名称不符合规范。必须为 3-63 个字符，仅支持小写字母、数字和连字符 (-)，且必须以字母或数字开头和结尾。'
+                : 'Invalid bucket name. Must be 3-63 characters, only lowercase letters, numbers, and hyphens, and start/end with a letter or digit.');
+          }
+          return;
+        }
+      }
       final target = _relPath.isEmpty ? name : '$_relPath/$name';
       try {
         await createDir(root: _root, path: target);
         _load(refresh: true);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to create folder: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isZh ? '创建失败: $e' : 'Failed to create: $e')));
         }
       }
     }
@@ -2333,6 +2375,13 @@ class BrowserPageState extends State<BrowserPage> {
     required String destRel,
     VoidCallback? onCutCompleted,
   }) async {
+    if (_remotes.isEmpty) await _loadRemotesMetadata();
+    if (!mounted) return;
+    if (_isAtMultiBucketRoot && (destRel.isEmpty || destRel == '/')) {
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再进行传输。' : 'You are at the multi-bucket root. Please enter a bucket first before transferring items.');
+      return;
+    }
     // Detect name clashes in the destination first and let the user decide
     // once for the whole batch. Overwriting silently would destroy the
     // existing files. Items dropped back into their own folder are
@@ -3783,7 +3832,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   const Icon(Icons.create_new_folder_outlined, size: 18),
                   const SizedBox(width: 8),
-                  Text(isZh ? '新建文件夹' : 'New folder'),
+                  Text(_isAtMultiBucketRoot ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket') : (isZh ? '新建文件夹' : 'New folder')),
                 ],
               ),
             ),
@@ -4425,6 +4474,7 @@ class BrowserPageState extends State<BrowserPage> {
     final list = _filteredAndSortedEntries;
     if (list.isEmpty) {
       final isFiltered = _filterQuery.isNotEmpty;
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       return RefreshIndicator(
         onRefresh: () async => _load(refresh: true),
         child: LayoutBuilder(
@@ -4491,15 +4541,16 @@ class BrowserPageState extends State<BrowserPage> {
                           alignment: WrapAlignment.center,
                           children: [
                             FilledButton.tonalIcon(
-                              icon: const Icon(Icons.create_new_folder),
-                              label: const Text('New Folder'),
+                              icon: Icon(_isAtMultiBucketRoot ? Icons.create_new_folder_outlined : Icons.create_new_folder),
+                              label: Text(_isAtMultiBucketRoot ? (isZh ? '新建存储桶' : 'New Bucket') : (isZh ? '新建文件夹' : 'New Folder')),
                               onPressed: _createFolder,
                             ),
-                            FilledButton.tonalIcon(
-                              icon: const Icon(Icons.note_add_outlined),
-                              label: const Text('New File'),
-                              onPressed: _createFile,
-                            ),
+                            if (!_isAtMultiBucketRoot)
+                              FilledButton.tonalIcon(
+                                icon: const Icon(Icons.note_add_outlined),
+                                label: Text(isZh ? '新建文件' : 'New File'),
+                                onPressed: _createFile,
+                              ),
                             if (_canNavigateUp)
                               OutlinedButton.icon(
                                 icon: const Icon(Icons.arrow_upward, size: 16),
