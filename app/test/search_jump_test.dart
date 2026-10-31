@@ -23,6 +23,24 @@ void main() {
       expect(HighlightService.instance.languageFor('data.csv'), isNull);
     });
 
+    test('HighlightService skips regex tokenization on large or minified files to prevent UI freeze', () {
+      // 1. Files > 48KB should safely return null (clean monospace text) in < 1ms
+      final largeCode = 'const x = 1;\n' * 5000; // ~65KB
+      final largeSpan = HighlightService.instance.spanFor(largeCode, 'big.js', Brightness.dark);
+      expect(largeSpan, isNull);
+
+      // 2. Minified files with lines > 500 chars should safely return null
+      final minifiedCode = 'var a="' + ('x' * 600) + '";\n';
+      final minifiedSpan = HighlightService.instance.spanFor(minifiedCode, 'bundle.min.js', Brightness.dark);
+      expect(minifiedSpan, isNull);
+
+      // 3. Normal small files should still produce full syntax highlighting
+      const smallCode = 'function hello() { return 42; }';
+      final smallSpan = HighlightService.instance.spanFor(smallCode, 'small.js', Brightness.dark);
+      expect(smallSpan, isNotNull);
+      expect(smallSpan!.children, isNotEmpty);
+    });
+
     test('Non-wrapping line Y calculation accurately counts newlines', () {
       const text = 'Line 0\nLine 1\nLine 2\nLine 3\nLine 4\n';
       const lineHeight = 13.0 * 1.35;

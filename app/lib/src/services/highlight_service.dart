@@ -189,15 +189,23 @@ class HighlightService {
       color: theme['root']?.color,
     );
 
-    // Guard against large files freezing UI isolate with regex backtracking
-    if (code.length > 512 * 1024) return null;
+    // Fast guards against freezing the UI isolate with regex backtracking.
+    // Pure Dart AST tokenization is fast for typical source files, but large
+    // files, data dumps, minified scripts, and long logs should render cleanly
+    // with base monospace styling to ensure instant file opening with zero lag.
+    if (code.length > 48 * 1024) return null;
     int lineCount = 1;
+    int lineStart = 0;
     for (int i = 0; i < code.length; i++) {
       if (code.codeUnitAt(i) == 10) {
+        // Guard against minified code with very long lines causing exponential regex backtracking
+        if (i - lineStart > 500) return null;
         lineCount++;
-        if (lineCount > 8000) return null;
+        if (lineCount > 1000) return null;
+        lineStart = i + 1;
       }
     }
+    if (code.length - lineStart > 500) return null;
 
     try {
       final result = _highlight.highlight(code: code, language: language);

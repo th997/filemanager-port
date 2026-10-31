@@ -110,7 +110,7 @@ class HighlightCodeElementBuilder extends MarkdownElementBuilder {
       color: themeConfig.textColor,
     );
 
-    if (code.length > 64 * 1024) {
+    if (code.length > 32 * 1024) {
       return TextSpan(text: code, style: baseStyle);
     }
 
@@ -121,7 +121,7 @@ class HighlightCodeElementBuilder extends MarkdownElementBuilder {
           result = _highlighter.highlight(code: code, language: language);
         } catch (_) {}
       }
-      if (result == null) {
+      if (result == null && code.length <= 2048) {
         try {
           result = _highlighter.highlightAuto(code);
         } catch (_) {}

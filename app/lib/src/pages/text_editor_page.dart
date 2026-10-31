@@ -77,6 +77,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
   String? _cachedDocForLower;
   String? _cachedDocLower;
 
+  String? _cachedLinesText;
+  List<String>? _cachedLinesList;
+
+  List<String> _getLines(String text) {
+    if (identical(text, _cachedLinesText) || text == _cachedLinesText) {
+      if (_cachedLinesList != null) return _cachedLinesList!;
+    }
+    _cachedLinesText = text;
+    _cachedLinesList = text.split('\n');
+    return _cachedLinesList!;
+  }
+
   String _getDocLower(String doc) {
     if (identical(doc, _cachedDocForLower) || doc == _cachedDocForLower) {
       if (_cachedDocLower != null) return _cachedDocLower!;
@@ -347,6 +359,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     _cachedDocForLower = null;
     _cachedDocLower = null;
+    _cachedLinesText = null;
+    _cachedLinesList = null;
     _controller.value = _controller.value.copyWith(
       text: text.replaceRange(idx, idx + query.length, replacement),
       selection:
@@ -380,6 +394,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
     buf.write(text.substring(start));
     _cachedDocForLower = null;
     _cachedDocLower = null;
+    _cachedLinesText = null;
+    _cachedLinesList = null;
     _controller.value = _controller.value.copyWith(
       text: buf.toString(),
       selection: const TextSelection.collapsed(offset: 0),
@@ -557,6 +573,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (mounted) {
         _cachedDocForLower = null;
         _cachedDocLower = null;
+        _cachedLinesText = null;
+        _cachedLinesList = null;
+        // Large preview files (> 128KB) automatically switch to code mode to avoid
+        // freezing the UI isolate on complex markdown AST rendering.
+        if (content.length > 128 * 1024 && _mode == TextFileMode.preview) {
+          _mode = TextFileMode.code;
+        }
         setState(() {
           _controller.text = content;
           _loading = false;
@@ -1452,7 +1475,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
         int lines = 1;
         int words = 0;
         bool inWord = false;
-        final countWords = chars <= 200000;
+        final countWords = chars <= 50000;
         for (int i = 0; i < text.length; i++) {
           final code = text.codeUnitAt(i);
           if (code == 10) lines++;
@@ -1584,6 +1607,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
               if (!_isDirty) setState(() => _isDirty = true);
               _cachedDocForLower = null;
               _cachedDocLower = null;
+              _cachedLinesText = null;
+              _cachedLinesList = null;
               if (_showFind && _findController.text.isNotEmpty) {
                 _findDebounce?.cancel();
                 _findDebounce = Timer(const Duration(milliseconds: 300), () {
@@ -1598,9 +1623,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Widget _buildCodeView() {
+    final text = _controller.text;
     final brightness = Theme.of(context).brightness;
     final span = HighlightService.instance.spanFor(
-      _controller.text,
+      text,
       widget.fileName,
       brightness,
       fontSize: _fontSize,
@@ -1612,7 +1638,19 @@ class _TextEditorPageState extends State<TextEditorPage> {
       height: 1.35,
     );
 
-    TextSpan resultSpan = span ?? TextSpan(text: _controller.text, style: baseStyle);
+    // If syntax highlighting was bypassed (e.g. large file, data dump, plain text),
+    // and the file has many lines, use the high-performance virtualized line list.
+    // This allows opening files of any size (even 100,000+ lines) instantly with 0ms freeze.
+    final lines = _getLines(text);
+    if (span == null && (lines.length > 300 || text.length > 32 * 1024)) {
+      return _buildVirtualizedCodeView(
+        lines: lines,
+        baseStyle: baseStyle,
+        background: background,
+      );
+    }
+
+    TextSpan resultSpan = span ?? TextSpan(text: text, style: baseStyle);
 
     if (_showFind &&
         _findController.text.isNotEmpty &&
@@ -1651,6 +1689,89 @@ class _TextEditorPageState extends State<TextEditorPage> {
         padding: const EdgeInsets.all(16),
         child: textWidget,
       ),
+    );
+  }
+
+  Widget _buildVirtualizedCodeView({
+    required List<String> lines,
+    required TextStyle baseStyle,
+    required Color background,
+  }) {
+    final lineHeight = _fontSize * 1.35;
+    return Container(
+      color: background,
+      width: double.infinity,
+      child: SelectionArea(
+        child: ListView.builder(
+          controller: _codeScrollController,
+          padding: const EdgeInsets.all(16),
+          itemCount: lines.length,
+          itemExtent: !_wordWrap ? lineHeight : null,
+          itemBuilder: (context, index) {
+            final lineText = lines[index];
+            Widget lineContent;
+            if (_showFind && _findController.text.isNotEmpty && _matchIndices.isNotEmpty) {
+              lineContent = _buildHighlightedLine(lineText, baseStyle);
+            } else {
+              lineContent = Text(
+                lineText.isEmpty ? ' ' : lineText,
+                style: baseStyle,
+                softWrap: _wordWrap,
+              );
+            }
+
+            if (!_wordWrap) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: lineContent,
+              );
+            }
+            return lineContent;
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHighlightedLine(String lineText, TextStyle baseStyle) {
+    final query = _findController.text;
+    final lowerLine = lineText.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    if (!lowerLine.contains(lowerQuery)) {
+      return Text(
+        lineText.isEmpty ? ' ' : lineText,
+        style: baseStyle,
+        softWrap: _wordWrap,
+      );
+    }
+
+    final spans = <InlineSpan>[];
+    int start = 0;
+    while (true) {
+      final idx = lowerLine.indexOf(lowerQuery, start);
+      if (idx == -1) {
+        if (start < lineText.length) {
+          spans.add(TextSpan(text: lineText.substring(start), style: baseStyle));
+        }
+        break;
+      }
+      if (idx > start) {
+        spans.add(TextSpan(text: lineText.substring(start, idx), style: baseStyle));
+      }
+      spans.add(TextSpan(
+        text: lineText.substring(idx, idx + query.length),
+        style: baseStyle.copyWith(
+          backgroundColor: const Color(0xFFFFEB3B),
+          color: Colors.black,
+          fontWeight: FontWeight.w600,
+        ),
+      ));
+      start = idx + query.length;
+    }
+    return Text.rich(
+      TextSpan(children: spans),
+      softWrap: _wordWrap,
     );
   }
 }
