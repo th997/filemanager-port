@@ -87,6 +87,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   double _preBoostSpeed = 1.0;
   double _boostRate = 2.0;
 
+  // Speed change HUD state
+  Timer? _speedHudTimer;
+  double? _hudSpeed;
+
   MediaTrack get _track => widget.playlist.isEmpty
       ? MediaTrack(
           path: widget.path,
@@ -362,8 +366,23 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _playbackSpeed = speed;
     _controller!.setPlaybackSpeed(speed);
     PreferencesService.instance.setString(_prefSpeed, speed.toString());
+    _showSpeedHud(speed);
     setState(() {});
     _resetControlsTimer();
+  }
+
+  void _showSpeedHud(double speed) {
+    _speedHudTimer?.cancel();
+    setState(() {
+      _hudSpeed = speed;
+    });
+    _speedHudTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() {
+          _hudSpeed = null;
+        });
+      }
+    });
   }
 
   void _toggleFullscreen() {
@@ -580,6 +599,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _volumeHudTimer?.cancel();
     _brightnessHudTimer?.cancel();
     _doubleTapHudTimer?.cancel();
+    _speedHudTimer?.cancel();
     ScreenBrightness.instance.resetApplicationScreenBrightness().catchError((_) {});
     WakelockPlus.disable().catchError((_) {});
     _saveResumePosition();
@@ -927,6 +947,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                   if (_isSpeedBoosting)
                     _buildSpeedBoostHud(),
 
+                  // Speed change toast HUD
+                  if (_hudSpeed != null && !_isSpeedBoosting)
+                    _buildSpeedToastHud(),
+
                   // Double-tap seek HUD ripple
                   if (_doubleTapSeekSeconds != null)
                     Positioned(
@@ -1139,6 +1163,48 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               const SizedBox(width: 8),
               Text(
                 '${_boostRate.toInt()}X Fast Forward',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpeedToastHud() {
+    if (_hudSpeed == null || _isSpeedBoosting) return const SizedBox.shrink();
+    return Positioned(
+      top: 64,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white24,
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.speed,
+                color: Colors.lightBlueAccent,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_hudSpeed == _hudSpeed!.roundToDouble() ? _hudSpeed!.toInt() : _hudSpeed}× 播放速度',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,

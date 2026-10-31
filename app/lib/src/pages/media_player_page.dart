@@ -134,6 +134,13 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   double _volume = 100.0;
   double _lastNonZeroVolume = 100.0;
 
+  static const _prefSpeed = 'player.speed';
+  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
+  double _playbackSpeed = 1.0;
+  Timer? _speedHudTimer;
+  double? _hudSpeed;
+  StreamSubscription<double>? _rateSub;
+
   bool _isSpeedBoosting = false;
   double _preBoostSpeed = 1.0;
   double _boostRate = 2.0;
@@ -141,7 +148,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   void _onLongPressStart(LongPressStartDetails details) {
     if (!_player.state.playing) return;
     HapticFeedback.mediumImpact();
-    _preBoostSpeed = _player.state.rate;
+    _preBoostSpeed = _playbackSpeed;
     _boostRate = _preBoostSpeed >= 2.0 ? 3.0 : 2.0;
     _player.setRate(_boostRate);
     setState(() {
@@ -158,6 +165,41 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     });
   }
 
+  void _setSpeed(double speed) {
+    if (_isSpeedBoosting) return;
+    _playbackSpeed = speed;
+    _player.setRate(speed);
+    PreferencesService.instance.setString(_prefSpeed, speed.toString());
+    _showSpeedHud(speed);
+    if (mounted) setState(() {});
+  }
+
+  void _showSpeedHud(double speed) {
+    _speedHudTimer?.cancel();
+    setState(() {
+      _hudSpeed = speed;
+    });
+    _speedHudTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() {
+          _hudSpeed = null;
+        });
+      }
+    });
+  }
+
+  void _cycleSpeed({required bool increase}) {
+    final currentIndex = _rates.indexOf(_playbackSpeed);
+    if (currentIndex == -1) {
+      _setSpeed(increase ? 1.25 : 0.75);
+      return;
+    }
+    final nextIndex = increase
+        ? (currentIndex + 1).clamp(0, _rates.length - 1)
+        : (currentIndex - 1).clamp(0, _rates.length - 1);
+    _setSpeed(_rates[nextIndex]);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -168,12 +210,11 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
       ),
     );
     _tunePlayerProperties();
-    final softwareRender = Platform.isLinux;
     _controller = VideoController(
       _player,
-      configuration: VideoControllerConfiguration(
-        hwdec: softwareRender ? 'no' : null,
-        enableHardwareAcceleration: !softwareRender,
+      configuration: const VideoControllerConfiguration(
+        hwdec: 'auto-safe',
+        enableHardwareAcceleration: true,
       ),
     );
     _volume = _player.state.volume;
@@ -182,6 +223,18 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
         WakelockPlus.enable().catchError((_) {});
       } else {
         WakelockPlus.disable().catchError((_) {});
+      }
+    });
+    final savedSpeed = double.tryParse(
+      PreferencesService.instance.getString(_prefSpeed) ?? '',
+    );
+    if (savedSpeed != null && _rates.contains(savedSpeed)) {
+      _playbackSpeed = savedSpeed;
+      _player.setRate(savedSpeed);
+    }
+    _rateSub = _player.stream.rate.listen((rate) {
+      if (mounted && !_isSpeedBoosting && _playbackSpeed != rate) {
+        setState(() => _playbackSpeed = rate);
       }
     });
     // Volume is a user preference, so a muted-then-closed player does not come
@@ -351,6 +404,9 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
       await _tunePlayerProperties();
       await _player.open(Media(uri));
       await _tunePlayerProperties();
+      if (_playbackSpeed != 1.0) {
+        await _player.setRate(_playbackSpeed);
+      }
       if (mounted) setState(() => _opened = true);
       if (_retryPosition != null) {
         final resumePos = _retryPosition!;
@@ -429,14 +485,19 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
           platform.setProperty('cache-pause-wait', '0') as Future<dynamic>,
           platform.setProperty('cache-pause-initial', 'no') as Future<dynamic>,
           platform.setProperty('cache-on-disk', 'no') as Future<dynamic>,
-          platform.setProperty('video-sync', 'display-resample') as Future<dynamic>,
+          // Use 'audio' clock sync mode so high playback rates (4x, 8x) advance
+          // smoothly without audio resampler overflow or massive vo frame drops.
+          platform.setProperty('video-sync', 'audio') as Future<dynamic>,
+          // Increase scaletempo2 ceiling beyond the default 8.0 to handle 8x/16x
+          // smoothly without muting or dropping audio.
+          platform.setProperty('af', 'scaletempo2=max-speed=16:search-interval=30') as Future<dynamic>,
           platform.setProperty('demuxer-readahead-secs', '120') as Future<dynamic>,
           platform.setProperty('demuxer-max-bytes', maxBytes) as Future<dynamic>,
           platform.setProperty('demuxer-max-back-bytes', maxBackBytes) as Future<dynamic>,
           platform.setProperty('network-timeout', '60') as Future<dynamic>,
           platform.setProperty('framedrop', 'vo') as Future<dynamic>,
           platform.setProperty('hr-seek-framedrop', 'yes') as Future<dynamic>,
-          platform.setProperty('audio-buffer', '0.5') as Future<dynamic>,
+          platform.setProperty('audio-buffer', '1.0') as Future<dynamic>,
           platform.setProperty('keep-open-pause', 'no') as Future<dynamic>,
         ];
         await Future.wait(futures);
@@ -470,6 +531,8 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable().catchError((_) {});
     _playingSub?.cancel();
+    _rateSub?.cancel();
+    _speedHudTimer?.cancel();
     _saveResumePosition();
     _resumeSub?.cancel();
     _completedSub?.cancel();
@@ -492,7 +555,11 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   Widget _withSpeedControls(Widget child) {
     // Each theme data gets its own instance: normal and fullscreen controls can
     // be mounted at the same time, and one widget instance cannot be.
-    Widget speedButton() => _SpeedButton(player: _player);
+    Widget speedButton() => _SpeedButton(
+          player: _player,
+          currentRate: _playbackSpeed,
+          onSelected: _setSpeed,
+        );
     Widget nextButton() => widget.playlist.length > 1
         ? IconButton(
             icon: Icon(
@@ -611,6 +678,15 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
         const SingleActivator(LogicalKeyboardKey.keyJ): () => _seekRelative(-10),
         const SingleActivator(LogicalKeyboardKey.keyL): () => _seekRelative(10),
         const SingleActivator(LogicalKeyboardKey.keyK): () => _player.playOrPause(),
+        const SingleActivator(LogicalKeyboardKey.bracketLeft): () {
+          _cycleSpeed(increase: false);
+        },
+        const SingleActivator(LogicalKeyboardKey.bracketRight): () {
+          _cycleSpeed(increase: true);
+        },
+        const SingleActivator(LogicalKeyboardKey.backslash): () {
+          _setSpeed(1.0);
+        },
       },
       child: Focus(
         autofocus: true,
@@ -670,6 +746,11 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
                       PreferencesService.instance.setBool(_prefLoop, _isLooping);
                     });
                   },
+                ),
+                _SpeedButton(
+                  player: _player,
+                  currentRate: _playbackSpeed,
+                  onSelected: _setSpeed,
                 ),
                 IconButton(
                   icon: const Icon(Icons.fullscreen),
@@ -882,6 +963,48 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
                           ),
                         ),
                       ),
+                    if (_hudSpeed != null && !_isSpeedBoosting)
+                      Positioned(
+                        top: 64,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white24,
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.speed,
+                                  color: Colors.lightBlueAccent,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${_hudSpeed == _hudSpeed!.roundToDouble() ? _hudSpeed!.toInt() : _hudSpeed}× 播放速度',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     if (_track.isAudio)
                       Positioned(
                         top: 24,
@@ -917,8 +1040,14 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
 /// Playback speed menu: 0.5× through 8×.
 class _SpeedButton extends StatefulWidget {
   final Player player;
+  final double currentRate;
+  final ValueChanged<double>? onSelected;
 
-  const _SpeedButton({required this.player});
+  const _SpeedButton({
+    required this.player,
+    this.currentRate = 1.0,
+    this.onSelected,
+  });
 
   @override
   State<_SpeedButton> createState() => _SpeedButtonState();
@@ -928,23 +1057,30 @@ class _SpeedButtonState extends State<_SpeedButton> {
   static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
   static const _prefSpeed = 'player.speed';
 
-  double _rate = 1.0;
+  late double _rate;
   StreamSubscription<double>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _rate = widget.player.state.rate;
+    _rate = widget.currentRate;
     final saved = double.tryParse(
       PreferencesService.instance.getString(_prefSpeed) ?? '',
     );
     if (saved != null && _rates.contains(saved)) {
       _rate = saved;
-      widget.player.setRate(saved);
     }
     _sub = widget.player.stream.rate.listen((rate) {
       if (mounted) setState(() => _rate = rate);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SpeedButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentRate != widget.currentRate) {
+      _rate = widget.currentRate;
+    }
   }
 
   @override
@@ -966,28 +1102,45 @@ class _SpeedButtonState extends State<_SpeedButton> {
       tooltip: 'Playback speed',
       initialValue: _rate,
       onSelected: (rate) async {
-        final wasPlaying = widget.player.state.playing;
+        setState(() => _rate = rate);
+        widget.onSelected?.call(rate);
         await widget.player.setRate(rate);
         PreferencesService.instance.setString(_prefSpeed, rate.toString());
-        if (wasPlaying) {
-          await widget.player.play();
-        }
       },
       itemBuilder: (context) => [
         for (final rate in _rates)
           PopupMenuItem<double>(
             value: rate,
-            child: Text(
-              _label(rate),
-              style: TextStyle(
-                fontWeight:
-                    rate == _rate ? FontWeight.bold : FontWeight.normal,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _label(rate),
+                    style: TextStyle(
+                      fontWeight:
+                          rate == _rate ? FontWeight.bold : FontWeight.normal,
+                      color: rate == _rate
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                  ),
+                ),
+                if (rate == _rate)
+                  Icon(
+                    Icons.check,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+              ],
             ),
           ),
       ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white12,
+          borderRadius: BorderRadius.circular(4),
+        ),
         child: Text(
           _label(_rate),
           style: const TextStyle(
