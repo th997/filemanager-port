@@ -106,10 +106,35 @@ class _TasksPageState extends State<TasksPage> {
     return scheme.primary;
   }
 
-  String _statusText(TaskProgressDto t) {
+  String _localizedLabel(String? label, bool isZh) {
+    if (!isZh) return label ?? 'Task';
+    switch (label) {
+      case 'Copy':
+        return '复制';
+      case 'Move':
+      case 'MoveItems':
+        return '移动';
+      case 'Delete':
+        return '删除';
+      case 'Compress':
+        return '压缩';
+      case 'Extract':
+        return '解压';
+      default:
+        return label ?? '任务';
+    }
+  }
+
+  String _statusText(TaskProgressDto t, {required bool isZh}) {
+    final isFinalizing = t.state == 'running' &&
+        ((t.total != null && t.total! > BigInt.zero && t.completed >= t.total!) ||
+            (t.fraction != null && t.fraction! >= 1.0));
+    if (isFinalizing) {
+      return isZh ? '正在完成…' : 'Finalizing…';
+    }
     switch (t.state) {
       case 'pending':
-        return 'Waiting…';
+        return isZh ? '等待中…' : 'Waiting…';
       case 'running':
         return AppLocalizations.of(context).inProgress;
       case 'completed':
@@ -124,22 +149,35 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   String _detailText(TaskProgressDto t) {
-    final parts = <String>[_statusText(t)];
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final parts = <String>[_statusText(t, isZh: isZh)];
     final total = t.total;
     if (total != null) {
-      parts.add('${formatBytes(t.completed)} of ${formatBytes(total)}');
+      final isItemCount = t.label == 'MoveItems' || t.label == 'Delete';
+      if (isItemCount) {
+        parts.add(isZh ? '${t.completed} / $total 项' : '${t.completed} of $total items');
+      } else {
+        parts.add(isZh
+            ? '${formatBytes(t.completed)} / ${formatBytes(total)}'
+            : '${formatBytes(t.completed)} of ${formatBytes(total)}');
+      }
     } else if (t.state == 'running' || t.state == 'completed') {
-      parts.add('${t.completed} items');
+      parts.add(isZh ? '${t.completed} 项' : '${t.completed} items');
     }
-    if (t.state == 'running') {
+    final isFinalizing = t.state == 'running' &&
+        ((t.total != null && t.total! > BigInt.zero && t.completed >= t.total!) ||
+            (t.fraction != null && t.fraction! >= 1.0));
+    if (isFinalizing) {
+      parts.add(isZh ? '正在同步数据…' : 'Syncing…');
+    } else if (t.state == 'running') {
       final estimator = _speeds[t.id];
       final speed = estimator?.speedText();
       if (speed != null) parts.add(speed);
-      final eta = estimator?.etaText(t.completed, t.total);
+      final eta = estimator?.etaText(t.completed, t.total, isZh: isZh);
       if (eta != null) parts.add(eta);
     }
     if (t.skipped > BigInt.zero) {
-      parts.add('${t.skipped} skipped');
+      parts.add(isZh ? '${t.skipped} 项已跳过' : '${t.skipped} skipped');
     }
     return parts.join(' • ');
   }
@@ -152,14 +190,22 @@ class _TasksPageState extends State<TasksPage> {
     _refresh();
     // A refused dismiss left the row in the list, so the button looked dead.
     if (refused > 0 && mounted) {
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$refused finished task(s) could not be cleared')),
+        SnackBar(
+          content: Text(
+            isZh
+                ? '$refused 个已完成的任务无法清除'
+                : '$refused finished task(s) could not be cleared',
+          ),
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final hasTerminal = _tasks.any(_isTerminal);
     return AppSwipeBack(
       child: Scaffold(
@@ -190,7 +236,9 @@ class _TasksPageState extends State<TasksPage> {
                     child: AppEmptyState(
                       icon: Icons.task_alt,
                       title: AppLocalizations.of(context).noTasksYet,
-                      subtitle: 'Copies, moves and other long operations will appear here.',
+                      subtitle: isZh
+                          ? '复制、移动以及其他长时间运行的操作将显示在此处。'
+                          : 'Copies, moves and other long operations will appear here.',
                     ),
                   ),
                 ),
@@ -214,6 +262,7 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Widget _buildTaskTile(TaskProgressDto t) {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final terminal = _isTerminal(t);
     final fraction = t.fraction;
     return Card(
@@ -237,7 +286,7 @@ class _TasksPageState extends State<TasksPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          t.label ?? 'Task',
+                          _localizedLabel(t.label, isZh),
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 13,
@@ -283,7 +332,13 @@ class _TasksPageState extends State<TasksPage> {
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: t.error!));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Error copied to clipboard')),
+                          SnackBar(
+                            content: Text(
+                              isZh
+                                  ? '错误信息已复制到剪贴板'
+                                  : 'Error copied to clipboard',
+                            ),
+                          ),
                         );
                       },
                       child: Row(
@@ -317,7 +372,11 @@ class _TasksPageState extends State<TasksPage> {
                   // button used to look like it worked either way.
                   if (!TaskService.instance.cancel(t.id)) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('This task cannot be cancelled')),
+                      SnackBar(
+                        content: Text(
+                          isZh ? '此任务无法取消' : 'This task cannot be cancelled',
+                        ),
+                      ),
                     );
                   }
                   _refresh();
@@ -331,7 +390,11 @@ class _TasksPageState extends State<TasksPage> {
                   if (!TaskService.instance.dismiss(t.id)) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Could not dismiss task')),
+                        SnackBar(
+                          content: Text(
+                            isZh ? '无法清除该任务' : 'Could not dismiss task',
+                          ),
+                        ),
                       );
                     }
                   }

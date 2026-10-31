@@ -830,10 +830,11 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        'Downloading ${item.name}',
+        isZh ? '正在下载 ${item.name}…' : 'Downloading ${item.name}…',
         onRetry: startTask,
       );
       if (completed != true || !mounted) return;
@@ -841,7 +842,8 @@ class BrowserPageState extends State<BrowserPage> {
       final dstPath = dstDir.isEmpty ? name : '$dstDir/$name';
       await _openLocalCopy(destination.root, dstPath, item);
     } catch (e) {
-      _showError('Download failed: $e');
+      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+      _showError(isZh ? '下载失败: $e' : 'Download failed: $e');
     }
   }
 
@@ -2154,28 +2156,35 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        'Downloading Files…',
+        isZh ? '正在下载文件…' : 'Downloading Files…',
         onRetry: startTask,
       );
       if (!mounted) return;
       _clearSelection();
       if (completed == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Downloaded to ${dest.path}')),
+          SnackBar(
+            content: Text(
+              isZh ? '已下载到 ${dest.path}' : 'Downloaded to ${dest.path}',
+            ),
+          ),
         );
       }
     } catch (e) {
-      _showError('Download failed: $e');
+      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+      _showError(isZh ? '下载失败: $e' : 'Download failed: $e');
     }
   }
 
   Future<void> _downloadSingle(EntryItem item) async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final dest = await FolderPickerDialog.show(
       context,
-      title: 'Select Download Destination',
+      title: isZh ? '选择下载目标文件夹' : 'Select Download Destination',
       initialRoot: PlatformPaths.defaultRoot(),
     );
     if (dest == null || !mounted) return;
@@ -2193,17 +2202,23 @@ class BrowserPageState extends State<BrowserPage> {
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        'Downloading ${item.name}…',
+        isZh ? '正在下载 ${item.name}…' : 'Downloading ${item.name}…',
         onRetry: startTask,
       );
       if (!mounted) return;
       if (completed == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Downloaded ${item.name} to ${dest.path}')),
+          SnackBar(
+            content: Text(
+              isZh
+                  ? '已下载 ${item.name} 到 ${dest.path}'
+                  : 'Downloaded ${item.name} to ${dest.path}',
+            ),
+          ),
         );
       }
     } catch (e) {
-      _showError('Download failed: $e');
+      _showError(isZh ? '下载失败: $e' : 'Download failed: $e');
     }
   }
 
@@ -2455,10 +2470,13 @@ class BrowserPageState extends State<BrowserPage> {
       final taskId = await startTask();
 
       if (!mounted) return;
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        isCut ? 'Moving Files…' : 'Copying Files…',
+        isZh
+            ? (isCut ? '正在移动文件…' : '正在复制文件…')
+            : (isCut ? 'Moving Files…' : 'Copying Files…'),
         onRetry: startTask,
       );
       // A cancelled move may have already removed some sources, so a cut
@@ -2466,7 +2484,8 @@ class BrowserPageState extends State<BrowserPage> {
       if (isCut && completed == true) onCutCompleted?.call();
       if (mounted) _load(refresh: true);
     } catch (e) {
-      _showError('${isCut ? 'Move' : 'Copy'} failed: $e');
+      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+      _showError(isZh ? '${isCut ? '移动' : '复制'}失败: $e' : '${isCut ? 'Move' : 'Copy'} failed: $e');
     }
   }
 
@@ -2646,15 +2665,26 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
-      final completed = await TaskProgressDialog.show(context, taskId, 'Duplicating…', onRetry: startTask);
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        isZh ? '正在创建副本…' : 'Duplicating…',
+        onRetry: startTask,
+      );
       if (completed == true && mounted) {
         _load(refresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Created "$candidate"')),
+          SnackBar(
+            content: Text(
+              isZh ? '已创建 "$candidate"' : 'Created "$candidate"',
+            ),
+          ),
         );
       }
     } catch (e) {
-      _showError('Duplicate failed: $e');
+      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+      _showError(isZh ? '创建副本失败: $e' : 'Duplicate failed: $e');
     }
   }
 
@@ -2776,7 +2806,13 @@ class BrowserPageState extends State<BrowserPage> {
             TaskService.instance.delete(root: _root, paths: paths);
         final taskId = await startTask();
         if (!mounted) return;
-        final done = await TaskProgressDialog.show(context, taskId, 'Deleting…', onRetry: startTask);
+        final isZh = Localizations.localeOf(context).languageCode == 'zh';
+        final done = await TaskProgressDialog.show(
+          context,
+          taskId,
+          isZh ? '正在删除…' : 'Deleting…',
+          onRetry: startTask,
+        );
         if (!mounted) return;
         _clearSelection();
         _load(refresh: true);
@@ -2784,13 +2820,14 @@ class BrowserPageState extends State<BrowserPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Deleted $count item${count == 1 ? '' : 's'}',
+                isZh ? '已删除 $count 项' : 'Deleted $count item${count == 1 ? '' : 's'}',
               ),
             ),
           );
         }
       } catch (e) {
-        _showError('Delete failed: $e');
+        final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+        _showError(isZh ? '删除失败: $e' : 'Delete failed: $e');
       }
     }
   }
@@ -2925,12 +2962,19 @@ class BrowserPageState extends State<BrowserPage> {
             );
         final taskId = await startTask();
         if (!mounted) return;
-        await TaskProgressDialog.show(context, taskId, 'Compressing…', onRetry: startTask);
+        final isZh = Localizations.localeOf(context).languageCode == 'zh';
+        await TaskProgressDialog.show(
+          context,
+          taskId,
+          isZh ? '正在压缩…' : 'Compressing…',
+          onRetry: startTask,
+        );
         if (!mounted) return;
         _clearSelection();
         _load(refresh: true);
       } catch (e) {
-        _showError('Compress failed: $e');
+        final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+        _showError(isZh ? '压缩失败: $e' : 'Compress failed: $e');
       }
     }
   }
@@ -2945,10 +2989,17 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
-      await TaskProgressDialog.show(context, taskId, 'Extracting Archive…', onRetry: startTask);
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      await TaskProgressDialog.show(
+        context,
+        taskId,
+        isZh ? '正在解压…' : 'Extracting Archive…',
+        onRetry: startTask,
+      );
       if (mounted) _load(refresh: true);
     } catch (e) {
-      _showError('Extract failed: $e');
+      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
+      _showError(isZh ? '解压失败: $e' : 'Extract failed: $e');
     }
   }
 

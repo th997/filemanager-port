@@ -97,10 +97,15 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   /// it; until this button existed the modal dialog was a cage.
   void _background() {
     final messenger = ScaffoldMessenger.of(context);
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     _pop(false);
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Running in background — track it under Home → Tasks'),
+      SnackBar(
+        content: Text(
+          isZh
+              ? '已转入后台运行 — 可在 主页 → 任务 查看进度'
+              : 'Running in background — track it under Home → Tasks',
+        ),
       ),
     );
   }
@@ -120,7 +125,10 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
       });
       _subscribe();
     } catch (e) {
-      if (mounted) setState(() => _retryError = 'Retry failed: $e');
+      if (mounted) {
+        final isZh = Localizations.localeOf(context).languageCode == 'zh';
+        setState(() => _retryError = isZh ? '重试失败: $e' : 'Retry failed: $e');
+      }
     }
   }
 
@@ -135,59 +143,113 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
     _pop(false);
   }
 
-  String? _speedLine(TaskProgressDto p) {
+  bool get _isFinalizing {
+    final p = _latest;
+    if (p == null || p.state != 'running') return false;
+    final total = p.total;
+    if (total != null && total > BigInt.zero && p.completed >= total) {
+      return true;
+    }
+    final fraction = p.fraction;
+    if (fraction != null && fraction >= 1.0) {
+      return true;
+    }
+    return false;
+  }
+
+  String _dialogTitle(String title, bool isZh) {
+    if (!isZh) return title;
+    final uploadMatch = RegExp(r'^Uploading\s+(\d+)\s+item\(s\)\.\.\.$').firstMatch(title);
+    if (uploadMatch != null) {
+      return '正在上传 ${uploadMatch.group(1)} 项…';
+    }
+    final uploadFolderMatch = RegExp(r'^Uploading\s+folder\s+"(.*)"\.\.\.$').firstMatch(title);
+    if (uploadFolderMatch != null) {
+      return '正在上传文件夹 "${uploadFolderMatch.group(1)}"…';
+    }
+    final downloadFileMatch = RegExp(r'^Downloading\s+(.*)\.\.\.$').firstMatch(title);
+    if (downloadFileMatch != null) {
+      return '正在下载 ${downloadFileMatch.group(1)}…';
+    }
+    switch (title) {
+      case 'Downloading Files…':
+        return '正在下载文件…';
+      case 'Duplicating…':
+        return '正在创建副本…';
+      case 'Deleting…':
+        return '正在删除…';
+      case 'Compressing…':
+        return '正在压缩…';
+      case 'Extracting Archive…':
+        return '正在解压…';
+      case 'Moving Files…':
+        return '正在移动文件…';
+      case 'Copying Files…':
+        return '正在复制文件…';
+      default:
+        return title;
+    }
+  }
+
+  String? _speedLine(TaskProgressDto p, bool isZh) {
+    if (_isFinalizing) {
+      return isZh ? '正在同步并校验数据…' : 'Syncing and verifying…';
+    }
     final parts = <String>[];
     final speed = _speed.speedText();
     if (speed != null) parts.add(speed);
-    final eta = _speed.etaText(p.completed, p.total);
+    final eta = _speed.etaText(p.completed, p.total, isZh: isZh);
     if (eta != null) parts.add(eta);
-    return parts.isEmpty ? null : parts.join(' • ');
+    if (parts.isEmpty) {
+      return isZh ? '正在传输…' : 'Transferring…';
+    }
+    return parts.join(' • ');
   }
 
-  String _statusLabel(String state) {
+  String _statusLabel(String state, bool isZh) {
+    if (_isFinalizing) {
+      return isZh ? '正在完成…' : 'Finalizing…';
+    }
     switch (state) {
       case 'pending':
-        return 'Waiting…';
+        return isZh ? '等待中…' : 'Waiting…';
       case 'running':
-        return 'In progress…';
+        return isZh ? '进行中…' : 'In progress…';
       case 'completed':
-        return 'Completed';
+        return isZh ? '已完成' : 'Completed';
       case 'failed':
-        return 'Failed';
+        return isZh ? '失败' : 'Failed';
       case 'cancelled':
-        return 'Cancelled';
+        return isZh ? '已取消' : 'Cancelled';
       default:
         return state;
     }
   }
 
-  String _formatBytes(BigInt bytes) {
-    final value = bytes.toDouble();
-    if (value < 1024) return '${value.toInt()} B';
-    if (value < 1024 * 1024) return '${(value / 1024).toStringAsFixed(1)} KB';
-    if (value < 1024 * 1024 * 1024) {
-      return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
   /// Bytes when the task measured a byte total; otherwise a plain item count.
-  String _processedLabel(TaskProgressDto p) {
+  String _processedLabel(TaskProgressDto p, bool isZh) {
     final total = p.total;
     if (total != null) {
-      return '${_formatBytes(p.completed)} of ${_formatBytes(total)}';
+      final isItemCount = p.label == 'MoveItems' || p.label == 'Delete';
+      if (isItemCount) {
+        return isZh ? '${p.completed} / $total 项' : '${p.completed} of $total items';
+      }
+      return isZh
+          ? '${formatBytes(p.completed)} / ${formatBytes(total)}'
+          : '${formatBytes(p.completed)} of ${formatBytes(total)}';
     }
-    return '${p.completed} items';
+    return isZh ? '${p.completed} 项' : '${p.completed} items';
   }
 
   @override
   Widget build(BuildContext context) {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final p = _latest;
     final state = p?.state ?? 'pending';
     final fraction = p?.fraction;
 
     return AlertDialog(
-      title: Text(widget.title),
+      title: Text(_dialogTitle(widget.title, isZh)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,7 +258,7 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                _statusLabel(state),
+                _statusLabel(state, isZh),
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
               if (fraction != null)
@@ -224,21 +286,23 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
           if (p != null) ...[
             const SizedBox(height: 4),
             Text(
-              _processedLabel(p),
+              _processedLabel(p, isZh),
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
           if (p != null && p.skipped > BigInt.zero) ...[
             const SizedBox(height: 4),
             Text(
-              '${p.skipped} skipped (already exists)',
+              isZh
+                  ? '${p.skipped} 项已跳过（已存在）'
+                  : '${p.skipped} skipped (already exists)',
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
-          if (state == 'running' && p != null && _speedLine(p) != null) ...[
+          if (state == 'running' && p != null && _speedLine(p, isZh) != null) ...[
             const SizedBox(height: 4),
             Text(
-              _speedLine(p)!,
+              _speedLine(p, isZh)!,
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
@@ -256,31 +320,31 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
           if (widget.onRetry != null)
             FilledButton(
               onPressed: _retry,
-              child: const Text('Retry'),
+              child: Text(isZh ? '重试' : 'Retry'),
             ),
           if (p?.error != null)
             TextButton.icon(
               icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy Error'),
+              label: Text(isZh ? '复制错误' : 'Copy Error'),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: p!.error!));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Error copied to clipboard')),
+                  SnackBar(content: Text(isZh ? '错误信息已复制到剪贴板' : 'Error copied to clipboard')),
                 );
               },
             ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Close'),
+            child: Text(isZh ? '关闭' : 'Close'),
           ),
         ] else ...[
           TextButton(
             onPressed: _background,
-            child: const Text('Background'),
+            child: Text(isZh ? '后台运行' : 'Background'),
           ),
           TextButton(
             onPressed: _cancel,
-            child: const Text('Cancel'),
+            child: Text(isZh ? '取消' : 'Cancel'),
           ),
         ],
       ],
