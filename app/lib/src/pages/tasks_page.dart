@@ -130,7 +130,7 @@ class _TasksPageState extends State<TasksPage> {
         ((t.total != null && t.total! > BigInt.zero && t.completed >= t.total!) ||
             (t.fraction != null && t.fraction! >= 1.0));
     if (isFinalizing) {
-      return isZh ? '正在完成…' : 'Finalizing…';
+      return isZh ? '正在完成（服务端处理中）…' : 'Finalizing (server processing)…';
     }
     switch (t.state) {
       case 'pending':
@@ -168,7 +168,7 @@ class _TasksPageState extends State<TasksPage> {
         ((t.total != null && t.total! > BigInt.zero && t.completed >= t.total!) ||
             (t.fraction != null && t.fraction! >= 1.0));
     if (isFinalizing) {
-      parts.add(isZh ? '正在同步数据…' : 'Syncing…');
+      parts.add(isZh ? '数据已全部发送，正在合并与校验…' : 'All data sent, verifying & merging…');
     } else if (t.state == 'running') {
       final estimator = _speeds[t.id];
       final speed = estimator?.speedText();
@@ -265,6 +265,9 @@ class _TasksPageState extends State<TasksPage> {
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final terminal = _isTerminal(t);
     final fraction = t.fraction;
+    final isFinalizing = t.state == 'running' &&
+        ((t.total != null && t.total! > BigInt.zero && t.completed >= t.total!) ||
+            (fraction != null && fraction >= 1.0));
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
@@ -293,7 +296,26 @@ class _TasksPageState extends State<TasksPage> {
                           ),
                         ),
                       ),
-                      if (fraction != null && !terminal)
+                      if (isFinalizing)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(strokeWidth: 1.5),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isZh ? '100% (处理中)' : '100% (processing)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        )
+                      else if (fraction != null && !terminal)
                         Text(
                           '${(fraction * 100).clamp(0, 100).toStringAsFixed(0)}%',
                           style: const TextStyle(
@@ -305,7 +327,9 @@ class _TasksPageState extends State<TasksPage> {
                   ),
                   if (!terminal) ...[
                     const SizedBox(height: 6),
-                    if (fraction != null)
+                    if (isFinalizing)
+                      const LinearProgressIndicator()
+                    else if (fraction != null)
                       LinearProgressIndicator(value: fraction)
                     else
                       const LinearProgressIndicator(),

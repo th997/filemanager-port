@@ -193,7 +193,9 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
 
   String? _speedLine(TaskProgressDto p, bool isZh) {
     if (_isFinalizing) {
-      return isZh ? '正在同步并校验数据…' : 'Syncing and verifying…';
+      return isZh
+          ? '数据已全部发送，正在等待服务端校验与合并…'
+          : 'All data transferred, waiting for server verification…';
     }
     final parts = <String>[];
     final speed = _speed.speedText();
@@ -208,7 +210,7 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
 
   String _statusLabel(String state, bool isZh) {
     if (_isFinalizing) {
-      return isZh ? '正在完成…' : 'Finalizing…';
+      return isZh ? '正在完成（服务端处理中）…' : 'Finalizing (server processing)…';
     }
     switch (state) {
       case 'pending':
@@ -257,11 +259,25 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                _statusLabel(state, isZh),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              Expanded(
+                child: Text(
+                  _statusLabel(state, isZh),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              if (fraction != null)
+              if (_isFinalizing) ...[
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  isZh ? '100% (处理中)' : '100% (processing)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ] else if (fraction != null)
                 Text(
                   '${(fraction * 100).clamp(0, 100).toStringAsFixed(0)}%',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -269,7 +285,9 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
             ],
           ),
           const SizedBox(height: 8),
-          if (fraction != null)
+          if (_isFinalizing)
+            const LinearProgressIndicator()
+          else if (fraction != null)
             LinearProgressIndicator(value: fraction)
           else
             const LinearProgressIndicator(),

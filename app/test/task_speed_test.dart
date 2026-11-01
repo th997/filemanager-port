@@ -75,8 +75,8 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 350));
       final speed1 = estimator.add(BigInt.from(5242880)); // 5MB
       expect(speed1, isNotNull);
-      // Cumulative rate anchor keeps it smooth and bounded (no 100MB/s fake burst)
-      expect(speed1! < 30 * 1024 * 1024, isTrue);
+      // Cumulative rate anchor with effectiveElapsed clamping keeps it smooth and bounded (no 100MB/s fake burst)
+      expect(speed1! < 15 * 1024 * 1024, isTrue);
 
       // Simulate in-flight network send of 5MB part taking 800ms
       await Future<void>.delayed(const Duration(milliseconds: 800));
@@ -85,6 +85,18 @@ void main() {
       // Speed should be held during chunk in-flight, NOT dropped to 0!
       expect(speed2! > 1024 * 1024, isTrue);
       expect(estimator.speedText(), isNot('0 B/s'));
+    });
+
+    test('massive initial buffer dump of 20MB in 350ms does not fake spike to > 100MB/s', () async {
+      final estimator = SpeedEstimator();
+      estimator.add(BigInt.zero);
+
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      // 20MB buffered in 350ms (would be 57 MB/s naively)
+      final speed = estimator.add(BigInt.from(20 * 1024 * 1024));
+      expect(speed, isNotNull);
+      // Must be safely clamped by effectiveElapsed anchor
+      expect(speed! <= 20 * 1024 * 1024 + 1024, isTrue);
     });
   });
 }

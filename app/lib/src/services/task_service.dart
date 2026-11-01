@@ -38,8 +38,8 @@ class SpeedEstimator {
   DateTime? _lastProgressChangeTime;
 
   SpeedEstimator({
-    this.windowDuration = const Duration(milliseconds: 4500),
-    this.initialWarmUp = const Duration(milliseconds: 300),
+    this.windowDuration = const Duration(milliseconds: 5000),
+    this.initialWarmUp = const Duration(milliseconds: 350),
   });
 
   /// Feed a new sample; returns the smoothed speed in bytes/sec, or null
@@ -79,11 +79,12 @@ class SpeedEstimator {
     final windowBytesDelta = (completed - oldest.completed).toDouble();
 
     // In the first few seconds of a transfer, anchor against cumulative rate.
-    // This absorbs any initial socket buffer burst (e.g. 10MB loaded in 0.1s).
+    // Clamping elapsed to at least 1.0s absorbs any initial socket/RAM buffer burst (e.g. 10MB loaded in 0.1s).
     final cumulativeBytesDelta =
         (completed - (_firstCompleted ?? BigInt.zero)).toDouble();
+    final effectiveElapsed = totalElapsed.clamp(1.0, double.infinity);
     final cumulativeSpeed =
-        totalElapsed > 0.2 ? cumulativeBytesDelta / totalElapsed : null;
+        totalElapsed > 0.2 ? cumulativeBytesDelta / effectiveElapsed : null;
 
     // Calculate window rate
     double? currentRate;
@@ -91,8 +92,10 @@ class SpeedEstimator {
       currentRate = windowBytesDelta / windowDt;
     }
 
-    // If in warm-up transition phase (< 4 seconds), prioritize cumulative rate anchor
-    if (totalElapsed < 4.0 && cumulativeSpeed != null) {
+    // In warm-up transition phase (< 4.5 seconds), prioritize cumulative rate anchor to absorb buffer bursts
+    if (totalElapsed < 2.0 && cumulativeSpeed != null) {
+      currentRate = cumulativeSpeed;
+    } else if (totalElapsed < 4.5 && cumulativeSpeed != null) {
       if (currentRate != null) {
         currentRate = cumulativeSpeed * 0.7 + currentRate * 0.3;
       } else {
@@ -106,14 +109,14 @@ class SpeedEstimator {
           ? now.difference(_lastProgressChangeTime!).inMilliseconds / 1000.0
           : 0.0;
 
-      if (timeSinceProgress < 3.0 &&
+      if (timeSinceProgress < 3.5 &&
           _smoothedSpeed != null &&
           _smoothedSpeed! > 0) {
         // Chunks in flight (e.g. S3 5MB/8MB multipart upload, TCP ACKs).
         // Hold the active transfer speed so it does not falsely plunge to 0 B/s.
         return _smoothedSpeed;
       } else if (_smoothedSpeed != null) {
-        // Prolonged stall (> 3.0 seconds): gently decay towards 0
+        // Prolonged stall (> 3.5 seconds): gently decay towards 0
         _smoothedSpeed = _smoothedSpeed! * 0.8;
         if (_smoothedSpeed! < 1024) _smoothedSpeed = null;
         return _smoothedSpeed;
@@ -124,8 +127,8 @@ class SpeedEstimator {
     if (_smoothedSpeed == null) {
       _smoothedSpeed = currentRate;
     } else {
-      // Exponential moving average: 75% previous, 25% current
-      _smoothedSpeed = _smoothedSpeed! * 0.75 + currentRate * 0.25;
+      // Exponential moving average: 80% previous, 20% current
+      _smoothedSpeed = _smoothedSpeed! * 0.8 + currentRate * 0.2;
     }
 
     return _smoothedSpeed;
