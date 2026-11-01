@@ -363,6 +363,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
   void _setSpeed(double speed) {
     if (_controller == null) return;
+    _isSpeedBoosting = false;
     _playbackSpeed = speed;
     _controller!.setPlaybackSpeed(speed);
     PreferencesService.instance.setString(_prefSpeed, speed.toString());
@@ -579,6 +580,14 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   void _onLongPressEnd(LongPressEndDetails details) {
     if (!_isSpeedBoosting) return;
     HapticFeedback.lightImpact();
+    _controller?.setPlaybackSpeed(_preBoostSpeed);
+    setState(() {
+      _isSpeedBoosting = false;
+    });
+  }
+
+  void _onLongPressCancel() {
+    if (!_isSpeedBoosting) return;
     _controller?.setPlaybackSpeed(_preBoostSpeed);
     setState(() {
       _isSpeedBoosting = false;
@@ -884,6 +893,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               onVerticalDragEnd: _onVerticalDragEnd,
               onLongPressStart: _onLongPressStart,
               onLongPressEnd: _onLongPressEnd,
+              onLongPressCancel: _onLongPressCancel,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1377,32 +1387,78 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               ],
               const Spacer(),
               // Speed Menu: 0.5x to 8.0x
-              PopupMenuButton<double>(
-                tooltip: 'Playback speed',
-                onSelected: _setSpeed,
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 0.5, child: Text('0.5x')),
-                  PopupMenuItem(value: 0.75, child: Text('0.75x')),
-                  PopupMenuItem(value: 1.0, child: Text('1.0x')),
-                  PopupMenuItem(value: 1.25, child: Text('1.25x')),
-                  PopupMenuItem(value: 1.5, child: Text('1.5x')),
-                  PopupMenuItem(value: 2.0, child: Text('2.0x')),
-                  PopupMenuItem(value: 4.0, child: Text('4.0x')),
-                  PopupMenuItem(value: 8.0, child: Text('8.0x')),
-                ],
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '${_playbackSpeed.toStringAsFixed(_playbackSpeed.truncateToDouble() == _playbackSpeed ? 0 : 2)}x',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
+              Builder(
+                builder: (btnCtx) => Tooltip(
+                  message: '播放速度',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () async {
+                        _resetControlsTimer();
+                        final RenderBox? button =
+                            btnCtx.findRenderObject() as RenderBox?;
+                        final overlay = Navigator.of(context, rootNavigator: true)
+                            .overlay
+                            ?.context
+                            .findRenderObject() as RenderBox?;
+                        if (button == null || overlay == null) return;
+
+                        final position = RelativeRect.fromRect(
+                          Rect.fromPoints(
+                            button.localToGlobal(Offset.zero, ancestor: overlay),
+                            button.localToGlobal(
+                                button.size.bottomRight(Offset.zero),
+                                ancestor: overlay),
+                          ),
+                          Offset.zero & overlay.size,
+                        );
+
+                        final selected = await showMenu<double>(
+                          context: context,
+                          useRootNavigator: true,
+                          position: position,
+                          initialValue: _playbackSpeed,
+                          elevation: 8,
+                          color: const Color(0xF21C1C1E),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(
+                                color: Colors.white24, width: 0.8),
+                          ),
+                          items: const [
+                            PopupMenuItem(value: 0.5, child: Text('0.5x')),
+                            PopupMenuItem(value: 0.75, child: Text('0.75x')),
+                            PopupMenuItem(value: 1.0, child: Text('1.0x')),
+                            PopupMenuItem(value: 1.25, child: Text('1.25x')),
+                            PopupMenuItem(value: 1.5, child: Text('1.5x')),
+                            PopupMenuItem(value: 2.0, child: Text('2.0x')),
+                            PopupMenuItem(value: 3.0, child: Text('3.0x')),
+                            PopupMenuItem(value: 4.0, child: Text('4.0x')),
+                            PopupMenuItem(value: 8.0, child: Text('8.0x')),
+                          ],
+                        );
+
+                        if (selected != null) {
+                          _setSpeed(selected);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '${_playbackSpeed.toStringAsFixed(_playbackSpeed.truncateToDouble() == _playbackSpeed ? 0 : 2)}x',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

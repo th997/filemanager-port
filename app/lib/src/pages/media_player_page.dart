@@ -135,7 +135,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   double _lastNonZeroVolume = 100.0;
 
   static const _prefSpeed = 'player.speed';
-  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
+  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
   double _playbackSpeed = 1.0;
   Timer? _speedHudTimer;
   double? _hudSpeed;
@@ -165,8 +165,18 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     });
   }
 
+  void _onLongPressCancel() {
+    if (!_isSpeedBoosting) return;
+    _player.setRate(_preBoostSpeed);
+    if (mounted) {
+      setState(() {
+        _isSpeedBoosting = false;
+      });
+    }
+  }
+
   void _setSpeed(double speed) {
-    if (_isSpeedBoosting) return;
+    _isSpeedBoosting = false;
     _playbackSpeed = speed;
     _player.setRate(speed);
     PreferencesService.instance.setString(_prefSpeed, speed.toString());
@@ -910,6 +920,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
                       behavior: HitTestBehavior.translucent,
                       onLongPressStart: _onLongPressStart,
                       onLongPressEnd: _onLongPressEnd,
+                      onLongPressCancel: _onLongPressCancel,
                       child: _withSpeedControls(
                         Video(
                           key: _videoKey,
@@ -1054,7 +1065,7 @@ class _SpeedButton extends StatefulWidget {
 }
 
 class _SpeedButtonState extends State<_SpeedButton> {
-  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0, 8.0];
+  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
   static const _prefSpeed = 'player.speed';
 
   late double _rate;
@@ -1071,7 +1082,7 @@ class _SpeedButtonState extends State<_SpeedButton> {
       _rate = saved;
     }
     _sub = widget.player.stream.rate.listen((rate) {
-      if (mounted) setState(() => _rate = rate);
+      if (mounted && _rate != rate) setState(() => _rate = rate);
     });
   }
 
@@ -1096,57 +1107,102 @@ class _SpeedButtonState extends State<_SpeedButton> {
     return '$text×';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<double>(
-      tooltip: 'Playback speed',
-      initialValue: _rate,
-      onSelected: (rate) async {
-        setState(() => _rate = rate);
-        widget.onSelected?.call(rate);
-        await widget.player.setRate(rate);
-        PreferencesService.instance.setString(_prefSpeed, rate.toString());
-      },
-      itemBuilder: (context) => [
+  Future<void> _openMenu(BuildContext context) async {
+    final RenderBox? button = context.findRenderObject() as RenderBox?;
+    final overlay = Navigator.of(context, rootNavigator: true)
+        .overlay
+        ?.context
+        .findRenderObject() as RenderBox?;
+    if (button == null || overlay == null) return;
+
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    // Save callbacks in local variables so rate application survives button unmount
+    final onSelected = widget.onSelected;
+    final player = widget.player;
+    final currentRate = _rate;
+
+    final selected = await showMenu<double>(
+      context: context,
+      useRootNavigator: true,
+      position: position,
+      initialValue: currentRate,
+      elevation: 8,
+      color: const Color(0xF21C1C1E),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: Colors.white24, width: 0.8),
+      ),
+      items: [
         for (final rate in _rates)
           PopupMenuItem<double>(
             value: rate,
+            height: 38,
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     _label(rate),
                     style: TextStyle(
-                      fontWeight:
-                          rate == _rate ? FontWeight.bold : FontWeight.normal,
-                      color: rate == _rate
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
+                      color: rate == currentRate
+                          ? Colors.lightBlueAccent
+                          : Colors.white,
+                      fontWeight: rate == currentRate
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      fontSize: 13,
                     ),
                   ),
                 ),
-                if (rate == _rate)
-                  Icon(
+                if (rate == currentRate)
+                  const Icon(
                     Icons.check,
                     size: 16,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: Colors.lightBlueAccent,
                   ),
               ],
             ),
           ),
       ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white12,
+    );
+
+    if (selected != null) {
+      if (mounted) setState(() => _rate = selected);
+      onSelected?.call(selected);
+      await player.setRate(selected);
+      PreferencesService.instance.setString(_prefSpeed, selected.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '播放速度',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          _label(_rate),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
+          onTap: () => _openMenu(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white12,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              _label(_rate),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
       ),
