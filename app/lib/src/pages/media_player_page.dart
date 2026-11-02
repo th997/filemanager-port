@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../rust/api/servers.dart';
+import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
 import '../widgets/app_swipe_back.dart';
@@ -137,6 +138,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   static const _prefSpeed = 'player.speed';
   static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
   double _playbackSpeed = 1.0;
+  bool _isExplicitlyClosed = false;
   Timer? _speedHudTimer;
   double? _hudSpeed;
   StreamSubscription<double>? _rateSub;
@@ -180,6 +182,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     _playbackSpeed = speed;
     _player.setRate(speed);
     PreferencesService.instance.setString(_prefSpeed, speed.toString());
+    GlobalPlaybackService.instance.setPlaybackSpeed(speed);
     _showSpeedHud(speed);
     if (mounted) setState(() {});
   }
@@ -214,19 +217,34 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _player = Player(
-      configuration: const PlayerConfiguration(
-        bufferSize: 128 * 1024 * 1024,
-      ),
-    );
-    _tunePlayerProperties();
-    _controller = VideoController(
-      _player,
-      configuration: const VideoControllerConfiguration(
-        hwdec: 'auto-safe',
-        enableHardwareAcceleration: true,
-      ),
-    );
+    final session = GlobalPlaybackService.instance;
+    if (session.hasActiveSession &&
+        session.currentPath == _track.path &&
+        session.desktopPlayer != null &&
+        session.desktopVideoController != null) {
+      _player = session.desktopPlayer!;
+      _controller = session.desktopVideoController!;
+      _startedStream = session.startedStream;
+      _opened = true;
+      session.setFullScreen(true);
+    } else {
+      if (session.hasActiveSession) {
+        session.stop();
+      }
+      _player = Player(
+        configuration: PlayerConfiguration(
+          bufferSize: PreferencesService.instance.bufferSizeMb * 1024 * 1024,
+        ),
+      );
+      _tunePlayerProperties();
+      _controller = VideoController(
+        _player,
+        configuration: const VideoControllerConfiguration(
+          hwdec: 'auto-safe',
+          enableHardwareAcceleration: true,
+        ),
+      );
+    }
     _volume = _player.state.volume;
     _playingSub = _player.stream.playing.listen((playing) {
       if (playing) {
@@ -299,7 +317,9 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
         }
       }
     });
-    _open();
+    if (!_opened) {
+      _open();
+    }
   }
 
   /// Switches playback to another track in the playlist, saving the
@@ -409,10 +429,23 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
             .where((segment) => segment.isNotEmpty)
             .map(Uri.encodeComponent)
             .join('/');
-        uri = '$base/$encoded';
+        final bufferMb = PreferencesService.instance.bufferSizeMb;
+        uri = '$base/$encoded?buffer_mb=$bufferMb';
       }
       await _tunePlayerProperties();
       await _player.open(Media(uri));
+      GlobalPlaybackService.instance.setDesktopSession(
+        root: widget.root,
+        path: _track.path,
+        fileName: _track.fileName,
+        isAudio: widget.isAudio,
+        playlist: widget.playlist,
+        currentIndex: _index,
+        player: _player,
+        controller: _controller,
+        startedStream: _startedStream,
+        playbackSpeed: _playbackSpeed,
+      );
       await _tunePlayerProperties();
       if (_playbackSpeed != 1.0) {
         await _player.setRate(_playbackSpeed);
@@ -486,9 +519,10 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   Future<void> _tunePlayerProperties() async {
     final dynamic platform = _player.platform;
     if (platform != null) {
-      final isAudio = _track.isAudio;
-      final maxBytes = isAudio ? '${16 * 1024 * 1024}' : '${128 * 1024 * 1024}';
-      final maxBackBytes = isAudio ? '${8 * 1024 * 1024}' : '${64 * 1024 * 1024}';
+      final bufferSec = PreferencesService.instance.bufferDurationSec.toString();
+      final bufferMb = PreferencesService.instance.bufferSizeMb;
+      final maxBytes = '${bufferMb * 1024 * 1024}';
+      final maxBackBytes = '${(bufferMb ~/ 2) * 1024 * 1024}';
       try {
         final futures = <Future<dynamic>>[
           platform.setProperty('cache-pause', 'no') as Future<dynamic>,
@@ -501,7 +535,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
           // Increase scaletempo2 ceiling beyond the default 8.0 to handle 8x/16x
           // smoothly without muting or dropping audio.
           platform.setProperty('af', 'scaletempo2=max-speed=16:search-interval=30') as Future<dynamic>,
-          platform.setProperty('demuxer-readahead-secs', '120') as Future<dynamic>,
+          platform.setProperty('demuxer-readahead-secs', bufferSec) as Future<dynamic>,
           platform.setProperty('demuxer-max-bytes', maxBytes) as Future<dynamic>,
           platform.setProperty('demuxer-max-back-bytes', maxBackBytes) as Future<dynamic>,
           platform.setProperty('network-timeout', '60') as Future<dynamic>,
@@ -536,6 +570,16 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     }
   }
 
+  void _closeAndExit() {
+    _isExplicitlyClosed = true;
+    _saveResumePosition();
+    _player.stop();
+    GlobalPlaybackService.instance.stop();
+    if (mounted) {
+      Navigator.of(context).maybePop();
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -548,13 +592,19 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     _completedSub?.cancel();
     _errorSub?.cancel();
     _volumeSub?.cancel();
-    _player.stop();
-    _player.dispose();
-    if (_startedStream) {
-      // The loopback stream server started for this root would otherwise
-      // keep running (and holding its port) for the rest of the app's
-      // lifetime, accumulating one server per played remote file.
-      stopMediaStreams();
+
+    if (_isExplicitlyClosed || !GlobalPlaybackService.instance.hasActiveSession) {
+      _player.stop();
+      _player.dispose();
+      if (_startedStream) {
+        // The loopback stream server started for this root would otherwise
+        // keep running (and holding its port) for the rest of the app's
+        // lifetime, accumulating one server per played remote file.
+        stopMediaStreams();
+      }
+      GlobalPlaybackService.instance.stop();
+    } else {
+      GlobalPlaybackService.instance.setFullScreen(false);
     }
     super.dispose();
   }
@@ -704,16 +754,20 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
           canPop: true,
           onPopInvokedWithResult: (didPop, _) {
             _saveResumePosition();
-            _player.stop();
+            if (_isExplicitlyClosed) {
+              _player.stop();
+            }
           },
-          child: Scaffold(
-            backgroundColor: Colors.black,
+          child: Theme(
+            data: ThemeData.dark(),
+            child: Scaffold(
+              backgroundColor: Colors.black,
             appBar: AppBar(
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
+                tooltip: '最小化 / Minimize',
                 onPressed: () async {
                   _saveResumePosition();
-                  await _player.stop();
                   if (context.mounted) {
                     Navigator.of(context).maybePop();
                   }
@@ -873,6 +927,11 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
                       ),
                     ],
                   ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  tooltip: '关闭 / Close',
+                  onPressed: _closeAndExit,
                 ),
               ],
             ),
@@ -1041,6 +1100,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
                   ],
                 ),
           ),
+          ),
         ),
       ),
     ),
@@ -1132,7 +1192,6 @@ class _SpeedButtonState extends State<_SpeedButton> {
       context: context,
       useRootNavigator: true,
       position: position,
-      initialValue: currentRate,
       elevation: 8,
       color: const Color(0xF21C1C1E),
       shape: RoundedRectangleBorder(
@@ -1151,12 +1210,12 @@ class _SpeedButtonState extends State<_SpeedButton> {
                     _label(rate),
                     style: TextStyle(
                       color: rate == currentRate
-                          ? Colors.lightBlueAccent
+                          ? const Color(0xFF40C4FF)
                           : Colors.white,
                       fontWeight: rate == currentRate
                           ? FontWeight.bold
-                          : FontWeight.normal,
-                      fontSize: 13,
+                          : FontWeight.w500,
+                      fontSize: 14,
                     ),
                   ),
                 ),
@@ -1164,7 +1223,7 @@ class _SpeedButtonState extends State<_SpeedButton> {
                   const Icon(
                     Icons.check,
                     size: 16,
-                    color: Colors.lightBlueAccent,
+                    color: Color(0xFF40C4FF),
                   ),
               ],
             ),

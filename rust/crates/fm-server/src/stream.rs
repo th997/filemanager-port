@@ -9,13 +9,14 @@
 //! token generated when the server starts: other apps on the device can reach
 //! loopback ports, so the port alone is not an access control.
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{body::Body, Router};
 use fm_core::VfsPath;
 use fm_vfs::Vfs;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::net::TcpListener;
@@ -87,6 +88,7 @@ pub async fn start_stream_server(vfs: Arc<dyn Vfs>) -> Result<StreamServer, Stri
 async fn handle_stream(
     State(state): State<Arc<StreamState>>,
     AxumPath((token, subpath)): AxumPath<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     method: Method,
     headers: HeaderMap,
 ) -> Response {
@@ -178,18 +180,28 @@ async fn handle_stream(
         }
     };
 
+    let target_cap = params
+        .get("buffer_mb")
+        .and_then(|s| s.parse::<usize>().ok())
+        .map(|mb| mb.clamp(1, 128) * 1024 * 1024)
+        .unwrap_or(PREFETCH_CAPACITY);
+
     let prefetch_cap = match length.or(total) {
-        Some(size) => ((size as usize).min(PREFETCH_CAPACITY)).max(64 * 1024),
-        None => 1024 * 1024,
+        Some(size) => ((size as usize).min(target_cap)).max(64 * 1024),
+        None => target_cap,
     };
     let read_buf_size = prefetch_cap.min(64 * 1024);
     let stream_buf = prefetch_cap.min(STREAM_BUFFER);
 
     let (reader_end, mut writer_end) = tokio::io::simplex(prefetch_cap);
+    let state_clone = Arc::clone(&state);
+    let path_clone = path.clone();
     tokio::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut reader = reader;
         let mut buf = vec![0u8; read_buf_size];
+        let mut current_offset = offset;
+        let mut remaining = length;
         loop {
             match reader.read(&mut buf).await {
                 Ok(0) => break,
@@ -197,8 +209,35 @@ async fn handle_stream(
                     if writer_end.write_all(&buf[..n]).await.is_err() {
                         break;
                     }
+                    current_offset += n as u64;
+                    if let Some(rem) = remaining.as_mut() {
+                        *rem = rem.saturating_sub(n as u64);
+                        if *rem == 0 {
+                            break;
+                        }
+                    }
                 }
-                Err(_) => break,
+                Err(_) => {
+                    if remaining == Some(0) {
+                        break;
+                    }
+                    let mut reconnected = false;
+                    for attempt in 1..=3 {
+                        tokio::time::sleep(std::time::Duration::from_millis(300 * attempt)).await;
+                        if let Ok(new_reader) = state_clone
+                            .vfs
+                            .open_read_range(&path_clone, current_offset, remaining)
+                            .await
+                        {
+                            reader = new_reader;
+                            reconnected = true;
+                            break;
+                        }
+                    }
+                    if !reconnected {
+                        break;
+                    }
+                }
             }
         }
     });

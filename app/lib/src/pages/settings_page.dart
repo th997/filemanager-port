@@ -38,6 +38,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late ThemeMode _themeMode = widget.currentThemeMode;
   late String _accentCode = widget.accentCode;
   late String _localeCode = widget.localeCode;
+  late int _bufferDurationSec = PreferencesService.instance.bufferDurationSec;
+  late int _bufferSizeMb = PreferencesService.instance.bufferSizeMb;
 
   ThemeMode get currentThemeMode => _themeMode;
 
@@ -379,6 +381,100 @@ class _SettingsPageState extends State<SettingsPage> {
                       style: const TextStyle(fontSize: 10)),
                   value: PreferencesService.toolbarAtBottom.value,
                   onChanged: _setToolbarAtBottom,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSectionHeader(context, 'Media Playback (远程播放缓冲)'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.timer_outlined,
+                    color: Colors.teal,
+                  ),
+                  title: const Text('Buffer Duration (缓冲时长)'),
+                  subtitle: Text('$_bufferDurationSec s forward buffer',
+                      style: const TextStyle(fontSize: 11)),
+                  trailing: DropdownButton<int>(
+                    value: _bufferDurationSec,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 5,
+                          child: Text('5s (低延迟)',
+                              style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 15,
+                          child: Text('15s (推荐)',
+                              style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 30,
+                          child:
+                              Text('30s', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 60,
+                          child:
+                              Text('60s', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 120,
+                          child:
+                              Text('120s', style: TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _bufferDurationSec = val);
+                        PreferencesService.instance.bufferDurationSec = val;
+                      }
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.memory,
+                    color: Colors.purple,
+                  ),
+                  title: const Text('Buffer Size (缓冲大小)'),
+                  subtitle: Text('$_bufferSizeMb MB pool size',
+                      style: const TextStyle(fontSize: 11)),
+                  trailing: DropdownButton<int>(
+                    value: _bufferSizeMb,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 4,
+                          child: Text('4 MB (省内存)',
+                              style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 8,
+                          child: Text('8 MB', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 16,
+                          child: Text('16 MB (推荐)',
+                              style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 32,
+                          child: Text('32 MB', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 64,
+                          child: Text('64 MB', style: TextStyle(fontSize: 12))),
+                      DropdownMenuItem(
+                          value: 128,
+                          child: Text('128 MB (超大)',
+                              style: TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _bufferSizeMb = val);
+                        PreferencesService.instance.bufferSizeMb = val;
+                      }
+                    },
+                  ),
                 ),
               ],
             ),

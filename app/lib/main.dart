@@ -7,9 +7,11 @@ import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
 import 'src/services/external_file_service.dart';
+import 'src/services/global_playback_service.dart';
 import 'src/services/platform_paths.dart';
 import 'src/services/preferences_service.dart';
 import 'src/services/storage_service.dart';
+import 'src/widgets/global_mini_player_bar.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -91,6 +93,7 @@ class _FileManagerAppState extends State<FileManagerApp> {
   @override
   void initState() {
     super.initState();
+    GlobalPlaybackService.instance.init(appNavigatorKey);
     ExternalFileService.instance.init(
       appNavigatorKey,
       initialArgs: widget.initialArgs,
@@ -235,6 +238,14 @@ class _FileManagerAppState extends State<FileManagerApp> {
           themeMode: _themeMode,
           theme: _themeData(lightScheme),
           darkTheme: _themeData(darkScheme),
+          builder: (context, child) {
+            return Stack(
+              children: [
+                ?child,
+                const GlobalMiniPlayerBar(),
+              ],
+            );
+          },
           home: HomePage(
             themeMode: _themeMode,
             onThemeModeChanged: _updateThemeMode,

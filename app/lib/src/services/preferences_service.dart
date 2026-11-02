@@ -45,6 +45,30 @@ class PreferencesService {
 
   static const String prefUseSystemPicker = 'upload.use_system_picker';
   static const String prefRecentUploadDirs = 'upload.recent_directories';
+  static const String prefBufferDurationSec = 'player.buffer_duration_sec';
+  static const String prefBufferSizeMb = 'player.buffer_size_mb';
+
+  int get bufferDurationSec {
+    final raw = getString(prefBufferDurationSec);
+    if (raw != null) {
+      final parsed = int.tryParse(raw);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 15;
+  }
+
+  set bufferDurationSec(int value) => setString(prefBufferDurationSec, value.toString());
+
+  int get bufferSizeMb {
+    final raw = getString(prefBufferSizeMb);
+    if (raw != null) {
+      final parsed = int.tryParse(raw);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 16;
+  }
+
+  set bufferSizeMb(int value) => setString(prefBufferSizeMb, value.toString());
 
   bool get useSystemPicker {
     final val = getBool(prefUseSystemPicker);

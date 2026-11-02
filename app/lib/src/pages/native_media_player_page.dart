@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../rust/api/servers.dart';
+import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
 import '../widgets/app_swipe_back.dart';
@@ -49,6 +50,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   bool _autoNext = true;
   bool _showControls = true;
   bool _isFullscreen = false;
+  bool _isExplicitlyClosed = false;
   Timer? _controlsTimer;
 
   static const _prefVolume = 'player.volume';
@@ -56,6 +58,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   static const _prefAutoNext = 'player.auto_next';
   static const _prefSpeed = 'player.speed';
   static const _prefResumePrefix = 'player.resume.';
+  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
 
   late int _index;
   bool _switching = false;
@@ -90,6 +93,17 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   // Speed change HUD state
   Timer? _speedHudTimer;
   double? _hudSpeed;
+
+  static const _nowPlayingChannel =
+      MethodChannel('com.github.th997.filemanager/now_playing');
+  bool? _lastNowPlayingIsPlaying;
+  int _lastNowPlayingSec = -1;
+  double _lastNowPlayingDuration = -1;
+  double _lastNowPlayingRate = -1;
+
+  DateTime? _bufferingStartTime;
+  Duration? _bufferingLastPos;
+  bool _isRecoveringStall = false;
 
   MediaTrack get _track => widget.playlist.isEmpty
       ? MediaTrack(
@@ -131,8 +145,29 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       _lastNonZeroVolume = _volume > 0 ? _volume : 1.0;
     }
 
-    _openCurrentTrack();
-    _resetControlsTimer();
+    final session = GlobalPlaybackService.instance;
+    if (session.hasActiveSession &&
+        session.currentPath == _track.path &&
+        session.videoPlayerController != null) {
+      _controller = session.videoPlayerController;
+      _initialized = _controller!.value.isInitialized;
+      _startedStream = session.startedStream;
+      _index = session.currentIndex;
+      _playbackSpeed = session.playbackSpeed;
+      _controller!.addListener(_onControllerUpdate);
+      session.setFullScreen(true);
+      _resetControlsTimer();
+    } else {
+      if (session.hasActiveSession) {
+        session.stop();
+      }
+      _openCurrentTrack();
+      _resetControlsTimer();
+    }
+
+    if (Platform.isIOS) {
+      _nowPlayingChannel.setMethodCallHandler(_handleNowPlayingMethodCall);
+    }
     ScreenBrightness.instance.application.then((val) {
       if (mounted) _dragBrightnessLevel = val;
     }).catchError((_) {});
@@ -197,7 +232,8 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
             .where((segment) => segment.isNotEmpty)
             .map(Uri.encodeComponent)
             .join('/');
-        uri = '$base/$encoded';
+        final bufferMb = PreferencesService.instance.bufferSizeMb;
+        uri = '$base/$encoded?buffer_mb=$bufferMb';
         _controller = VideoPlayerController.networkUrl(
           Uri.parse(uri),
           videoPlayerOptions: VideoPlayerOptions(
@@ -210,11 +246,29 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       await _controller!.initialize();
       _controller!.addListener(_onControllerUpdate);
 
+      GlobalPlaybackService.instance.setIosSession(
+        root: widget.root,
+        path: _track.path,
+        fileName: _track.fileName,
+        isAudio: widget.isAudio,
+        playlist: widget.playlist,
+        currentIndex: _index,
+        controller: _controller!,
+        startedStream: _startedStream,
+        playbackSpeed: _playbackSpeed,
+      );
+
+      if (Platform.isIOS) {
+        _nowPlayingChannel.invokeMethod('setBufferDuration', {
+          'seconds': PreferencesService.instance.bufferDurationSec.toDouble(),
+        }).catchError((_) {});
+      }
+
       await _controller!.setLooping(_isLooping);
       await _controller!.setPlaybackSpeed(_playbackSpeed);
       await _controller!.setVolume(_volume);
 
-      _applyResume();
+      await _applyResume();
 
       await _controller!.play();
       WakelockPlus.enable().catchError((_) {});
@@ -224,6 +278,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           _initialized = true;
         });
         _resetControlsTimer();
+        _updateNowPlaying(force: true);
       }
     } catch (e) {
       if (mounted) {
@@ -234,7 +289,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     }
   }
 
-  void _applyResume() {
+  Future<void> _applyResume() async {
     if (_controller == null) return;
     final saved = int.tryParse(
       PreferencesService.instance.getString(_resumeKey) ?? '',
@@ -242,7 +297,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     if (saved == null || saved < 5000) return;
     final dur = _controller!.value.duration;
     if (dur > Duration.zero && saved < dur.inMilliseconds * 0.95) {
-      _controller!.seekTo(Duration(milliseconds: saved));
+      await _controller!.seekTo(Duration(milliseconds: saved));
     }
   }
 
@@ -302,6 +357,33 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       WakelockPlus.disable().catchError((_) {});
     }
 
+    // Auto-recover if stream stalled in buffering state for >= 3s
+    if (_initialized && val.isBuffering && val.isPlaying) {
+      if (_bufferingStartTime == null || _bufferingLastPos != val.position) {
+        _bufferingStartTime = DateTime.now();
+        _bufferingLastPos = val.position;
+      } else if (!_isRecoveringStall &&
+          DateTime.now().difference(_bufferingStartTime!).inSeconds >= 3) {
+        _isRecoveringStall = true;
+        _bufferingStartTime = DateTime.now();
+        final currentPos = val.position;
+        _controller!.seekTo(currentPos).then((_) {
+          _controller?.play();
+          _isRecoveringStall = false;
+        }).catchError((_) {
+          _isRecoveringStall = false;
+        });
+      }
+    } else {
+      _bufferingStartTime = null;
+      _bufferingLastPos = null;
+      _isRecoveringStall = false;
+    }
+
+    if (_initialized && _controller != null) {
+      _updateNowPlaying();
+    }
+
     setState(() {});
   }
 
@@ -331,6 +413,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         : (dur > Duration.zero && target > dur ? dur : target);
     _controller!.seekTo(clamped);
     _resetControlsTimer();
+    _updateNowPlaying(force: true);
   }
 
   void _togglePlayPause() {
@@ -343,6 +426,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       _controller!.play();
       _resetControlsTimer();
     }
+    _updateNowPlaying(force: true);
   }
 
   void _toggleMute() {
@@ -367,9 +451,76 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _playbackSpeed = speed;
     _controller!.setPlaybackSpeed(speed);
     PreferencesService.instance.setString(_prefSpeed, speed.toString());
+    GlobalPlaybackService.instance.setPlaybackSpeed(speed);
     _showSpeedHud(speed);
+    _updateNowPlaying(force: true);
     setState(() {});
     _resetControlsTimer();
+  }
+
+  Future<dynamic> _handleNowPlayingMethodCall(MethodCall call) async {
+    if (!mounted || _controller == null) return;
+    switch (call.method) {
+      case 'onRemoteCommand':
+        final arg = call.arguments;
+        if (arg == 'play') {
+          if (!_controller!.value.isPlaying) {
+            _controller!.play();
+            _updateNowPlaying(force: true);
+          }
+        } else if (arg == 'pause') {
+          if (_controller!.value.isPlaying) {
+            _controller!.pause();
+            _updateNowPlaying(force: true);
+          }
+        } else if (arg == 'togglePlayPause') {
+          _togglePlayPause();
+        } else if (arg == 'forward10') {
+          _seekRelative(10);
+        } else if (arg == 'rewind10') {
+          _seekRelative(-10);
+        } else if (arg == 'next') {
+          if (_hasNext) _openTrack(_index + 1);
+        } else if (arg == 'prev') {
+          if (_hasPrev) _openTrack(_index - 1);
+        } else if (arg is Map && arg.containsKey('seek')) {
+          final target = (arg['seek'] as num).toDouble();
+          _controller!.seekTo(Duration(milliseconds: (target * 1000).toInt()));
+          _updateNowPlaying(force: true);
+        }
+        break;
+    }
+  }
+
+  void _updateNowPlaying({bool force = false}) {
+    if (!Platform.isIOS || _controller == null || !_controller!.value.isInitialized) return;
+    final val = _controller!.value;
+    final isPlaying = val.isPlaying;
+    final posSec = val.position.inSeconds;
+    final durationSec = val.duration.inMilliseconds / 1000.0;
+    final currentRate = isPlaying ? _playbackSpeed : 0.0;
+
+    if (!force &&
+        _lastNowPlayingIsPlaying == isPlaying &&
+        _lastNowPlayingDuration == durationSec &&
+        _lastNowPlayingRate == currentRate &&
+        (posSec - _lastNowPlayingSec).abs() < 5) {
+      return;
+    }
+    _lastNowPlayingIsPlaying = isPlaying;
+    _lastNowPlayingSec = posSec;
+    _lastNowPlayingDuration = durationSec;
+    _lastNowPlayingRate = currentRate;
+
+    _nowPlayingChannel.invokeMethod('update', {
+      'title': _track.fileName,
+      'duration': durationSec,
+      'position': val.position.inMilliseconds / 1000.0,
+      'rate': currentRate,
+      'isAudio': widget.isAudio,
+      'hasNext': _hasNext,
+      'hasPrev': _hasPrev,
+    }).catchError((_) {});
   }
 
   void _showSpeedHud(double speed) {
@@ -598,6 +749,23 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _resetControlsTimer();
+      if (_controller != null && _controller!.value.isInitialized) {
+        _controller!.setPlaybackSpeed(_playbackSpeed);
+        _updateNowPlaying(force: true);
+      }
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_controller != null && _controller!.value.isInitialized) {
+        _updateNowPlaying(force: true);
+      }
+    }
+  }
+
+  void _closeAndExit() {
+    _isExplicitlyClosed = true;
+    _saveResumePosition();
+    GlobalPlaybackService.instance.stop();
+    if (mounted) {
+      Navigator.of(context).maybePop();
     }
   }
 
@@ -618,16 +786,36 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     }
 
-    final c = _controller;
-    _controller = null;
-    if (c != null) {
-      c.removeListener(_onControllerUpdate);
-      c.pause();
-      c.dispose();
-    }
+    if (_isExplicitlyClosed || !GlobalPlaybackService.instance.hasActiveSession) {
+      final c = _controller;
+      _controller = null;
+      if (c != null) {
+        try {
+          c.removeListener(_onControllerUpdate);
+        } catch (_) {}
+        try {
+          c.pause().catchError((_) {});
+        } catch (_) {}
+        try {
+          c.dispose().catchError((_) {});
+        } catch (_) {}
+      }
 
-    if (_startedStream) {
-      stopMediaStreams();
+      if (_startedStream) {
+        try {
+          stopMediaStreams();
+        } catch (_) {}
+        _startedStream = false;
+      }
+      if (Platform.isIOS) {
+        _nowPlayingChannel.setMethodCallHandler(null);
+        _nowPlayingChannel.invokeMethod('clear').catchError((_) {});
+      }
+      GlobalPlaybackService.instance.stop();
+    } else {
+      // Minimize: keep playback running in background/mini player
+      _controller?.removeListener(_onControllerUpdate);
+      GlobalPlaybackService.instance.setFullScreen(false);
     }
     super.dispose();
   }
@@ -656,12 +844,15 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         },
         child: Focus(
           autofocus: true,
-          child: Scaffold(
-            backgroundColor: Colors.black,
+          child: Theme(
+            data: ThemeData.dark(),
+            child: Scaffold(
+              backgroundColor: Colors.black,
             appBar: _showControls || !_isFullscreen
                 ? AppBar(
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      tooltip: '最小化 / Minimize',
                       onPressed: () async {
                         _saveResumePosition();
                         if (context.mounted) {
@@ -849,6 +1040,11 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           ],
                         ],
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        tooltip: '关闭 / Close',
+                        onPressed: _closeAndExit,
+                      ),
                     ],
                   )
                 : null,
@@ -1005,6 +1201,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                 ],
               ),
             ),
+          ),
           ),
         ),
       ),
@@ -1415,10 +1612,9 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                         );
 
                         final selected = await showMenu<double>(
-                          context: context,
+                          context: btnCtx,
                           useRootNavigator: true,
                           position: position,
-                          initialValue: _playbackSpeed,
                           elevation: 8,
                           color: const Color(0xF21C1C1E),
                           shape: RoundedRectangleBorder(
@@ -1426,16 +1622,36 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                             side: const BorderSide(
                                 color: Colors.white24, width: 0.8),
                           ),
-                          items: const [
-                            PopupMenuItem(value: 0.5, child: Text('0.5x')),
-                            PopupMenuItem(value: 0.75, child: Text('0.75x')),
-                            PopupMenuItem(value: 1.0, child: Text('1.0x')),
-                            PopupMenuItem(value: 1.25, child: Text('1.25x')),
-                            PopupMenuItem(value: 1.5, child: Text('1.5x')),
-                            PopupMenuItem(value: 2.0, child: Text('2.0x')),
-                            PopupMenuItem(value: 3.0, child: Text('3.0x')),
-                            PopupMenuItem(value: 4.0, child: Text('4.0x')),
-                            PopupMenuItem(value: 8.0, child: Text('8.0x')),
+                          items: [
+                            for (final rate in _rates)
+                              PopupMenuItem<double>(
+                                value: rate,
+                                height: 38,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${rate == rate.roundToDouble() ? rate.toInt() : rate}x',
+                                        style: TextStyle(
+                                          color: (rate - _playbackSpeed).abs() < 0.01
+                                              ? const Color(0xFF40C4FF)
+                                              : Colors.white,
+                                          fontWeight: (rate - _playbackSpeed).abs() < 0.01
+                                              ? FontWeight.bold
+                                              : FontWeight.w500,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    if ((rate - _playbackSpeed).abs() < 0.01)
+                                      const Icon(
+                                        Icons.check,
+                                        size: 16,
+                                        color: Color(0xFF40C4FF),
+                                      ),
+                                  ],
+                                ),
+                              ),
                           ],
                         );
 
