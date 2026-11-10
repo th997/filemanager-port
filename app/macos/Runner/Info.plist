@@ -55,5 +55,7 @@
 	<string>FileManager needs access to removable volumes to manage external storage.</string>
 	<key>NSNetworkVolumesUsageDescription</key>
 	<string>FileManager needs access to network volumes to manage shared files.</string>
+	<key>FLTEnableImpeller</key>
+	<false/>
 </dict>
 </plist>

@@ -91,8 +91,22 @@ fn key_file(data_dir: &Path) -> PathBuf {
 }
 
 fn load_or_create_key(data_dir: &Path) -> [u8; 32] {
-    // 1. OS keyring, when it already holds a key.
+    // 1. A key file minted on disk. On desktop systems (especially macOS where
+    //    ad-hoc signed builds trigger OS Keychain password prompts), the file
+    //    is the primary store (mode 0600, restricted to current user).
+    if let Ok(existing) = std::fs::read_to_string(key_file(data_dir)) {
+        if let Some(key) = decode_key(&existing) {
+            return key;
+        }
+    }
+
+    // 2. OS keyring (used on iOS, Windows, Linux, but skipped on macOS desktop to prevent
+    //    SecurityAgent authorization popups for local/ad-hoc builds).
+    #[cfg(not(target_os = "macos"))]
     let entry = keyring::Entry::new("filemanager-port", "master-key").ok();
+    #[cfg(target_os = "macos")]
+    let entry: Option<keyring::Entry> = None;
+
     if let Some(entry) = &entry {
         if let Ok(existing) = entry.get_password() {
             if let Some(key) = decode_key(&existing) {
@@ -100,19 +114,8 @@ fn load_or_create_key(data_dir: &Path) -> [u8; 32] {
             }
         }
     }
-    // 2. A key file minted by an earlier fallback run. This must win
-    //    over minting a fresh keyring key, or every config written by
-    //    that run would become unreadable.
-    if let Ok(existing) = std::fs::read_to_string(key_file(data_dir)) {
-        if let Some(key) = decode_key(&existing) {
-            // Adopt it into the keyring for future runs when possible.
-            if let Some(entry) = &entry {
-                let _ = entry.set_password(&existing);
-            }
-            return key;
-        }
-    }
-    // 3. Mint a new key: keyring first, file as the fallback store.
+
+    // 3. Mint a new key: keyring first (when enabled), file as fallback/primary store.
     let mut key = [0u8; 32];
     OsRng.fill_bytes(&mut key);
     let encoded = STANDARD.encode(key);

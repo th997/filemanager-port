@@ -71,6 +71,8 @@ Future<void> _initDesktopWindow() async {
     if (x == null || y == null) await windowManager.center();
   }
   windowManager.addListener(_windowBoundsSaver);
+  await windowManager.show();
+  await windowManager.focus();
 }
 
 class FileManagerApp extends StatefulWidget {
@@ -239,9 +241,10 @@ class _FileManagerAppState extends State<FileManagerApp> {
           theme: _themeData(lightScheme),
           darkTheme: _themeData(darkScheme),
           builder: (context, child) {
+            final content = child ?? const SizedBox.shrink();
             return Stack(
               children: [
-                ?child,
+                content,
                 const GlobalMiniPlayerBar(),
               ],
             );
