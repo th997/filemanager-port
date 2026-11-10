@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -96,8 +97,20 @@ class GlobalPlaybackService extends ChangeNotifier {
   void setFullScreen(bool value) {
     if (isFullScreen != value) {
       isFullScreen = value;
-      notifyListeners();
+      _notifySafely();
     }
+  }
+
+  /// Notifies listeners unless the widget tree is locked (e.g. a page's
+  /// dispose() during unmount). A notify dropped in that window never reaches
+  /// the mini player bar, which then keeps rendering its stale state forever.
+  void _notifySafely() {
+    final binding = WidgetsBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      binding.addPostFrameCallback((_) => notifyListeners());
+      return;
+    }
+    notifyListeners();
   }
 
   void setIosSession({
@@ -324,7 +337,7 @@ class GlobalPlaybackService extends ChangeNotifier {
     _lastNowPlayingDuration = -1;
     _lastNowPlayingRate = -1;
 
-    notifyListeners();
+    _notifySafely();
 
     if (wasStartedStream) {
       try {

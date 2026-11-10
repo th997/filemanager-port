@@ -12,6 +12,8 @@ import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
 import '../widgets/app_swipe_back.dart';
+import '../widgets/media_player/media_player_controls.dart';
+import '../widgets/media_player/media_player_hud.dart';
 import 'media_player_page.dart';
 
 /// iOS-native video and audio playback using AVPlayer via [VideoPlayerController].
@@ -820,16 +822,6 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     super.dispose();
   }
 
-  String _formatDuration(Duration d) {
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60);
-    final seconds = d.inSeconds.remainder(60);
-    if (hours > 0) {
-      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-    }
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppSwipeBack(
@@ -1139,61 +1131,31 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
                   // Horizontal swipe seek HUD
                   if (_isDraggingSeek)
-                    _buildSeekHud(),
+                    MediaPlayerSeekHud(
+                      deltaSeconds: _dragSeekDeltaSec,
+                      target: _dragSeekTarget,
+                      total: _controller?.value.duration ?? Duration.zero,
+                    ),
 
                   // Vertical brightness gesture HUD
                   if (_isDraggingBrightness)
-                    _buildBrightnessHud(),
+                    MediaPlayerBrightnessHud(brightness: _dragBrightnessLevel),
 
                   // Vertical volume gesture HUD
                   if (_isDraggingVolume)
-                    _buildVolumeHud(),
+                    MediaPlayerVolumeHud(volume: _volume),
 
                   // Long-press speed boost floating HUD
                   if (_isSpeedBoosting)
-                    _buildSpeedBoostHud(),
+                    MediaPlayerSpeedBoostHud(boostRate: _boostRate),
 
                   // Speed change toast HUD
                   if (_hudSpeed != null && !_isSpeedBoosting)
-                    _buildSpeedToastHud(),
+                    MediaPlayerSpeedToastHud(speed: _hudSpeed!),
 
                   // Double-tap seek HUD ripple
                   if (_doubleTapSeekSeconds != null)
-                    Positioned(
-                      left: _doubleTapSeekSeconds! < 0 ? 32 : null,
-                      right: _doubleTapSeekSeconds! > 0 ? 32 : null,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(28),
-                            border: Border.all(color: Colors.white24, width: 1),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _doubleTapSeekSeconds! < 0 ? Icons.replay_10 : Icons.forward_10,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${_doubleTapSeekSeconds! > 0 ? '+' : ''}$_doubleTapSeekSeconds s',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                    MediaPlayerDoubleTapSeekHud(seconds: _doubleTapSeekSeconds!),
 
                   // Overlay Controls (Timeline + Bottom Buttons)
                   if (_showControls && _initialized && _controller != null)
@@ -1202,224 +1164,6 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               ),
             ),
           ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSeekHud() {
-    final dur = _controller?.value.duration ?? Duration.zero;
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white24, width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _dragSeekDeltaSec >= 0 ? Icons.fast_forward : Icons.fast_rewind,
-              color: Colors.white,
-              size: 38,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${_dragSeekDeltaSec >= 0 ? "+" : ""}${_dragSeekDeltaSec}s',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${_formatDuration(_dragSeekTarget)} / ${_formatDuration(dur)}',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVolumeHud() {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white24, width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _volume == 0
-                  ? Icons.volume_off
-                  : (_volume < 0.5 ? Icons.volume_down : Icons.volume_up),
-              color: Colors.white,
-              size: 38,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${(_volume * 100).toInt()}%',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: 100,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: _volume,
-                  minHeight: 4,
-                  backgroundColor: Colors.white24,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBrightnessHud() {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white24, width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _dragBrightnessLevel < 0.3
-                  ? Icons.brightness_low
-                  : (_dragBrightnessLevel < 0.7
-                      ? Icons.brightness_medium
-                      : Icons.brightness_high),
-              color: Colors.white,
-              size: 38,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${(_dragBrightnessLevel * 100).toInt()}%',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: 100,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: _dragBrightnessLevel,
-                  minHeight: 4,
-                  backgroundColor: Colors.white24,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.amber),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSpeedBoostHud() {
-    return Positioned(
-      top: 64,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.amber.withValues(alpha: 0.7),
-              width: 1.2,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.fast_forward, color: Colors.amber, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '${_boostRate.toInt()}X Fast Forward',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSpeedToastHud() {
-    if (_hudSpeed == null || _isSpeedBoosting) return const SizedBox.shrink();
-    return Positioned(
-      top: 64,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white24,
-              width: 1.2,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.speed,
-                color: Colors.lightBlueAccent,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${_hudSpeed == _hudSpeed!.roundToDouble() ? _hudSpeed!.toInt() : _hudSpeed}× 播放速度',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -1480,9 +1224,6 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     final val = _controller!.value;
     final pos = val.position;
     final dur = val.duration;
-    final double maxSec = dur.inMilliseconds.toDouble();
-    final double curSec =
-        pos.inMilliseconds.toDouble().clamp(0.0, maxSec > 0 ? maxSec : 0.0);
 
     final double bottomMargin = _isFullscreen ? 36.0 : 24.0;
     final double seekMargin = _isFullscreen ? 96.0 : 84.0;
@@ -1490,53 +1231,17 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     return Stack(
       children: [
         // Seek Bar (Safely raised above Home Indicator)
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: seekMargin,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatDuration(pos),
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  Text(
-                    _formatDuration(dur),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 3.0,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 14.0),
-                  activeTrackColor: Colors.blueAccent,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: Colors.blueAccent,
-                ),
-                child: Slider(
-                  value: maxSec > 0 ? curSec : 0.0,
-                  min: 0.0,
-                  max: maxSec > 0 ? maxSec : 1.0,
-                  onChanged: (v) {
-                    _controlsTimer?.cancel();
-                    _controller?.seekTo(Duration(milliseconds: v.toInt()));
-                  },
-                  onChangeEnd: (_) {
-                    _resetControlsTimer();
-                  },
-                ),
-              ),
-            ],
-          ),
+        MediaPlayerTimeline(
+          position: pos,
+          duration: dur,
+          bottomMargin: seekMargin,
+          onSeekChanged: (v) {
+            _controlsTimer?.cancel();
+            _controller?.seekTo(Duration(milliseconds: v.toInt()));
+          },
+          onSeekEnd: (_) {
+            _resetControlsTimer();
+          },
         ),
 
         // Bottom Action Bar
@@ -1585,98 +1290,18 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               const Spacer(),
               // Speed Menu: 0.5x to 8.0x
               Builder(
-                builder: (btnCtx) => Tooltip(
-                  message: '播放速度',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(4),
-                      onTap: () async {
-                        _resetControlsTimer();
-                        final RenderBox? button =
-                            btnCtx.findRenderObject() as RenderBox?;
-                        final overlay = Navigator.of(context, rootNavigator: true)
-                            .overlay
-                            ?.context
-                            .findRenderObject() as RenderBox?;
-                        if (button == null || overlay == null) return;
-
-                        final position = RelativeRect.fromRect(
-                          Rect.fromPoints(
-                            button.localToGlobal(Offset.zero, ancestor: overlay),
-                            button.localToGlobal(
-                                button.size.bottomRight(Offset.zero),
-                                ancestor: overlay),
-                          ),
-                          Offset.zero & overlay.size,
-                        );
-
-                        final selected = await showMenu<double>(
-                          context: btnCtx,
-                          useRootNavigator: true,
-                          position: position,
-                          elevation: 8,
-                          color: const Color(0xF21C1C1E),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: const BorderSide(
-                                color: Colors.white24, width: 0.8),
-                          ),
-                          items: [
-                            for (final rate in _rates)
-                              PopupMenuItem<double>(
-                                value: rate,
-                                height: 38,
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${rate == rate.roundToDouble() ? rate.toInt() : rate}x',
-                                        style: TextStyle(
-                                          color: (rate - _playbackSpeed).abs() < 0.01
-                                              ? const Color(0xFF40C4FF)
-                                              : Colors.white,
-                                          fontWeight: (rate - _playbackSpeed).abs() < 0.01
-                                              ? FontWeight.bold
-                                              : FontWeight.w500,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                    if ((rate - _playbackSpeed).abs() < 0.01)
-                                      const Icon(
-                                        Icons.check,
-                                        size: 16,
-                                        color: Color(0xFF40C4FF),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        );
-
-                        if (selected != null) {
-                          _setSpeed(selected);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${_playbackSpeed.toStringAsFixed(_playbackSpeed.truncateToDouble() == _playbackSpeed ? 0 : 2)}x',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                builder: (btnCtx) => MediaPlayerSpeedBadge(
+                  speed: _playbackSpeed,
+                  onTap: () {
+                    _resetControlsTimer();
+                    showPlayerSpeedMenu(
+                      context: context,
+                      buttonContext: btnCtx,
+                      currentSpeed: _playbackSpeed,
+                      rates: _rates,
+                      onSelected: _setSpeed,
+                    );
+                  },
                 ),
               ),
             ],

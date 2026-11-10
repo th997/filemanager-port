@@ -12,6 +12,8 @@ import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
 import '../widgets/app_swipe_back.dart';
+import '../widgets/media_player/media_player_controls.dart';
+import '../widgets/media_player/media_player_hud.dart';
 import 'native_media_player_page.dart';
 
 /// Video and audio playback for local, remote, and archive files.
@@ -216,6 +218,10 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   @override
   void initState() {
     super.initState();
+    // Must be set before any _track access: _track indexes the playlist.
+    _index = widget.playlist.isEmpty
+        ? 0
+        : widget.startIndex.clamp(0, widget.playlist.length - 1);
     WidgetsBinding.instance.addObserver(this);
     final session = GlobalPlaybackService.instance;
     if (session.hasActiveSession &&
@@ -285,9 +291,6 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     _errorSub = _player.stream.error.listen((message) {
       if (mounted) setState(() => _error = message);
     });
-    _index = widget.playlist.isEmpty
-        ? 0
-        : widget.startIndex.clamp(0, widget.playlist.length - 1);
     _completedSub = _player.stream.completed.listen((completed) {
       if (completed) {
         final pos = _player.state.position;
@@ -593,18 +596,23 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     _errorSub?.cancel();
     _volumeSub?.cancel();
 
-    if (_isExplicitlyClosed || !GlobalPlaybackService.instance.hasActiveSession) {
-      _player.stop();
-      _player.dispose();
-      if (_startedStream) {
-        // The loopback stream server started for this root would otherwise
-        // keep running (and holding its port) for the rest of the app's
-        // lifetime, accumulating one server per played remote file.
-        stopMediaStreams();
+    // _closeAndExit() already stopped playback, and GlobalPlaybackService.stop()
+    // owns disposing the Player. Disposing it again here frees the libmpv handle
+    // twice and segfaults the mpv core thread, so the closed path is a no-op.
+    if (!_isExplicitlyClosed) {
+      if (GlobalPlaybackService.instance.hasActiveSession) {
+        GlobalPlaybackService.instance.setFullScreen(false);
+      } else {
+        _player.stop();
+        _player.dispose();
+        if (_startedStream) {
+          // The loopback stream server started for this root would otherwise
+          // keep running (and holding its port) for the rest of the app's
+          // lifetime, accumulating one server per played remote file.
+          stopMediaStreams();
+        }
+        GlobalPlaybackService.instance.stop();
       }
-      GlobalPlaybackService.instance.stop();
-    } else {
-      GlobalPlaybackService.instance.setFullScreen(false);
     }
     super.dispose();
   }
@@ -992,89 +1000,9 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
                       ),
                     ),
                     if (_isSpeedBoosting)
-                      Positioned(
-                        top: 64,
-                        left: 0,
-                        right: 0,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.8),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.amber.withValues(alpha: 0.7),
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.fast_forward,
-                                  color: Colors.amber,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '${_boostRate.toInt()}X Fast Forward',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                      MediaPlayerSpeedBoostHud(boostRate: _boostRate),
                     if (_hudSpeed != null && !_isSpeedBoosting)
-                      Positioned(
-                        top: 64,
-                        left: 0,
-                        right: 0,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.85),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white24,
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.speed,
-                                  color: Colors.lightBlueAccent,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '${_hudSpeed == _hudSpeed!.roundToDouble() ? _hudSpeed!.toInt() : _hudSpeed}× 播放速度',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                      MediaPlayerSpeedToastHud(speed: _hudSpeed!),
                     if (_track.isAudio)
                       Positioned(
                         top: 24,
@@ -1168,74 +1096,23 @@ class _SpeedButtonState extends State<_SpeedButton> {
   }
 
   Future<void> _openMenu(BuildContext context) async {
-    final RenderBox? button = context.findRenderObject() as RenderBox?;
-    final overlay = Navigator.of(context, rootNavigator: true)
-        .overlay
-        ?.context
-        .findRenderObject() as RenderBox?;
-    if (button == null || overlay == null) return;
-
-    final position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(Offset.zero, ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
-      ),
-      Offset.zero & overlay.size,
-    );
-
-    // Save callbacks in local variables so rate application survives button unmount
-    final onSelected = widget.onSelected;
     final player = widget.player;
-    final currentRate = _rate;
+    final onSelected = widget.onSelected;
 
-    final selected = await showMenu<double>(
+    final selected = await showPlayerSpeedMenu(
       context: context,
-      useRootNavigator: true,
-      position: position,
-      elevation: 8,
-      color: const Color(0xF21C1C1E),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: Colors.white24, width: 0.8),
-      ),
-      items: [
-        for (final rate in _rates)
-          PopupMenuItem<double>(
-            value: rate,
-            height: 38,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _label(rate),
-                    style: TextStyle(
-                      color: rate == currentRate
-                          ? const Color(0xFF40C4FF)
-                          : Colors.white,
-                      fontWeight: rate == currentRate
-                          ? FontWeight.bold
-                          : FontWeight.w500,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                if (rate == currentRate)
-                  const Icon(
-                    Icons.check,
-                    size: 16,
-                    color: Color(0xFF40C4FF),
-                  ),
-              ],
-            ),
-          ),
-      ],
+      buttonContext: context,
+      currentSpeed: _rate,
+      rates: _rates,
+      onSelected: (rate) async {
+        if (mounted) setState(() => _rate = rate);
+        onSelected?.call(rate);
+        await player.setRate(rate);
+        PreferencesService.instance.setString(_prefSpeed, rate.toString());
+      },
     );
-
-    if (selected != null) {
-      if (mounted) setState(() => _rate = selected);
-      onSelected?.call(selected);
-      await player.setRate(selected);
-      PreferencesService.instance.setString(_prefSpeed, selected.toString());
+    if (selected != null && mounted) {
+      setState(() => _rate = selected);
     }
   }
 
