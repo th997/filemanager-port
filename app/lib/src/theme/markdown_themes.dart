@@ -259,6 +259,33 @@ class MarkdownThemeConfig {
     highlightTheme: nordTheme,
   );
 
+  /// Cross-platform CJK font fallbacks, ensuring text glyphs never fail to render on Linux desktop.
+  static const List<String> fontFamilyFallback = [
+    'Noto Sans CJK SC',
+    'Noto Sans SC',
+    'Source Han Sans SC',
+    'Source Han Sans CN',
+    'WenQuanYi Micro Hei',
+    'WenQuanYi Zen Hei',
+    'Droid Sans Fallback',
+    'PingFang SC',
+    'Microsoft YaHei',
+    'SimHei',
+    'sans-serif',
+  ];
+
+  static const List<String> monoFontFamilyFallback = [
+    'Noto Sans Mono CJK SC',
+    'Noto Sans Mono SC',
+    'Source Han Sans Mono SC',
+    'WenQuanYi Micro Hei Mono',
+    'DejaVu Sans Mono',
+    'Liberation Mono',
+    'Consolas',
+    'Menlo',
+    'monospace',
+  ];
+
   MarkdownStyleSheet toStyleSheet(BuildContext context, {double fontSize = 14.0}) {
     final scale = fontSize / 14.0;
     return MarkdownStyleSheet(
@@ -266,6 +293,7 @@ class MarkdownThemeConfig {
         color: textColor,
         fontSize: fontSize,
         height: 1.6,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       h1: TextStyle(
         color: h1Color,
@@ -273,6 +301,7 @@ class MarkdownThemeConfig {
         fontWeight: FontWeight.w800,
         height: 1.3,
         letterSpacing: -0.5,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       h1Padding: const EdgeInsets.only(top: 18, bottom: 8),
       h2: TextStyle(
@@ -281,6 +310,7 @@ class MarkdownThemeConfig {
         fontWeight: FontWeight.w700,
         height: 1.35,
         letterSpacing: -0.3,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       h2Padding: const EdgeInsets.only(top: 14, bottom: 6),
       h3: TextStyle(
@@ -288,6 +318,7 @@ class MarkdownThemeConfig {
         fontSize: 16 * scale,
         fontWeight: FontWeight.w600,
         height: 1.4,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       h3Padding: const EdgeInsets.only(top: 12, bottom: 4),
       h4: TextStyle(
@@ -295,32 +326,46 @@ class MarkdownThemeConfig {
         fontSize: 14 * scale,
         fontWeight: FontWeight.w600,
         height: 1.4,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       h5: TextStyle(
         color: h4Color,
         fontSize: 13 * scale,
         fontWeight: FontWeight.w600,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       h6: TextStyle(
         color: textColor.withValues(alpha: 0.8),
         fontSize: 12 * scale,
         fontWeight: FontWeight.w600,
+        fontFamilyFallback: fontFamilyFallback,
       ),
-      em: TextStyle(color: textColor, fontStyle: FontStyle.italic),
-      strong: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+      em: TextStyle(
+        color: textColor,
+        fontStyle: FontStyle.italic,
+        fontFamilyFallback: fontFamilyFallback,
+      ),
+      strong: TextStyle(
+        color: textColor,
+        fontWeight: FontWeight.bold,
+        fontFamilyFallback: fontFamilyFallback,
+      ),
       del: TextStyle(
         color: textColor.withValues(alpha: 0.6),
         decoration: TextDecoration.lineThrough,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       a: TextStyle(
         color: linkColor,
         decoration: TextDecoration.underline,
         decorationColor: linkColor.withValues(alpha: 0.5),
+        fontFamilyFallback: fontFamilyFallback,
       ),
       code: TextStyle(
         color: codeTextColor,
         backgroundColor: codeBgColor,
         fontFamily: 'monospace',
+        fontFamilyFallback: monoFontFamilyFallback,
         fontSize: (fontSize - 1).clamp(10.0, 30.0),
       ),
       blockquote: TextStyle(
@@ -328,6 +373,7 @@ class MarkdownThemeConfig {
         fontSize: fontSize,
         fontStyle: FontStyle.italic,
         height: 1.5,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       blockquotePadding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       blockquoteDecoration: BoxDecoration(
@@ -346,10 +392,12 @@ class MarkdownThemeConfig {
         color: textColor,
         fontWeight: FontWeight.bold,
         fontSize: fontSize,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       tableBody: TextStyle(
         color: textColor,
         fontSize: fontSize,
+        fontFamilyFallback: fontFamilyFallback,
       ),
       tableBorder: TableBorder.all(
         color: tableBorder,
@@ -362,7 +410,10 @@ class MarkdownThemeConfig {
       horizontalRuleDecoration: BoxDecoration(
         border: Border(top: BorderSide(color: hrColor, width: 1.5)),
       ),
-      listBullet: TextStyle(color: textColor),
+      listBullet: TextStyle(
+        color: textColor,
+        fontFamilyFallback: fontFamilyFallback,
+      ),
     );
   }
 }

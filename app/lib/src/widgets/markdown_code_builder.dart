@@ -33,12 +33,18 @@ class HighlightCodeElementBuilder extends MarkdownElementBuilder {
     TextStyle? preferredStyle,
     TextStyle? parentStyle,
   ) {
-    // If not a code block, let default inline code styling take over
-    final isCodeBlock = element.attributes.containsKey('class') ||
-        element.textContent.contains('\n');
-    if (!isCodeBlock) return null;
+    // Locate nested <code> element if this builder was mounted on <pre>
+    md.Element? codeChild;
+    if (element.children != null) {
+      for (final child in element.children!) {
+        if (child is md.Element && child.tag == 'code') {
+          codeChild = child;
+          break;
+        }
+      }
+    }
 
-    final rawClass = element.attributes['class'] ?? '';
+    final rawClass = codeChild?.attributes['class'] ?? element.attributes['class'] ?? '';
     String? language;
     if (rawClass.startsWith('language-')) {
       language = rawClass.substring('language-'.length).toLowerCase();
@@ -83,17 +89,19 @@ class HighlightCodeElementBuilder extends MarkdownElementBuilder {
                     letterSpacing: 0.5,
                     color: themeConfig.textColor.withValues(alpha: 0.6),
                     fontFamily: 'monospace',
+                    fontFamilyFallback: MarkdownThemeConfig.monoFontFamilyFallback,
                   ),
                 ),
                 _CopyButton(code: code, textColor: themeConfig.textColor),
               ],
             ),
           ),
-          // Code content with horizontal scroll
+          // Code content with horizontal scroll. Uses Text.rich so it participates
+          // cleanly in the page-level SelectionArea without nested GTK selection conflicts.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.all(12),
-            child: SelectableText.rich(
+            child: Text.rich(
               _buildSpan(code, language),
             ),
           ),
@@ -105,6 +113,7 @@ class HighlightCodeElementBuilder extends MarkdownElementBuilder {
   TextSpan _buildSpan(String code, String? language) {
     final baseStyle = TextStyle(
       fontFamily: 'monospace',
+      fontFamilyFallback: MarkdownThemeConfig.monoFontFamilyFallback,
       fontSize: fontSize,
       height: 1.45,
       color: themeConfig.textColor,

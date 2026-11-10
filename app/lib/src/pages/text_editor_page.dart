@@ -1632,26 +1632,64 @@ class _TextEditorPageState extends State<TextEditorPage> {
         if (_isMarkdown) {
           final brightness = Theme.of(context).brightness;
           final themeConfig = MarkdownThemeConfig.get(_markdownTheme, brightness);
+          if (_controller.text.isEmpty) {
+            return Container(
+              color: themeConfig.backgroundColor,
+              width: double.infinity,
+              height: double.infinity,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.description_outlined,
+                      size: 48,
+                      color: themeConfig.textColor.withValues(alpha: 0.35),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Document is empty',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: themeConfig.textColor.withValues(alpha: 0.6),
+                        fontFamilyFallback: MarkdownThemeConfig.fontFamilyFallback,
+                      ),
+                    ),
+                    if (!widget.readOnly) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text('Edit in Source Mode'),
+                        onPressed: () => _setMode(TextFileMode.code),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }
           return Container(
             color: themeConfig.backgroundColor,
             width: double.infinity,
             height: double.infinity,
-            child: Markdown(
-              data: _controller.text,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              selectable: true,
-              extensionSet: md.ExtensionSet.gitHubFlavored,
-              styleSheet: themeConfig.toStyleSheet(context, fontSize: _fontSize),
-              builders: {
-                'code': HighlightCodeElementBuilder(
-                  themeConfig: themeConfig,
-                  fontSize: _fontSize,
-                ),
-                'blockquote': CalloutBlockquoteBuilder(
-                  themeConfig: themeConfig,
-                  fontSize: _fontSize,
-                ),
-              },
+            child: SelectionArea(
+              child: Markdown(
+                data: _controller.text,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                selectable: false,
+                extensionSet: md.ExtensionSet.gitHubFlavored,
+                styleSheet: themeConfig.toStyleSheet(context, fontSize: _fontSize),
+                builders: {
+                  'pre': HighlightCodeElementBuilder(
+                    themeConfig: themeConfig,
+                    fontSize: _fontSize,
+                  ),
+                  'blockquote': CalloutBlockquoteBuilder(
+                    themeConfig: themeConfig,
+                    fontSize: _fontSize,
+                  ),
+                },
+              ),
             ),
           );
         }
@@ -1680,6 +1718,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
             keyboardType: TextInputType.multiline,
             style: TextStyle(
               fontFamily: 'monospace',
+              fontFamilyFallback: MarkdownThemeConfig.monoFontFamilyFallback,
               fontSize: _fontSize,
               height: 1.35,
             ),
@@ -1708,6 +1747,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final brightness = Theme.of(context).brightness;
     final baseStyle = TextStyle(
       fontFamily: 'monospace',
+      fontFamilyFallback: MarkdownThemeConfig.monoFontFamilyFallback,
       fontSize: _fontSize,
       height: 1.35,
     );
