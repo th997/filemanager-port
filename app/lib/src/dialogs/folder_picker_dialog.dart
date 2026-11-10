@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
+import 'vfs_picker_scaffold.dart';
 
 /// Result of picking a destination folder.
 class PickedFolder {
@@ -191,46 +191,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   }
 
   Future<void> _createNewFolder() async {
-    final nameController = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Folder'),
-        content: TextField(
-          controller: nameController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Folder name',
-            hintText: 'e.g. Documents',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (val) {
-            if (val.trim().isNotEmpty) {
-              Navigator.of(ctx).pop(val.trim());
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          // An empty name used to leave the dialog open with no hint about
-          // why nothing happened.
-          ListenableBuilder(
-            listenable: nameController,
-            builder: (ctx, _) => FilledButton(
-              onPressed: nameController.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.of(ctx).pop(nameController.text.trim()),
-              child: const Text('Create'),
-            ),
-          ),
-        ],
-      ),
-    );
-    nameController.dispose();
-
+    final name = await showNewFolderDialog(context);
     if (name != null && name.isNotEmpty) {
       try {
         final target = _relPath.isEmpty ? name : '$_relPath/$name';
@@ -286,7 +247,6 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final recentDirs = isNativeRoot(_root)
         ? PreferencesService.instance.getRecentUploadDirs()
         : const <String>[];
@@ -294,249 +254,115 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         .where((t) => isNativeRoot(t.root))
         .toList();
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(widget.title)),
-          if (isNativeRoot(_root))
-            TextButton.icon(
-              icon: const Icon(Icons.open_in_browser, size: 16),
-              label: Text(isZh ? '系统选择器' : 'System Picker'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                textStyle: const TextStyle(fontSize: 12),
-              ),
-              onPressed: _switchToSystemPicker,
-            ),
-        ],
-      ),
-      actionsOverflowButtonSpacing: 6,
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 460),
-        child: SizedBox(
-          width: double.maxFinite,
-          height: 460,
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (recentDirs.isNotEmpty) ...[
-              Row(
-                children: [
-                  const Icon(Icons.history, size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    isZh ? '最近目录:' : 'Recent:',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: 32,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final dir in recentDirs)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ActionChip(
-                          avatar: const Icon(Icons.folder_outlined, size: 13),
-                          label: Text(
-                            shortDirectoryName(dir),
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                          tooltip: dir,
-                          onPressed: () => _navigateTo(dir),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-            ],
-            if (quickTargets.isNotEmpty)
-              SizedBox(
-                height: 36,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final target in quickTargets)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ActionChip(
-                          label: Text(target.name, style: const TextStyle(fontSize: 12)),
-                          onPressed: () {
-                            setState(() {
-                              _root = target.root;
-                              _relPath = target.relPath;
-                              _filterQuery = '';
-                              _filterController.clear();
-                            });
-                            _load();
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward),
-                  tooltip: 'Parent folder',
-                  onPressed: _canGoUp ? _up : null,
-                ),
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: _currentPath));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Path copied to clipboard')),
-                      );
-                    },
-                    child: Tooltip(
-                      message: 'Click to copy path',
-                      child: Text(
-                        _currentPath,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off, size: 18),
-                  tooltip: _showHidden ? 'Hide hidden folders' : 'Show hidden folders',
-                  onPressed: () {
-                    setState(() => _showHidden = !_showHidden);
-                    _load();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  tooltip: 'New Folder',
-                  onPressed: _createNewFolder,
-                ),
-              ],
-            ),
-            const Divider(height: 1),
-            if (_folders.length > 5 || _filterQuery.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                child: TextField(
-                  controller: _filterController,
-                  decoration: InputDecoration(
-                    hintText: 'Filter subfolders...',
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: _filterQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              setState(() {
-                                _filterQuery = '';
-                                _filterController.clear();
-                              });
-                            },
-                          )
-                        : null,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onChanged: (v) => setState(() => _filterQuery = v),
-                ),
-              ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Cannot read this folder: $_error',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                const SizedBox(height: 8),
-                                OutlinedButton.icon(
-                                  onPressed: _load,
-                                  icon: const Icon(Icons.refresh, size: 16),
-                                  label: const Text('Retry'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : _folders.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No subfolders',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            )
-                          : () {
-                              final filtered = _filterQuery.isEmpty
-                                  ? _folders
-                                  : _folders
-                                      .where((f) => f.name.toLowerCase().contains(_filterQuery.toLowerCase()))
-                                      .toList();
-                              if (filtered.isEmpty) {
-                                return const Center(
-                                  child: Text(
-                                    'No matching subfolders',
-                                    style: TextStyle(fontSize: 12),
-                                  ),
-                                );
-                              }
-                              return ListView.builder(
-                                itemCount: filtered.length,
-                                itemBuilder: (context, index) {
-                                  final folder = filtered[index];
-                                  final isHidden = folder.hidden;
-                                  final isSelected = _selectedFolder == folder.name;
-                                  return ListTile(
-                                    dense: true,
-                                    selected: isSelected,
-                                    selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
-                                    leading: Icon(
-                                      isHidden ? Icons.folder_outlined : Icons.folder,
-                                      size: 20,
-                                      color: isHidden
-                                          ? Colors.grey
-                                          : (isSelected ? Theme.of(context).colorScheme.primary : Colors.amber),
-                                    ),
-                                    title: Text(
-                                      folder.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: isHidden ? TextStyle(color: Theme.of(context).colorScheme.outline) : null,
-                                    ),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.chevron_right, size: 20),
-                                      tooltip: 'Open',
-                                      onPressed: () => _open(folder.name),
-                                    ),
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedFolder = isSelected ? null : folder.name;
-                                      });
-                                    },
-                                  );
-                                },
-                              );
-                            }(),
-            ),
-          ],
+    final filtered = _filterQuery.isEmpty
+        ? _folders
+        : _folders
+            .where((f) => f.name.toLowerCase().contains(_filterQuery.toLowerCase()))
+            .toList();
+
+    Widget bodyWidget;
+    if (_folders.isEmpty) {
+      bodyWidget = const Center(
+        child: Text(
+          'No subfolders',
+          style: TextStyle(fontSize: 12),
         ),
-      ),
-      ),
+      );
+    } else if (filtered.isEmpty) {
+      bodyWidget = const Center(
+        child: Text(
+          'No matching subfolders',
+          style: TextStyle(fontSize: 12),
+        ),
+      );
+    } else {
+      bodyWidget = ListView.builder(
+        itemCount: filtered.length,
+        itemBuilder: (context, index) {
+          final folder = filtered[index];
+          final isHidden = folder.hidden;
+          final isSelected = _selectedFolder == folder.name;
+          return ListTile(
+            dense: true,
+            selected: isSelected,
+            selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+            leading: Icon(
+              isHidden ? Icons.folder_outlined : Icons.folder,
+              size: 20,
+              color: isHidden
+                  ? Colors.grey
+                  : (isSelected ? Theme.of(context).colorScheme.primary : Colors.amber),
+            ),
+            title: Text(
+              folder.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: isHidden ? TextStyle(color: Theme.of(context).colorScheme.outline) : null,
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.chevron_right, size: 20),
+              tooltip: 'Open',
+              onPressed: () => _open(folder.name),
+            ),
+            onTap: () {
+              setState(() {
+                _selectedFolder = isSelected ? null : folder.name;
+              });
+            },
+          );
+        },
+      );
+    }
+
+    return VfsPickerScaffold(
+      title: widget.title,
+      onSystemPicker: isNativeRoot(_root) ? _switchToSystemPicker : null,
+      recentDirs: recentDirs,
+      onNavigateTo: _navigateTo,
+      quickTargets: quickTargets,
+      onSelectTarget: (target) {
+        setState(() {
+          _root = target.root;
+          _relPath = target.relPath;
+          _filterQuery = '';
+          _filterController.clear();
+        });
+        _load();
+      },
+      currentPath: _currentPath,
+      canGoUp: _canGoUp,
+      onUp: _up,
+      showHidden: _showHidden,
+      onToggleHidden: () {
+        setState(() => _showHidden = !_showHidden);
+        _load();
+      },
+      hiddenTooltip: _showHidden ? 'Hide hidden folders' : 'Show hidden folders',
+      pathActions: [
+        IconButton(
+          icon: const Icon(Icons.create_new_folder_outlined),
+          tooltip: 'New Folder',
+          onPressed: _createNewFolder,
+        ),
+      ],
+      showFilter: _folders.length > 5 || _filterQuery.isNotEmpty,
+      filterController: _filterController,
+      filterQuery: _filterQuery,
+      filterHintText: 'Filter subfolders...',
+      onFilterChanged: (v) => setState(() => _filterQuery = v),
+      onFilterClear: () {
+        setState(() {
+          _filterQuery = '';
+          _filterController.clear();
+        });
+      },
+      loading: _loading,
+      error: _error,
+      errorPrefix: 'Cannot read this folder: ',
+      onRetry: _load,
+      body: bodyWidget,
+      maxWidth: 500,
+      maxHeight: 460,
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

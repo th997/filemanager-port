@@ -21,7 +21,9 @@ import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
-import '../theme/app_ui_tokens.dart';
+import '../widgets/browser/browser_action_sheets.dart';
+import '../widgets/browser/browser_bottom_action_bar.dart';
+import '../widgets/browser/browser_toolbar.dart';
 import '../widgets/entry_thumbnail.dart';
 import 'image_viewer_page.dart';
 import 'media_player_page.dart';
@@ -1208,127 +1210,49 @@ class BrowserPageState extends State<BrowserPage> {
   /// offers on a file.
   Future<void> _showEntryActions(EntryItem item) async {
     HapticFeedback.mediumImpact();
-    final path = _fullEntryPath(item);
-    final action = await showModalBottomSheet<String>(
+    final action = await showBrowserEntryModalBottomSheet(
       context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
-        ),
-        child: SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 16),
-            children: [
-              ListTile(
-                leading: Icon(item.icon, color: item.iconColor(ctx)),
-                title: Text(item.name, overflow: TextOverflow.ellipsis),
-                subtitle: Text(item.isDir ? 'Folder' : item.formattedSize),
-              ),
-              const Divider(height: 1),
-            if (!item.isDir)
-              ListTile(
-                leading: const Icon(Icons.open_in_new),
-                title: const Text('Open with'),
-                onTap: () => Navigator.of(ctx).pop('open_with'),
-              ),
-            if (_isRemoteOrArchive(_root))
-              ListTile(
-                leading: const Icon(Icons.download_outlined, color: Colors.blue),
-                title: const Text('Download to local'),
-                onTap: () => Navigator.of(ctx).pop('download'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: const Text('Copy'),
-              onTap: () => Navigator.of(ctx).pop('copy'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('Copy Path'),
-              onTap: () => Navigator.of(ctx).pop('copy_path'),
-            ),
-            if (_canWrite)
-              ListTile(
-                leading: const Icon(Icons.cut),
-                title: const Text('Cut'),
-                onTap: () => Navigator.of(ctx).pop('cut'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.checklist),
-              title: const Text('Select items'),
-              onTap: () => Navigator.of(ctx).pop('select'),
-            ),
-            if (item.isArchive && _canArchive)
-              ListTile(
-                leading: const Icon(Icons.unarchive),
-                title: const Text('Extract Here'),
-                onTap: () => Navigator.of(ctx).pop('extract'),
-              )
-            else if (_canWrite && _canArchive)
-              ListTile(
-                leading: const Icon(Icons.archive),
-                title: const Text('Compress to ZIP'),
-                onTap: () => Navigator.of(ctx).pop('compress'),
-              ),
-            if (item.isDir)
-              ListTile(
-                leading: const Icon(Icons.bookmark_add_outlined),
-                title: const Text('Bookmark This Folder'),
-                onTap: () => Navigator.of(ctx).pop('bookmark'),
-              ),
-            if (!item.isDir)
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: const Text('Share'),
-                onTap: () => Navigator.of(ctx).pop('share'),
-              ),
-            if (_canWrite)
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline),
-                title: const Text('Rename'),
-                onTap: () => Navigator.of(ctx).pop('rename'),
-              ),
-            if (_canWrite)
-              ListTile(
-                leading: const Icon(Icons.control_point_duplicate),
-                title: const Text('Duplicate'),
-                onTap: () => Navigator.of(ctx).pop('duplicate'),
-              ),
-            if (_canWrite)
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('Delete', style: TextStyle(color: Colors.red)),
-                onTap: () => Navigator.of(ctx).pop('delete'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Properties'),
-              onTap: () => Navigator.of(ctx).pop('info'),
-            ),
-          ],
-        ),
-      ),
-      ),
+      item: item,
+      isRemoteOrArchive: _isRemoteOrArchive(_root),
+      canWrite: _canWrite,
+      canArchive: _canArchive,
     );
+    if (action != null && mounted) {
+      _handleEntryAction(action, item);
+    }
+  }
 
+  /// Desktop right-click context menu on a file/folder referencing File Manager+.
+  Future<void> _showContextMenu(BuildContext originContext, Offset position, EntryItem item) async {
+    HapticFeedback.mediumImpact();
+    _lastItemSecondaryTap = DateTime.now();
+    final action = await showBrowserContextMenu(
+      context: originContext,
+      position: position,
+      item: item,
+      isRemoteOrArchive: _isRemoteOrArchive(_root),
+      canWrite: _canWrite,
+      canArchive: _canArchive,
+    );
+    if (action != null && mounted) {
+      _handleEntryAction(action, item);
+    }
+  }
+
+  void _handleEntryAction(String action, EntryItem item) {
+    final path = _fullEntryPath(item);
     switch (action) {
       case 'open':
         _openEntry(item);
-        break;
-      case 'copy_path':
-        _copyEntryPath(item);
         break;
       case 'open_with':
         _openWithSystem(item);
         break;
       case 'download':
         _downloadSingle(item);
+        break;
+      case 'bookmark':
+        _bookmarkFolder(item);
         break;
       case 'copy':
         setState(() {
@@ -1354,6 +1278,15 @@ class BrowserPageState extends State<BrowserPage> {
           _selectedPaths.add(path);
         });
         break;
+      case 'rename':
+        _renameSingle(item);
+        break;
+      case 'duplicate':
+        _duplicateEntry(item);
+        break;
+      case 'delete':
+        _deleteSingle(item);
+        break;
       case 'extract':
         _extractArchive(item);
         break;
@@ -1367,238 +1300,6 @@ class BrowserPageState extends State<BrowserPage> {
         break;
       case 'share':
         _shareEntry(item);
-        break;
-      case 'rename':
-        _renameSingle(item);
-        break;
-      case 'duplicate':
-        _duplicateEntry(item);
-        break;
-      case 'delete':
-        _deleteSingle(item);
-        break;
-      case 'bookmark':
-        _bookmarkFolder(item);
-        break;
-      case 'info':
-        _showFileInfo(item);
-        break;
-    }
-  }
-
-  /// Desktop right-click context menu on a file/folder referencing File Manager+.
-  Future<void> _showContextMenu(BuildContext originContext, Offset position, EntryItem item) async {
-    HapticFeedback.mediumImpact();
-    _lastItemSecondaryTap = DateTime.now();
-    final path = _fullEntryPath(item);
-    final action = await showMenu<String>(
-      context: originContext,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(originContext).height * 0.85,
-        minWidth: 200,
-      ),
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx + 1,
-        position.dy + 1,
-      ),
-      items: [
-        PopupMenuItem(
-          value: 'open',
-          child: Row(
-            children: [
-              Icon(item.isDir ? Icons.folder_open : Icons.open_in_new, size: 18),
-              const SizedBox(width: 8),
-              Text(item.isDir ? 'Open' : 'Open'),
-            ],
-          ),
-        ),
-        if (!item.isDir)
-          const PopupMenuItem(
-            value: 'open_with',
-            child: Row(
-              children: [
-                Icon(Icons.open_in_browser, size: 18),
-                SizedBox(width: 8),
-                Text('Open with'),
-              ],
-            ),
-          ),
-        if (_isRemoteOrArchive(_root))
-          const PopupMenuItem(
-            value: 'download',
-            child: Row(
-              children: [
-                Icon(Icons.download, size: 18, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('Download to local'),
-              ],
-            ),
-          ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'copy',
-          child: Row(
-            children: [
-              Icon(Icons.copy, size: 18),
-              SizedBox(width: 8),
-              Text('Copy'),
-            ],
-          ),
-        ),
-        if (_canWrite)
-          const PopupMenuItem(
-            value: 'cut',
-            child: Row(
-              children: [
-                Icon(Icons.cut, size: 18),
-                SizedBox(width: 8),
-                Text('Cut'),
-              ],
-            ),
-          ),
-        if (_canWrite)
-          const PopupMenuItem(
-            value: 'rename',
-            child: Row(
-              children: [
-                Icon(Icons.drive_file_rename_outline, size: 18),
-                SizedBox(width: 8),
-                Text('Rename'),
-              ],
-            ),
-          ),
-        if (_canWrite)
-          const PopupMenuItem(
-            value: 'duplicate',
-            child: Row(
-              children: [
-                Icon(Icons.control_point_duplicate, size: 18),
-                SizedBox(width: 8),
-                Text('Duplicate'),
-              ],
-            ),
-          ),
-        if (_canWrite)
-          const PopupMenuItem(
-            value: 'delete',
-            child: Row(
-              children: [
-                Icon(Icons.delete, size: 18, color: Colors.red),
-                SizedBox(width: 8),
-                Text('Delete', style: TextStyle(color: Colors.red)),
-              ],
-            ),
-          ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'copy_path',
-          child: Row(
-            children: [
-              Icon(Icons.link, size: 18),
-              SizedBox(width: 8),
-              Text('Copy Path'),
-            ],
-          ),
-        ),
-        if (item.isArchive && _canArchive)
-          const PopupMenuItem(
-            value: 'extract',
-            child: Row(
-              children: [
-                Icon(Icons.unarchive, size: 18),
-                SizedBox(width: 8),
-                Text('Extract Here'),
-              ],
-            ),
-          )
-        else if (_canWrite && _canArchive)
-          const PopupMenuItem(
-            value: 'compress',
-            child: Row(
-              children: [
-                Icon(Icons.archive, size: 18),
-                SizedBox(width: 8),
-                Text('Compress to ZIP'),
-              ],
-            ),
-          ),
-        if (item.isDir)
-          const PopupMenuItem(
-            value: 'bookmark',
-            child: Row(
-              children: [
-                Icon(Icons.bookmark_add_outlined, size: 18),
-                SizedBox(width: 8),
-                Text('Bookmark This Folder'),
-              ],
-            ),
-          ),
-        const PopupMenuItem(
-          value: 'info',
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 18),
-              SizedBox(width: 8),
-              Text('Properties'),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    if (action == null || !mounted) return;
-    switch (action) {
-      case 'open':
-        _openEntry(item);
-        break;
-      case 'open_with':
-        _openWithSystem(item);
-        break;
-      case 'download':
-        _downloadSingle(item);
-        break;
-      case 'bookmark':
-        _bookmarkFolder(item);
-        break;
-      case 'copy':
-        setState(() {
-          _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: false);
-        });
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Copied ${item.name} to clipboard')),
-        );
-        break;
-      case 'cut':
-        setState(() {
-          _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: true);
-        });
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cut ${item.name} to clipboard')),
-        );
-        break;
-      case 'rename':
-        _renameSingle(item);
-        break;
-      case 'duplicate':
-        _duplicateEntry(item);
-        break;
-      case 'delete':
-        _deleteSingle(item);
-        break;
-      case 'extract':
-        _extractArchive(item);
-        break;
-      case 'compress':
-        setState(() {
-          _selectedPaths
-            ..clear()
-            ..add(path);
-        });
-        _compressSelected();
         break;
       case 'copy_path':
         _copyEntryPath(item);
@@ -1627,136 +1328,14 @@ class BrowserPageState extends State<BrowserPage> {
     }
     HapticFeedback.mediumImpact();
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
-    final action = await showMenu<String>(
+    final action = await showBrowserBackgroundContextMenu(
       context: context,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-        minWidth: 200,
-      ),
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx + 1,
-        position.dy + 1,
-      ),
-      items: [
-        if (_canWrite)
-          PopupMenuItem(
-            value: 'new_folder',
-            child: Row(
-              children: [
-                Icon(_isAtMultiBucketRoot ? Icons.create_new_folder_outlined : Icons.create_new_folder, size: 18),
-                const SizedBox(width: 8),
-                Text(_isAtMultiBucketRoot ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket') : (isZh ? '新建文件夹' : 'New Folder')),
-              ],
-            ),
-          ),
-        if (_canWrite && !_isAtMultiBucketRoot)
-          PopupMenuItem(
-            value: 'new_file',
-            child: Row(
-              children: [
-                const Icon(Icons.note_add_outlined, size: 18),
-                const SizedBox(width: 8),
-                Text(isZh ? '新建文本文件' : 'New Text File'),
-              ],
-            ),
-          ),
-        if (_canWrite) ...[
-          PopupMenuItem(
-            value: 'upload',
-            child: Row(
-              children: [
-                const Icon(Icons.cloud_upload_outlined, size: 18),
-                const SizedBox(width: 8),
-                Text(isZh ? '上传文件' : 'Upload Files'),
-              ],
-            ),
-          ),
-          PopupMenuItem(
-            value: 'upload_folder',
-            child: Row(
-              children: [
-                const Icon(Icons.drive_folder_upload_outlined, size: 18),
-                const SizedBox(width: 8),
-                Text(isZh ? '上传文件夹' : 'Upload Folder'),
-              ],
-            ),
-          ),
-          PopupMenuItem(
-            value: 'upload_inapp',
-            child: Row(
-              children: [
-                const Icon(Icons.folder_shared_outlined, size: 18),
-                const SizedBox(width: 8),
-                Text(isZh ? '应用内浏览上传…' : 'Browse In-App to Upload…'),
-              ],
-            ),
-          ),
-        ],
-        if (_clipboard != null && _canWrite)
-          PopupMenuItem(
-            value: 'paste',
-            child: Row(
-              children: [
-                const Icon(Icons.paste, size: 18),
-                const SizedBox(width: 8),
-                Text('Paste (${_clipboard!.paths.length})'),
-              ],
-            ),
-          ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'refresh',
-          child: Row(
-            children: [
-              Icon(Icons.refresh, size: 18),
-              SizedBox(width: 8),
-              Text('Refresh'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'select_all',
-          child: Row(
-            children: [
-              Icon(Icons.select_all, size: 18),
-              SizedBox(width: 8),
-              Text('Select All'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'invert_selection',
-          child: Row(
-            children: [
-              Icon(Icons.swap_horiz, size: 18),
-              SizedBox(width: 8),
-              Text('Invert Selection'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'bookmark',
-          child: Row(
-            children: [
-              Icon(Icons.bookmark_add_outlined, size: 18),
-              SizedBox(width: 8),
-              Text('Bookmark This Folder'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'copy_path',
-          child: Row(
-            children: [
-              Icon(Icons.copy, size: 18),
-              SizedBox(width: 8),
-              Text('Copy Folder Path'),
-            ],
-          ),
-        ),
-      ],
+      position: position,
+      canWrite: _canWrite,
+      isAtMultiBucketRoot: _isAtMultiBucketRoot,
+      hasClipboard: _clipboard != null,
+      clipboardCount: _clipboard?.paths.length,
+      isZh: isZh,
     );
 
     if (action == null || !mounted) return;
@@ -4074,54 +3653,6 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Widget _buildUnifiedAddressBar(List<String> segments) {
-    if (_isEditingAddress) {
-      return Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.link, size: 16),
-            const SizedBox(width: 6),
-            Expanded(
-              child: TextField(
-                controller: _addressController,
-                autofocus: true,
-                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                decoration: const InputDecoration(
-                  hintText: 'Enter path to jump...',
-                  isDense: true,
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 6),
-                ),
-                onSubmitted: _jumpToAddress,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.arrow_forward, size: 16, color: Colors.blue),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              tooltip: 'Jump',
-              onPressed: () => _jumpToAddress(_addressController.text),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 16),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              tooltip: 'Cancel',
-              onPressed: () => setState(() => _isEditingAddress = false),
-            ),
-          ],
-        ),
-      );
-    }
-
     String rootLabel;
     if (_root == '/') {
       rootLabel = '/';
@@ -4135,157 +3666,44 @@ class BrowserPageState extends State<BrowserPage> {
       rootLabel = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? _root;
     }
 
-    final isCompact = MediaQuery.sizeOf(context).width < 600;
-
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        borderRadius: AppUiTokens.borderRadiusMd,
-        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-      ),
-      child: Row(
-        children: [
-          if (!isCompact) ...[
-            // Chevrons, not arrows: the plain arrow at the far left of the
-            // bar leaves the page, this one only walks folder history.
-            AppIconButton(
-              icon: Icons.chevron_left,
-              size: 28,
-              iconSize: 16,
-              tooltip: 'Back in history (Alt+←)',
-              onPressed: _backStack.isEmpty ? null : _goBack,
-            ),
-            AppIconButton(
-              icon: Icons.chevron_right,
-              size: 28,
-              iconSize: 16,
-              tooltip: 'Forward in history (Alt+→)',
-              onPressed: _forwardStack.isEmpty ? null : _goForward,
-            ),
-          ],
-          if (!isCompact || _canNavigateUp)
-            AppIconButton(
-              icon: Icons.arrow_upward,
-              size: 28,
-              iconSize: 16,
-              tooltip: 'Up one level',
-              onPressed: _canNavigateUp ? _navigateUp : null,
-            ),
-          if (!isCompact)
-            AppIconButton(
-              icon: Icons.refresh,
-              size: 28,
-              iconSize: 16,
-              tooltip: 'Refresh',
-              onPressed: _load,
-            ),
-          if (!isCompact || _canNavigateUp)
-            Container(
-              height: 16,
-              width: 1,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-            ),
-          Expanded(
-            // Reversed so a deep path opens scrolled to the current folder
-            // instead of the drive root; the crumb order still reads normally.
-            child: SingleChildScrollView(
-              reverse: true,
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  DragTarget<({String root, List<String> paths})>(
-                    onAcceptWithDetails: (d) => _acceptDrop(d.data, ''),
-                    builder: (ctx, candidate, rejected) => InkWell(
-                    borderRadius: BorderRadius.circular(4),
-                    onTap: () {
-                      if (_relPath.isNotEmpty) {
-                        _pushHistory();
-                        setState(() => _relPath = '');
-                        if (_scrollController.hasClients) {
-                          _scrollController.jumpTo(0);
-                        }
-                        _load();
-                      }
-                    },
-                    onLongPress: () {
-                      Clipboard.setData(ClipboardData(text: _root));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Copied path: $_root')),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      child: Text(
-                        rootLabel,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _relPath.isEmpty ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                          fontWeight: _relPath.isEmpty ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                    ),
-                  ),
-                  for (int i = 0; i < segments.length; i++) ...[
-                    const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
-                    () {
-                      final segPath = segments.take(i + 1).join('/');
-                      return DragTarget<({String root, List<String> paths})>(
-                        onAcceptWithDetails: (d) => _acceptDrop(d.data, segPath),
-                        builder: (ctx, candidate, rejected) => InkWell(
-                          borderRadius: BorderRadius.circular(4),
-                          onTap: () {
-                            if (segPath != _relPath) {
-                              _pushHistory();
-                              setState(() => _relPath = segPath);
-                              if (_scrollController.hasClients) {
-                                _scrollController.jumpTo(0);
-                              }
-                              _load();
-                            }
-                          },
-                          onLongPress: () {
-                            final full = isNativeRoot(_root) ? joinNative(_root, segPath) : '$_root/$segPath';
-                            Clipboard.setData(ClipboardData(text: full));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Copied path: $full')),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            child: Text(
-                              segments[i],
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: i == segments.length - 1 ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                                fontWeight: i == segments.length - 1 ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }(),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 15),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Edit address (Cmd/Ctrl+L)',
-            onPressed: () {
-              _addressController.text = _displayFullPath;
-              setState(() => _isEditingAddress = true);
-            },
-          ),
-        ],
-      ),
+    return BrowserUnifiedAddressBar(
+      isEditingAddress: _isEditingAddress,
+      addressController: _addressController,
+      onJumpToAddress: _jumpToAddress,
+      onCancelEdit: () => setState(() => _isEditingAddress = false),
+      onStartEdit: () {
+        _addressController.text = _displayFullPath;
+        setState(() => _isEditingAddress = true);
+      },
+      root: _root,
+      relPath: _relPath,
+      rootLabel: rootLabel,
+      segments: segments,
+      canGoBack: _backStack.isNotEmpty,
+      onGoBack: _goBack,
+      canGoForward: _forwardStack.isNotEmpty,
+      onGoForward: _goForward,
+      canNavigateUp: _canNavigateUp,
+      onNavigateUp: _navigateUp,
+      onRefresh: _load,
+      onSegmentTap: (targetRelPath) {
+        if (targetRelPath != _relPath) {
+          _pushHistory();
+          setState(() => _relPath = targetRelPath);
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(0);
+          }
+          _load();
+        }
+      },
+      onCopyPath: (path) {
+        final full = isNativeRoot(_root) ? joinNative(_root, path) : '$_root/$path';
+        Clipboard.setData(ClipboardData(text: full));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Copied path: $full')),
+        );
+      },
+      onAcceptDrop: (data, targetRelPath) => _acceptDrop(data, targetRelPath),
     );
   }
 
@@ -4409,85 +3827,24 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Widget _buildBottomActionBar() {
-    final selectionSize = _selectedBytes;
-    final selectionLabel = selectionSize > BigInt.zero
-        ? '${_selectedPaths.length} selected (${_formatBytes(selectionSize)})'
-        : '${_selectedPaths.length} selected';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4, offset: const Offset(0, -2))],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            if (_isSelecting) ...[
-              if (_isRemoteOrArchive(_root))
-                _actionButton(Icons.download, 'Download', _downloadSelected, color: Colors.blue),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  selectionLabel,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-              _actionButton(Icons.copy, 'Copy', () => _copySelected(isCut: false)),
-              if (_canWrite) ...[
-                _actionButton(Icons.cut, 'Cut', () => _copySelected(isCut: true)),
-                _actionButton(Icons.delete, 'Delete', _deleteSelected, color: Colors.red),
-                if (_selectedPaths.length == 1)
-                  _actionButton(Icons.edit, 'Rename', _renameSelected),
-                if (_selectedPaths.length == 1)
-                  _actionButton(Icons.info_outline, 'Info', _showSelectedInfo),
-                if (_canArchive)
-                  _actionButton(Icons.archive, 'Zip', _compressSelected),
-              ],
-            ],
-            if (_clipboard != null && !_isSelecting && _canWrite) ...[
-              _actionButton(
-                Icons.paste,
-                'Paste (${_clipboard!.paths.length})',
-                _paste,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              _actionButton(
-                Icons.close,
-                'Clear',
-                () => setState(() => _clipboard = null),
-                color: Colors.grey,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _actionButton(IconData icon, String label, VoidCallback onTap, {Color? color}) {
-    return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 17, color: color),
-            const SizedBox(height: 1),
-            Text(label, style: TextStyle(fontSize: 10, color: color)),
-          ],
-        ),
-      ),
+    return BrowserBottomActionBar(
+      isSelecting: _isSelecting,
+      isRemoteOrArchive: _isRemoteOrArchive(_root),
+      canWrite: _canWrite,
+      canArchive: _canArchive,
+      selectedCount: _selectedPaths.length,
+      selectedBytes: _selectedBytes,
+      formatBytes: _formatBytes,
+      clipboardCount: _clipboard?.paths.length,
+      onDownload: _downloadSelected,
+      onCopy: () => _copySelected(isCut: false),
+      onCut: () => _copySelected(isCut: true),
+      onDelete: _deleteSelected,
+      onRename: _renameSelected,
+      onInfo: _showSelectedInfo,
+      onCompress: _compressSelected,
+      onPaste: _paste,
+      onClearClipboard: () => setState(() => _clipboard = null),
     );
   }
 

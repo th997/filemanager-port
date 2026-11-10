@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
+import 'vfs_picker_scaffold.dart';
 
 /// Result of picking files to upload.
 class PickedFiles {
@@ -247,301 +247,166 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final recentDirs = PreferencesService.instance.getRecentUploadDirs();
     final quickTargets = PlatformPaths.quickTargets()
-        .where((t) => t.root.startsWith('/') || t.root.contains(':'))
+        .where((t) => isNativeRoot(t.root))
         .toList();
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(widget.title)),
-          TextButton.icon(
-            icon: const Icon(Icons.open_in_browser, size: 16),
-            label: Text(isZh ? '系统选择器' : 'System Picker'),
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              textStyle: const TextStyle(fontSize: 12),
-            ),
-            onPressed: _switchToSystemPicker,
-          ),
-        ],
-      ),
-      actionsOverflowButtonSpacing: 6,
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 500),
-        child: SizedBox(
-          width: double.maxFinite,
-          height: 500,
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (recentDirs.isNotEmpty) ...[
-              Row(
+    final query = _filterQuery.toLowerCase();
+    final displayedFolders = query.isEmpty
+        ? _folders
+        : _folders.where((f) => f.name.toLowerCase().contains(query)).toList();
+    final displayedFiles = query.isEmpty
+        ? _files
+        : _files.where((f) => f.name.toLowerCase().contains(query)).toList();
+
+    Widget bodyWidget;
+    if (_folders.isEmpty && _files.isEmpty) {
+      bodyWidget = const Center(
+        child: Text('Folder is empty', style: TextStyle(color: Colors.grey)),
+      );
+    } else if (displayedFolders.isEmpty && displayedFiles.isEmpty) {
+      bodyWidget = const Center(
+        child: Text('No matching items', style: TextStyle(color: Colors.grey, fontSize: 12)),
+      );
+    } else {
+      bodyWidget = ListView.builder(
+        itemCount: displayedFolders.length + displayedFiles.length,
+        itemBuilder: (context, index) {
+          if (index < displayedFolders.length) {
+            final folder = displayedFolders[index];
+            final isSelected = _selectedPaths.contains(_fullPath(folder));
+            return ListTile(
+              dense: true,
+              leading: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.history, size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    isZh ? '最近目录:' : 'Recent:',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => _toggleSelect(folder),
+                  ),
+                  Icon(
+                    folder.hidden ? Icons.folder_outlined : Icons.folder,
+                    color: folder.hidden ? Colors.grey : Colors.amber,
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: 32,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final dir in recentDirs)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ActionChip(
-                          avatar: const Icon(Icons.folder_outlined, size: 13),
-                          label: Text(
-                            shortDirectoryName(dir),
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                          tooltip: dir,
-                          onPressed: () => _navigateTo(dir),
-                        ),
-                      ),
-                  ],
-                ),
+              title: Text(
+                folder.name,
+                style: folder.hidden
+                    ? TextStyle(color: Theme.of(context).colorScheme.outline)
+                    : null,
               ),
-              const SizedBox(height: 6),
-            ],
-            if (quickTargets.isNotEmpty)
-              SizedBox(
-                height: 36,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final target in quickTargets)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ActionChip(
-                          label: Text(target.name, style: const TextStyle(fontSize: 12)),
-                          onPressed: () {
-                            setState(() {
-                              _root = target.root;
-                              _relPath = target.relPath;
-                              _selectedPaths.clear();
-                              _filterQuery = '';
-                              _filterController.clear();
-                            });
-                            _load();
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+              subtitle: Text(
+                isZh ? '文件夹' : 'Folder',
+                style: const TextStyle(fontSize: 11),
               ),
-            const SizedBox(height: 8),
-            Row(
+              trailing: IconButton(
+                icon: const Icon(Icons.chevron_right, size: 18),
+                tooltip: 'Open folder',
+                onPressed: () => _openFolder(folder.name),
+              ),
+              onTap: () => _openFolder(folder.name),
+            );
+          }
+          final file = displayedFiles[index - displayedFolders.length];
+          return ListTile(
+            dense: true,
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward),
-                  tooltip: 'Parent folder',
-                  onPressed: _relPath.isEmpty ? null : _up,
+                Checkbox(
+                  value: _selectedPaths.contains(_fullPath(file)),
+                  onChanged: (_) => _toggleSelect(file),
                 ),
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: _currentPath));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Path copied to clipboard')),
-                      );
-                    },
-                    child: Tooltip(
-                      message: 'Click to copy path',
-                      child: Text(
-                        _currentPath,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
+                Icon(
+                  file.icon,
+                  color: file.hidden ? Colors.grey : file.iconColor(context),
+                  size: 22,
                 ),
-                IconButton(
-                  icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off, size: 18),
-                  tooltip: _showHidden ? 'Hide hidden files' : 'Show hidden files',
-                  onPressed: () {
-                    setState(() {
-                      _showHidden = !_showHidden;
-                      if (!_showHidden) {
-                        _selectedPaths.removeWhere((p) =>
-                            [..._folders, ..._files].any((f) => f.hidden && _fullPath(f) == p));
-                      }
-                    });
-                    _load();
-                  },
-                ),
-                if (_visibleItems.isNotEmpty)
-                  TextButton.icon(
-                    icon: Icon(
-                      _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
-                          ? Icons.deselect
-                          : Icons.select_all,
-                      size: 16,
-                    ),
-                    label: Text(
-                      _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
-                          ? 'Deselect All'
-                          : 'Select All',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    onPressed: _selectAll,
-                  ),
               ],
             ),
-            const Divider(height: 1),
-            if ((_folders.length + _files.length > 5) || _filterQuery.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                child: TextField(
-                  controller: _filterController,
-                  decoration: InputDecoration(
-                    hintText: 'Filter files & folders...',
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: _filterQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              setState(() {
-                                _filterQuery = '';
-                                _filterController.clear();
-                              });
-                            },
-                          )
-                        : null,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onChanged: (v) => setState(() => _filterQuery = v),
-                ),
-              ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      // A dead-end error forced the user to cancel and reopen
-                      // the dialog to retry, as the folder picker already does.
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontSize: 12)),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.refresh, size: 16),
-                                label: const Text('Retry'),
-                                onPressed: _load,
-                              ),
-                            ],
-                          ),
-                        )
-                      : (_folders.isEmpty && _files.isEmpty)
-                          ? const Center(child: Text('Folder is empty', style: TextStyle(color: Colors.grey)))
-                          : () {
-                              final query = _filterQuery.toLowerCase();
-                              final displayedFolders = query.isEmpty
-                                  ? _folders
-                                  : _folders.where((f) => f.name.toLowerCase().contains(query)).toList();
-                              final displayedFiles = query.isEmpty
-                                  ? _files
-                                  : _files.where((f) => f.name.toLowerCase().contains(query)).toList();
-
-                              if (displayedFolders.isEmpty && displayedFiles.isEmpty) {
-                                return const Center(
-                                  child: Text('No matching items', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                );
-                              }
-
-                              // Builder, not a children list: a folder with
-                              // thousands of files otherwise builds every
-                              // tile (and checkbox) up front.
-                              return ListView.builder(
-                                itemCount: displayedFolders.length + displayedFiles.length,
-                                itemBuilder: (context, index) {
-                                  if (index < displayedFolders.length) {
-                                    final folder = displayedFolders[index];
-                                    final isSelected = _selectedPaths.contains(_fullPath(folder));
-                                    return ListTile(
-                                      dense: true,
-                                      leading: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Checkbox(
-                                            value: isSelected,
-                                            onChanged: (_) => _toggleSelect(folder),
-                                          ),
-                                          Icon(
-                                            folder.hidden ? Icons.folder_outlined : Icons.folder,
-                                            color: folder.hidden ? Colors.grey : Colors.amber,
-                                          ),
-                                        ],
-                                      ),
-                                      title: Text(
-                                        folder.name,
-                                        style: folder.hidden
-                                            ? TextStyle(color: Theme.of(context).colorScheme.outline)
-                                            : null,
-                                      ),
-                                      subtitle: Text(
-                                        Localizations.localeOf(context).languageCode == 'zh' ? '文件夹' : 'Folder',
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                      trailing: IconButton(
-                                        icon: const Icon(Icons.chevron_right, size: 18),
-                                        tooltip: 'Open folder',
-                                        onPressed: () => _openFolder(folder.name),
-                                      ),
-                                      onTap: () => _openFolder(folder.name),
-                                    );
-                                  }
-                                  final file = displayedFiles[index - displayedFolders.length];
-                                  return ListTile(
-                                    dense: true,
-                                    leading: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Checkbox(
-                                          value: _selectedPaths.contains(_fullPath(file)),
-                                          onChanged: (_) => _toggleSelect(file),
-                                        ),
-                                        Icon(
-                                          file.icon,
-                                          color: file.hidden ? Colors.grey : file.iconColor(context),
-                                          size: 22,
-                                        ),
-                                      ],
-                                    ),
-                                    title: Text(
-                                      file.name,
-                                      style: file.hidden
-                                          ? TextStyle(color: Theme.of(context).colorScheme.outline)
-                                          : null,
-                                    ),
-                                    subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
-                                    onTap: () => _toggleSelect(file),
-                                  );
-                                },
-                              );
-                            }(),
+            title: Text(
+              file.name,
+              style: file.hidden
+                  ? TextStyle(color: Theme.of(context).colorScheme.outline)
+                  : null,
             ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Text(
-                '${_folders.length} folder${_folders.length == 1 ? "" : "s"}, ${_files.length} file${_files.length == 1 ? "" : "s"}'
-                '${_selectedPaths.isNotEmpty ? " • ${_selectedPaths.length} selected" : ""}',
-                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
+            subtitle: Text(file.formattedSize, style: const TextStyle(fontSize: 11)),
+            onTap: () => _toggleSelect(file),
+          );
+        },
+      );
+    }
+
+    return VfsPickerScaffold(
+      title: widget.title,
+      onSystemPicker: _switchToSystemPicker,
+      recentDirs: recentDirs,
+      onNavigateTo: _navigateTo,
+      quickTargets: quickTargets,
+      onSelectTarget: (target) {
+        setState(() {
+          _root = target.root;
+          _relPath = target.relPath;
+          _selectedPaths.clear();
+          _filterQuery = '';
+          _filterController.clear();
+        });
+        _load();
+      },
+      currentPath: _currentPath,
+      canGoUp: _relPath.isNotEmpty,
+      onUp: _up,
+      showHidden: _showHidden,
+      onToggleHidden: () {
+        setState(() {
+          _showHidden = !_showHidden;
+          if (!_showHidden) {
+            _selectedPaths.removeWhere((p) =>
+                [..._folders, ..._files].any((f) => f.hidden && _fullPath(f) == p));
+          }
+        });
+        _load();
+      },
+      pathActions: [
+        if (_visibleItems.isNotEmpty)
+          TextButton.icon(
+            icon: Icon(
+              _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
+                  ? Icons.deselect
+                  : Icons.select_all,
+              size: 16,
             ),
-          ],
+            label: Text(
+              _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
+                  ? 'Deselect All'
+                  : 'Select All',
+              style: const TextStyle(fontSize: 12),
+            ),
+            onPressed: _selectAll,
+          ),
+      ],
+      showFilter: (_folders.length + _files.length > 5) || _filterQuery.isNotEmpty,
+      filterController: _filterController,
+      filterQuery: _filterQuery,
+      filterHintText: 'Filter files & folders...',
+      onFilterChanged: (v) => setState(() => _filterQuery = v),
+      onFilterClear: () {
+        setState(() {
+          _filterQuery = '';
+          _filterController.clear();
+        });
+      },
+      loading: _loading,
+      error: _error,
+      onRetry: _load,
+      body: bodyWidget,
+      footer: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Text(
+          '${_folders.length} folder${_folders.length == 1 ? "" : "s"}, ${_files.length} file${_files.length == 1 ? "" : "s"}'
+          '${_selectedPaths.isNotEmpty ? " • ${_selectedPaths.length} selected" : ""}',
+          style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-      ),
       ),
       actions: [
         TextButton(
@@ -551,9 +416,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
         FilledButton.icon(
           icon: const Icon(Icons.upload, size: 18),
           label: Text(
-            Localizations.localeOf(context).languageCode == 'zh'
-                ? '上传 (${_selectedPaths.length})'
-                : 'Upload (${_selectedPaths.length})',
+            isZh ? '上传 (${_selectedPaths.length})' : 'Upload (${_selectedPaths.length})',
           ),
           onPressed: _selectedPaths.isEmpty
               ? null

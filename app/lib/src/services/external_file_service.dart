@@ -42,8 +42,11 @@ class ExternalFileService {
           if (arg.startsWith('-')) continue;
           final f = File(arg);
           final d = Directory(arg);
-          if (f.existsSync() || d.existsSync()) {
-            _handlePath(arg);
+          if (f.existsSync()) {
+            _handlePath(f.absolute.path);
+            return;
+          } else if (d.existsSync()) {
+            _handlePath(d.absolute.path);
             return;
           }
         }
