@@ -4,9 +4,9 @@ on:
   push:
     branches: ["main"]
     tags: ["v*"]
-    paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
+    paths: ["app/**", "rust/**", ".github/workflows/**"]
   pull_request:
-    paths: ["app/**", "rust/**", ".github/workflows/flutter.yml"]
+    paths: ["app/**", "rust/**", ".github/workflows/**"]
   workflow_dispatch:
 
 jobs:
@@ -30,6 +30,16 @@ jobs:
       - name: Analyze
         working-directory: app
         run: flutter analyze
+      - name: Build Rust bridge for Dart tests
+        working-directory: rust
+        run: cargo build -p fm_ffi
+      - name: Stage native library for Dart tests
+        run: |
+          mkdir -p app/build/linux/x64/debug/bundle/lib
+          cp rust/target/debug/libfm_ffi.so app/build/linux/x64/debug/bundle/lib/
+      - name: Test
+        working-directory: app
+        run: flutter test
       - name: Build Linux
         working-directory: app
         run: flutter build linux --release
