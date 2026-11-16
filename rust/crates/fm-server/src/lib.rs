@@ -25,7 +25,8 @@ pub struct ServerConfig {
     pub root: VfsPath,
     /// `None` means the OS assigns a free port.
     pub port: Option<u16>,
-    /// `None` means anonymous access.
+    /// The HTTP share requires a non-empty password; anonymous LAN
+    /// sharing is deliberately disabled.
     pub password: Option<String>,
     pub read_only: bool,
 }
@@ -61,10 +62,31 @@ mod tests {
     #[tokio::test]
     async fn http_share_starts_and_stops() {
         let temp = tempfile::tempdir().unwrap();
-        let server = start_http_share(temp.path().to_path_buf(), None, None, true)
-            .await
-            .expect("should start server");
+        // Starting a 0.0.0.0 listener without a password must be refused.
+        assert!(
+            start_http_share(temp.path().to_path_buf(), None, None, true)
+                .await
+                .is_err(),
+            "anonymous LAN sharing must not start"
+        );
+        assert!(
+            start_http_share(temp.path().to_path_buf(), None, Some("   ".into()), true)
+                .await
+                .is_err(),
+            "a blank password must not start a share"
+        );
+
+        let server = start_http_share(
+            temp.path().to_path_buf(),
+            None,
+            Some("test-password".into()),
+            true,
+        )
+        .await
+        .expect("should start server");
         assert!(server.port > 0);
+        assert!(!server.share_token.is_empty());
+        assert_ne!(server.share_token, "test-password");
         let _ = server.shutdown_tx.send(());
     }
 

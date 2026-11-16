@@ -13,9 +13,13 @@ struct DirCacheEntry {
     dtos: Vec<EntryDto>,
 }
 
-fn dir_cache() -> &'static Mutex<HashMap<(String, String, String, bool), DirCacheEntry>> {
-    static CACHE: OnceLock<Mutex<HashMap<(String, String, String, bool), DirCacheEntry>>> =
-        OnceLock::new();
+/// (root, slash path, filter, show hidden) — the four values that make a
+/// directory listing unique.
+type DirCacheKey = (String, String, String, bool);
+type DirCache = Mutex<HashMap<DirCacheKey, DirCacheEntry>>;
+
+fn dir_cache() -> &'static DirCache {
+    static CACHE: OnceLock<DirCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 

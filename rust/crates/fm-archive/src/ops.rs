@@ -1,6 +1,7 @@
 //! Archive extraction and compression utilities.
 
 use fm_vfs::{VfsError, VfsResult};
+use tokio_util::sync::CancellationToken;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -131,7 +132,58 @@ fn backend_err(e: std::io::Error) -> VfsError {
     }
 }
 
+/// Refuse to write an archive entry through a symlink that already exists in
+/// the destination tree. `File::create` and `create_dir_all` both follow
+/// links, so a purely lexical check (`enclosed_name` / `safe_join`) is not
+/// enough: extracting an entry named `link/x` into a directory containing
+/// `link -> /etc` would otherwise write outside the destination.
+fn assert_contained(destination_dir: &Path, target: &Path) -> std::io::Result<()> {
+    let escape = || {
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "archive entry escapes the destination directory",
+        )
+    };
+    let dest_canon = destination_dir.canonicalize()?;
+
+    if let Ok(meta) = std::fs::symlink_metadata(target) {
+        if meta.file_type().is_symlink() {
+            return Err(escape());
+        }
+    }
+
+    let mut probe = target.parent().unwrap_or(destination_dir);
+    loop {
+        if std::fs::symlink_metadata(probe).is_ok() {
+            let resolved = probe.canonicalize()?;
+            if !resolved.starts_with(&dest_canon) {
+                return Err(escape());
+            }
+            return Ok(());
+        }
+        probe = probe.parent().ok_or_else(escape)?;
+    }
+}
+
+fn cancelled_err() -> VfsError {
+    backend_err(std::io::Error::new(
+        std::io::ErrorKind::Interrupted,
+        "operation cancelled",
+    ))
+}
+
 pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult<()> {
+    extract_archive_with_cancel(archive_path, destination_dir, &CancellationToken::new())
+}
+
+/// Extract with cooperative cancellation. The token is checked at every
+/// entry boundary, so a cancelled task stops writing instead of running to
+/// completion while the UI already shows it as cancelled.
+pub fn extract_archive_with_cancel(
+    archive_path: &Path,
+    destination_dir: &Path,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
     std::fs::create_dir_all(destination_dir).map_err(backend_err)?;
 
     let name = archive_path
@@ -149,7 +201,14 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
     }));
     let mut created = CreatedPaths::default();
 
-    let result = extract_inner(format, archive_path, destination_dir, &budget, &mut created);
+    let result = extract_inner(
+        format,
+        archive_path,
+        destination_dir,
+        &budget,
+        &mut created,
+        cancel,
+    );
     if result.is_err() {
         created.cleanup();
     }
@@ -162,7 +221,11 @@ fn extract_inner(
     destination_dir: &Path,
     budget: &SharedBudget,
     created: &mut CreatedPaths,
+    cancel: &CancellationToken,
 ) -> VfsResult<()> {
+    if cancel.is_cancelled() {
+        return Err(cancelled_err());
+    }
     match format {
         ArchiveFormat::Zip | ArchiveFormat::Epub => {
             let file = File::open(archive_path).map_err(backend_err)?;
@@ -181,6 +244,9 @@ fn extract_inner(
             // files holding the target text, and every written byte is
             // charged to the budget.
             for i in 0..zip.len() {
+                if cancel.is_cancelled() {
+                    return Err(cancelled_err());
+                }
                 let mut entry = zip.by_index(i).map_err(|e| {
                     backend_err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
                 })?;
@@ -191,6 +257,7 @@ fn extract_inner(
                     )));
                 };
                 let target = destination_dir.join(&rel);
+                assert_contained(destination_dir, &target).map_err(backend_err)?;
                 if entry.is_dir() {
                     created.track_parent_dirs(&target.join("x"), destination_dir);
                     if !target.exists() {
@@ -231,7 +298,7 @@ fn extract_inner(
                 budget: tar_stream_budget(budget),
             };
             let mut archive = tar::Archive::new(reader);
-            extract_tar(&mut archive, destination_dir, created)
+            extract_tar(&mut archive, destination_dir, created, cancel)
         }
         ArchiveFormat::TarGz => {
             let file = File::open(archive_path).map_err(backend_err)?;
@@ -241,7 +308,7 @@ fn extract_inner(
                 budget: tar_stream_budget(budget),
             };
             let mut archive = tar::Archive::new(reader);
-            extract_tar(&mut archive, destination_dir, created)
+            extract_tar(&mut archive, destination_dir, created, cancel)
         }
         ArchiveFormat::SevenZip => {
             // sevenz-rust joins entry names onto the destination without
@@ -251,6 +318,9 @@ fn extract_inner(
                 archive_path,
                 destination_dir,
                 |entry, reader, _dest| {
+                    if cancel.is_cancelled() {
+                        return Err(sevenz_rust::Error::other("operation cancelled"));
+                    }
                     entries_seen += 1;
                     if entries_seen > MAX_ENTRIES {
                         return Err(sevenz_rust::Error::other(format!(
@@ -263,6 +333,8 @@ fn extract_inner(
                             entry.name()
                         ))
                     })?;
+                    assert_contained(destination_dir, &target)
+                        .map_err(sevenz_rust::Error::io)?;
                     if entry.is_directory() {
                         created.track_parent_dirs(&target.join("x"), destination_dir);
                         if !target.exists() {
@@ -312,10 +384,14 @@ fn extract_tar<R: std::io::Read>(
     archive: &mut tar::Archive<R>,
     destination_dir: &Path,
     created: &mut CreatedPaths,
+    cancel: &CancellationToken,
 ) -> VfsResult<()> {
     let mut entries_seen = 0usize;
     let entries = archive.entries().map_err(backend_err)?;
     for entry in entries {
+        if cancel.is_cancelled() {
+            return Err(cancelled_err());
+        }
         let mut entry = entry.map_err(backend_err)?;
         entries_seen += 1;
         if entries_seen > MAX_ENTRIES {
@@ -327,6 +403,7 @@ fn extract_tar<R: std::io::Read>(
         if let Ok(entry_path) = entry.path() {
             let entry_str = entry_path.to_string_lossy().replace('\\', "/");
             if let Some(target) = safe_join(destination_dir, &entry_str) {
+                assert_contained(destination_dir, &target).map_err(backend_err)?;
                 created.track_parent_dirs(&target, destination_dir);
                 created.track_file(&target);
             }
@@ -356,7 +433,60 @@ fn safe_join(base: &Path, entry_name: &str) -> Option<std::path::PathBuf> {
 }
 
 pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsResult<()> {
-    let file = File::create(destination_zip).map_err(|e| VfsError::Backend {
+    create_zip_with_cancel(sources, destination_zip, &CancellationToken::new())
+}
+
+/// Compress with cooperative cancellation. The archive is built in a unique
+/// sibling temp file and renamed into place only on success, so a cancelled
+/// or failed run never truncates or corrupts an archive that already exists.
+pub fn create_zip_with_cancel(
+    sources: &[impl AsRef<Path>],
+    destination_zip: &Path,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
+    let tmp_path = temp_zip_path(destination_zip);
+    let result = create_zip_inner(sources, &tmp_path, destination_zip, cancel);
+    match result {
+        Ok(()) => {
+            if let Err(e) = std::fs::rename(&tmp_path, destination_zip) {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(VfsError::Backend {
+                    path: fm_core::VfsPath::root(),
+                    source: e,
+                });
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(e)
+        }
+    }
+}
+
+fn temp_zip_path(destination_zip: &Path) -> std::path::PathBuf {
+    let parent = destination_zip.parent().unwrap_or_else(|| Path::new("."));
+    let name = destination_zip
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("archive.zip");
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    parent.join(format!(".{name}.fm-zip-{}-{nanos}", std::process::id()))
+}
+
+fn create_zip_inner(
+    sources: &[impl AsRef<Path>],
+    write_path: &Path,
+    final_dest: &Path,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
+    if cancel.is_cancelled() {
+        return Err(cancelled_err());
+    }
+    let file = File::create(write_path).map_err(|e| VfsError::Backend {
         path: fm_core::VfsPath::root(),
         source: e,
     })?;
@@ -365,15 +495,27 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o755);
 
-    let dest_canon = destination_zip.canonicalize().ok();
+    // Exclude both the temp file being written and any pre-existing final
+    // archive, so compressing a folder into a zip inside it never pulls the
+    // output into itself.
+    let mut exclude_canon: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(c) = write_path.canonicalize() {
+        exclude_canon.push(c);
+    }
+    if let Ok(c) = final_dest.canonicalize() {
+        if !exclude_canon.contains(&c) {
+            exclude_canon.push(c);
+        }
+    }
 
     for source_ref in sources {
+        if cancel.is_cancelled() {
+            return Err(cancelled_err());
+        }
         let source = source_ref.as_ref();
-        if let Some(ref dc) = dest_canon {
-            if let Ok(sc) = source.canonicalize() {
-                if sc == *dc {
-                    continue;
-                }
+        if let Ok(sc) = source.canonicalize() {
+            if exclude_canon.iter().any(|dc| sc == *dc) {
+                continue;
             }
         }
         if source.is_file() {
@@ -407,7 +549,7 @@ pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsRe
                     path: fm_core::VfsPath::root(),
                     source: std::io::Error::other(e.to_string()),
                 })?;
-            add_dir_to_zip(&mut zip, base_dir, source, options, dest_canon.as_deref())?;
+            add_dir_to_zip(&mut zip, base_dir, source, options, &exclude_canon, cancel)?;
         }
     }
 
@@ -428,7 +570,8 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
     base_dir: &Path,
     current_dir: &Path,
     options: SimpleFileOptions,
-    dest_canon: Option<&Path>,
+    exclude_canon: &[std::path::PathBuf],
+    cancel: &CancellationToken,
 ) -> VfsResult<()> {
     let read_dir = std::fs::read_dir(current_dir).map_err(|e| VfsError::Backend {
         path: fm_core::VfsPath::root(),
@@ -436,16 +579,17 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
     })?;
 
     for entry_res in read_dir {
+        if cancel.is_cancelled() {
+            return Err(cancelled_err());
+        }
         let entry = entry_res.map_err(|e| VfsError::Backend {
             path: fm_core::VfsPath::root(),
             source: e,
         })?;
         let path = entry.path();
-        if let Some(dc) = dest_canon {
-            if let Ok(pc) = path.canonicalize() {
-                if pc == dc {
-                    continue;
-                }
+        if let Ok(pc) = path.canonicalize() {
+            if exclude_canon.iter().any(|dc| pc == *dc) {
+                continue;
             }
         }
         let rel_path = path
@@ -471,7 +615,7 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
                     path: fm_core::VfsPath::root(),
                     source: std::io::Error::other(e.to_string()),
                 })?;
-            add_dir_to_zip(zip, base_dir, &path, options, dest_canon)?;
+            add_dir_to_zip(zip, base_dir, &path, options, exclude_canon, cancel)?;
         } else if file_type.is_file() {
             zip.start_file(&rel_path_str, options)
                 .map_err(|e| VfsError::Backend {
@@ -497,6 +641,94 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn cancelled_extraction_stops_before_writing() {
+        let dir = tempdir().unwrap();
+        let zip_path = dir.path().join("many.zip");
+        {
+            let file = File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for i in 0..50 {
+                writer.start_file(format!("f{i}.txt"), options).unwrap();
+                writer.write_all(b"hello").unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let dest = dir.path().join("out");
+        assert!(extract_archive_with_cancel(&zip_path, &dest, &cancel).is_err());
+        assert!(!dest.join("f0.txt").exists(), "cancelled extraction wrote a file");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extraction_refuses_to_follow_a_preexisting_symlink() {
+        let dir = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        std::fs::write(outside.path().join("victim.txt"), b"original").unwrap();
+        let dest = dir.path().join("out");
+        std::fs::create_dir(&dest).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dest.join("escape")).unwrap();
+
+        let zip_path = dir.path().join("evil.zip");
+        {
+            let file = File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            // Lexically harmless, but resolves through the planted link.
+            writer.start_file("escape/victim.txt", options).unwrap();
+            writer.write_all(b"overwritten").unwrap();
+            writer.finish().unwrap();
+        }
+        assert!(extract_archive(&zip_path, &dest).is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join("victim.txt")).unwrap(),
+            "original"
+        );
+    }
+
+    #[test]
+    fn cancelled_compression_removes_the_partial_zip() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("a.txt");
+        std::fs::write(&src, b"data").unwrap();
+        let out = dir.path().join("out.zip");
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert!(create_zip_with_cancel(&[&src], &out, &cancel).is_err());
+        assert!(!out.exists(), "cancelled compression left a broken zip");
+    }
+
+    #[test]
+    fn cancelled_compression_keeps_an_existing_zip_intact() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("a.txt");
+        std::fs::write(&src, b"data").unwrap();
+        let out = dir.path().join("out.zip");
+        // A valid pre-existing archive that must survive a cancelled overwrite.
+        create_zip(&[&src], &out).unwrap();
+        let before = std::fs::read(&out).unwrap();
+
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert!(create_zip_with_cancel(&[&src], &out, &cancel).is_err());
+        assert_eq!(
+            std::fs::read(&out).unwrap(),
+            before,
+            "cancelled overwrite corrupted the existing zip"
+        );
+        let strays: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".fm-zip-"))
+            .collect();
+        assert!(strays.is_empty(), "cancelled compression left a temp file");
+    }
 
     #[test]
     fn test_create_zip_skips_destination_inside_source() {

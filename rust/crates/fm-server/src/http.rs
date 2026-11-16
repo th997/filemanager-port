@@ -16,10 +16,18 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
 
+/// Cap for a single multipart upload request. The web UI uploads in
+/// chunks, so without a cap a client can keep streaming until the disk
+/// is full.
+const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 pub struct ServerState {
     pub root_dir: PathBuf,
     pub canonical_root: Option<PathBuf>,
     pub password: Option<String>,
+    /// Random per-share bearer token used by the web UI. Deliberately NOT
+    /// the password: a share link must never disclose the password itself.
+    pub share_token: String,
     pub read_only: bool,
 }
 
@@ -57,6 +65,7 @@ pub struct UploadResponse {
 pub struct RunningServer {
     pub port: u16,
     pub shutdown_tx: oneshot::Sender<()>,
+    pub share_token: String,
 }
 
 pub async fn start_http_share(
@@ -65,6 +74,17 @@ pub async fn start_http_share(
     password: Option<String>,
     read_only: bool,
 ) -> Result<RunningServer, String> {
+    // This server binds 0.0.0.0, so an empty password would expose the
+    // shared directory to the entire LAN without any authentication.
+    // Refuse to start instead of silently granting anonymous access.
+    let password = password
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| {
+            "a share password is required (anonymous LAN sharing is disabled)".to_string()
+        })?;
+    let share_token = uuid::Uuid::new_v4().simple().to_string();
+
     let port = preferred_port.unwrap_or(0);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr)
@@ -80,7 +100,8 @@ pub async fn start_http_share(
     let state = Arc::new(ServerState {
         root_dir,
         canonical_root,
-        password,
+        password: Some(password),
+        share_token: share_token.clone(),
         read_only,
     });
 
@@ -92,7 +113,7 @@ pub async fn start_http_share(
         .route("/api/list/", get(handle_list_root))
         .route("/api/list/{*subpath}", get(handle_list_sub))
         .route("/download/{*subpath}", get(handle_download))
-        .layer(DefaultBodyLimit::disable())
+        .layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES as usize))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth))
         .with_state(state);
 
@@ -109,28 +130,32 @@ pub async fn start_http_share(
     Ok(RunningServer {
         port: actual_port,
         shutdown_tx,
+        share_token,
     })
 }
 
 fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bool {
-    let expected = match &state.password {
-        Some(p) if !p.is_empty() => p,
-        _ => return true,
+    // Fail closed: no password means no access, never anonymous access.
+    let Some(expected) = state.password.as_deref().filter(|p| !p.is_empty()) else {
+        return false;
     };
 
-    let check_eq = |token: &str| -> bool {
-        if token.len() != expected.len() {
+    let check_eq = |candidate: &str, secret: &str| -> bool {
+        if candidate.len() != secret.len() {
             return false;
         }
         let mut diff = 0u8;
-        for (a, b) in token.as_bytes().iter().zip(expected.as_bytes()) {
+        for (a, b) in candidate.as_bytes().iter().zip(secret.as_bytes()) {
             diff |= a ^ b;
         }
         diff == 0
     };
 
+    // The URL token is a random session token minted at startup, not the
+    // password. Sharing a link therefore never puts the password into a
+    // browser history, a Referer header or a proxy access log.
     if let Some(token) = &query.token {
-        if check_eq(token) {
+        if check_eq(token, &state.share_token) {
             return true;
         }
     }
@@ -154,7 +179,7 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
                             .split_once(':')
                             .map(|(_, p)| p)
                             .unwrap_or(credentials);
-                        if check_eq(password) {
+                        if check_eq(password, expected) {
                             return true;
                         }
                     }
@@ -165,7 +190,7 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_str.strip_prefix("bearer "))
                 .unwrap_or(auth_str);
-            if check_eq(token) {
+            if check_eq(token, expected) {
                 return true;
             }
         }
@@ -576,6 +601,14 @@ async fn handle_index() -> Html<&'static str> {
         let currentPath = '';
         let allItems = [];
 
+        // The share link carries a per-session token; every API request must
+        // echo it back or the auth middleware rejects it with 401.
+        const shareToken = new URLSearchParams(window.location.search).get('token');
+        function withToken(url) {
+            if (!shareToken) return url;
+            return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(shareToken);
+        }
+
         function escapeHtml(str) {
             return String(str)
                 .replace(/&/g, '&amp;')
@@ -607,13 +640,13 @@ async fn handle_index() -> Html<&'static str> {
 
         function buildListUrl(path) {
             const clean = (path || '').replace(/^\/+|\/+$/g, '');
-            if (!clean) return '/api/list';
-            return '/api/list/' + clean.split('/').map(encodeURIComponent).join('/');
+            if (!clean) return withToken('/api/list');
+            return withToken('/api/list/' + clean.split('/').map(encodeURIComponent).join('/'));
         }
 
         function buildDownloadUrl(path) {
             const clean = (path || '').replace(/^\/+|\/+$/g, '');
-            return '/download/' + clean.split('/').map(encodeURIComponent).join('/');
+            return withToken('/download/' + clean.split('/').map(encodeURIComponent).join('/'));
         }
 
         function renderBreadcrumbs(path) {
@@ -730,7 +763,7 @@ async fn handle_index() -> Html<&'static str> {
 
         async function checkConfig() {
             try {
-                const res = await fetch('/api/config');
+                const res = await fetch(withToken('/api/config'));
                 if (res.ok) {
                     const cfg = await res.json();
                     if (cfg.read_only) {
@@ -874,12 +907,7 @@ async fn handle_index() -> Html<&'static str> {
                 formData.append('files', item.file, item.relPath);
             }
 
-            const params = new URLSearchParams(window.location.search);
-            const token = params.get('token');
-            let url = '/api/upload?dir=' + encodeURIComponent(currentPath);
-            if (token) {
-                url += '&token=' + encodeURIComponent(token);
-            }
+            const url = withToken('/api/upload?dir=' + encodeURIComponent(currentPath));
 
             const xhr = new XMLHttpRequest();
             xhr.upload.onprogress = (event) => {
@@ -955,8 +983,16 @@ async fn handle_upload(
 
     let base_dir = query.dir.as_deref().unwrap_or("").trim_matches('/');
     let mut uploaded_count = 0;
+    let mut total_written: u64 = 0;
 
-    while let Ok(Some(mut field)) = multipart.next_field().await {
+    loop {
+        // `while let Ok(Some(..))` used to treat a broken upload stream as a
+        // normal end-of-file and report success with a truncated file.
+        let mut field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(_) => return Err((StatusCode::BAD_REQUEST, "Malformed multipart upload")),
+        };
         let file_name = match field.file_name() {
             Some(name) if !name.trim().is_empty() => name.to_string(),
             _ => continue,
@@ -972,33 +1008,93 @@ async fn handle_upload(
         let target_path = resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), &combined_rel)
             .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid file path"))?;
 
-        if let Some(parent) = target_path.parent() {
-            if !parent.exists() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create directory"))?;
-            }
-            if let Ok(c_parent) = parent.canonicalize() {
-                let root_canon = state.canonical_root.as_deref().unwrap_or(&state.root_dir);
-                if !c_parent.starts_with(root_canon) {
+        let parent = target_path
+            .parent()
+            .ok_or((StatusCode::BAD_REQUEST, "Invalid file path"))?;
+        let root_canon = state.canonical_root.as_deref().unwrap_or(&state.root_dir);
+        // Verify containment against the deepest existing ancestor BEFORE
+        // creating anything: create_dir_all follows symlinks, so creating
+        // first could plant directories outside the shared root.
+        let mut probe = parent.to_path_buf();
+        loop {
+            if std::fs::symlink_metadata(&probe).is_ok() {
+                let resolved = probe.canonicalize().map_err(|_| {
+                    (StatusCode::FORBIDDEN, "Cannot verify destination directory")
+                })?;
+                if !resolved.starts_with(root_canon) {
                     return Err((StatusCode::FORBIDDEN, "Path traverses outside root"));
+                }
+                break;
+            }
+            if !probe.pop() {
+                return Err((StatusCode::FORBIDDEN, "Cannot verify destination directory"));
+            }
+        }
+        if !parent.exists() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create directory"))?;
+        }
+        // Fail closed: if the parent cannot be canonicalised we cannot prove
+        // that the upload still lands inside the shared root.
+        let c_parent = parent.canonicalize().map_err(|_| {
+            (StatusCode::FORBIDDEN, "Cannot verify destination directory")
+        })?;
+        if !c_parent.starts_with(root_canon) {
+            return Err((StatusCode::FORBIDDEN, "Path traverses outside root"));
+        }
+
+        // Stream into a unique sibling temp file and rename only on success:
+        // an interrupted upload must not leave a truncated file behind or
+        // destroy a file that was already there.
+        let base_name = target_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("upload");
+        let tmp_path = parent.join(format!(
+            ".{base_name}.fm-upload-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+
+        let mut file = tokio::fs::File::create(&tmp_path)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create destination file"))?;
+
+        let mut failure: Option<(StatusCode, &'static str)> = None;
+        loop {
+            match field.chunk().await {
+                Ok(Some(chunk)) => {
+                    total_written = total_written.saturating_add(chunk.len() as u64);
+                    if total_written > MAX_UPLOAD_BYTES {
+                        failure = Some((StatusCode::PAYLOAD_TOO_LARGE, "Upload exceeds size limit"));
+                        break;
+                    }
+                    if file.write_all(&chunk).await.is_err() {
+                        failure = Some((StatusCode::INTERNAL_SERVER_ERROR, "Failed to write file data"));
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    failure = Some((StatusCode::BAD_REQUEST, "Upload stream interrupted"));
+                    break;
                 }
             }
         }
 
-        let mut file = tokio::fs::File::create(&target_path)
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create destination file"))?;
-
-        while let Ok(Some(chunk)) = field.chunk().await {
-            file.write_all(&chunk)
-                .await
-                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to write file data"))?;
+        if failure.is_none() && file.flush().await.is_err() {
+            failure = Some((StatusCode::INTERNAL_SERVER_ERROR, "Failed to flush file"));
         }
+        drop(file);
 
-        file.flush()
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to flush file"))?;
+        if let Some(err) = failure {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(err);
+        }
+        if tokio::fs::rename(&tmp_path, &target_path).await.is_err() {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to finalize upload"));
+        }
 
         uploaded_count += 1;
     }
@@ -1151,13 +1247,25 @@ fn resolve_path_inner(root: &Path, canonical_root: Option<&Path>, rel: &str) -> 
         }
         target.push(seg);
     }
-    if let Ok(c_target) = target.canonicalize() {
-        if let Some(c_root) = canonical_root {
-            if !c_target.starts_with(c_root) {
-                return Err(());
+    match target.canonicalize() {
+        Ok(c_target) => {
+            let c_root = canonical_root
+                .map(Path::to_path_buf)
+                .or_else(|| root.canonicalize().ok());
+            match c_root {
+                Some(c_root) if !c_target.starts_with(&c_root) => return Err(()),
+                Some(_) => {}
+                // We cannot resolve the root: refuse instead of assuming
+                // that the target is contained in it.
+                None => return Err(()),
             }
-        } else if let Ok(c_root) = root.canonicalize() {
-            if !c_target.starts_with(&c_root) {
+        }
+        Err(_) => {
+            // A file that does not exist yet has no canonical path; the
+            // caller must verify its parent directory. An entry that exists
+            // but cannot be resolved (dangling symlink, permission error)
+            // is untrusted and refused.
+            if std::fs::symlink_metadata(&target).is_ok() {
                 return Err(());
             }
         }
@@ -1202,5 +1310,68 @@ mod tests {
         assert!(resolve_path(root, "foo/../../etc/passwd").is_err());
         assert!(resolve_path(root, "C:\\Windows\\win.ini").is_err());
         assert!(resolve_path(root, "foo\0bar").is_err());
+    }
+
+    fn auth_state(password: Option<&str>, token: &str) -> ServerState {
+        ServerState {
+            root_dir: PathBuf::from("/tmp"),
+            canonical_root: None,
+            password: password.map(str::to_string),
+            share_token: token.to_string(),
+            read_only: true,
+        }
+    }
+
+    #[test]
+    fn empty_password_never_grants_anonymous_access() {
+        for state in [auth_state(None, "random-token"), auth_state(Some(""), "random-token")] {
+            let headers = HeaderMap::new();
+            assert!(!check_auth(&headers, &AuthQuery { token: None }, &state));
+            assert!(!check_auth(
+                &headers,
+                &AuthQuery { token: Some("anything".into()) },
+                &state
+            ));
+        }
+    }
+
+    #[test]
+    fn url_token_is_session_token_not_password() {
+        let state = auth_state(Some("hunter2"), "session-abc");
+        let headers = HeaderMap::new();
+        assert!(check_auth(
+            &headers,
+            &AuthQuery { token: Some("session-abc".into()) },
+            &state
+        ));
+        // Passing the password in the URL must not authenticate: otherwise
+        // a shared link would leak the password into history/Referer/logs.
+        assert!(!check_auth(
+            &headers,
+            &AuthQuery { token: Some("hunter2".into()) },
+            &state
+        ));
+        assert!(!check_auth(
+            &headers,
+            &AuthQuery { token: Some("wrong".into()) },
+            &state
+        ));
+    }
+
+    #[test]
+    fn basic_auth_still_uses_the_password() {
+        let state = auth_state(Some("hunter2"), "session-abc");
+        let mut headers = HeaderMap::new();
+        let encoded = base64::engine::general_purpose::STANDARD.encode("anyuser:hunter2");
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Basic {encoded}").parse().unwrap(),
+        );
+        assert!(check_auth(&headers, &AuthQuery { token: None }, &state));
+        headers.insert(
+            header::AUTHORIZATION,
+            "Bearer session-abc".parse().unwrap(),
+        );
+        assert!(!check_auth(&headers, &AuthQuery { token: None }, &state));
     }
 }

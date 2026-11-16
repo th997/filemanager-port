@@ -32,6 +32,10 @@ pub async fn start_lan_http_server(
 
     let server = start_http_share(PathBuf::from(root_dir), port, password, read_only).await?;
     let actual_port = server.port;
+    // A random per-share session token, never the user's password: sharing
+    // this link does not disclose the password to browser history, Referer
+    // headers or proxy logs.
+    let share_token = server.share_token.clone();
 
     {
         let mut guard = HTTP_RUNNING.lock();
@@ -40,7 +44,7 @@ pub async fn start_lan_http_server(
 
     let addresses = get_lan_ip_addresses();
     let primary_ip = addresses.first().cloned().unwrap_or_else(|| "127.0.0.1".to_string());
-    let url = format!("http://{primary_ip}:{actual_port}");
+    let url = format!("http://{primary_ip}:{actual_port}/?token={share_token}");
 
     Ok(ServerStatusDto {
         running: true,

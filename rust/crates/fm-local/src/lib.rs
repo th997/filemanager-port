@@ -116,12 +116,18 @@ impl LocalFs {
         native: &Path,
         include_final: bool,
     ) -> VfsResult<()> {
-        // Without a canonical root there is nothing to verify against —
-        // e.g. the root does not exist yet, in which case nothing inside
-        // it can be a planted symlink either.
         let canonical_root = match &self.canonical_root {
             Some(cr) => cr,
-            None => return Ok(()),
+            None => {
+                // The root could not be canonicalised when the backend was
+                // built (usually because it does not exist yet). Creating a
+                // brand-new entry below a non-existent root is safe; touching
+                // an existing entry we cannot verify is not. Fail closed.
+                if std::fs::symlink_metadata(native).is_ok() {
+                    return Err(VfsError::PermissionDenied { path: path.clone() });
+                }
+                return Ok(());
+            }
         };
         let mut existing = if include_final || path.is_root() {
             native.to_path_buf()
@@ -131,15 +137,20 @@ impl LocalFs {
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| native.to_path_buf())
         };
-        while !existing.exists() {
+        // symlink_metadata (not `exists`) so a dangling link counts as an
+        // existing entry and is checked rather than skipped.
+        while std::fs::symlink_metadata(&existing).is_err() {
             if !existing.pop() {
-                return Ok(());
-            }
-        }
-        if let Ok(canonical) = existing.canonicalize() {
-            if !canonical.starts_with(&canonical_root) {
                 return Err(VfsError::PermissionDenied { path: path.clone() });
             }
+        }
+        // If the deepest existing ancestor cannot be resolved we cannot
+        // prove containment — refuse instead of silently trusting it.
+        let canonical = existing.canonicalize().map_err(|_| {
+            VfsError::PermissionDenied { path: path.clone() }
+        })?;
+        if !canonical.starts_with(canonical_root) {
+            return Err(VfsError::PermissionDenied { path: path.clone() });
         }
         Ok(())
     }
@@ -472,6 +483,44 @@ mod tests {
         assert_eq!(find("link_file").kind, EntryKind::File);
         assert_eq!(find("link_file").size, Some(5));
         assert_eq!(find("link_broken").kind, EntryKind::Symlink);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlink_inside_root_cannot_escape_it() {
+        let dir = fixture();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), b"secret").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("escape")).unwrap();
+
+        let fs = LocalFs::new(dir.path());
+        let escaped = VfsPath::from_slash_path("/escape/secret.txt");
+        assert!(matches!(
+            fs.open_read(&escaped).await,
+            Err(VfsError::PermissionDenied { .. })
+        ));
+        assert!(matches!(
+            fs.open_write(&escaped, WriteMode::Create).await,
+            Err(VfsError::PermissionDenied { .. })
+        ));
+        assert_eq!(std::fs::read_to_string(outside.path().join("secret.txt")).unwrap(), "secret");
+    }
+
+    #[tokio::test]
+    async fn unresolvable_root_fails_closed_for_existing_entries() {
+        let dir = fixture();
+        let mut fs = LocalFs::new(dir.path());
+        fs.canonical_root = None;
+        assert!(matches!(
+            fs.stat(&VfsPath::from_slash_path("/a.txt")).await,
+            Err(VfsError::PermissionDenied { .. })
+        ));
+        // Creating a brand-new entry below a not-yet-existing root is still
+        // allowed; there is nothing inside it to be a planted symlink.
+        let writer = fs
+            .open_write(&VfsPath::from_slash_path("/brand-new.txt"), WriteMode::Create)
+            .await;
+        assert!(writer.is_ok());
     }
 
     #[tokio::test]

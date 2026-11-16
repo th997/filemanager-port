@@ -187,6 +187,9 @@ pub async fn copy_recursive(
     .await
 }
 
+// All eight values are threaded through the recursive copy without being
+// repacked into a context struct; splitting them would only add indirection.
+#[allow(clippy::too_many_arguments)]
 async fn copy_recursive_impl(
     src_vfs: &dyn Vfs,
     src_path: &VfsPath,

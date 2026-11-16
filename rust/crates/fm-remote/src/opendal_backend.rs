@@ -54,7 +54,7 @@ impl WebdavClientInfo {
             segments.push(seg);
         }
         for seg in path.segments() {
-            segments.push(&seg);
+            segments.push(seg);
         }
         drop(segments);
         Ok(url)
@@ -218,8 +218,14 @@ impl OpendalFs {
             message: format!("failed to initialize WebDAV operator: {e}"),
         })?;
 
+        // Never disable certificate validation on this client: it also carries
+        // the `Authorization: Basic` header (see the PUT below), so an
+        // unverified TLS peer would receive the user's WebDAV credentials and
+        // every uploaded byte. reqwest's `rustls` feature installs
+        // rustls-platform-verifier, which validates both the chain and the
+        // hostname against the OS trust store. Self-signed servers must be
+        // supported through an explicit, opt-in certificate pin instead.
         let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
             .build()
             .map_err(|e| VfsError::Connection {
                 message: format!("failed to initialize WebDAV HTTP client: {e}"),

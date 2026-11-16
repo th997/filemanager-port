@@ -1,5 +1,5 @@
 use crate::registry::VfsRegistry;
-use fm_archive::ops::{create_zip, extract_archive};
+use fm_archive::ops::{create_zip_with_cancel, extract_archive_with_cancel};
 use fm_core::{EntryKind, VfsPath};
 use fm_ops::{
     copy_recursive, delete_recursive, total_bytes, ConflictPolicy, TaskManager, TaskProgress,
@@ -20,14 +20,16 @@ fn task_mgr() -> &'static TaskManager {
 ///
 /// A cancellation makes the worker's operation fail; reporting that as
 /// `failed` would show a scary error for an action the user chose, so the
-/// cancellation wins over the error it caused.
+/// cancellation wins over the error it caused. If the operation nevertheless
+/// finished successfully (cancel arrived too late), report `Completed`:
+/// the files really are on disk and the user must not be told otherwise.
 fn finish(
     progress: &Arc<Mutex<TaskProgress>>,
     cancel: &CancellationToken,
     result: Result<(), String>,
 ) {
     let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-    if cancel.is_cancelled() {
+    if cancel.is_cancelled() && result.is_err() {
         p.state = TaskState::Cancelled;
         p.error = None;
         return;
@@ -482,7 +484,12 @@ pub async fn start_compress_task(
 
         let dst = PathBuf::from(dst_archive_path);
         // Archiving blocks on the filesystem; keep the async worker free.
-        let res = tokio::task::spawn_blocking(move || create_zip(&items, &dst))
+        // The cancel token goes into the blocking closure so it really stops
+        // writing at entry boundaries instead of just relabelling the result.
+        let cancel_bg = cancel.clone();
+        let res = tokio::task::spawn_blocking(move || {
+            create_zip_with_cancel(&items, &dst, &cancel_bg)
+        })
             .await
             .unwrap_or_else(|e| {
                 Err(fm_vfs::VfsError::Backend {
@@ -515,7 +522,10 @@ pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result
         let src = PathBuf::from(archive_path);
         let dst = PathBuf::from(dst_dir);
         // Extraction blocks on the filesystem; keep the async worker free.
-        let res = tokio::task::spawn_blocking(move || extract_archive(&src, &dst))
+        let cancel_bg = cancel.clone();
+        let res = tokio::task::spawn_blocking(move || {
+            extract_archive_with_cancel(&src, &dst, &cancel_bg)
+        })
             .await
             .unwrap_or_else(|e| {
                 Err(fm_vfs::VfsError::Backend {
