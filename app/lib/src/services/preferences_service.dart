@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -21,6 +22,8 @@ class PreferencesService {
   Map<String, String> _values = {};
   bool _loaded = false;
   File? _file;
+  Timer? _persistTimer;
+  Future<void> _writeQueue = Future<void>.value();
 
   Future<void> load() async {
     if (_loaded) return;
@@ -130,11 +133,56 @@ class PreferencesService {
     if (_values.remove(key) != null) _persist();
   }
 
+  /// Window move/resize fires many times per second and each event writes
+  /// four keys. Coalesce them into one asynchronous write so dragging the
+  /// window never blocks the UI isolate with synchronous disk I/O.
   void _persist() {
     final file = _file;
     if (file == null) return;
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 250), () {
+      _persistTimer = null;
+      _enqueueWrite(file);
+    });
+  }
+
+  /// Serialize debounced writes so two of them can never interleave, and write
+  /// atomically (temp file + rename) so a concurrent [flush] cannot tear the
+  /// JSON. The snapshot is taken when the write runs, so a late write still
+  /// persists the latest values rather than a stale one.
+  void _enqueueWrite(File file) {
+    _writeQueue =
+        _writeQueue.then((_) => _atomicWrite(file)).catchError((_) {});
+  }
+
+  Future<void> _atomicWrite(File file) async {
+    final tmp = File('${file.path}.tmp');
     try {
-      file.writeAsStringSync(jsonEncode(_values));
-    } catch (_) {}
+      await tmp.writeAsString(jsonEncode(_values));
+      await tmp.rename(file.path);
+    } catch (_) {
+      try {
+        await tmp.delete();
+      } catch (_) {}
+    }
+  }
+
+  /// Immediately flush a pending debounced write, e.g. before the window
+  /// closes so the last bounds are not lost. Synchronous and atomic so it is
+  /// durable even if the process exits right after.
+  void flush() {
+    _persistTimer?.cancel();
+    _persistTimer = null;
+    final file = _file;
+    if (file == null) return;
+    final tmp = File('${file.path}.flush.tmp');
+    try {
+      tmp.writeAsStringSync(jsonEncode(_values));
+      tmp.renameSync(file.path);
+    } catch (_) {
+      try {
+        tmp.deleteSync();
+      } catch (_) {}
+    }
   }
 }

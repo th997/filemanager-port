@@ -484,14 +484,20 @@ class _RemotesPageState extends State<RemotesPage> {
               if (text.isEmpty) return;
               try {
                 final count = await StorageService.instance.importRemotesJson(text);
+                final failures = StorageService.instance.lastImportFailures;
                 if (ctx.mounted) {
                   Navigator.of(ctx).pop(true);
                 }
                 if (mounted) {
+                  final detail = failures.isEmpty
+                      ? ''
+                      : '; ${failures.length} failed: ${failures.join(', ')}';
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Successfully imported $count connection(s)'),
-                      backgroundColor: Theme.of(context).colorScheme.success,
+                      content: Text('Imported $count connection(s)$detail'),
+                      backgroundColor: failures.isEmpty
+                          ? Theme.of(context).colorScheme.success
+                          : Theme.of(context).colorScheme.error,
                     ),
                   );
                 }

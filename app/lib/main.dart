@@ -50,6 +50,13 @@ class _WindowBoundsSaver with WindowListener {
 
   @override
   void onWindowResized() => _save();
+
+  @override
+  void onWindowClose() {
+    // Bounds are persisted through a debounce; make sure the last burst is
+    // written before the process goes away.
+    PreferencesService.instance.flush();
+  }
 }
 
 final _windowBoundsSaver = _WindowBoundsSaver();

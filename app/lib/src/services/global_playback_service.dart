@@ -288,23 +288,35 @@ class GlobalPlaybackService extends ChangeNotifier {
 
   void playNext() {
     if (!hasNext) return;
-    final nextIndex = currentIndex + 1;
-    final track = playlist[nextIndex];
-    currentIndex = nextIndex;
-    currentPath = track.path;
-    currentFileName = track.fileName;
-    isAudio = track.isAudio;
-    restoreFullScreen();
+    _switchTrack(currentIndex + 1);
   }
 
   void playPrev() {
     if (!hasPrev) return;
-    final prevIndex = currentIndex - 1;
-    final track = playlist[prevIndex];
-    currentIndex = prevIndex;
+    _switchTrack(currentIndex - 1);
+  }
+
+  /// The live player still holds the previous file's media source. Just
+  /// changing `currentPath` made the newly pushed player page believe it
+  /// could reuse that controller, so it never opened the new track: the UI
+  /// showed the next title while the old file kept playing. Drop the whole
+  /// session and let the new page create a player for the new URI.
+  void _switchTrack(int index) {
+    final root = currentRoot;
+    final tracks = playlist;
+    if (root == null || index < 0 || index >= tracks.length) return;
+    final track = tracks[index];
+    final speed = playbackSpeed;
+
+    stop();
+
+    currentRoot = root;
     currentPath = track.path;
     currentFileName = track.fileName;
     isAudio = track.isAudio;
+    playlist = tracks;
+    currentIndex = index;
+    playbackSpeed = speed;
     restoreFullScreen();
   }
 
@@ -368,6 +380,10 @@ class GlobalPlaybackService extends ChangeNotifier {
       try {
         _nowPlayingChannel.invokeMethod('clear').catchError((_) {});
       } catch (_) {}
+      // The player page overwrites this channel's handler while visible.
+      // Take it back so lock-screen/headset commands keep working after the
+      // page is gone (mini player, track switch, ...).
+      initNowPlayingHandler();
     }
   }
 

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -181,6 +182,14 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     }
   }
 
+  /// The server listens on 0.0.0.0, so an empty password would expose the
+  /// shared directory to the whole LAN. Generate a strong one instead.
+  String _randomSharePassword() {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    final random = math.Random.secure();
+    return List.generate(16, (_) => alphabet[random.nextInt(alphabet.length)]).join();
+  }
+
   Future<void> _toggleServer(bool start) async {
     if (start) {
       final portText = _portCtrl.text.trim();
@@ -195,8 +204,14 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         return;
       }
       setState(() => _starting = true);
+      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       try {
-        final pwd = _pwdCtrl.text.trim().isEmpty ? null : _pwdCtrl.text.trim();
+        var pwd = _pwdCtrl.text.trim();
+        final generatedPwd = pwd.isEmpty;
+        if (generatedPwd) {
+          pwd = _randomSharePassword();
+          _pwdCtrl.text = pwd;
+        }
 
         final status = await SharingService.instance.startHttp(
           rootDir: _shareRoot,
@@ -211,6 +226,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
             _serverStatus = status;
             _starting = false;
           });
+          if (generatedPwd) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(isZh ? '已自动生成访问密码：$pwd' : 'Generated share password: $pwd'),
+              ),
+            );
+          }
         }
       } catch (e) {
         if (mounted) {
@@ -409,8 +431,8 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                     const SizedBox(height: 8),
                     Text(
                       isZh
-                          ? '同一 Wi-Fi 下任何浏览器输入以下地址即可访问：'
-                          : 'Access files from any browser on the same Wi-Fi:',
+                          ? '同一 Wi-Fi 下浏览器打开以下地址即可访问（链接含访问令牌，请勿公开分享）：'
+                          : 'Open this link in a browser on the same Wi-Fi. The link contains the access token — do not share it publicly.',
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 4),
@@ -426,7 +448,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       )
                     else
                       ..._serverStatus!.addresses.map((ip) {
-                      final url = 'http://$ip:${_serverStatus!.port}';
+                      // The backend URL carries a random per-share session
+                      // token. Keep it on every listed address: a copied link
+                      // then works directly, and the password itself never
+                      // appears in a URL, history or Referer header.
+                      final query = Uri.tryParse(_serverStatus!.url)?.query ?? '';
+                      final url =
+                          'http://$ip:${_serverStatus!.port}${query.isEmpty ? '' : '?$query'}';
                       final successColor = Theme.of(context).colorScheme.success;
                       return Container(
                         margin: const EdgeInsets.symmetric(vertical: 2),
@@ -531,7 +559,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                             obscureText: _obscurePwd,
                             style: const TextStyle(fontSize: 11.5),
                             decoration: InputDecoration(
-                              labelText: isZh ? '访问密码 (可选)' : 'Password (Optional)',
+                              labelText: isZh ? '访问密码 (留空自动生成)' : 'Password (auto if blank)',
+                              helperText: isZh
+                                  ? '服务对局域网可见，务必设置密码'
+                                  : 'Visible on the LAN; a password is required',
+                              helperStyle: const TextStyle(fontSize: 10),
                               border: const OutlineInputBorder(),
                               isDense: true,
                               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),

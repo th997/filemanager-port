@@ -809,14 +809,17 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         } catch (_) {}
         _startedStream = false;
       }
-      if (Platform.isIOS) {
-        _nowPlayingChannel.setMethodCallHandler(null);
-        _nowPlayingChannel.invokeMethod('clear').catchError((_) {});
-      }
+      // stop() clears the now-playing info and re-registers the global
+      // handler; clearing the channel here would race with that.
       GlobalPlaybackService.instance.stop();
     } else {
-      // Minimize: keep playback running in background/mini player
+      // Minimize: keep playback running in background/mini player. Hand the
+      // remote-command handler back to the service — leaving it pointing at
+      // this disposed State made lock-screen controls silently stop working.
       _controller?.removeListener(_onControllerUpdate);
+      if (Platform.isIOS) {
+        GlobalPlaybackService.instance.initNowPlayingHandler();
+      }
       GlobalPlaybackService.instance.setFullScreen(false);
     }
     super.dispose();

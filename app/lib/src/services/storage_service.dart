@@ -124,15 +124,22 @@ class StorageService {
     return const JsonEncoder.withIndent('  ').convert(data);
   }
 
+  /// Names of connections that failed to save during the last import, so
+  /// the UI can report them instead of silently dropping them.
+  List<String> lastImportFailures = [];
+
   Future<int> importRemotesJson(String jsonStr) async {
     final list = _parseRemotesJson(jsonStr);
+    lastImportFailures = [];
     if (list.isEmpty) return 0;
     var count = 0;
     for (final r in list) {
       try {
         await rem_api.saveRemote(dbPath: dbPath, config: r);
         count++;
-      } catch (_) {}
+      } catch (_) {
+        lastImportFailures.add(r.name);
+      }
     }
     if (count > 0) {
       await _syncRemotesBackup();
