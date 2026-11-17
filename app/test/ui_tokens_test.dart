@@ -110,4 +110,56 @@ void main() {
 
     expect(popped, isFalse);
   });
+
+  testWidgets('AppSwipeBack triggers from comfortable mobile edge (x=160)', (tester) async {
+    var popped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppSwipeBack(
+            onBack: () => popped = true,
+            child: Container(color: Colors.blue, width: 400, height: 600),
+          ),
+        ),
+      ),
+    );
+
+    // Swipe right starting from x=160 (within dynamic left edge threshold ~180px)
+    final gesture = await tester.startGesture(const Offset(160, 200));
+    await gesture.moveBy(const Offset(50, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(popped, isTrue);
+  });
+
+  testWidgets('AppSwipeBack uses Navigator.maybePop when onBack is null', (tester) async {
+    final navKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navKey,
+        home: const Scaffold(body: Text('Page 1')),
+      ),
+    );
+
+    // Push second page wrapped with AppSwipeBack
+    navKey.currentState!.push(
+      MaterialPageRoute(
+        builder: (_) => const AppSwipeBack(
+          child: Scaffold(body: Text('Page 2')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Page 2'), findsOneWidget);
+
+    // Swipe right from left edge on Page 2
+    final gesture = await tester.startGesture(const Offset(40, 200));
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Page 1'), findsOneWidget);
+    expect(find.text('Page 2'), findsNothing);
+  });
 }

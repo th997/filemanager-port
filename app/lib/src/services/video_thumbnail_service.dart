@@ -29,7 +29,14 @@ class VideoThumbnailService {
   static final String _thumbsDirPath = '${Directory.systemTemp.path}/fm_video_thumbs';
 
   static String _thumbFileName(String key) {
-    return '${key.hashCode.abs()}.jpg';
+    // FNV-1a: String.hashCode is stable but different videos can collide,
+    // and a collision shows the wrong frame for the file.
+    var h = 0xcbf29ce484222325;
+    for (final unit in key.codeUnits) {
+      h ^= unit;
+      h = (h * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+    }
+    return '${h.toRadixString(16)}.jpg';
   }
 
   Future<File?> thumbnail({required String root, required String path}) {
@@ -79,6 +86,10 @@ class VideoThumbnailService {
   }
 
   Future<File?> _grab(String root, String path, String key) async {
+    // A pending idle dispose would otherwise fire in the middle of the next
+    // open/seek/screenshot and free the shared player.
+    _idleTimer?.cancel();
+    _idleTimer = null;
     try {
       final dir = Directory(_thumbsDirPath);
       if (!dir.existsSync()) {

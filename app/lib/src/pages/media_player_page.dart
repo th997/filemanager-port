@@ -100,8 +100,7 @@ class _MediaKitPlayerPage extends StatefulWidget {
   State<_MediaKitPlayerPage> createState() => _MediaKitPlayerPageState();
 }
 
-class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
-    with WidgetsBindingObserver {
+class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   final GlobalKey<VideoState> _videoKey = GlobalKey<VideoState>();
   late final Player _player;
   late final VideoController _controller;
@@ -112,13 +111,14 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   bool _opened = false;
   bool _startedStream = false;
   bool _isLooping = false;
-  bool _wasPlayingBeforeBackground = false;
   static const _prefVolume = 'player.volume';
   static const _prefLoop = 'player.loop';
   static const _prefAutoNext = 'player.auto_next';
   static const _prefResumePrefix = 'player.resume.';
   late int _index;
   bool _switching = false;
+  int _openGeneration = 0;
+  int _eofRetries = 0;
   bool _autoNext = true;
   StreamSubscription<bool>? _completedSub;
 
@@ -222,9 +222,9 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     _index = widget.playlist.isEmpty
         ? 0
         : widget.startIndex.clamp(0, widget.playlist.length - 1);
-    WidgetsBinding.instance.addObserver(this);
     final session = GlobalPlaybackService.instance;
     if (session.hasActiveSession &&
+        session.currentRoot == widget.root &&
         session.currentPath == _track.path &&
         session.desktopPlayer != null &&
         session.desktopVideoController != null) {
@@ -297,11 +297,17 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
         final dur = _player.state.duration;
         // Premature stream termination (>2s before true duration):
         // auto-resume from current position instead of pausing or skipping.
+        // Capped: a file with inflated duration metadata would otherwise
+        // stop→open→seek at the same spot forever.
         if (dur > const Duration(seconds: 3) &&
             pos < dur - const Duration(seconds: 2)) {
-          _retry(fromPosition: pos);
+          if (_eofRetries < 2) {
+            _eofRetries++;
+            _retry(fromPosition: pos);
+          }
           return;
         }
+        _eofRetries = 0;
         // Auto-advance only on a natural finish: not while looping a
         // single track and not while a manual track switch is mid-open.
         if (_autoNext && completed && !_isLooping && !_switching && _hasNext) {
@@ -334,6 +340,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     _resumeSub = null;
     _resumeApplied = false;
     _switching = true;
+    _eofRetries = 0;
     setState(() {
       _index = index;
       _error = null;
@@ -342,7 +349,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     try {
       await _open();
     } finally {
-      _switching = false;
+      if (index == _index) _switching = false;
     }
   }
 
@@ -397,14 +404,17 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     final newVol = (_volume + delta).clamp(0.0, 100.0);
     _player.setVolume(newVol);
     if (newVol > 0) _lastNonZeroVolume = newVol;
-    _saveVolume();
+    // _volume is updated by the stream listener a tick later; persist the
+    // value we just set or the last adjustment is lost.
+    _saveVolume(newVol);
   }
 
   /// Remember the level the user settled on; a muted session should not
   /// silence the next video.
-  void _saveVolume() {
-    final level = _volume > 0 ? _volume : _lastNonZeroVolume;
-    PreferencesService.instance.setString(_prefVolume, level.toStringAsFixed(0));
+  void _saveVolume([double? level]) {
+    final current = level ?? _volume;
+    final saved = current > 0 ? current : _lastNonZeroVolume;
+    PreferencesService.instance.setString(_prefVolume, saved.toStringAsFixed(0));
   }
 
   void _seekRelative(int seconds) {
@@ -418,16 +428,20 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
 
 
   Future<void> _open() async {
+    final generation = ++_openGeneration;
+    final track = _track;
+    final index = _index;
+    final resumeKey = _resumeKey;
     try {
       final String uri;
-      final native = joinNative(widget.root, _track.path);
+      final native = joinNative(widget.root, track.path);
       if (isNativeRoot(widget.root) && File(native).existsSync()) {
         uri = Uri.file(native).toString();
       } else {
         final base = (await startMediaStream(root: widget.root))
             .replaceFirst(RegExp(r'/$'), '');
         _startedStream = true;
-        final encoded = _track.path
+        final encoded = track.path
             .split('/')
             .where((segment) => segment.isNotEmpty)
             .map(Uri.encodeComponent)
@@ -437,19 +451,23 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
       }
       await _tunePlayerProperties();
       await _player.open(Media(uri));
+      // A newer open superseded this one while awaiting; touching session
+      // state now would attach metadata/resume to the wrong track.
+      if (generation != _openGeneration) return;
       GlobalPlaybackService.instance.setDesktopSession(
         root: widget.root,
-        path: _track.path,
-        fileName: _track.fileName,
-        isAudio: widget.isAudio,
+        path: track.path,
+        fileName: track.fileName,
+        isAudio: track.isAudio,
         playlist: widget.playlist,
-        currentIndex: _index,
+        currentIndex: index,
         player: _player,
         controller: _controller,
         startedStream: _startedStream,
         playbackSpeed: _playbackSpeed,
       );
       await _tunePlayerProperties();
+      if (generation != _openGeneration) return;
       if (_playbackSpeed != 1.0) {
         await _player.setRate(_playbackSpeed);
       }
@@ -460,7 +478,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
         _resumeApplied = true;
         _player.seek(resumePos);
       } else {
-        _applyResume();
+        _applyResume(resumeKey);
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -473,11 +491,11 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
   /// The duration is often still unknown right after `open`, so the seek waits
   /// for the first non-zero duration before deciding whether the saved spot is
   /// past the end.
-  void _applyResume() {
+  void _applyResume([String? key]) {
     if (_resumeApplied) return;
     _resumeApplied = true;
     final saved = int.tryParse(
-      PreferencesService.instance.getString(_resumeKey) ?? '',
+      PreferencesService.instance.getString(key ?? _resumeKey) ?? '',
     );
     if (saved == null || saved < 5000) return;
     _resumeSub = _player.stream.duration.listen((duration) {
@@ -552,27 +570,6 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
     }
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!Platform.isIOS) return;
-    if (_track.isAudio) return;
-
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
-      // iOS kills apps that perform OpenGL ES rendering in the background.
-      // Disabling video track stops GL rendering while audio keeps playing uninterrupted.
-      if (_player.state.playing) {
-        _wasPlayingBeforeBackground = true;
-      }
-      _player.setVideoTrack(VideoTrack.no());
-    } else if (state == AppLifecycleState.resumed) {
-      _player.setVideoTrack(VideoTrack.auto());
-      if (_wasPlayingBeforeBackground) {
-        _wasPlayingBeforeBackground = false;
-        _player.play();
-      }
-    }
-  }
-
   void _closeAndExit() {
     _isExplicitlyClosed = true;
     _saveResumePosition();
@@ -585,7 +582,6 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable().catchError((_) {});
     _playingSub?.cancel();
     _rateSub?.cancel();

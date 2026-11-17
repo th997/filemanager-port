@@ -45,6 +45,33 @@ void main() {
       expect(seekValue, greaterThanOrEqualTo(0.0));
     });
 
+    testWidgets('MediaPlayerTimeline updates time display during dragging', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                MediaPlayerTimeline(
+                  position: const Duration(seconds: 10),
+                  duration: const Duration(seconds: 100),
+                  onSeekChanged: (_) {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('00:10'), findsOneWidget);
+      final slider = find.byType(Slider);
+      final center = tester.getCenter(slider);
+      final gesture = await tester.startGesture(center);
+      await tester.pump();
+      expect(find.text('00:10'), findsNothing);
+      await gesture.up();
+      await tester.pump();
+    });
+
     testWidgets('MediaPlayerSpeedBadge triggers callback on tap', (tester) async {
       bool tapped = false;
       await tester.pumpWidget(

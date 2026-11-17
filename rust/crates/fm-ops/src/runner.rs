@@ -79,8 +79,17 @@ impl TaskManager {
 
     pub fn cancel(&self, id: &str) -> bool {
         if let Some(handle) = self.find(id) {
+            let mut p = handle.progress.lock().unwrap_or_else(|e| e.into_inner());
+            // A finished task must not be rewritten as cancelled: the row
+            // would claim the work was aborted after it actually completed.
+            if matches!(
+                p.state,
+                TaskState::Completed | TaskState::Failed | TaskState::Cancelled
+            ) {
+                return false;
+            }
             handle.cancel.cancel();
-            handle.progress.lock().unwrap_or_else(|e| e.into_inner()).state = TaskState::Cancelled;
+            p.state = TaskState::Cancelled;
             true
         } else {
             false
@@ -289,7 +298,9 @@ async fn copy_single_file(
     if let Ok(existing) = dst_vfs.stat(dst_path).await {
         match policy {
             ConflictPolicy::Skip => {
-                progress.lock().unwrap_or_else(|e| e.into_inner()).skipped += 1;
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                p.skipped += 1;
+                p.policy_skips += 1;
                 return Ok(());
             }
             ConflictPolicy::Rename => {
@@ -325,10 +336,16 @@ async fn copy_single_file(
     // a cancelled or failed copy both destroyed the previous version and
     // left a truncated file behind.
     let dst_name = target.name().unwrap_or("file");
+    // Unique per attempt: two concurrent tasks writing the same destination
+    // used to share `{name}.fm-part` and interleave their bytes.
+    let tmp_name = format!(
+        "{dst_name}.{}.fm-part",
+        uuid::Uuid::new_v4().simple()
+    );
     let tmp_path = target
         .parent()
         .unwrap_or_else(VfsPath::root)
-        .join(format!("{dst_name}.fm-part"));
+        .join(tmp_name);
 
     if let Err(e) =
         stream_into(src_vfs, src_path, dst_vfs, &tmp_path, progress, cancel).await
@@ -352,8 +369,20 @@ async fn copy_single_file(
                 let _ = dst_vfs.remove(&tmp_path).await;
                 return Err(first_err);
             }
-            let _ = dst_vfs.remove(&target).await;
+            // Move the old file aside instead of deleting it: if the second
+            // rename fails too, the previous version is still recoverable.
+            let backup_path = target
+                .parent()
+                .unwrap_or_else(VfsPath::root)
+                .join(format!(
+                    "{dst_name}.{}.fm-old",
+                    uuid::Uuid::new_v4().simple()
+                ));
+            let had_backup = dst_vfs.rename(&target, &backup_path).await.is_ok();
             if dst_vfs.rename(&tmp_path, &target).await.is_err() {
+                if had_backup {
+                    let _ = dst_vfs.rename(&backup_path, &target).await;
+                }
                 let _ = dst_vfs.remove(&tmp_path).await;
                 // If rename still failed (e.g. backend lacks rename capability or refuses temp file rename),
                 // rollback progress before streaming directly into target so progress doesn't stick at 100%.
@@ -363,6 +392,9 @@ async fn copy_single_file(
                     p.completed = p.completed.saturating_sub(file_len);
                 }
                 return stream_into(src_vfs, src_path, dst_vfs, &target, progress, cancel).await;
+            }
+            if had_backup {
+                let _ = dst_vfs.remove(&backup_path).await;
             }
             Ok(())
         }

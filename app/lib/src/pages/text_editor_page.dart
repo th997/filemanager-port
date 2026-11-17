@@ -502,6 +502,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
     if (_matchIndices.isEmpty) return;
     final idx = _matchIndices[_currentMatchIndex];
     final len = _findController.text.length;
+    // The match list can lag the buffer by the 300ms debounce after an
+    // edit; selecting a stale offset would throw or land past the text.
+    if (idx < 0 || idx + len > _controller.text.length) {
+      _updateMatches(jumpToMatch: true, forceScroll: forceScroll);
+      return;
+    }
     _controller.selection = TextSelection(baseOffset: idx, extentOffset: idx + len);
     _scrollToMatch(idx, force: forceScroll);
   }
@@ -707,7 +713,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Future<void> _save() async {
-    if (_loading || _error != null) return;
+    if (_loading || _error != null || _saving) return;
     setState(() => _saving = true);
     final savedText = _controller.text;
     try {

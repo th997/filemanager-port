@@ -118,7 +118,14 @@ pub async fn remove_history(db_path: String, root: String, path: String) -> Resu
 pub async fn move_to_trash(db_path: String, source_path: String) -> Result<(), String> {
     let db = open_db(&db_path)?;
     let src = PathBuf::from(&source_path);
-    let meta = std::fs::symlink_metadata(&src).map_err(|e| e.to_string())?;
+    // A cross-device move degrades to a recursive copy and can move GBs;
+    // it must not block a tokio worker.
+    let meta = tokio::task::spawn_blocking({
+        let src = src.clone();
+        move || std::fs::symlink_metadata(&src).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let is_dir = meta.is_dir();
     let size = meta.len();
 
@@ -130,7 +137,6 @@ pub async fn move_to_trash(db_path: String, source_path: String) -> Result<(), S
 
     let unique_name = Uuid::new_v4().to_string();
     let stored_dest = trash_dir.join(&unique_name);
-    move_path(&src, &stored_dest).map_err(|e| e.to_string())?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -144,7 +150,21 @@ pub async fn move_to_trash(db_path: String, source_path: String) -> Result<(), S
         deleted_at_millis: now,
     };
 
-    db.add_trash_item(&item, size).map_err(|e| e.to_string())?;
+    // Record first, move second: a failed insert after the move left the
+    // file stranded in the trash dir with no row pointing at it, i.e. the
+    // user's file silently vanished. On a failed move, drop the row again.
+    let id = db.add_trash_item(&item, size).map_err(|e| e.to_string())?;
+    let move_result = tokio::task::spawn_blocking({
+        let src = src.clone();
+        let stored_dest = stored_dest.clone();
+        move || move_path(&src, &stored_dest)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Err(e) = move_result {
+        let _ = db.remove_trash_item(id);
+        return Err(e.to_string());
+    }
     let _ = is_dir;
     Ok(())
 }
@@ -187,7 +207,14 @@ pub async fn restore_trash_item(db_path: String, id: String) -> Result<(), Strin
             let _ = std::fs::create_dir_all(parent);
         }
 
-        move_path(&stored, &original).map_err(|e| e.to_string())?;
+        tokio::task::spawn_blocking({
+            let stored = stored.clone();
+            let original = original.clone();
+            move || move_path(&stored, &original)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
         db.remove_trash_item(numeric_id).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -263,7 +290,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// returned so the entry stays in the bin instead of silently vanishing from
 /// the list while its bytes remain on disk.
 fn remove_stored(stored: &Path) -> Result<(), String> {
-    let result = if stored.is_dir() {
+    // symlink_metadata: `is_dir()` follows links, so a symlink pointing at
+    // a directory took the remove_dir_all path, failed, and the entry could
+    // never be deleted.
+    let is_real_dir = std::fs::symlink_metadata(stored)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+    let result = if is_real_dir {
         std::fs::remove_dir_all(stored)
     } else {
         std::fs::remove_file(stored)

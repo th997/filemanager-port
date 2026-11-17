@@ -5,16 +5,103 @@ import 'package:path_provider/path_provider.dart';
 class PlatformPaths {
   static String? _iosDocuments;
   static String? _iosSupport;
+  static String? _androidSupport;
 
-  /// iOS only: resolve the app sandbox directories before anything else runs.
+  /// Resolve app-private directories before anything else runs.
   ///
   /// `$HOME` inside an iOS sandbox is not a browsable location, so the
-  /// environment-based fallbacks used on desktop do not work there.
+  /// environment-based fallbacks used on desktop do not work there. On
+  /// Android the database and backups must live in app-private storage,
+  /// not shared storage where any app can read credentials.
   static Future<void> init() async {
-    if (!Platform.isIOS) return;
+    if (Platform.isIOS) {
+      try {
+        _iosDocuments = (await getApplicationDocumentsDirectory()).path;
+        _iosSupport = (await getApplicationSupportDirectory()).path;
+      } catch (_) {}
+    } else if (Platform.isAndroid) {
+      try {
+        _androidSupport = (await getApplicationSupportDirectory()).path;
+      } catch (_) {}
+      _migrateLegacyAndroidData();
+    }
+  }
+
+  static const _legacyAndroidDir = '/storage/emulated/0/.filemanager';
+
+  /// Older builds kept the database and preferences in shared storage.
+  /// Move them into the private dir once, then remove the exposed copies.
+  static void _migrateLegacyAndroidData() {
+    final target = _androidSupport;
+    if (target == null || target == _legacyAndroidDir) return;
     try {
-      _iosDocuments = (await getApplicationDocumentsDirectory()).path;
-      _iosSupport = (await getApplicationSupportDirectory()).path;
+      final legacy = Directory(_legacyAndroidDir);
+      if (!legacy.existsSync()) return;
+      Directory(target).createSync(recursive: true);
+      // The DB runs in WAL mode: recent commits live in the -wal sidecar
+      // until a checkpoint. Copying only the .db silently dropped them.
+      // `master.key` holds the credential key and is looked up next to the
+      // DB, so leaving it behind makes every saved remote config
+      // undecryptable in the new location.
+      final files = <String>[
+        'filemanager.db',
+        'filemanager.db-wal',
+        'filemanager.db-shm',
+        'master.key',
+        'preferences.json',
+      ];
+      for (final name in files) {
+        final old = File('$_legacyAndroidDir/$name');
+        final dst = File('$target/$name');
+        if (old.existsSync() && !dst.existsSync()) {
+          try {
+            old.copySync(dst.path);
+          } catch (_) {}
+        }
+      }
+      // The private dir may already hold a key minted by a launch that ran
+      // before this migration. In that case the legacy key is the only one
+      // that can decrypt the rows just copied, so keep it in the private
+      // dir as a fallback before removing the exposed shared-storage copy.
+      final legacyKey = File('$_legacyAndroidDir/master.key');
+      final newKey = File('$target/master.key');
+      if (legacyKey.existsSync() && newKey.existsSync()) {
+        try {
+          if (legacyKey.readAsStringSync() != newKey.readAsStringSync()) {
+            final fallback = File('$target/master.key.legacy');
+            if (!fallback.existsSync()) {
+              legacyKey.copySync(fallback.path);
+            }
+          }
+        } catch (_) {}
+      }
+      // Delete only after every copy landed, so an interrupted migration
+      // leaves the legacy set intact for the next launch.
+      for (final name in files) {
+        final old = File('$_legacyAndroidDir/$name');
+        final dst = File('$target/$name');
+        if (old.existsSync() && dst.existsSync()) {
+          try {
+            old.deleteSync();
+          } catch (_) {}
+        }
+      }
+      for (final name in ['remotes_backup.json', 'bookmarks_backup.json']) {
+        final old = File('/storage/emulated/0/$name');
+        if (old.existsSync()) {
+          final dst = File('$target/$name');
+          if (!dst.existsSync()) {
+            try {
+              old.copySync(dst.path);
+            } catch (_) {}
+          }
+          if (dst.existsSync()) {
+            try {
+              old.deleteSync();
+            } catch (_) {}
+          }
+        }
+      }
     } catch (_) {}
   }
 
@@ -42,7 +129,7 @@ class PlatformPaths {
       // the database and preferences belong.
       dir = _iosSupport ?? _iosDocuments ?? Directory.systemTemp.path;
     } else if (Platform.isAndroid) {
-      dir = '/storage/emulated/0/.filemanager';
+      dir = _androidSupport ?? _legacyAndroidDir;
     } else if (Platform.isWindows) {
       final appData = Platform.environment['APPDATA'] ?? Platform.environment['USERPROFILE'] ?? 'C:\\';
       dir = '$appData\\filemanager';

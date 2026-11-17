@@ -410,6 +410,7 @@ impl Vfs for FtpFs {
 
         // Some servers reject SIZE; fall back to the parent listing before
         // concluding this is a directory.
+        let mut listed = false;
         if size.is_none() {
             let parent = ftp_path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
             let parent = if parent.is_empty() { "/" } else { parent };
@@ -419,13 +420,23 @@ impl Vfs for FtpFs {
                     if let Ok(f) = ListParser::parse_posix(&line)
                         .or_else(|_| ListParser::parse_dos(&line))
                     {
-                        if f.name() == name && !f.is_directory() {
-                            size = Some(f.size() as u64);
+                        if f.name() == name {
+                            listed = true;
+                            if !f.is_directory() {
+                                size = Some(f.size() as u64);
+                            }
                             break;
                         }
                     }
                 }
             }
+        }
+
+        // SIZE said nothing and the listing does not contain the name:
+        // treating it as a directory made every conflict probe report
+        // "exists", so Skip skipped everything and Rename renamed blindly.
+        if size.is_none() && !listed && !path.is_root() {
+            return Err(VfsError::NotFound { path: path.clone() });
         }
 
         Ok(Entry {

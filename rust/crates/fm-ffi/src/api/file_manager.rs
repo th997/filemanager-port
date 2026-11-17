@@ -524,7 +524,19 @@ pub async fn export_to_native(
 ) -> Result<String, String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
-    let name = vfs_path.name().unwrap_or("file").to_string();
+    let raw_name = vfs_path.name().unwrap_or("file");
+    // The name comes from a remote server's listing; a malicious server can
+    // return names containing separators or "..", which would write outside
+    // the cache dir through the join below.
+    let name: String = raw_name
+        .chars()
+        .map(|c| if c == '/' || c == '\\' || c == '\0' { '_' } else { c })
+        .collect();
+    let name = if name == ".." || name == "." || name.is_empty() {
+        "file".to_string()
+    } else {
+        name
+    };
     let dir = Path::new(&cache_dir);
     let native = dir.join(name);
     tokio::fs::create_dir_all(dir)

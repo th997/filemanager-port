@@ -44,6 +44,11 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
   String? _streamUrl;
   String? _error;
 
+  // Untrusted local HTML must not run scripts by default: the preview is
+  // same-origin with the loopback file stream, so JS could read and exfiltrate
+  // every file under the shared root.
+  bool _jsEnabled = false;
+
   bool get _isWebViewSupported =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
@@ -88,6 +93,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
   Future<bool> _handleUrlTap(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return false;
+    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
     if (Platform.isLinux) {
       try {
         await Process.start('gio', ['open', url], mode: ProcessStartMode.detached);
@@ -109,6 +115,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
 
   @override
   void dispose() {
+    _controller?.setNavigationDelegate(NavigationDelegate());
     _loadingNotifier.dispose();
     _progressNotifier.dispose();
     super.dispose();
@@ -148,12 +155,14 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
         final encodedSegments = cleanPath.split('/').map(Uri.encodeComponent).join('/');
         fullUrl = '$base$encodedSegments';
       } catch (_) {}
+      if (!mounted) return;
 
       _streamUrl = fullUrl;
 
       late final WebViewController controller;
       controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setJavaScriptMode(
+            _jsEnabled ? JavaScriptMode.unrestricted : JavaScriptMode.disabled)
         ..setBackgroundColor(Colors.white)
         ..addJavaScriptChannel(
           'ImagePreviewChannel',
@@ -164,15 +173,18 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
         ..setNavigationDelegate(
           NavigationDelegate(
             onProgress: (p) {
+              if (!mounted) return;
               _progressNotifier.value = p / 100.0;
             },
             onPageStarted: (_) {
+              if (!mounted) return;
               _loadingNotifier.value = true;
             },
             onPageFinished: (_) {
+              if (!mounted) return;
               _loadingNotifier.value = false;
               _progressNotifier.value = 1.0;
-              _injectScripts(controller);
+              if (_jsEnabled) _injectScripts(controller);
             },
             onWebResourceError: (err) {
               if (err.isForMainFrame ?? true) {
@@ -277,6 +289,52 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
     }
   }
 
+  void _toggleJs() {
+    setState(() => _jsEnabled = !_jsEnabled);
+    _initWebView();
+  }
+
+  static final _imgTagRe = RegExp(r'<img\b[^>]*>', caseSensitive: false);
+  static final _imgSrcRe = RegExp(r'''src\s*=\s*["']([^"']+)["']''', caseSensitive: false);
+  static final _imgAltRe = RegExp(r'''alt\s*=\s*["']([^"']*)["']''', caseSensitive: false);
+
+  bool get _hasHtmlImages => _imgTagRe.hasMatch(widget.rawHtml);
+
+  // With scripts disabled the in-page click bindings cannot run; parse the
+  // <img> tags on the Dart side so image preview still works.
+  Future<void> _openExtractedImages() async {
+    final siblings = <ImageViewerEntry>[];
+    var i = 0;
+    for (final m in _imgTagRe.allMatches(widget.rawHtml)) {
+      final tag = m.group(0)!;
+      final src = _imgSrcRe.firstMatch(tag)?.group(1);
+      if (src == null || src.isEmpty) continue;
+      final alt = _imgAltRe.firstMatch(tag)?.group(1) ?? '';
+      final entry = await _resolveImageEntry(src, alt, i++);
+      if (entry != null) siblings.add(entry);
+    }
+    if (siblings.isEmpty || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerPage(
+          filePath: siblings.first.localPath ?? '',
+          fileName: siblings.first.name,
+          siblings: siblings,
+          initialIndex: 0,
+        ),
+      ),
+    );
+  }
+
+  static String _contentHash(List<int> bytes) {
+    var h = 0xcbf29ce484222325;
+    for (final b in bytes) {
+      h ^= b;
+      h = (h * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+    }
+    return h.toRadixString(16);
+  }
+
   String _resolveRelativePath(String basePath, String relative) {
     if (relative.startsWith('/') ||
         relative.startsWith('http://') ||
@@ -320,7 +378,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
           final bytes = base64Decode(base64Data);
           final tempDir = await getTemporaryDirectory();
           final name = alt.isNotEmpty ? alt : 'image_$index.$ext';
-          final file = File('${tempDir.path}/html_b64_${bytes.hashCode}.$ext');
+          final file = File('${tempDir.path}/html_b64_${_contentHash(bytes)}.$ext');
           if (!file.existsSync()) {
             await file.writeAsBytes(bytes);
           }
@@ -610,6 +668,36 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
                 },
               );
             },
+          ),
+        ),
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!_jsEnabled && _hasHtmlImages)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FloatingActionButton.small(
+                    heroTag: null,
+                    onPressed: _openExtractedImages,
+                    tooltip: '预览图片',
+                    child: const Icon(Icons.image_outlined, size: 18),
+                  ),
+                ),
+              FloatingActionButton.small(
+                heroTag: null,
+                onPressed: _toggleJs,
+                tooltip: _jsEnabled
+                    ? '脚本已启用：页面代码可访问共享目录内的文件，点击禁用'
+                    : '脚本已禁用（安全默认），点击启用',
+                backgroundColor: _jsEnabled
+                    ? Theme.of(context).colorScheme.errorContainer
+                    : Theme.of(context).colorScheme.surfaceContainerHigh,
+                child: Icon(_jsEnabled ? Icons.code_off : Icons.code, size: 18),
+              ),
+            ],
           ),
         ),
       ],

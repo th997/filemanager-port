@@ -248,7 +248,7 @@ async fn handle_stream(
     })
 }
 
-enum RangeSpec {
+pub(crate) enum RangeSpec {
     None,
     Satisfiable { offset: u64, length: u64 },
     Unsatisfiable,
@@ -259,7 +259,7 @@ enum RangeSpec {
 /// Multi-range requests and malformed values are ignored (the whole entity is
 /// served). A well-formed range past the end is unsatisfiable and must produce
 /// `416`, not an empty `206`.
-fn parse_range(value: Option<&HeaderValue>, total: Option<u64>) -> RangeSpec {
+pub(crate) fn parse_range(value: Option<&HeaderValue>, total: Option<u64>) -> RangeSpec {
     let value = match value.and_then(|v| v.to_str().ok()) {
         Some(value) => value,
         None => return RangeSpec::None,

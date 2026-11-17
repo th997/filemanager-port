@@ -1,9 +1,9 @@
 //! Axum-based HTTP local network sharing server with web UI and media streaming.
 
-use axum::extract::{DefaultBodyLimit, Multipart, Path as AxumPath, Query, Request, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path as AxumPath, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
-use axum::response::{Html, Response};
+use axum::response::{Html, IntoResponse, Response};
 use base64::Engine as _;
 use axum::routing::{get, post};
 use axum::{body::Body, Json, Router};
@@ -29,6 +29,8 @@ pub struct ServerState {
     /// the password: a share link must never disclose the password itself.
     pub share_token: String,
     pub read_only: bool,
+    /// Failed auth attempts per client IP, for brute-force throttling.
+    pub auth_failures: std::sync::Mutex<std::collections::HashMap<std::net::IpAddr, (u32, std::time::Instant)>>,
 }
 
 #[derive(Serialize)]
@@ -103,6 +105,7 @@ pub async fn start_http_share(
         password: Some(password),
         share_token: share_token.clone(),
         read_only,
+        auth_failures: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
     let app = Router::new()
@@ -120,7 +123,10 @@ pub async fn start_http_share(
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     tokio::spawn(async move {
-        let _ = axum::serve(listener, app)
+        let _ = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
             })
@@ -206,13 +212,61 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
 async fn require_auth(
     State(state): State<Arc<ServerState>>,
     headers: HeaderMap,
-    Query(query): Query<AuthQuery>,
     request: Request,
     next: Next,
 ) -> Response {
+    // Parse the token from the URI directly: a Query extractor would
+    // consume the request body, which middleware must pass through.
+    let mut query = AuthQuery { token: None };
+    if let Some(q) = request.uri().query() {
+        for pair in q.split('&') {
+            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+            if k == "token" {
+                query.token = Some(percent_decode_str(v));
+            }
+        }
+    }
+    // ConnectInfo is inserted by into_make_service_with_connect_info; read
+    // it from the extensions so the middleware signature stays generic.
+    let peer_ip = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .unwrap_or_else(|| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    let now = std::time::Instant::now();
+    let locked_out = {
+        let failures = state.auth_failures.lock().unwrap_or_else(|e| e.into_inner());
+        match failures.get(&peer_ip) {
+            // Exponential backoff: 5+ failures lock the IP out for a window
+            // that grows with the count, so 0.0.0.0 sharing is not a free
+            // brute-force target.
+            Some((count, last)) if *count >= 5 => {
+                let window = std::time::Duration::from_secs(
+                    5u64.saturating_mul(*count as u64).min(300),
+                );
+                now.duration_since(*last) < window
+            }
+            _ => false,
+        }
+    };
+    if locked_out {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+
     if check_auth(&headers, &query, &state) {
+        {
+            let mut failures = state.auth_failures.lock().unwrap_or_else(|e| e.into_inner());
+            failures.remove(&peer_ip);
+        }
         next.run(request).await
     } else {
+        let mut failures = state.auth_failures.lock().unwrap_or_else(|e| e.into_inner());
+        if failures.len() > 1024 {
+            failures.retain(|_, (_, last)| now.duration_since(*last) < std::time::Duration::from_secs(3600));
+        }
+        let entry = failures.entry(peer_ip).or_insert((0, now));
+        entry.0 = entry.0.saturating_add(1);
+        entry.1 = now;
         unauthorized_response()
     }
 }
@@ -1173,6 +1227,39 @@ async fn handle_list_internal(
     Ok(Json(items))
 }
 
+fn percent_decode_str(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16);
+                let lo = (bytes[i + 2] as char).to_digit(16);
+                match (hi, lo) {
+                    (Some(h), Some(l)) => {
+                        out.push((h * 16 + l) as u8);
+                        i += 3;
+                    }
+                    _ => {
+                        out.push(bytes[i]);
+                        i += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn percent_encode(s: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let bytes = s.as_bytes();
@@ -1217,14 +1304,57 @@ async fn handle_download(
     let encoded_name = percent_encode(file_name);
     let disposition = format!("attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{encoded_name}");
 
-    let stream = ReaderStream::with_capacity(file, 64 * 1024);
-    let body = Body::from_stream(stream);
+    // Honour Range so browsers can seek in shared media and resume
+    // interrupted downloads; the stream path already does this.
+    let (offset, length, status) = match crate::stream::parse_range(
+        headers.get(header::RANGE),
+        Some(total_size),
+    ) {
+        crate::stream::RangeSpec::None => (0u64, None, StatusCode::OK),
+        crate::stream::RangeSpec::Satisfiable { offset, length } => {
+            (offset, Some(length), StatusCode::PARTIAL_CONTENT)
+        }
+        crate::stream::RangeSpec::Unsatisfiable => {
+            let mut response = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+            if let Ok(value) = header::HeaderValue::from_str(&format!("bytes */{total_size}")) {
+                response.headers_mut().insert(header::CONTENT_RANGE, value);
+            }
+            return Ok(response);
+        }
+    };
 
-    let response = Response::builder()
-        .status(StatusCode::OK)
+    let reader: Box<dyn tokio::io::AsyncRead + Send + Unpin> = if offset > 0 || length.is_some() {
+        let mut f = file;
+        use tokio::io::AsyncSeekExt;
+        f.seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        match length {
+            Some(len) => Box::new(tokio::io::AsyncReadExt::take(f, len)),
+            None => Box::new(f),
+        }
+    } else {
+        Box::new(file)
+    };
+
+    let body = Body::from_stream(ReaderStream::with_capacity(reader, 64 * 1024));
+
+    let mut builder = Response::builder()
+        .status(status)
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(header::CONTENT_DISPOSITION, disposition)
-        .header(header::CONTENT_LENGTH, total_size.to_string())
+        .header(header::ACCEPT_RANGES, "bytes");
+    builder = match length {
+        Some(len) => builder
+            .header(header::CONTENT_LENGTH, len.to_string())
+            .header(
+                header::CONTENT_RANGE,
+                format!("bytes {}-{}/{}", offset, offset + len - 1, total_size),
+            ),
+        None => builder.header(header::CONTENT_LENGTH, total_size.to_string()),
+    };
+
+    let response = builder
         .body(body)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1319,6 +1449,7 @@ mod tests {
             password: password.map(str::to_string),
             share_token: token.to_string(),
             read_only: true,
+            auth_failures: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 

@@ -103,7 +103,7 @@ void main() {
     });
 
     test('PickedFiles supports multiple paths including folders', () {
-      const picked = PickedFiles(
+      final picked = PickedFiles(
         root: '/storage/emulated/0',
         paths: ['DCIM/Camera', 'Documents/Report.pdf', 'Downloads/music'],
       );

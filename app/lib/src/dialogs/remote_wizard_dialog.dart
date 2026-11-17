@@ -195,7 +195,11 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
 
     try {
       final config = _buildConfig();
-      final ok = await StorageService.instance.testConnection(config);
+      // A silent hang on a firewalled host blocks the dialog for the OS TCP
+      // timeout (~2 min); match the remotes page's 8s probe.
+      final ok = await StorageService.instance
+          .testConnection(config)
+          .timeout(const Duration(seconds: 8));
       if (mounted) {
         setState(() {
           _testing = false;
@@ -219,13 +223,35 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     final config = _buildConfig();
     final oldId = widget.initialConfig?.id;
     try {
+      // Upsert on an existing id would silently replace another connection.
+      final existing = await StorageService.instance.getRemotes();
+      final clash = existing.where((r) => r.id == config.id && r.id != oldId);
+      if (clash.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _testSuccess = false;
+            _testResult = 'ID "${config.id}" is already used by "${clash.first.name}"';
+          });
+        }
+        return;
+      }
       // Save the new record first: deleting the old one before the save
       // meant a failed save (DB error, validation) destroyed the existing
       // connection for good.
       await StorageService.instance.saveRemote(config);
       if (oldId != null && oldId != config.id) {
-        await StorageService.instance.deleteRemote(oldId);
-        invalidateRoot(root: 'remote://$oldId');
+        try {
+          await StorageService.instance.deleteRemote(oldId);
+          invalidateRoot(root: 'remote://$oldId');
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              _testSuccess = true;
+              _testResult =
+                  'Saved, but the old entry "$oldId" could not be removed: $e';
+            });
+          }
+        }
       }
     } catch (e) {
       if (mounted) {

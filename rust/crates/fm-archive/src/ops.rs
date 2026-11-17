@@ -91,6 +91,7 @@ impl<W: std::io::Write> std::io::Write for CountingWriter<W> {
 struct CreatedPaths {
     files: Vec<std::path::PathBuf>,
     dirs: Vec<std::path::PathBuf>,
+    temps: Vec<std::path::PathBuf>,
 }
 
 impl CreatedPaths {
@@ -98,6 +99,12 @@ impl CreatedPaths {
         if !target.exists() {
             self.files.push(target.to_path_buf());
         }
+    }
+
+    /// Temp files always belong to this extraction, whether or not a file
+    /// already existed at the final path.
+    fn track_temp(&mut self, tmp: &Path) {
+        self.temps.push(tmp.to_path_buf());
     }
 
     fn track_parent_dirs(&mut self, target: &Path, dest: &Path) {
@@ -117,10 +124,55 @@ impl CreatedPaths {
         for file in &self.files {
             let _ = std::fs::remove_file(file);
         }
+        for tmp in &self.temps {
+            let _ = std::fs::remove_file(tmp);
+        }
         let mut dirs = self.dirs.clone();
         dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
         for dir in dirs {
             let _ = std::fs::remove_dir(dir);
+        }
+    }
+}
+
+fn sibling_tmp_path(target: &Path) -> std::path::PathBuf {
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("entry");
+    let pid = std::process::id();
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_name = format!(".{name}.{pid}.{unique}.fm-part");
+    match target.parent() {
+        Some(parent) => parent.join(tmp_name),
+        None => std::path::PathBuf::from(tmp_name),
+    }
+}
+
+/// Move the finished temp file into place.
+///
+/// Windows `rename` refuses to replace an existing file, so an overwrite
+/// first moves the old target aside and puts it back if the swap fails.
+fn install_temp(tmp: &Path, target: &Path) -> std::io::Result<()> {
+    if std::fs::rename(tmp, target).is_ok() {
+        return Ok(());
+    }
+    if !target.exists() {
+        return std::fs::rename(tmp, target);
+    }
+    let backup = sibling_tmp_path(target).with_extension("fm-old");
+    std::fs::rename(target, &backup)?;
+    match std::fs::rename(tmp, target) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&backup);
+            Ok(())
+        }
+        Err(e) => {
+            let _ = std::fs::rename(&backup, target);
+            Err(e)
         }
     }
 }
@@ -269,8 +321,13 @@ fn extract_inner(
                     if let Some(parent) = target.parent() {
                         std::fs::create_dir_all(parent).map_err(backend_err)?;
                     }
-                    created.track_file(&target);
-                    let out = File::create(&target).map_err(backend_err)?;
+                    // Extract beside the target and rename over it only on
+                    // success: truncating an existing file in place destroyed
+                    // it even when extraction later failed or hit the budget,
+                    // and cleanup only ever removed files it had created.
+                    let tmp = sibling_tmp_path(&target);
+                    created.track_temp(&tmp);
+                    let out = File::create(&tmp).map_err(backend_err)?;
                     let mut out = std::io::BufWriter::with_capacity(128 * 1024, out);
                     let mut writer = CountingWriter {
                         inner: &mut out,
@@ -283,10 +340,12 @@ fn extract_inner(
                     if let Some(mode) = entry.unix_mode() {
                         use std::os::unix::fs::PermissionsExt;
                         let _ = std::fs::set_permissions(
-                            &target,
+                            &tmp,
                             std::fs::Permissions::from_mode(mode & 0o777),
                         );
                     }
+                    created.track_file(&target);
+                    install_temp(&tmp, &target).map_err(backend_err)?;
                 }
             }
             Ok(())
@@ -346,8 +405,11 @@ fn extract_inner(
                         if let Some(parent) = target.parent() {
                             std::fs::create_dir_all(parent).map_err(sevenz_rust::Error::io)?;
                         }
-                        created.track_file(&target);
-                        let file = File::create(&target).map_err(sevenz_rust::Error::io)?;
+                        // Same temp-then-install rule as zip: never truncate
+                        // an existing file before the entry fully extracted.
+                        let tmp = sibling_tmp_path(&target);
+                        created.track_temp(&tmp);
+                        let file = File::create(&tmp).map_err(sevenz_rust::Error::io)?;
                         let mut file = std::io::BufWriter::with_capacity(128 * 1024, file);
                         let mut limited = CountingReader {
                             inner: reader,
@@ -355,6 +417,9 @@ fn extract_inner(
                         };
                         std::io::copy(&mut limited, &mut file).map_err(sevenz_rust::Error::io)?;
                         file.flush().map_err(sevenz_rust::Error::io)?;
+                        drop(file);
+                        created.track_file(&target);
+                        install_temp(&tmp, &target).map_err(sevenz_rust::Error::io)?;
                     }
                     Ok(true)
                 },
@@ -405,6 +470,19 @@ fn extract_tar<R: std::io::Read>(
             if let Some(target) = safe_join(destination_dir, &entry_str) {
                 assert_contained(destination_dir, &target).map_err(backend_err)?;
                 created.track_parent_dirs(&target, destination_dir);
+                // Regular files go through a sibling temp so an existing
+                // file is only replaced once the entry fully unpacked.
+                if entry.header().entry_type().is_file() {
+                    if let Some(parent) = target.parent() {
+                        std::fs::create_dir_all(parent).map_err(backend_err)?;
+                    }
+                    let tmp = sibling_tmp_path(&target);
+                    created.track_temp(&tmp);
+                    entry.unpack(&tmp).map_err(backend_err)?;
+                    created.track_file(&target);
+                    install_temp(&tmp, &target).map_err(backend_err)?;
+                    continue;
+                }
                 created.track_file(&target);
             }
         }
@@ -514,7 +592,7 @@ fn create_zip_inner(
         }
         let source = source_ref.as_ref();
         if let Ok(sc) = source.canonicalize() {
-            if exclude_canon.iter().any(|dc| sc == *dc) {
+            if exclude_canon.contains(&sc) {
                 continue;
             }
         }
@@ -588,7 +666,7 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
         })?;
         let path = entry.path();
         if let Ok(pc) = path.canonicalize() {
-            if exclude_canon.iter().any(|dc| pc == *dc) {
+            if exclude_canon.contains(&pc) {
                 continue;
             }
         }
@@ -662,6 +740,30 @@ mod tests {
         let dest = dir.path().join("out");
         assert!(extract_archive_with_cancel(&zip_path, &dest, &cancel).is_err());
         assert!(!dest.join("f0.txt").exists(), "cancelled extraction wrote a file");
+    }
+
+    #[test]
+    fn failed_extraction_rolls_back_created_files() {
+        let dir = tempdir().unwrap();
+        let zip_path = dir.path().join("corrupt_second.zip");
+        {
+            let file = File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("first.txt", options).unwrap();
+            writer.write_all(b"first file content").unwrap();
+            // Second entry has an unsafe path that fails validation mid-extraction
+            writer.start_file("../outside.txt", options).unwrap();
+            writer.write_all(b"malicious").unwrap();
+            writer.finish().unwrap();
+        }
+        let dest = dir.path().join("out");
+        assert!(extract_archive(&zip_path, &dest).is_err());
+        assert!(
+            !dest.join("first.txt").exists(),
+            "first entry should be rolled back when subsequent entry fails"
+        );
     }
 
     #[cfg(unix)]

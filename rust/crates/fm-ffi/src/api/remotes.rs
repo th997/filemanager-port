@@ -107,8 +107,28 @@ pub async fn list_remotes(db_path: String) -> Result<Vec<RemoteConfigDto>, Strin
 
     let mut list = Vec::new();
     for r in records {
-        if let Ok(cfg) = serde_json::from_str::<RemoteConfig>(&r.config_json) {
-            list.push(RemoteConfigDto::from(cfg));
+        match serde_json::from_str::<RemoteConfig>(&r.config_json) {
+            Ok(cfg) => list.push(RemoteConfigDto::from(cfg)),
+            // A row whose config cannot be decrypted (master key lost) used
+            // to be dropped here, so the connection silently vanished from
+            // the UI while its row stayed in the database. Keep it visible
+            // under its stored name so it can be re-entered or deleted.
+            Err(_) => list.push(RemoteConfigDto {
+                id: r.id,
+                name: r.display_name,
+                kind: r.kind,
+                endpoint: None,
+                bucket: None,
+                region: None,
+                access_key_id: None,
+                secret_access_key: None,
+                host: None,
+                port: None,
+                username: None,
+                password: None,
+                root_path: None,
+                path_style: false,
+            }),
         }
     }
     Ok(list)

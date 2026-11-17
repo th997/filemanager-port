@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart' show Color, TextStyle;
@@ -265,6 +266,39 @@ class MarkdownPdfService {
 
   /// Generates a PDF byte stream from Markdown text, themed with [themeConfig].
   Future<Uint8List> generatePdf({
+    required String markdown,
+    required String title,
+    MarkdownThemeConfig? themeConfig,
+    PdfMarginMode marginMode = PdfMarginMode.standard,
+    pw.Font? customRegularFont,
+    pw.Font? customBoldFont,
+    List<pw.Font>? customFontFallback,
+  }) {
+    // pw.Font objects cannot cross an isolate boundary; the default path
+    // (system fonts, no caller-supplied fonts) is pure Dart/IO and runs
+    // off the UI isolate so large documents do not freeze the app.
+    if (customRegularFont != null ||
+        customBoldFont != null ||
+        customFontFallback != null) {
+      return _buildPdf(
+        markdown: markdown,
+        title: title,
+        themeConfig: themeConfig,
+        marginMode: marginMode,
+        customRegularFont: customRegularFont,
+        customBoldFont: customBoldFont,
+        customFontFallback: customFontFallback,
+      );
+    }
+    return Isolate.run(() => _buildPdf(
+          markdown: markdown,
+          title: title,
+          themeConfig: themeConfig,
+          marginMode: marginMode,
+        ));
+  }
+
+  Future<Uint8List> _buildPdf({
     required String markdown,
     required String title,
     MarkdownThemeConfig? themeConfig,
@@ -1087,6 +1121,19 @@ class MarkdownPdfService {
             decoration: pw.TextDecoration.underline,
           );
           break;
+        case 'img':
+          // Images are not embedded; leave a visible marker instead of
+          // silently dropping them.
+          final alt = node.attributes['alt'] ?? '';
+          final src = node.attributes['src'] ?? '';
+          final label = alt.isNotEmpty ? alt : src;
+          return pw.TextSpan(
+            text: label.isEmpty ? '[image]' : '[image: $label]',
+            style: baseStyle.copyWith(
+              color: PdfColors.grey600,
+              fontStyle: pw.FontStyle.italic,
+            ),
+          );
       }
 
       final children = node.children;
@@ -1227,11 +1274,8 @@ class _PdfHighlightSpan {
   }) : children = children ?? [];
 
   _PdfHighlightSpan addSpan(pw.InlineSpan span) {
-    return _PdfHighlightSpan(
-      node: node,
-      style: style,
-      children: [...children, span],
-    );
+    children.add(span);
+    return this;
   }
 
   pw.TextSpan toSpan() {

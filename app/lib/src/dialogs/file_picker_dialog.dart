@@ -10,12 +10,19 @@ import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import 'vfs_picker_scaffold.dart';
 
-/// Result of picking files to upload.
+/// Result of picking files to upload. The system picker can return files
+/// from several folders at once, so the result is a set of (root, names)
+/// groups rather than a single root.
 class PickedFiles {
-  final String root;
-  final List<String> paths;
+  final List<({String root, List<String> paths})> groups;
 
-  const PickedFiles({required this.root, required this.paths});
+  const PickedFiles._(this.groups);
+
+  PickedFiles({required String root, required List<String> paths})
+      : groups = [(root: root, paths: paths)];
+
+  String get root => groups.first.root;
+  List<String> get paths => groups.expand((g) => g.paths).toList();
 }
 
 /// In-app file picker over local VFS to pick files for uploading to remote storage.
@@ -93,7 +100,10 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     super.dispose();
   }
 
+  int _loadSeq = 0;
+
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
@@ -109,7 +119,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
       final files = all.where((e) => !e.isDir).toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-      if (mounted) {
+      if (mounted && seq == _loadSeq) {
         setState(() {
           _folders = folders;
           _files = files;
@@ -117,7 +127,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && seq == _loadSeq) {
         setState(() {
           _error = e.toString();
           _loading = false;
@@ -234,10 +244,13 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
       }
 
       if (byParent.isEmpty || !mounted) return;
-      final first = byParent.entries.first;
+      // Files picked from different folders arrive grouped by their root;
+      // returning only the first group silently dropped the rest.
       Navigator.pop(
         context,
-        PickedFiles(root: first.key, paths: first.value),
+        PickedFiles._([
+          for (final g in byParent.entries) (root: g.key, paths: g.value),
+        ]),
       );
     } catch (_) {}
   }

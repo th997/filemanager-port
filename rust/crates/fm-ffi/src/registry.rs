@@ -148,7 +148,12 @@ impl VfsRegistry {
                 PathBuf::from(archive_path)
             };
 
-            let archive_fs = ArchiveFs::open(local_path).map_err(|e| e.to_string())?;
+            // Opening an archive builds a full entry index (decompresses
+            // tar.gz streams); keep that off the tokio worker threads.
+            let archive_fs = tokio::task::spawn_blocking(move || ArchiveFs::open(local_path))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
             Arc::new(archive_fs)
         } else if let Some(remote_id) = root.strip_prefix("remote://") {
             self.get_remote_vfs(remote_id)?

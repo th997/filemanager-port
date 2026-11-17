@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 
 import '../pages/media_player_page.dart';
 import '../rust/api/servers.dart';
+import 'preferences_service.dart';
 
 /// Global manager for active media playback across route navigation.
 ///
@@ -81,9 +82,17 @@ class GlobalPlaybackService extends ChangeNotifier {
   double _lastNowPlayingDuration = -1;
   double _lastNowPlayingRate = -1;
 
-  bool get hasActiveSession =>
-      (videoPlayerController != null && videoPlayerController!.value.isInitialized) ||
-      (desktopPlayer != null);
+  bool get hasActiveSession {
+    final vpc = videoPlayerController;
+    if (vpc != null) {
+      try {
+        if (vpc.value.isInitialized) return true;
+      } catch (_) {
+        // Controller already disposed; treat as no session.
+      }
+    }
+    return desktopPlayer != null;
+  }
 
   bool get hasNext => playlist.isNotEmpty && currentIndex < playlist.length - 1;
   bool get hasPrev => playlist.isNotEmpty && currentIndex > 0;
@@ -142,6 +151,18 @@ class GlobalPlaybackService extends ChangeNotifier {
     initNowPlayingHandler();
     controller.addListener(_onIosControllerUpdate);
     _onIosControllerUpdate();
+  }
+
+  /// Drops the service's reference before the owner disposes [controller],
+  /// so listeners never observe a disposed controller mid track switch.
+  void detachIosSessionController(VideoPlayerController controller) {
+    if (videoPlayerController != controller) return;
+    try {
+      controller.removeListener(_onIosControllerUpdate);
+    } catch (_) {}
+    videoPlayerController = null;
+    isPlaying = false;
+    _notifySafely();
   }
 
   void _onIosControllerUpdate() {
@@ -321,6 +342,7 @@ class GlobalPlaybackService extends ChangeNotifier {
   }
 
   void stop() {
+    _persistResumePosition();
     final vpc = videoPlayerController;
     videoPlayerController = null;
 
@@ -387,8 +409,26 @@ class GlobalPlaybackService extends ChangeNotifier {
     }
   }
 
+  /// Same key format and near-start/near-end rules as the player pages, so
+  /// positions survive completion/track switches handled while minimized.
+  void _persistResumePosition() {
+    final root = currentRoot;
+    final path = currentPath;
+    if (root == null || path == null || duration <= Duration.zero) return;
+    final key = 'player.resume.$root|$path';
+    if (position < const Duration(seconds: 5) || position > duration * 0.95) {
+      PreferencesService.instance.remove(key);
+      return;
+    }
+    PreferencesService.instance.setString(
+      key,
+      position.inMilliseconds.toString(),
+    );
+  }
+
   void restoreFullScreen([BuildContext? context]) {
     if (currentRoot == null || currentPath == null || currentFileName == null) return;
+    if (isFullScreen) return;
     isFullScreen = true;
     notifyListeners();
 

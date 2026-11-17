@@ -345,10 +345,11 @@ impl ArchiveFs {
         let target_name = path.to_slash_string().trim_start_matches('/').to_string();
 
         let (writer, out) = tokio::io::duplex(256 * 1024);
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let handle = tokio::runtime::Handle::current();
         tokio::task::spawn_blocking(move || {
             let mut bridge = SyncIoBridge::new_with_handle(writer, handle);
-            let _ = pump_entry(
+            let res = pump_entry(
                 format,
                 &archive_path,
                 index,
@@ -357,10 +358,16 @@ impl ArchiveFs {
                 length,
                 &mut bridge,
             );
-            // Dropping the bridge closes the pipe; the caller sees EOF.
+            // Report the outcome before the bridge drops: a corrupt entry
+            // must surface as a read error, not as a clean EOF that makes a
+            // half-extracted file look complete.
+            let _ = result_tx.send(res.map_err(|e| e.to_string()));
         });
 
-        Ok(Box::new(out))
+        Ok(Box::new(SignalingReader {
+            rx: out,
+            result: Some(result_rx),
+        }))
     }
 
     pub fn read_entry_bytes(&self, path: &VfsPath) -> VfsResult<Vec<u8>> {
@@ -439,6 +446,15 @@ impl ArchiveFs {
             ArchiveFormat::SevenZip => {
                 let mut found_bytes = Vec::new();
                 let target_name = path.to_slash_string().trim_start_matches('/').to_string();
+                // Untrusted headers can declare a bomb entry; cap the bytes
+                // actually inflated for this read the same way extraction does.
+                let archive_len = std::fs::metadata(&self.archive_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let limit = archive_len
+                    .saturating_mul(200)
+                    .saturating_add(64 * 1024 * 1024)
+                    .min(32 * 1024 * 1024 * 1024);
                 sevenz_rust::decompress_file_with_extract_fn(
                     &self.archive_path,
                     "",
@@ -448,7 +464,14 @@ impl ArchiveFs {
                         // (Windows-created archives) and would never match,
                         // silently returning empty content.
                         if entry.name().replace('\\', "/") == target_name {
-                            match reader.read_to_end(&mut found_bytes) {
+                            let mut limited = reader.take(limit);
+                            match limited.read_to_end(&mut found_bytes) {
+                                Ok(n) if (n as u64) >= limit => Err(sevenz_rust::Error::io(
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "entry exceeds the decompression safety limit",
+                                    ),
+                                )),
                                 Ok(_) => Ok(false), // stop search
                                 Err(e) => Err(sevenz_rust::Error::io(e)),
                             }
@@ -463,6 +486,44 @@ impl ArchiveFs {
                 })?;
                 Ok(found_bytes)
             }
+        }
+    }
+}
+
+/// Read side of the decompression pipe. At EOF the producer's result is
+/// reported first: an `Err` becomes a read error so a corrupt entry cannot
+/// masquerade as a complete file.
+struct SignalingReader {
+    rx: tokio::io::DuplexStream,
+    result: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+}
+
+impl tokio::io::AsyncRead for SignalingReader {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        use std::task::Poll;
+        use std::future::Future;
+        let this = self.get_mut();
+        let prev_len = buf.filled().len();
+        match std::pin::Pin::new(&mut this.rx).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) if buf.filled().len() == prev_len => match this.result.take() {
+                Some(mut result_rx) => match std::pin::Pin::new(&mut result_rx).poll(cx) {
+                    Poll::Ready(Ok(Ok(()))) => Poll::Ready(Ok(())),
+                    Poll::Ready(Ok(Err(e))) => Poll::Ready(Err(std::io::Error::other(e))),
+                    Poll::Ready(Err(_)) => Poll::Ready(Err(std::io::Error::other(
+                        "archive reader ended unexpectedly",
+                    ))),
+                    Poll::Pending => {
+                        this.result = Some(result_rx);
+                        Poll::Pending
+                    }
+                },
+                None => Poll::Ready(Ok(())),
+            },
+            other => other,
         }
     }
 }

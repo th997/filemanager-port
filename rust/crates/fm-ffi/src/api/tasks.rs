@@ -363,7 +363,7 @@ pub async fn start_move_task(
                 let skipped_before = progress
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .skipped;
+                    .policy_skips;
                 if let Err(e) = copy_recursive(
                     src_vfs.as_ref(),
                     &src_p,
@@ -389,7 +389,7 @@ pub async fn start_move_task(
                 let skipped_now = progress
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .skipped;
+                    .policy_skips;
                 if skipped_now > skipped_before {
                     continue;
                 }

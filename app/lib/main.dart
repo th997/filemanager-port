@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
@@ -71,11 +72,25 @@ Future<void> _initDesktopWindow() async {
   final x = read('window.x');
   final y = read('window.y');
   if (w != null && h != null && w >= 800 && h >= 500) {
-    await windowManager.setBounds(
-      Rect.fromLTWH(x ?? 0, y ?? 0, w, h),
-      animate: false,
-    );
-    if (x == null || y == null) await windowManager.center();
+    var rect = Rect.fromLTWH(x ?? 0, y ?? 0, w, h);
+    // A display unplugged since the last run leaves the saved bounds off
+    // every current screen; the window then opens invisible.
+    var visible = true;
+    try {
+      final displays = await screenRetriever.getAllDisplays();
+      visible = displays.any((d) {
+        final size = d.visibleSize ?? d.size;
+        final origin = d.visiblePosition ?? Offset.zero;
+        return rect.overlaps(
+          Rect.fromLTWH(origin.dx, origin.dy, size.width, size.height),
+        );
+      });
+      if (!visible) rect = rect.translate(-rect.left, -rect.top);
+    } catch (_) {}
+    await windowManager.setBounds(rect, animate: false);
+    if (!visible || x == null || y == null) {
+      await windowManager.center();
+    }
   }
   windowManager.addListener(_windowBoundsSaver);
   await windowManager.show();
@@ -90,7 +105,8 @@ class FileManagerApp extends StatefulWidget {
   State<FileManagerApp> createState() => _FileManagerAppState();
 }
 
-class _FileManagerAppState extends State<FileManagerApp> {
+class _FileManagerAppState extends State<FileManagerApp>
+    with WidgetsBindingObserver {
   static const _themeKey = 'theme_mode';
   static const _localeKey = 'app.language';
 
@@ -102,6 +118,7 @@ class _FileManagerAppState extends State<FileManagerApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     GlobalPlaybackService.instance.init(appNavigatorKey);
     ExternalFileService.instance.init(
       appNavigatorKey,
@@ -114,6 +131,23 @@ class _FileManagerAppState extends State<FileManagerApp> {
     );
     _localeCode = PreferencesService.instance.getString(_localeKey) ?? 'system';
     _accentCode = PreferencesService.instance.getString(_accentKey) ?? 'deepTeal';
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Mobile processes can be killed without a close event; flush the
+    // debounced preference writes whenever the app leaves the foreground.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      PreferencesService.instance.flush();
+    }
   }
 
   void _updateThemeMode(ThemeMode mode) {

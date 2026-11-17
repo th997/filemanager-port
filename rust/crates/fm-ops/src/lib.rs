@@ -57,6 +57,10 @@ pub struct TaskProgress {
     pub error: Option<String>,
     /// Destination items left untouched by the `Skip` conflict policy.
     pub skipped: u64,
+    /// Skips caused specifically by the `Skip` conflict policy (internal,
+    /// not exported). `skipped` also counts symlinks/special files, so move
+    /// cannot use it to decide whether the source is still needed.
+    pub policy_skips: u64,
     /// Short human label for the operation ("Copy", "Move", ...), set by
     /// whoever started the task so a task list can say what each row is.
     pub label: Option<String>,
@@ -71,6 +75,7 @@ impl TaskProgress {
             current: None,
             error: None,
             skipped: 0,
+            policy_skips: 0,
             label: None,
         }
     }

@@ -25,6 +25,9 @@ class _TasksPageState extends State<TasksPage> {
   Timer? _timer;
   final Map<String, SpeedEstimator> _speeds = {};
 
+  /// Tasks whose cancellation was requested and is still in flight.
+  final Set<String> _cancelling = {};
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +52,10 @@ class _TasksPageState extends State<TasksPage> {
     }
     final ids = tasks.map((t) => t.id).toSet();
     _speeds.removeWhere((id, _) => !ids.contains(id));
+    _cancelling.removeWhere((id) => !ids.contains(id));
+    for (final t in tasks) {
+      if (_isTerminal(t)) _cancelling.remove(t.id);
+    }
     for (final t in tasks) {
       if (t.state == 'running') {
         _speeds.putIfAbsent(t.id, SpeedEstimator.new).add(t.completed);
@@ -126,6 +133,9 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   String _statusText(TaskProgressDto t, {required bool isZh}) {
+    if (_cancelling.contains(t.id)) {
+      return isZh ? '正在取消…' : 'Cancelling…';
+    }
     final isFinalizing = t.state == 'running' &&
         ((t.total != null && t.total! > BigInt.zero && t.completed >= t.total!) ||
             (t.fraction != null && t.fraction! >= 1.0));
@@ -400,6 +410,17 @@ class _TasksPageState extends State<TasksPage> {
                         content: Text(
                           isZh ? '此任务无法取消' : 'This task cannot be cancelled',
                         ),
+                      ),
+                    );
+                  } else {
+                    // Cancellation is asynchronous; without immediate
+                    // feedback the row keeps saying "running" and users
+                    // press the button again.
+                    setState(() => _cancelling.add(t.id));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(isZh ? '正在取消…' : 'Cancelling…'),
+                        duration: const Duration(seconds: 1),
                       ),
                     );
                   }

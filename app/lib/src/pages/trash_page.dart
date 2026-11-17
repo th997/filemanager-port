@@ -255,7 +255,10 @@ class _TrashPageState extends State<TrashPage> {
   Future<void> _restore(TrashItemDto item) async {
     final name = _displayName(item);
     setState(() {
-      _items.removeWhere((i) => i.id == item.id);
+      // Replace the list instead of mutating it in place: the caches below
+      // key on identity, and an in-place removeWhere left the old entries
+      // on screen after a successful restore.
+      _items = _items.where((i) => i.id != item.id).toList();
     });
     try {
       await StorageService.instance.restoreTrashItem(item.id);
@@ -297,7 +300,7 @@ class _TrashPageState extends State<TrashPage> {
     );
     if (confirm == true) {
       setState(() {
-        _items.removeWhere((i) => i.id == item.id);
+        _items = _items.where((i) => i.id != item.id).toList();
       });
       try {
         await StorageService.instance.deleteTrashItem(item.id);

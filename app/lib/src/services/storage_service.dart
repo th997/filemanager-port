@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -36,7 +35,11 @@ class StorageService {
   Future<List<rem_api.RemoteConfigDto>> getRemotes() async {
     ensureInitialized();
     var rems = await rem_api.listRemotes(dbPath: dbPath);
-    if (rems.isEmpty) {
+    // A row whose config could not be decrypted comes back with every
+    // field empty (only id/name/kind survive). Restoring from the backup
+    // re-saves those ids with the current key, which repairs them. One
+    // unreadable row is enough: a mixed list must not skip the repair.
+    if (rems.isEmpty || rems.any(_isUnreadableRemote)) {
       final restored = await _restoreRemotesFromBackup();
       if (restored.isNotEmpty) {
         rems = restored;
@@ -45,16 +48,27 @@ class StorageService {
     return rems;
   }
 
+  /// A remote whose stored config could not be decrypted. The Rust side
+  /// always fills `rootPath` for a readable config, so a null root with no
+  /// host, endpoint or bucket cannot be a real connection.
+  static bool _isUnreadableRemote(rem_api.RemoteConfigDto r) =>
+      r.rootPath == null &&
+      r.host == null &&
+      r.endpoint == null &&
+      r.bucket == null;
+
   Future<void> saveRemote(rem_api.RemoteConfigDto config) async {
     ensureInitialized();
     await rem_api.saveRemote(dbPath: dbPath, config: config);
-    unawaited(_syncRemotesBackup());
+    // Must finish before callers re-read: getRemotes() restores from backup
+    // when the DB is empty, so a stale backup would resurrect deleted rows.
+    await _syncRemotesBackup();
   }
 
   Future<void> deleteRemote(String id) async {
     ensureInitialized();
     await rem_api.deleteRemote(dbPath: dbPath, id: id);
-    unawaited(_syncRemotesBackup());
+    await _syncRemotesBackup();
   }
 
   Future<bool> testConnection(rem_api.RemoteConfigDto config) async {
@@ -64,7 +78,29 @@ class StorageService {
   Future<void> _syncRemotesBackup() async {
     try {
       final list = await rem_api.listRemotes(dbPath: dbPath);
-      final jsonStr = jsonEncode(list.map(_remoteConfigToMap).toList());
+      final previous = await _readRemotesBackup();
+      // Could not read the old backup: writing now might destroy the only
+      // plaintext copy of a row that is currently undecryptable.
+      if (previous == null) {
+        return;
+      }
+      final entries = <Map<String, dynamic>>[];
+      for (final r in list) {
+        if (!_isUnreadableRemote(r)) {
+          entries.add(_remoteConfigToMap(r));
+          continue;
+        }
+        // An unreadable row carries no credentials, so its previous backup
+        // entry is the only plaintext copy left. Keep that rather than
+        // writing an empty shell over it.
+        final matches = previous.where((p) => p.id == r.id).toList();
+        if (matches.isNotEmpty) {
+          entries.add(_remoteConfigToMap(matches.first));
+        }
+      }
+      // Written even when empty: ids absent from `list` were deleted, and
+      // leaving them in the backup would let getRemotes() resurrect them.
+      final jsonStr = jsonEncode(entries);
       if (KeychainService.isSupported) {
         await KeychainService.save(_keychainRemotesKey, jsonStr);
       }
@@ -76,46 +112,72 @@ class StorageService {
     } catch (_) {}
   }
 
-  Future<List<rem_api.RemoteConfigDto>> _restoreRemotesFromBackup() async {
-    // 1. iOS Keychain survives reinstall/uninstall
+  /// The current backup contents, or null when they could not be read
+  /// reliably (IO error, or a non-empty file that failed to parse). An
+  /// absent backup is a legitimate empty list, not a failure.
+  Future<List<rem_api.RemoteConfigDto>?> _readRemotesBackup() async {
     if (KeychainService.isSupported) {
       try {
         final jsonStr = await KeychainService.read(_keychainRemotesKey);
         if (jsonStr != null && jsonStr.trim().isNotEmpty) {
           final list = _parseRemotesJson(jsonStr);
           if (list.isNotEmpty) {
-            for (final r in list) {
-              try {
-                await rem_api.saveRemote(dbPath: dbPath, config: r);
-              } catch (_) {}
-            }
-            return await rem_api.listRemotes(dbPath: dbPath);
+            return list;
           }
         }
       } catch (_) {}
     }
-
-    // 2. Documents file backup (iCloud / iTunes sync)
     try {
       final filePath = _backupFilePath(_remotesBackupFileName);
-      if (filePath != null) {
-        final f = File(filePath);
-        if (f.existsSync()) {
-          final jsonStr = await f.readAsString();
-          final list = _parseRemotesJson(jsonStr);
-          if (list.isNotEmpty) {
-            for (final r in list) {
-              try {
-                await rem_api.saveRemote(dbPath: dbPath, config: r);
-              } catch (_) {}
-            }
-            return await rem_api.listRemotes(dbPath: dbPath);
-          }
-        }
+      if (filePath == null) {
+        return null;
       }
-    } catch (_) {}
+      final f = File(filePath);
+      if (!f.existsSync()) {
+        return [];
+      }
+      final jsonStr = await f.readAsString();
+      final list = _parseRemotesJson(jsonStr);
+      if (list.isEmpty && jsonStr.trim().isNotEmpty && jsonStr.trim() != '[]') {
+        return null;
+      }
+      return list;
+    } catch (_) {
+      return null;
+    }
+  }
 
-    return [];
+  /// Re-saves only connections that are missing from the database or cannot
+  /// be decrypted. Rewriting healthy rows would bump their `created_at` on
+  /// every page load and reshuffle the list, which is ordered by it.
+  Future<List<rem_api.RemoteConfigDto>> _restoreRemotesFromBackup() async {
+    final backup = await _readRemotesBackup();
+    if (backup == null || backup.isEmpty) {
+      return [];
+    }
+    try {
+      final current = await rem_api.listRemotes(dbPath: dbPath);
+      final healthy = <String>{
+        for (final r in current)
+          if (!_isUnreadableRemote(r)) r.id,
+      };
+      var repaired = false;
+      for (final r in backup) {
+        if (healthy.contains(r.id)) {
+          continue;
+        }
+        try {
+          await rem_api.saveRemote(dbPath: dbPath, config: r);
+          repaired = true;
+        } catch (_) {}
+      }
+      if (!repaired) {
+        return [];
+      }
+      return await rem_api.listRemotes(dbPath: dbPath);
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<String> exportRemotesJson() async {
@@ -163,13 +225,13 @@ class StorageService {
   Future<void> addBookmark({required String name, required String root, required String path}) async {
     ensureInitialized();
     await meta_api.addBookmark(dbPath: dbPath, name: name, root: root, path: path);
-    unawaited(_syncBookmarksBackup());
+    await _syncBookmarksBackup();
   }
 
   Future<void> deleteBookmark(String id) async {
     ensureInitialized();
     await meta_api.deleteBookmark(dbPath: dbPath, id: id);
-    unawaited(_syncBookmarksBackup());
+    await _syncBookmarksBackup();
   }
 
   Future<void> renameBookmark({
@@ -183,10 +245,12 @@ class StorageService {
     await deleteBookmark(id);
     try {
       await addBookmark(name: newName, root: root, path: path);
-    } catch (_) {
+    } catch (e) {
       try {
         await addBookmark(name: oldName, root: root, path: path);
-      } catch (_) {}
+      } catch (_) {
+        throw StateError('Rename failed and the bookmark could not be restored: $e');
+      }
       rethrow;
     }
   }
@@ -318,7 +382,11 @@ class StorageService {
   // Serialization helpers
   static String? _backupFilePath(String filename) {
     try {
-      final root = PlatformPaths.defaultRoot();
+      // Android: app-private dir — shared storage would expose credentials
+      // to every app. iOS Documents stays sandboxed and syncs via iCloud.
+      final root = Platform.isAndroid
+          ? PlatformPaths.appDataDir()
+          : PlatformPaths.defaultRoot();
       return '$root/$filename';
     } catch (_) {
       return null;

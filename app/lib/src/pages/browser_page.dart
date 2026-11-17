@@ -221,6 +221,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// Set while a tile drag (stage H) is in flight so the lasso stands down.
   bool _itemDragActive = false;
   final Set<String> _selectedPaths = <String>{};
+  double? _swipeDownX;
   double _swipeStartX = 0;
   double _swipeDeltaX = 0;
 
@@ -293,11 +294,18 @@ class BrowserPageState extends State<BrowserPage> {
   /// Directory the in-flight load belongs to. A load started for one folder
   /// must not fill the list after the user has navigated elsewhere.
   String? _loadingFor;
+
+  /// Bumped on every fresh _load (navigation, refresh, re-sort). Page
+  /// appends capture it so a stale page request cannot land in a list that
+  /// was reset in the meantime — the directory key alone is identical for
+  /// a refresh of the same folder.
+  int _loadEpoch = 0;
   DateTime? _lastItemSecondaryTap;
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
     final loadingFor = '$_root\u0000$_relPath';
+    final epoch = _loadEpoch;
     setState(() => _loadingMore = true);
     try {
       final nextPage = _currentPage + 1;
@@ -310,7 +318,7 @@ class BrowserPageState extends State<BrowserPage> {
         sortAscending: _sortAsc,
       );
       if (!mounted) return;
-      if (_loadingFor == loadingFor) {
+      if (_loadingFor == loadingFor && _loadEpoch == epoch) {
         setState(() {
           _currentPage = nextPage;
           _entries.addAll(paged.entries.map((e) => EntryItem(e)));
@@ -411,10 +419,12 @@ class BrowserPageState extends State<BrowserPage> {
 
   void _handleSwipeBack() {
     if (_isSelecting) {
+      HapticFeedback.lightImpact();
       _clearSelection();
       return;
     }
     if (_isSearching) {
+      HapticFeedback.lightImpact();
       setState(() {
         _isSearching = false;
         _filterQuery = '';
@@ -424,15 +434,26 @@ class BrowserPageState extends State<BrowserPage> {
       });
       return;
     }
+    if (_isEditingAddress) {
+      HapticFeedback.lightImpact();
+      setState(() => _isEditingAddress = false);
+      return;
+    }
     if (_backStack.isNotEmpty) {
+      HapticFeedback.lightImpact();
       _goBack();
       return;
     }
+    // Deep-linked into a subfolder with empty history: still walk up
+    // instead of leaving the page outright.
     if (_canNavigateUp) {
+      HapticFeedback.lightImpact();
       _navigateUp();
       return;
     }
+    if (widget.embedded) return;
     if (Navigator.of(context).canPop()) {
+      HapticFeedback.lightImpact();
       Navigator.of(context).pop();
     }
   }
@@ -513,6 +534,11 @@ class BrowserPageState extends State<BrowserPage> {
     widget.onLocationChanged?.call(_root, _relPath);
     final loadingFor = '$_root\u0000$_relPath';
     _loadingFor = loadingFor;
+    _loadEpoch++;
+    // A pending debounce would otherwise run against the folder the user
+    // just left and repopulate stale results.
+    _searchDebounce?.cancel();
+    _searchSeq++;
     setState(() {
       // A refresh keeps the current list on screen; swapping it for a spinner
       // would drop the scroll offset and flash the whole page.
@@ -597,6 +623,18 @@ class BrowserPageState extends State<BrowserPage> {
   bool get _canNavigateUp {
     if (_relPath.isNotEmpty) return true;
     if (_root.startsWith('archive://')) return true;
+    if (Platform.isAndroid) {
+      // Only the emulated shared volume is browsable; its parents are not
+      // listable by a normal app, so walking up there only shows an error.
+      const top = '/storage/emulated/0';
+      if (_root == top ||
+          _root == '/' ||
+          _root == '/sdcard' ||
+          _root == '/storage' ||
+          _root == '/storage/emulated') {
+        return false;
+      }
+    }
     if (_root.startsWith('/') && _root != '/') return true;
     final driveMatch = RegExp(r'^[a-zA-Z]:[/\\]').firstMatch(_root);
     if (driveMatch != null) {
@@ -719,6 +757,15 @@ class BrowserPageState extends State<BrowserPage> {
     if (item.isText || item.isMarkdown || item.isHtml) {
       if (_needsDownloadPrompt(item)) {
         _downloadThenOpen(item);
+        return;
+      }
+      // The editor loads the whole file into memory (and the find index
+      // roughly doubles it); multi-hundred-MB logs would OOM the app.
+      const maxTextBytes = 20 * 1024 * 1024;
+      if (item.size != null && item.size! > BigInt.from(maxTextBytes)) {
+        _showError(
+          '"${item.name}" is too large to edit (${item.formattedSize}). Open it with an external app instead.',
+        );
         return;
       }
       Navigator.of(context).push(
@@ -1180,6 +1227,13 @@ class BrowserPageState extends State<BrowserPage> {
     var p = item.path;
     if (p.startsWith('/')) p = p.substring(1);
     _pushHistory();
+    // Selection belonged to the old folder; leaving it behind lets
+    // destructive actions hit entries the user can no longer see.
+    setState(() {
+      _isSelecting = false;
+      _selectedPaths.clear();
+      _selectionAnchor = null;
+    });
     if (item.isDir) {
       setState(() => _relPath = p);
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
@@ -1192,7 +1246,11 @@ class BrowserPageState extends State<BrowserPage> {
     await _load();
     if (!mounted) return;
     final match = _entries.where((e) => e.name == item.name).firstOrNull;
-    if (match != null) _openEntry(match);
+    if (match != null) {
+      _openEntry(match);
+    } else {
+      _showError('File is beyond the first page of "$parent"; open the folder to view it.');
+    }
   }
 
   /// True while the address or search field holds the keyboard. Page-wide
@@ -1513,6 +1571,8 @@ class BrowserPageState extends State<BrowserPage> {
   /// instead of pretending everything is selected.
   Future<void> _selectAll() async {
     HapticFeedback.selectionClick();
+    final loadingFor = '$_root\u0000$_relPath';
+    final epoch = _loadEpoch;
     if (_hasMore && _totalCount > 0) {
       if (_totalCount > 10000) {
         // Returning matters: falling through selected only the loaded pages,
@@ -1530,6 +1590,9 @@ class BrowserPageState extends State<BrowserPage> {
             sortAscending: _sortAsc,
           );
           if (!mounted) return;
+          // The user may have navigated or refreshed while the full listing
+          // was in flight; those entries belong to the old folder.
+          if (_loadingFor != loadingFor || _loadEpoch != epoch) return;
           setState(() {
             _entries = paged.entries.map((e) => EntryItem(e)).toList();
             _hasMore = false;
@@ -1541,6 +1604,7 @@ class BrowserPageState extends State<BrowserPage> {
         }
       }
     }
+    if (!mounted) return;
     setState(() {
       _isSelecting = true;
       for (final e in _filteredAndSortedEntries) {
@@ -1568,6 +1632,7 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _openSelected() {
+    if (_isTyping) return;
     if (_selectedPaths.length != 1) return;
     final path = _selectedPaths.first;
     final item = _entries.where((e) => _fullEntryPath(e) == path).firstOrNull;
@@ -1672,16 +1737,19 @@ class BrowserPageState extends State<BrowserPage> {
       context,
       title: isZh ? '上传文件/文件夹到当前目录' : 'Upload Items to Current Folder',
     );
-    if (picked == null || picked.paths.isEmpty || !mounted) return;
+    if (picked == null || picked.groups.isEmpty || !mounted) return;
 
-    PreferencesService.instance.addRecentUploadDir(picked.root);
-
-    await _transfer(
-      srcRoot: picked.root,
-      paths: picked.paths,
-      isCut: false,
-      destRel: _relPath,
-    );
+    for (final group in picked.groups) {
+      if (group.paths.isEmpty) continue;
+      PreferencesService.instance.addRecentUploadDir(group.root);
+      await _transfer(
+        srcRoot: group.root,
+        paths: group.paths,
+        isCut: false,
+        destRel: _relPath,
+      );
+      if (!mounted) return;
+    }
   }
 
   Future<void> _uploadFolder({bool forceInApp = false}) async {
@@ -1830,6 +1898,8 @@ class BrowserPageState extends State<BrowserPage> {
             dstRoot: dest.root,
             dstDir: dest.relPath,
             dstName: item.name,
+            // Never destroy a same-named file in the destination folder.
+            conflictPolicy: 'rename',
           );
       final taskId = await startTask();
       if (!mounted) return;
@@ -2032,10 +2102,10 @@ class BrowserPageState extends State<BrowserPage> {
       return;
     }
     // Detect name clashes in the destination first and let the user decide
-    // once for the whole batch. Overwriting silently would destroy the
-    // existing files. Items dropped back into their own folder are
-    // excluded: the Rust side renames those automatically.
-    var policy = 'overwrite';
+    // once for the whole batch. Default stays 'rename': if the probe fails
+    // for a reason other than "missing" (permissions, network), falling back
+    // to overwrite could silently replace existing files.
+    var policy = 'rename';
     final conflicts = <String>[];
     for (final p in paths) {
       final name = p.split('/').last;
@@ -2045,7 +2115,8 @@ class BrowserPageState extends State<BrowserPage> {
         await statEntry(root: _root, path: dstPath);
         conflicts.add(name);
       } catch (_) {
-        // Missing (or not stat-able): nothing to decide for this item.
+        // Not found → nothing to decide. Other failures also fall through:
+        // the default 'rename' policy keeps both files either way.
       }
     }
     if (conflicts.isNotEmpty) {
@@ -2281,10 +2352,19 @@ class BrowserPageState extends State<BrowserPage> {
       ext = '';
     }
 
+    // Check against the whole folder, not just the loaded page: a
+    // `_copy` that exists beyond page 1 would otherwise be overwritten.
+    final existing = <String>{};
+    try {
+      existing.addAll(
+        (await listDir(root: _root, path: _relPath)).map((e) => e.name),
+      );
+    } catch (_) {
+      existing.addAll(_entries.map((e) => e.name));
+    }
     String candidate = '${base}_copy$ext';
     int count = 2;
-    final existingNames = _entries.map((e) => e.name).toSet();
-    while (existingNames.contains(candidate)) {
+    while (existing.contains(candidate)) {
       candidate = '${base}_copy_$count$ext';
       count++;
     }
@@ -2296,6 +2376,7 @@ class BrowserPageState extends State<BrowserPage> {
             dstRoot: _root,
             dstDir: _relPath,
             dstName: candidate,
+            conflictPolicy: 'rename',
           );
       final taskId = await startTask();
       if (!mounted) return;
@@ -2422,13 +2503,21 @@ class BrowserPageState extends State<BrowserPage> {
                 : SnackBarAction(
                     label: 'Undo',
                     onPressed: () async {
+                      final failures = <String>[];
                       for (final id in newIds) {
                         try {
                           await StorageService.instance.restoreTrashItem(id);
-                        } catch (_) {}
+                        } catch (_) {
+                          failures.add(id);
+                        }
                       }
                       if (!mounted) return;
                       _load(refresh: true);
+                      if (failures.isNotEmpty) {
+                        _showError(
+                          'Could not restore ${failures.length} item${failures.length == 1 ? '' : 's'}',
+                        );
+                      }
                     },
                   ),
           ),
@@ -2718,18 +2807,28 @@ class BrowserPageState extends State<BrowserPage> {
 
   Future<void> _showFileInfo(EntryItem item) async {
     final path = _fullEntryPath(item);
-    // Directories report no size from the backend; measure them on demand so
-    // Properties is not just "Directory" for every folder.
-    String? dirSize;
+    // Directories report no size from the backend; measure them in the
+    // background and fill the dialog once the walk finishes, instead of
+    // freezing on "Properties" for a large tree.
+    final dirSizeNotifier = ValueNotifier<String?>(null);
+    // The walk can outlive the dialog; writing a disposed notifier throws.
+    var closed = false;
     if (item.isDir && isNativeRoot(_root)) {
-      dirSize = await _measureDirectory(joinNative(_root, path));
-      if (!mounted) return;
+      final dirPath = joinNative(_root, path);
+      _measureDirectory(dirPath).then((size) {
+        if (!closed) dirSizeNotifier.value = size;
+      }).catchError((_) {});
+    }
+    if (!mounted) {
+      closed = true;
+      dirSizeNotifier.dispose();
+      return;
     }
     final fullPath = isNativeRoot(_root)
         ? joinNative(_root, path)
         : '$_root/$path';
     final ext = item.isDir ? null : (item.name.contains('.') ? item.name.split('.').last : null);
-    showDialog(
+    await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Row(
@@ -2747,12 +2846,19 @@ class BrowserPageState extends State<BrowserPage> {
               _infoRow('Name', item.name),
               _infoRow('Path', fullPath),
               if (ext != null) _infoRow('Extension', ext.toUpperCase()),
-              _infoRow(
-                'Size',
-                item.isDir
-                    ? (dirSize ?? 'Directory')
-                    : '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
-              ),
+              if (item.isDir)
+                ValueListenableBuilder<String?>(
+                  valueListenable: dirSizeNotifier,
+                  builder: (_, size, _) => _infoRow(
+                    'Size',
+                    size ?? 'Measuring…',
+                  ),
+                )
+              else
+                _infoRow(
+                  'Size',
+                  '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
+                ),
               _infoRow('Modified', item.formattedModified),
               _infoRow('Type', item.isDir ? 'Directory' : (item.isArchive ? 'Archive' : 'File')),
               _infoRow('Hidden', item.hidden ? 'Yes' : 'No'),
@@ -2784,6 +2890,8 @@ class BrowserPageState extends State<BrowserPage> {
         ],
       ),
     );
+    closed = true;
+    dirSizeNotifier.dispose();
   }
 
   Widget _infoRow(String label, String value) {
@@ -2895,10 +3003,13 @@ class BrowserPageState extends State<BrowserPage> {
 
     final segments = _relPathSegments;
 
-    // Back first leaves selection/search/address, then walks up the directory tree.
-    // At the top level the platform handles it (exit or tab switch).
-    final canNavigateUp = _isSelecting || _isSearching || _isEditingAddress || _relPath.isNotEmpty ||
-        _root.startsWith('archive://') || (_root.startsWith('/') && _root != '/');
+    // Back first leaves selection/search/address, then walks back through
+    // folder history. At the initial folder it leaves the page.
+    final canInterceptBack = _isSelecting ||
+        _isSearching ||
+        _isEditingAddress ||
+        _backStack.isNotEmpty ||
+        _canNavigateUp;
 
     return _withDropTarget(CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -3079,7 +3190,7 @@ class BrowserPageState extends State<BrowserPage> {
         child: Focus(
         autofocus: true,
         child: PopScope(
-      canPop: widget.embedded || !canNavigateUp,
+      canPop: widget.embedded || !canInterceptBack,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || widget.embedded) return;
         if (_isSelecting) {
@@ -3094,7 +3205,9 @@ class BrowserPageState extends State<BrowserPage> {
           });
         } else if (_isEditingAddress) {
           setState(() => _isEditingAddress = false);
-        } else {
+        } else if (_backStack.isNotEmpty) {
+          _goBack();
+        } else if (_canNavigateUp) {
           _navigateUp();
         }
       },
@@ -3143,8 +3256,11 @@ class BrowserPageState extends State<BrowserPage> {
           : null,
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        onHorizontalDragDown: (details) {
+          _swipeDownX = details.globalPosition.dx;
+        },
         onHorizontalDragStart: (details) {
-          _swipeStartX = details.globalPosition.dx;
+          _swipeStartX = _swipeDownX ?? details.globalPosition.dx;
           _swipeDeltaX = 0;
         },
         onHorizontalDragUpdate: (details) {
@@ -3152,28 +3268,38 @@ class BrowserPageState extends State<BrowserPage> {
         },
         onHorizontalDragEnd: (details) {
           final velocity = details.primaryVelocity ?? 0;
-          final fromLeftEdge = _swipeStartX < 140;
-          if (fromLeftEdge && (_swipeDeltaX > 35 || (velocity > 260 && _swipeDeltaX > 20))) {
+          final edgeThreshold = (MediaQuery.sizeOf(context).width * 0.45).clamp(140.0, 220.0);
+          final fromLeftEdge = _swipeStartX < edgeThreshold;
+          if (fromLeftEdge && (_swipeDeltaX > 35 || (velocity > 220 && _swipeDeltaX > 15))) {
             _handleSwipeBack();
-          } else if ((velocity < -260 && _swipeDeltaX < -25) && _forwardStack.isNotEmpty) {
+          } else if ((velocity < -220 && _swipeDeltaX < -25) && _forwardStack.isNotEmpty) {
+            HapticFeedback.lightImpact();
             _goForward();
           }
+          _swipeDownX = null;
           _swipeStartX = 0;
           _swipeDeltaX = 0;
         },
         onHorizontalDragCancel: () {
+          _swipeDownX = null;
           _swipeStartX = 0;
           _swipeDeltaX = 0;
         },
-        child: Column(
-          children: [
-            // A refresh keeps the list, so it needs its own progress line —
-            // otherwise F5 and pull-to-refresh look like a no-op.
-            if (_refreshing) const LinearProgressIndicator(minHeight: 2),
-            _buildCapabilitiesBar(),
-            Expanded(child: _buildBody()),
-            if (_isSelecting || _clipboard != null) _buildBottomActionBar(),
-          ],
+        child: SafeArea(
+          // With the toolbar moved to the bottom there is no AppBar to consume
+          // the status-bar inset, so the body starts under it otherwise.
+          top: PreferencesService.toolbarAtBottom.value,
+          bottom: false,
+          child: Column(
+            children: [
+              // A refresh keeps the list, so it needs its own progress line —
+              // otherwise F5 and pull-to-refresh look like a no-op.
+              if (_refreshing) const LinearProgressIndicator(minHeight: 2),
+              _buildCapabilitiesBar(),
+              Expanded(child: _buildBody()),
+              if (_isSelecting || _clipboard != null) _buildBottomActionBar(),
+            ],
+          ),
         ),
       ),
       ),
@@ -3662,6 +3788,9 @@ class BrowserPageState extends State<BrowserPage> {
       rootLabel = remote != null ? '☁️ ${remote.name}' : 'Remote';
     } else if (_root.startsWith('archive://')) {
       rootLabel = 'Archive';
+    } else if (_root == '/storage/emulated/0') {
+      // Last segment of this path is "0", which reads as a drive letter.
+      rootLabel = 'Internal Storage';
     } else {
       rootLabel = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? _root;
     }
@@ -3689,7 +3818,12 @@ class BrowserPageState extends State<BrowserPage> {
       onSegmentTap: (targetRelPath) {
         if (targetRelPath != _relPath) {
           _pushHistory();
-          setState(() => _relPath = targetRelPath);
+          setState(() {
+            _relPath = targetRelPath;
+            _isSelecting = false;
+            _selectedPaths.clear();
+            _selectionAnchor = null;
+          });
           if (_scrollController.hasClients) {
             _scrollController.jumpTo(0);
           }

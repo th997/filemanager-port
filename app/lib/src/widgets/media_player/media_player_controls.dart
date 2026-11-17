@@ -145,7 +145,7 @@ class MediaPlayerSpeedBadge extends StatelessWidget {
 }
 
 /// Reusable timeline slider displaying current position and duration.
-class MediaPlayerTimeline extends StatelessWidget {
+class MediaPlayerTimeline extends StatefulWidget {
   final Duration position;
   final Duration duration;
   final ValueChanged<double> onSeekChanged;
@@ -162,15 +162,26 @@ class MediaPlayerTimeline extends StatelessWidget {
   });
 
   @override
+  State<MediaPlayerTimeline> createState() => _MediaPlayerTimelineState();
+}
+
+class _MediaPlayerTimelineState extends State<MediaPlayerTimeline> {
+  // While dragging, show the finger position instead of the live playback
+  // position, and only seek once on release: per-tick seeks flood the
+  // native player and the position updates yank the thumb back.
+  double? _dragSec;
+
+  @override
   Widget build(BuildContext context) {
-    final double maxSec = duration.inMilliseconds.toDouble();
-    final double curSec =
-        position.inMilliseconds.toDouble().clamp(0.0, maxSec > 0 ? maxSec : 0.0);
+    final double maxSec = widget.duration.inMilliseconds.toDouble();
+    final double curSec = (_dragSec ??
+            widget.position.inMilliseconds.toDouble())
+        .clamp(0.0, maxSec > 0 ? maxSec : 0.0);
 
     return Positioned(
       left: 16,
       right: 16,
-      bottom: bottomMargin,
+      bottom: widget.bottomMargin,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -178,11 +189,13 @@ class MediaPlayerTimeline extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                formatPlayerDuration(position),
+                formatPlayerDuration(_dragSec != null
+                    ? Duration(milliseconds: _dragSec!.toInt())
+                    : widget.position),
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
               Text(
-                formatPlayerDuration(duration),
+                formatPlayerDuration(widget.duration),
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ],
@@ -201,8 +214,13 @@ class MediaPlayerTimeline extends StatelessWidget {
               value: maxSec > 0 ? curSec : 0.0,
               min: 0.0,
               max: maxSec > 0 ? maxSec : 1.0,
-              onChanged: onSeekChanged,
-              onChangeEnd: onSeekEnd,
+              onChangeStart: (v) => setState(() => _dragSec = v),
+              onChanged: (v) => setState(() => _dragSec = v),
+              onChangeEnd: (v) {
+                setState(() => _dragSec = null);
+                widget.onSeekChanged(v);
+                widget.onSeekEnd?.call(v);
+              },
             ),
           ),
         ],

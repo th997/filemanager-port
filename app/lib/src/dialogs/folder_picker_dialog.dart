@@ -102,7 +102,10 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     super.dispose();
   }
 
+  int _loadSeq = 0;
+
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
@@ -115,14 +118,14 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           .where((e) => e.isDir && (_showHidden || !e.hidden))
           .toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      if (mounted) {
+      if (mounted && seq == _loadSeq) {
         setState(() {
           _folders = folders;
           _loading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && seq == _loadSeq) {
         setState(() {
           _error = e.toString();
           _loading = false;

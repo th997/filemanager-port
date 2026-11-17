@@ -66,9 +66,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   /// Accumulated downward drag on the current image, used to close on swipe.
   double _dismissDrag = 0;
 
-  /// Cache path per entry index, filled in lazily for remote images.
-  final Map<int, String> _localPaths = {};
-  final Map<int, Future<String>> _inFlightPaths = {};
+  /// Cache path per entry (not per index): deleting an image shifts every
+  /// later index, and an in-flight download completing after the shift used
+  /// to write its path into the wrong slot.
+  final Map<ImageViewerEntry, String> _localPaths = {};
+  final Map<ImageViewerEntry, Future<String>> _inFlightPaths = {};
 
   @override
   void initState() {
@@ -99,10 +101,10 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     }
   }
 
-  void _resetView() {
+  void _resetView({bool keepRotation = false}) {
     setState(() {
       _transformationController.value = Matrix4.identity();
-      _quarterTurns = 0;
+      if (!keepRotation) _quarterTurns = 0;
       _zoomed = false;
     });
   }
@@ -145,7 +147,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   /// already zoomed returns to fit.
   void _toggleZoom(Offset position) {
     if (_zoomed) {
-      _resetView();
+      // Un-zoom only: double-tap should not also drop the rotation.
+      _resetView(keepRotation: true);
       return;
     }
     const scale = 2.5;
@@ -410,14 +413,14 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   /// Native path for an entry, exporting remote and archive images once.
   Future<String> _localPathFor(int index) {
-    final cached = _localPaths[index];
+    final entry = _entries[index];
+    final cached = _localPaths[entry];
     if (cached != null) return Future.value(cached);
-    final inFlight = _inFlightPaths[index];
+    final inFlight = _inFlightPaths[entry];
     if (inFlight != null) return inFlight;
 
-    final entry = _entries[index];
     if (entry.localPath != null) {
-      _localPaths[index] = entry.localPath!;
+      _localPaths[entry] = entry.localPath!;
       return Future.value(entry.localPath!);
     }
 
@@ -426,28 +429,28 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (resolver != null) {
       fut = resolver().then((path) {
         if (path == null) throw StateError('Cannot read ${entry.name}');
-        _localPaths[index] = path;
+        _localPaths[entry] = path;
         return path;
       });
     } else {
       fut = FileOpenService.instance
           .nativePath(entry.root!, entry.remotePath!)
           .then((path) {
-        _localPaths[index] = path;
+        _localPaths[entry] = path;
         return path;
       });
     }
 
-    _inFlightPaths[index] = fut;
+    _inFlightPaths[entry] = fut;
     fut.whenComplete(() {
-      _inFlightPaths.remove(index);
+      _inFlightPaths.remove(entry);
     });
     return fut;
   }
 
   Widget _buildImageAt(int index, {required bool interactive}) {
     final entry = _entries[index];
-    final native = entry.localPath ?? _localPaths[index];
+    final native = entry.localPath ?? _localPaths[entry];
 
     if (native != null) {
       return _imageFromFile(native, interactive);
@@ -582,31 +585,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
       setState(() {
         _entries.removeAt(_index);
-        _localPaths.remove(_index);
-        _inFlightPaths.remove(_index);
-        final newLocal = <int, String>{};
-        _localPaths.forEach((k, v) {
-          if (k < _index) {
-            newLocal[k] = v;
-          } else if (k > _index) {
-            newLocal[k - 1] = v;
-          }
-        });
-        _localPaths
-          ..clear()
-          ..addAll(newLocal);
-
-        final newInFlight = <int, Future<String>>{};
-        _inFlightPaths.forEach((k, v) {
-          if (k < _index) {
-            newInFlight[k] = v;
-          } else if (k > _index) {
-            newInFlight[k - 1] = v;
-          }
-        });
-        _inFlightPaths
-          ..clear()
-          ..addAll(newInFlight);
+        _localPaths.remove(entry);
+        _inFlightPaths.remove(entry);
       });
 
       if (_entries.isEmpty) {

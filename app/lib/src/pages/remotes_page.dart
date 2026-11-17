@@ -82,6 +82,14 @@ class _RemotesPageState extends State<RemotesPage> {
     );
   }
 
+  /// The stored config could not be decrypted, so every field but the
+  /// name and kind is empty. Editing or testing it would just fail.
+  static bool _isUnreadable(RemoteConfigDto r) =>
+      r.rootPath == null &&
+      r.host == null &&
+      r.endpoint == null &&
+      r.bucket == null;
+
   Future<void> _loadRemotes() async {
     try {
       final rems = await StorageService.instance.getRemotes();
@@ -90,12 +98,14 @@ class _RemotesPageState extends State<RemotesPage> {
         _remotes = rems;
         _loading = false;
         for (final r in rems) {
-          _status[r.id] = _ConnStatus.checking;
+          _status[r.id] =
+              _isUnreadable(r) ? _ConnStatus.unknown : _ConnStatus.checking;
         }
       });
       // Probe reachability in the background so the list shows live
       // status dots without blocking the page on slow servers.
       for (final r in rems) {
+        if (_isUnreadable(r)) continue;
         _probeStatus(r, skipInitialSetState: true);
       }
     } catch (e) {
@@ -308,6 +318,15 @@ class _RemotesPageState extends State<RemotesPage> {
 
   /// Quick reachability check without opening the edit wizard.
   Future<void> _testRemote(RemoteConfigDto remote) async {
+    // Nothing to test: the stored config could not be decrypted.
+    if (_isUnreadable(remote)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This connection has no readable details. Edit it to re-enter them.'),
+        ),
+      );
+      return;
+    }
     // Tapping again while a check is in flight started a second connection
     // whose result could overwrite the first one's.
     if (_status[remote.id] == _ConnStatus.checking) return;
@@ -676,8 +695,13 @@ class _RemotesPageState extends State<RemotesPage> {
 
                                   final r = displayedRemotes[i];
                                   final (icon, color) = _remoteVisuals(r.kind);
-                                  final sub = r.endpoint ??
-                                      (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}');
+                                  final unreadable = _isUnreadable(r);
+                                  final sub = unreadable
+                                      ? 'Details unavailable — re-enter to reconnect'
+                                      : (r.endpoint ??
+                                          (r.bucket != null
+                                              ? 'Bucket: ${r.bucket}'
+                                              : '${r.host ?? ""}:${r.port ?? ""}'));
 
                                   return Card(
                                     child: ListTile(

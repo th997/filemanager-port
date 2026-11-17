@@ -149,6 +149,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
     final session = GlobalPlaybackService.instance;
     if (session.hasActiveSession &&
+        session.currentRoot == widget.root &&
         session.currentPath == _track.path &&
         session.videoPlayerController != null) {
       _controller = session.videoPlayerController;
@@ -202,6 +203,9 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     final oldController = _controller;
     _controller = null;
     if (oldController != null) {
+      // Detach from the service first: hasActiveSession() reads the
+      // controller's value and would throw on a disposed controller.
+      GlobalPlaybackService.instance.detachIosSessionController(oldController);
       oldController.removeListener(_onControllerUpdate);
       await oldController.dispose();
     }
@@ -252,7 +256,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         root: widget.root,
         path: _track.path,
         fileName: _track.fileName,
-        isAudio: widget.isAudio,
+        isAudio: _track.isAudio,
         playlist: widget.playlist,
         currentIndex: _index,
         controller: _controller!,
@@ -440,9 +444,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       _volume = _lastNonZeroVolume > 0 ? _lastNonZeroVolume : 1.0;
     }
     _controller!.setVolume(_volume);
+    // Mute is transient: persist the unmuted level so the next session
+    // does not start silent (matches desktop behavior).
+    final saved = _volume > 0 ? _volume : _lastNonZeroVolume;
     PreferencesService.instance.setString(
       _prefVolume,
-      (_volume * 100).toInt().toString(),
+      (saved * 100).toInt().toString(),
     );
     setState(() {});
   }

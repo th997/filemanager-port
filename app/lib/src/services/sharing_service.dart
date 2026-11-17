@@ -9,6 +9,15 @@ class SharingService {
 
   bool get isRunning => _currentStatus?.running ?? false;
 
+  // The status DTO carries no share configuration, but the utilities page
+  // needs it back when it is re-entered while the server is running.
+  String? _rootDir;
+  String? get rootDir => _rootDir;
+  bool _readOnly = true;
+  bool get readOnly => _readOnly;
+  String? _password;
+  String? get password => _password;
+
   Future<srv_api.ServerStatusDto> startHttp({
     required String rootDir,
     int? port,
@@ -22,6 +31,9 @@ class SharingService {
       readOnly: readOnly,
     );
     _currentStatus = status;
+    _rootDir = rootDir;
+    _readOnly = readOnly;
+    _password = password;
     return status;
   }
 
@@ -29,6 +41,8 @@ class SharingService {
     final ok = srv_api.stopLanHttpServer();
     if (ok) {
       _currentStatus = null;
+      _rootDir = null;
+      _password = null;
     }
     return ok;
   }

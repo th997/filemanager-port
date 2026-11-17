@@ -50,7 +50,7 @@ impl std::fmt::Debug for Credential {
 }
 
 /// Unified configuration for remote and cloud connections.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RemoteConfig {
     pub id: String,
     pub kind: LocationKind,
@@ -74,6 +74,31 @@ pub struct RemoteConfig {
     /// layer persists it here so later launches verify from the start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_key_fingerprint: Option<String>,
+}
+
+impl std::fmt::Debug for RemoteConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // A derived Debug would print passwords and keys in plaintext the
+        // moment anyone logs a config.
+        f.debug_struct("RemoteConfig")
+            .field("id", &self.id)
+            .field("kind", &self.kind)
+            .field("display_name", &self.display_name)
+            .field("endpoint", &self.endpoint)
+            .field("region", &self.region)
+            .field("bucket", &self.bucket)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("root", &self.root)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("key_id", &self.key_id)
+            .field("key_secret", &self.key_secret.as_ref().map(|_| "<redacted>"))
+            .field("private_key", &self.private_key.as_ref().map(|_| "<redacted>"))
+            .field("path_style", &self.path_style)
+            .field("host_key_fingerprint", &self.host_key_fingerprint)
+            .finish()
+    }
 }
 
 impl RemoteConfig {

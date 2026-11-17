@@ -42,9 +42,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   @override
   void initState() {
     super.initState();
-    _shareRoot = PlatformPaths.defaultRoot();
-    _serverRunning = SharingService.instance.isRunning;
-    _serverStatus = SharingService.instance.currentStatus;
+    final sharing = SharingService.instance;
+    _shareRoot = sharing.rootDir ?? PlatformPaths.defaultRoot();
+    _readOnly = sharing.readOnly;
+    final savedPwd = sharing.password;
+    if (savedPwd != null) _pwdCtrl.text = savedPwd;
+    _serverRunning = sharing.isRunning;
+    _serverStatus = sharing.currentStatus;
     _loadData();
   }
 
@@ -488,6 +492,41 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                         ),
                       );
                     }),
+                    if (_pwdCtrl.text.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.key, size: 14),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: SelectableText(
+                                '${isZh ? '访问密码' : 'Password'}: ${_pwdCtrl.text}',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy, size: 14),
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(6),
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              tooltip: isZh ? '复制密码' : 'Copy password',
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: _pwdCtrl.text));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(isZh ? '密码已复制到剪贴板' : 'Password copied to clipboard')),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ] else ...[
                     const SizedBox(height: 8),
                     Text(

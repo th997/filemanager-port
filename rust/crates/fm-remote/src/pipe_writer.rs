@@ -14,6 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream
 pub(crate) struct PipeWriter {
     tx: Option<DuplexStream>,
     result: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+    abort: Option<tokio::sync::oneshot::Sender<()>>,
     done: bool,
 }
 
@@ -132,8 +133,15 @@ impl AsyncWrite for PipeWriter {
 
 impl Drop for PipeWriter {
     fn drop(&mut self) {
-        // Dropping the pipe makes the upload task see EOF and finalize.
         self.tx = None;
+        // A writer dropped without a successful shutdown means the copy was
+        // cancelled or failed. Closing the pipe alone made the upload task
+        // see a clean EOF and finalize a truncated file on the server.
+        if !self.done {
+            if let Some(abort) = self.abort.take() {
+                let _ = abort.send(());
+            }
+        }
     }
 }
 
@@ -145,12 +153,18 @@ where
 {
     let (tx, rx) = tokio::io::duplex(256 * 1024);
     let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    let (abort_tx, abort_rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let _ = done_tx.send(upload(rx).await);
+        let res = tokio::select! {
+            res = upload(rx) => res,
+            _ = abort_rx => Err("upload aborted".to_string()),
+        };
+        let _ = done_tx.send(res);
     });
     Box::new(PipeWriter {
         tx: Some(tx),
         result: Some(done_rx),
+        abort: Some(abort_tx),
         done: false,
     })
 }
