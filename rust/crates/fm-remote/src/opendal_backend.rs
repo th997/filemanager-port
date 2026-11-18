@@ -226,6 +226,7 @@ impl OpendalFs {
         // hostname against the OS trust store. Self-signed servers must be
         // supported through an explicit, opt-in certificate pin instead.
         let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
             .build()
             .map_err(|e| VfsError::Connection {
                 message: format!("failed to initialize WebDAV HTTP client: {e}"),

@@ -12,9 +12,9 @@ enum MarkdownThemeType {
   dracula('dracula', 'Dracula (Neon)', Icons.nightlight_round),
   solarizedDark('solarized_dark', 'Solarized Dark', Icons.brightness_2),
   solarizedLight('solarized_light', 'Solarized Light', Icons.wb_sunny_outlined),
-  vibrant('vibrant', 'Vibrant 彩色', Icons.palette_outlined),
-  sepia('sepia', 'Sepia 羊皮纸', Icons.menu_book_outlined),
-  nord('nord', 'Nord 极光冷灰', Icons.ac_unit);
+  vibrant('vibrant', 'Vibrant', Icons.palette_outlined),
+  sepia('sepia', 'Sepia', Icons.menu_book_outlined),
+  nord('nord', 'Nord', Icons.ac_unit);
 
   final String id;
   final String label;

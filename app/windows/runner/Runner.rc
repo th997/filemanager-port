@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.github.th997" "\0"
-            VALUE "FileDescription", "filemanager" "\0"
+            VALUE "FileDescription", "FP File Manager" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "filemanager" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.github.th997. All rights reserved." "\0"
             VALUE "OriginalFilename", "filemanager.exe" "\0"
-            VALUE "ProductName", "filemanager" "\0"
+            VALUE "ProductName", "FP File Manager" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

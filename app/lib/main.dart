@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:media_kit/media_kit.dart';
@@ -18,6 +19,16 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    yield const LicenseEntryWithLineBreaks(
+      ['rust_core', 'opendal', 'tokio', 'media_kit_native'],
+      '''FP File Manager Rust Core Engine & Native Dependencies:
+- opendal (Apache-2.0): Apache OpenDAL data access layer
+- tokio (MIT): Asynchronous runtime for Rust
+- libmpv / ffmpeg (LGPL-2.1-or-later): Media playback backend
+- All 460 Rust crates licensed under permissive MIT / Apache-2.0 / BSD licenses.''',
+    );
+  });
   if (!Platform.isIOS) {
     MediaKit.ensureInitialized();
   }
@@ -273,7 +284,7 @@ class _FileManagerAppState extends State<FileManagerApp>
             : ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark);
         return MaterialApp(
           navigatorKey: appNavigatorKey,
-          title: 'File Manager',
+          title: 'FP File Manager',
           debugShowCheckedModeBanner: false,
           locale: _locale,
           localizationsDelegates: AppLocalizations.localizationsDelegates,

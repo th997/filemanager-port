@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/servers.dart';
 import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
@@ -586,7 +587,9 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
     _playingSub?.cancel();
     _rateSub?.cancel();
     _speedHudTimer?.cancel();
-    _saveResumePosition();
+    if (!_isExplicitlyClosed) {
+      _saveResumePosition();
+    }
     _resumeSub?.cancel();
     _completedSub?.cancel();
     _errorSub?.cancel();
@@ -757,9 +760,8 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
         child: PopScope(
           canPop: true,
           onPopInvokedWithResult: (didPop, _) {
-            _saveResumePosition();
-            if (_isExplicitlyClosed) {
-              _player.stop();
+            if (!_isExplicitlyClosed) {
+              _saveResumePosition();
             }
           },
           child: Theme(
@@ -769,7 +771,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
             appBar: AppBar(
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
-                tooltip: '最小化 / Minimize',
+                tooltip: AppLocalizations.of(context).minimize,
                 onPressed: () async {
                   _saveResumePosition();
                   if (context.mounted) {
@@ -934,7 +936,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.white),
-                  tooltip: '关闭 / Close',
+                  tooltip: AppLocalizations.of(context).close,
                   onPressed: _closeAndExit,
                 ),
               ],
@@ -1115,7 +1117,7 @@ class _SpeedButtonState extends State<_SpeedButton> {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: '播放速度',
+      message: AppLocalizations.of(context).playbackSpeed,
       child: Material(
         color: Colors.transparent,
         child: InkWell(

@@ -23,7 +23,7 @@ fn dir_cache() -> &'static DirCache {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn invalidate_dir_cache(root: &str) {
+pub(crate) fn invalidate_dir_cache(root: &str) {
     let mut cache = dir_cache().lock();
     cache.retain(|(r, _, _, _), _| r != root);
 }
@@ -468,7 +468,10 @@ pub async fn read_text_file(root: String, path: String) -> Result<String, String
         Ok(text) => Ok(text),
         Err(e) => {
             let bytes = e.into_bytes();
-            let (text, _, _) = encoding_rs::GB18030.decode(&bytes);
+            let (text, _, had_errors) = encoding_rs::GB18030.decode(&bytes);
+            if had_errors {
+                return Err("file is not valid UTF-8 or GB18030 text".to_string());
+            }
             Ok(text.into_owned())
         }
     }
@@ -550,10 +553,14 @@ pub async fn export_to_native(
     let mut file = tokio::fs::File::create(&native)
         .await
         .map_err(|e| e.to_string())?;
-    tokio::io::copy(&mut reader, &mut file)
-        .await
-        .map_err(|e| e.to_string())?;
-    file.flush().await.map_err(|e| e.to_string())?;
+    if let Err(e) = tokio::io::copy(&mut reader, &mut file).await {
+        let _ = tokio::fs::remove_file(&native).await;
+        return Err(e.to_string());
+    }
+    if let Err(e) = file.flush().await {
+        let _ = tokio::fs::remove_file(&native).await;
+        return Err(e.to_string());
+    }
 
     Ok(native.to_string_lossy().into_owned())
 }

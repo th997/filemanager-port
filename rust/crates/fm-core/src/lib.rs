@@ -83,6 +83,12 @@ impl VfsPath {
         self.segments.is_empty()
     }
 
+    /// Returns true if any segment is `.` or `..`, which could escape a root
+    /// when joined onto a backend path.
+    pub fn has_traversal_segment(&self) -> bool {
+        self.segments.iter().any(|s| s == "." || s == "..")
+    }
+
     pub fn name(&self) -> Option<&str> {
         self.segments.last().map(String::as_str)
     }

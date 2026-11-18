@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../../models/entry_item.dart';
 
 /// Shows mobile action sheet for a single file or folder entry.
@@ -294,8 +295,9 @@ Future<String?> showBrowserBackgroundContextMenu({
   required bool isAtMultiBucketRoot,
   required bool hasClipboard,
   required int? clipboardCount,
-  required bool isZh,
+  bool isZh = false,
 }) {
+  final l10n = AppLocalizations.of(context);
   return showMenu<String>(
     context: context,
     constraints: BoxConstraints(
@@ -323,8 +325,8 @@ Future<String?> showBrowserBackgroundContextMenu({
               const SizedBox(width: 8),
               Text(
                 isAtMultiBucketRoot
-                    ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket')
-                    : (isZh ? '新建文件夹' : 'New Folder'),
+                    ? l10n.newBucket
+                    : l10n.newFolder,
               ),
             ],
           ),
@@ -336,7 +338,7 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.note_add_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(isZh ? '新建文本文件' : 'New Text File'),
+              Text(l10n.newTextFile),
             ],
           ),
         ),
@@ -347,7 +349,7 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.cloud_upload_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(isZh ? '上传文件' : 'Upload Files'),
+              Text(l10n.uploadFiles),
             ],
           ),
         ),
@@ -357,7 +359,7 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.drive_folder_upload_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(isZh ? '上传文件夹' : 'Upload Folder'),
+              Text(l10n.uploadFolder),
             ],
           ),
         ),
@@ -367,7 +369,7 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.folder_shared_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(isZh ? '应用内浏览上传…' : 'Browse In-App to Upload…'),
+              Text(l10n.browseInAppUpload),
             ],
           ),
         ),

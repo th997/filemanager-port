@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
@@ -225,14 +226,14 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
   }
 
   Future<void> _switchToSystemPicker() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     final initialDir = _currentPath.isNotEmpty && Directory(_currentPath).existsSync()
         ? _currentPath
         : null;
     try {
       final files = await openFiles(
         initialDirectory: initialDir,
-        confirmButtonText: isZh ? '上传' : 'Upload',
+        confirmButtonText: l10n.upload,
       );
       if (files.isEmpty || !mounted) return;
 
@@ -257,7 +258,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     final recentDirs = PreferencesService.instance.getRecentUploadDirs();
     final quickTargets = PlatformPaths.quickTargets()
         .where((t) => isNativeRoot(t.root))
@@ -309,7 +310,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
                     : null,
               ),
               subtitle: Text(
-                isZh ? '文件夹' : 'Folder',
+                l10n.folderLabel,
                 style: const TextStyle(fontSize: 11),
               ),
               trailing: IconButton(
@@ -424,12 +425,12 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         FilledButton.icon(
           icon: const Icon(Icons.upload, size: 18),
           label: Text(
-            isZh ? '上传 (${_selectedPaths.length})' : 'Upload (${_selectedPaths.length})',
+            '${l10n.upload} (${_selectedPaths.length})',
           ),
           onPressed: _selectedPaths.isEmpty
               ? null

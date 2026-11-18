@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../l10n/app_localizations.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/metadata.dart' as meta_api;
@@ -186,14 +185,6 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     }
   }
 
-  /// The server listens on 0.0.0.0, so an empty password would expose the
-  /// shared directory to the whole LAN. Generate a strong one instead.
-  String _randomSharePassword() {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    final random = math.Random.secure();
-    return List.generate(16, (_) => alphabet[random.nextInt(alphabet.length)]).join();
-  }
-
   Future<void> _toggleServer(bool start) async {
     if (start) {
       final portText = _portCtrl.text.trim();
@@ -208,19 +199,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         return;
       }
       setState(() => _starting = true);
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       try {
-        var pwd = _pwdCtrl.text.trim();
-        final generatedPwd = pwd.isEmpty;
-        if (generatedPwd) {
-          pwd = _randomSharePassword();
-          _pwdCtrl.text = pwd;
-        }
+        final pwd = _pwdCtrl.text.trim();
 
         final status = await SharingService.instance.startHttp(
           rootDir: _shareRoot,
           port: port,
-          password: pwd,
+          password: pwd.isEmpty ? null : pwd,
           readOnly: _readOnly,
         );
 
@@ -230,13 +215,6 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
             _serverStatus = status;
             _starting = false;
           });
-          if (generatedPwd) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(isZh ? '已自动生成访问密码：$pwd' : 'Generated share password: $pwd'),
-              ),
-            );
-          }
         }
       } catch (e) {
         if (mounted) {
@@ -293,11 +271,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).utilities, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text(l10n.utilities, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
@@ -313,16 +291,16 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         padding: AppUiTokens.pagePadding,
         children: [
           // 1. Recycle Bin Card
-          _buildSectionHeader(AppLocalizations.of(context).recycleBin),
+          _buildSectionHeader(l10n.recycleBin),
           Card(
             child: ListTile(
               leading: const AppCircleBadge(
                 icon: Icons.delete_outline,
                 color: Colors.deepOrange,
               ),
-              title: Text(AppLocalizations.of(context).recycleBin),
+              title: Text(l10n.recycleBin),
               subtitle: Text(
-                isZh ? '回收站共有 $_trashCount 项' : '$_trashCount items in trash',
+                l10n.trashCountNotice(_trashCount),
                 style: const TextStyle(fontSize: 10),
               ),
               trailing: Row(
@@ -334,7 +312,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       size: 28,
                       iconSize: 18,
                       color: Theme.of(context).colorScheme.error,
-                      tooltip: isZh ? '清空回收站' : 'Empty Recycle Bin',
+                      tooltip: l10n.emptyRecycleBin,
                       onPressed: _emptyTrash,
                     ),
                   const Icon(Icons.chevron_right, size: 16),
@@ -351,7 +329,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           const SizedBox(height: 12),
 
           // 2. LAN HTTP Sharing Card
-          _buildSectionHeader(AppLocalizations.of(context).lanSharing),
+          _buildSectionHeader(l10n.lanSharing),
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -379,13 +357,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                isZh ? '局域网网页共享服务' : 'Web Sharing Server',
+                                l10n.webSharingServer,
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               Text(
                                 _serverRunning
-                                    ? (isZh ? '🟢 局域网运行中' : '🟢 Running on LAN')
-                                    : (isZh ? '⚪ 已停止' : '⚪ Stopped'),
+                                    ? l10n.runningOnLan
+                                    : l10n.stopped,
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: _serverRunning
@@ -420,11 +398,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                             onTap: () {
                               Clipboard.setData(ClipboardData(text: _shareRoot));
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(isZh ? '共享目录路径已复制' : 'Shared path copied')),
+                                SnackBar(content: Text(l10n.sharedPathCopied)),
                               );
                             },
                             child: Text(
-                              '${isZh ? '共享目录' : 'Shared'}: ${_friendlyPath(_shareRoot)}${_readOnly ? (isZh ? ' (只读)' : ' (read-only)') : ''}',
+                              '${l10n.shared}: ${_friendlyPath(_shareRoot)}${_readOnly ? l10n.readOnly : ''}',
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -434,9 +412,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      isZh
-                          ? '同一 Wi-Fi 下浏览器打开以下地址即可访问（链接含访问令牌，请勿公开分享）：'
-                          : 'Open this link in a browser on the same Wi-Fi. The link contains the access token — do not share it publicly.',
+                      l10n.shareInstructions,
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 4),
@@ -444,9 +420,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Text(
-                          isZh
-                              ? '未检测到局域网 IP，请连接 Wi-Fi 或网线。'
-                              : 'No local IP address detected. Connect to Wi-Fi or LAN.',
+                          l10n.noLanIpFound,
                           style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.warning),
                         ),
                       )
@@ -480,11 +454,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               visualDensity: VisualDensity.compact,
                               padding: const EdgeInsets.all(8),
                               constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                              tooltip: isZh ? '复制网址' : 'Copy URL',
+                              tooltip: l10n.copyUrl,
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: url));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isZh ? '网址已复制到剪贴板' : 'URL copied to clipboard')),
+                                  SnackBar(content: Text(l10n.urlCopied)),
                                 );
                               },
                             ),
@@ -506,7 +480,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                             const SizedBox(width: 6),
                             Expanded(
                               child: SelectableText(
-                                '${isZh ? '访问密码' : 'Password'}: ${_pwdCtrl.text}',
+                                '${l10n.sharePasswordLabel}: ${_pwdCtrl.text}',
                                 style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                               ),
                             ),
@@ -515,11 +489,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               visualDensity: VisualDensity.compact,
                               padding: const EdgeInsets.all(6),
                               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                              tooltip: isZh ? '复制密码' : 'Copy password',
+                              tooltip: l10n.copyPassword,
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: _pwdCtrl.text));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isZh ? '密码已复制到剪贴板' : 'Password copied to clipboard')),
+                                  SnackBar(content: Text(l10n.passwordCopied)),
                                 );
                               },
                             ),
@@ -530,9 +504,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                   ] else ...[
                     const SizedBox(height: 8),
                     Text(
-                      isZh
-                          ? '在局域网内免数据线共享文件。任何浏览器均可直接访问、串流媒体、下载或上传。'
-                          : 'Share files on your local network without cables. Stream media, download or upload through any web browser.',
+                      l10n.welcomeBody,
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 8),
@@ -551,7 +523,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  isZh ? '共享目录' : 'Shared Folder',
+                                  l10n.shared,
                                   style: const TextStyle(fontSize: 9, color: Colors.grey),
                                 ),
                                 Text(
@@ -569,61 +541,72 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                             ),
                             onPressed: _serverRunning ? null : _pickShareFolder,
-                            child: Text(isZh ? '更改' : 'Change', style: const TextStyle(fontSize: 11)),
+                            child: Text(l10n.change, style: const TextStyle(fontSize: 11)),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 8),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SizedBox(
                           width: 85,
+                          height: 44,
                           child: TextField(
                             controller: _portCtrl,
                             keyboardType: TextInputType.number,
-                            style: const TextStyle(fontSize: 11.5),
+                            style: const TextStyle(fontSize: 12),
                             decoration: InputDecoration(
-                              labelText: isZh ? '端口' : 'Port',
+                              labelText: l10n.port,
                               border: const OutlineInputBorder(),
                               isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: TextField(
-                            controller: _pwdCtrl,
-                            obscureText: _obscurePwd,
-                            style: const TextStyle(fontSize: 11.5),
-                            decoration: InputDecoration(
-                              labelText: isZh ? '访问密码 (留空自动生成)' : 'Password (auto if blank)',
-                              helperText: isZh
-                                  ? '服务对局域网可见，务必设置密码'
-                                  : 'Visible on the LAN; a password is required',
-                              helperStyle: const TextStyle(fontSize: 10),
-                              border: const OutlineInputBorder(),
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                              suffixIcon: IconButton(
-                                icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
-                                visualDensity: VisualDensity.compact,
-                                padding: const EdgeInsets.all(8),
-                                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                                tooltip: _obscurePwd ? 'Show password' : 'Hide password',
-                                onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
+                          child: SizedBox(
+                            height: 44,
+                            child: TextField(
+                              controller: _pwdCtrl,
+                              obscureText: _obscurePwd,
+                              style: const TextStyle(fontSize: 12),
+                              decoration: InputDecoration(
+                                labelText: l10n.passwordFieldLabel,
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                suffixIcon: IconButton(
+                                  icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                  tooltip: _obscurePwd ? 'Show password' : 'Hide password',
+                                  onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ],
                     ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 2, bottom: 2),
+                      child: Text(
+                        l10n.passwordFieldHelper,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     CheckboxListTile(
                       title: Text(
-                        isZh ? '只读模式 (禁止网页端上传)' : 'Read Only (disallow web uploads)',
+                        l10n.readOnlyMode,
                         style: const TextStyle(fontSize: 11),
                       ),
                       value: _readOnly,
@@ -641,7 +624,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           const SizedBox(height: 12),
 
           // 3. Cache cleaner
-          _buildSectionHeader(AppLocalizations.of(context).storageAndCache),
+          _buildSectionHeader(l10n.storageAndCache),
           Card(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -651,11 +634,9 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                 icon: Icons.cleaning_services,
                 color: Colors.teal,
               ),
-              title: Text(isZh ? '导出与预览缓存' : 'Export & Preview Cache'),
+              title: Text(l10n.exportPreviewCache),
               subtitle: Text(
-                isZh
-                    ? '外部应用打开文件产生的临时缓存 (${_formatSize(_cacheSizeBytes)})'
-                    : 'Temporary files cached when opening with external apps (${_formatSize(_cacheSizeBytes)})',
+                '${l10n.exportPreviewCache} (${_formatSize(_cacheSizeBytes)})',
                 style: const TextStyle(fontSize: 10),
               ),
               trailing: _clearingCache
@@ -666,7 +647,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
                       onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
-                      child: Text(isZh ? '清理' : 'Clear', style: const TextStyle(fontSize: 11)),
+                      child: Text(l10n.clear, style: const TextStyle(fontSize: 11)),
                     ),
             ),
             const Divider(height: 1),
@@ -675,11 +656,9 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                 icon: Icons.archive_outlined,
                 color: Colors.deepPurple,
               ),
-              title: Text(isZh ? '远程与压缩包缓存' : 'Remote Archive Cache'),
+              title: Text(l10n.remoteArchiveCache),
               subtitle: Text(
-                isZh
-                    ? '浏览远程服务器时产生的临时文件 (${_formatSize(_archiveCacheBytes)})'
-                    : 'Archives downloaded from remote servers for browsing (${_formatSize(_archiveCacheBytes)})',
+                '${l10n.remoteArchiveCache} (${_formatSize(_archiveCacheBytes)})',
                 style: const TextStyle(fontSize: 10),
               ),
               trailing: OutlinedButton(
@@ -688,7 +667,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                 ),
                 onPressed: _archiveCacheBytes > 0 ? _clearArchiveCache : null,
-                child: Text(isZh ? '清理' : 'Clear', style: const TextStyle(fontSize: 11)),
+                child: Text(l10n.clear, style: const TextStyle(fontSize: 11)),
               ),
             ),
               ],

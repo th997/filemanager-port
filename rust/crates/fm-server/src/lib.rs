@@ -62,19 +62,13 @@ mod tests {
     #[tokio::test]
     async fn http_share_starts_and_stops() {
         let temp = tempfile::tempdir().unwrap();
-        // Starting a 0.0.0.0 listener without a password must be refused.
-        assert!(
-            start_http_share(temp.path().to_path_buf(), None, None, true)
-                .await
-                .is_err(),
-            "anonymous LAN sharing must not start"
-        );
-        assert!(
-            start_http_share(temp.path().to_path_buf(), None, Some("   ".into()), true)
-                .await
-                .is_err(),
-            "a blank password must not start a share"
-        );
+        // Starting with None password is supported and authenticated via share_token.
+        let server_token_only = start_http_share(temp.path().to_path_buf(), None, None, true)
+            .await
+            .expect("token-only share should start");
+        assert!(server_token_only.port > 0);
+        assert!(!server_token_only.share_token.is_empty());
+        let _ = server_token_only.shutdown_tx.send(());
 
         let server = start_http_share(
             temp.path().to_path_buf(),

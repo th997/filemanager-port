@@ -97,6 +97,9 @@ async fn handle_stream(
     }
 
     let path = VfsPath::from_slash_path(&subpath);
+    if path.has_traversal_segment() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let entry = match state.vfs.stat(&path).await {
         Ok(entry) => entry,
         Err(_) => {

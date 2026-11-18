@@ -7,6 +7,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/file_manager.dart';
 import '../services/file_open_service.dart';
 import '../services/highlight_service.dart';
@@ -1001,7 +1002,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 if (_isHtml)
                   IconButton(
                     icon: const Icon(Icons.open_in_browser),
-                    tooltip: '在系统浏览器中打开 (Open in Browser)',
+                    tooltip: AppLocalizations.of(context).openInBrowser,
                     onPressed: _openInBrowser,
                   ),
                 if (_isMarkdown && _mode == TextFileMode.preview) ...[
@@ -1104,7 +1105,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           enabled: false,
                           height: 28,
                           child: Text(
-                            '页间距 / 边距',
+                            'Margins / Spacing',
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(context).colorScheme.outline,
@@ -1186,13 +1187,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     },
                     itemBuilder: (ctx) => [
                       if (_isHtml)
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'open_in_browser',
                           child: Row(
                             children: [
-                              Icon(Icons.open_in_browser, size: 20),
-                              SizedBox(width: 8),
-                              Text('在系统浏览器中打开'),
+                              const Icon(Icons.open_in_browser, size: 20),
+                              const SizedBox(width: 8),
+                              Text(AppLocalizations.of(context).openInBrowser),
                             ],
                           ),
                         ),
@@ -1286,23 +1287,6 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         ],
                       );
                     },
-                  ),
-                if (_mode == TextFileMode.edit && _saving)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  )
-                else if (_mode == TextFileMode.edit)
-                  IconButton(
-                    icon: const Icon(Icons.save),
-                    tooltip: 'Save (Ctrl+S)',
-                    onPressed: _isDirty && _error == null ? _save : null,
                   ),
               ],
             ),

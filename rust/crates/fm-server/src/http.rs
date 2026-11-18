@@ -76,15 +76,9 @@ pub async fn start_http_share(
     password: Option<String>,
     read_only: bool,
 ) -> Result<RunningServer, String> {
-    // This server binds 0.0.0.0, so an empty password would expose the
-    // shared directory to the entire LAN without any authentication.
-    // Refuse to start instead of silently granting anonymous access.
     let password = password
         .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty())
-        .ok_or_else(|| {
-            "a share password is required (anonymous LAN sharing is disabled)".to_string()
-        })?;
+        .filter(|p| !p.is_empty());
     let share_token = uuid::Uuid::new_v4().simple().to_string();
 
     let port = preferred_port.unwrap_or(0);
@@ -102,7 +96,7 @@ pub async fn start_http_share(
     let state = Arc::new(ServerState {
         root_dir,
         canonical_root,
-        password: Some(password),
+        password,
         share_token: share_token.clone(),
         read_only,
         auth_failures: std::sync::Mutex::new(std::collections::HashMap::new()),
@@ -141,11 +135,6 @@ pub async fn start_http_share(
 }
 
 fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bool {
-    // Fail closed: no password means no access, never anonymous access.
-    let Some(expected) = state.password.as_deref().filter(|p| !p.is_empty()) else {
-        return false;
-    };
-
     let check_eq = |candidate: &str, secret: &str| -> bool {
         if candidate.len() != secret.len() {
             return false;
@@ -157,47 +146,44 @@ fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bo
         diff == 0
     };
 
-    // The URL token is a random session token minted at startup, not the
-    // password. Sharing a link therefore never puts the password into a
-    // browser history, a Referer header or a proxy access log.
+    // 1. The URL token is a random session token minted at startup.
+    // Anyone accessing with the valid token is authenticated immediately.
     if let Some(token) = &query.token {
         if check_eq(token, &state.share_token) {
             return true;
         }
     }
 
-    if let Some(auth_val) = headers.get(header::AUTHORIZATION) {
-        if let Ok(auth_str) = auth_val.to_str() {
-            // HTTP Basic: base64("user:password"). The share has no
-            // username concept, so only the part after the first ':' is
-            // checked. Browsers send this automatically once the user has
-            // answered the 401 challenge, which is what makes the web UI
-            // usable with a password set.
-            if let Some(basic) = auth_str
-                .strip_prefix("Basic ")
-                .or_else(|| auth_str.strip_prefix("basic "))
-            {
-                if let Ok(decoded) =
-                    base64::engine::general_purpose::STANDARD.decode(basic.trim())
+    // 2. HTTP Basic / Bearer with password if password was configured
+    if let Some(expected) = state.password.as_deref() {
+        if let Some(auth_val) = headers.get(header::AUTHORIZATION) {
+            if let Ok(auth_str) = auth_val.to_str() {
+                if let Some(basic) = auth_str
+                    .strip_prefix("Basic ")
+                    .or_else(|| auth_str.strip_prefix("basic "))
                 {
-                    if let Ok(credentials) = std::str::from_utf8(&decoded) {
-                        let password = credentials
-                            .split_once(':')
-                            .map(|(_, p)| p)
-                            .unwrap_or(credentials);
-                        if check_eq(password, expected) {
-                            return true;
+                    if let Ok(decoded) =
+                        base64::engine::general_purpose::STANDARD.decode(basic.trim())
+                    {
+                        if let Ok(credentials) = std::str::from_utf8(&decoded) {
+                            let password = credentials
+                                .split_once(':')
+                                .map(|(_, p)| p)
+                                .unwrap_or(credentials);
+                            if check_eq(password, expected) {
+                                return true;
+                            }
                         }
                     }
                 }
-            }
 
-            let token = auth_str
-                .strip_prefix("Bearer ")
-                .or_else(|| auth_str.strip_prefix("bearer "))
-                .unwrap_or(auth_str);
-            if check_eq(token, expected) {
-                return true;
+                let token = auth_str
+                    .strip_prefix("Bearer ")
+                    .or_else(|| auth_str.strip_prefix("bearer "))
+                    .unwrap_or(auth_str);
+                if check_eq(token, expected) {
+                    return true;
+                }
             }
         }
     }
@@ -1290,6 +1276,9 @@ async fn handle_download(
         .map_err(|_| StatusCode::FORBIDDEN)?;
     let file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if metadata.is_dir() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let total_size = metadata.len();
 
     let file_name = file_path
@@ -1405,16 +1394,63 @@ fn resolve_path_inner(root: &Path, canonical_root: Option<&Path>, rel: &str) -> 
 
 pub fn get_lan_ip_addresses() -> Vec<String> {
     let mut ips = Vec::new();
+
+    // 1. On Linux, check default gateway from /proc/net/route to avoid being hijacked by TUN/VPN fake-ip (e.g. Clash Meta 198.18.x.x)
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/net/route") {
+            for line in content.lines() {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                if fields.len() >= 3 && fields[1] == "00000000" {
+                    if let Ok(hex_val) = u32::from_str_radix(fields[2], 16) {
+                        if hex_val != 0 {
+                            let ip_bytes = hex_val.to_le_bytes();
+                            let gw_ip = std::net::Ipv4Addr::from(ip_bytes);
+                            if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+                                if socket.connect((gw_ip, 80)).is_ok() {
+                                    if let Ok(local_addr) = socket.local_addr() {
+                                        let ip = local_addr.ip().to_string();
+                                        if ip != "0.0.0.0" && ip != "127.0.0.1" && !ip.starts_with("198.18.") && !ips.contains(&ip) {
+                                            ips.push(ip);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Standard UDP route probe, filtering out loopback and CGNAT/TUN fake IPs (198.18.x.x / 198.19.x.x)
     if let Ok(interfaces) = std::net::UdpSocket::bind("0.0.0.0:0") {
         if interfaces.connect("8.8.8.8:80").is_ok() {
             if let Ok(local_addr) = interfaces.local_addr() {
                 let ip = local_addr.ip().to_string();
-                if ip != "0.0.0.0" && ip != "127.0.0.1" {
+                if ip != "0.0.0.0" && ip != "127.0.0.1" && !ip.starts_with("198.18.") && !ip.starts_with("198.19.") && !ips.contains(&ip) {
                     ips.push(ip);
                 }
             }
         }
     }
+
+    // 3. Fallback probes for common LAN gateways if empty
+    if ips.is_empty() {
+        for target in ["192.168.1.1:80", "192.168.0.1:80", "10.0.0.1:80", "172.16.0.1:80"] {
+            if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+                if socket.connect(target).is_ok() {
+                    if let Ok(local_addr) = socket.local_addr() {
+                        let ip = local_addr.ip().to_string();
+                        if ip != "0.0.0.0" && ip != "127.0.0.1" && !ip.starts_with("198.18.") && !ips.contains(&ip) {
+                            ips.push(ip);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if ips.is_empty() {
         ips.push("127.0.0.1".to_string());
     }

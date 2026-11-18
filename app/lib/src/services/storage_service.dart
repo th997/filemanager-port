@@ -364,13 +364,17 @@ class StorageService {
   Future<void> restoreTrashItem(String id) async {
     ensureInitialized();
     await meta_api.restoreTrashItem(dbPath: dbPath, id: id);
-    _cachedTrashCount = (_cachedTrashCount != null && _cachedTrashCount! > 0 ? _cachedTrashCount! - 1 : 0);
+    if (_cachedTrashCount != null) {
+      _cachedTrashCount = _cachedTrashCount! > 0 ? _cachedTrashCount! - 1 : 0;
+    }
   }
 
   Future<void> deleteTrashItem(String id) async {
     ensureInitialized();
     await meta_api.deleteTrashItem(dbPath: dbPath, id: id);
-    _cachedTrashCount = (_cachedTrashCount != null && _cachedTrashCount! > 0 ? _cachedTrashCount! - 1 : 0);
+    if (_cachedTrashCount != null) {
+      _cachedTrashCount = _cachedTrashCount! > 0 ? _cachedTrashCount! - 1 : 0;
+    }
   }
 
   Future<void> clearTrash() async {

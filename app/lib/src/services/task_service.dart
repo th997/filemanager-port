@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/tasks.dart' as tasks_api;
 
 /// Human-readable byte size (used across dialogs and task center).
@@ -135,7 +136,7 @@ class SpeedEstimator {
   }
 
   /// "about 4 min left" / "剩余约 4 分钟" style text, or null when it cannot be estimated.
-  String? etaText(BigInt completed, BigInt? total, {bool isZh = false}) {
+  String? etaText(BigInt completed, BigInt? total, {AppLocalizations? l10n, bool isZh = false}) {
     if (total == null) return null;
     final speed = _smoothedSpeed;
     if (speed == null || speed < 1.0) return null;
@@ -144,17 +145,23 @@ class SpeedEstimator {
 
     final seconds = (remaining / speed).round();
     if (seconds < 5) {
+      if (l10n != null) return l10n.almostDone;
       return isZh ? '即将完成' : 'almost done';
     }
     if (seconds < 60) {
+      if (l10n != null) return l10n.secondsLeft(seconds);
       return isZh ? '剩余约 $seconds 秒' : 'about $seconds sec left';
     }
     final minutes = (seconds / 60).ceil();
     if (minutes < 60) {
+      if (l10n != null) return l10n.minutesLeft(minutes);
       return isZh ? '剩余约 $minutes 分钟' : 'about $minutes min left';
     }
     final hours = minutes ~/ 60;
     final rest = minutes % 60;
+    if (l10n != null) {
+      return rest == 0 ? l10n.hoursLeft(hours) : l10n.hoursMinutesLeft(hours, rest);
+    }
     if (isZh) {
       return rest == 0 ? '剩余约 $hours 小时' : '剩余约 $hours 小时 $rest 分钟';
     } else {

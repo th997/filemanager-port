@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../pages/image_viewer_page.dart';
 import '../rust/api/servers.dart';
 import '../services/path_utils.dart';
@@ -135,7 +136,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
     if (widget.root != oldWidget.root || widget.path != oldWidget.path) {
       _initWebView();
     } else if (widget.isDirty != oldWidget.isDirty ||
-        (widget.isDirty && widget.rawHtml != oldWidget.rawHtml)) {
+        widget.rawHtml != oldWidget.rawHtml) {
       _loadContent();
     }
   }
@@ -567,7 +568,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '桌面端为精简 HTML 预览。如需完整的 JS/CSS 样式效果，可在浏览器中打开。',
+                        AppLocalizations.of(context).desktopHtmlPreviewHint,
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -577,7 +578,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
                     FilledButton.tonalIcon(
                       onPressed: widget.onOpenInBrowser,
                       icon: const Icon(Icons.open_in_browser, size: 16),
-                      label: const Text('用浏览器打开', style: TextStyle(fontSize: 12)),
+                      label: Text(AppLocalizations.of(context).openInBrowser, style: const TextStyle(fontSize: 12)),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         visualDensity: VisualDensity.compact,
@@ -682,7 +683,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
                   child: FloatingActionButton.small(
                     heroTag: null,
                     onPressed: _openExtractedImages,
-                    tooltip: '预览图片',
+                    tooltip: AppLocalizations.of(context).previewImage,
                     child: const Icon(Icons.image_outlined, size: 18),
                   ),
                 ),
@@ -690,8 +691,8 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
                 heroTag: null,
                 onPressed: _toggleJs,
                 tooltip: _jsEnabled
-                    ? '脚本已启用：页面代码可访问共享目录内的文件，点击禁用'
-                    : '脚本已禁用（安全默认），点击启用',
+                    ? AppLocalizations.of(context).scriptEnabledTooltip
+                    : AppLocalizations.of(context).scriptDisabledTooltip,
                 backgroundColor: _jsEnabled
                     ? Theme.of(context).colorScheme.errorContainer
                     : Theme.of(context).colorScheme.surfaceContainerHigh,

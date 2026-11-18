@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
+
 /// Standard list of playback speeds supported across players.
 const List<double> kPlayerSpeedRates = [
   0.5,
@@ -116,8 +118,9 @@ class MediaPlayerSpeedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = Localizations.of<AppLocalizations>(context, AppLocalizations);
     return Tooltip(
-      message: '播放速度',
+      message: l10n?.playbackSpeed ?? 'Playback speed',
       child: Material(
         color: Colors.transparent,
         child: InkWell(

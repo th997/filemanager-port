@@ -1,10 +1,16 @@
 [Desktop Entry]
 Type=Application
-Name=File Manager
-GenericName=File Manager
+Name=FP File Manager
+Name[zh_CN]=FP文件管理器
+Name[ja]=FPファイルマネージャー
+GenericName=FP File Manager
+GenericName[zh_CN]=FP文件管理器
+GenericName[ja]=FPファイルマネージャー
 Comment=Browse local, remote and archive files
+Comment[zh_CN]=浏览本地、远程与归档文件
+Comment[ja]=ローカル、リモート、アーカイブファイルを閲覧
 Exec=filemanager %U
 Icon=filemanager
 Terminal=false
 Categories=System;FileTools;FileManager;
-Keywords=files;manager;browse;
+Keywords=files;manager;browse;文件;管理器;

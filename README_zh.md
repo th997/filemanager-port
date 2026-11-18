@@ -1,4 +1,4 @@
-# 跨平台高性能文件管理器 (Rust + Flutter)
+# FP文件管理器 (Rust + Flutter)
 
 [English](README.md) | [简体中文](README_zh.md) | [日本語](README_ja.md)
 

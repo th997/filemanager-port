@@ -90,80 +90,88 @@ class BrowserBottomActionBar extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            if (isSelecting) ...[
-              if (isRemoteOrArchive)
-                _actionButton(
-                  icon: Icons.download,
-                  label: 'Download',
-                  onTap: onDownload,
-                  color: Colors.blue,
-                ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  selectionLabel,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  if (isSelecting) ...[
+                    if (isRemoteOrArchive)
+                      _actionButton(
+                        icon: Icons.download,
+                        label: 'Download',
+                        onTap: onDownload,
+                        color: Colors.blue,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        selectionLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    _actionButton(
+                      icon: Icons.copy,
+                      label: 'Copy',
+                      onTap: onCopy,
+                    ),
+                    if (selectedCount == 1)
+                      _actionButton(
+                        icon: Icons.info_outline,
+                        label: 'Info',
+                        onTap: onInfo,
+                      ),
+                    if (canWrite) ...[
+                      _actionButton(
+                        icon: Icons.cut,
+                        label: 'Cut',
+                        onTap: onCut,
+                      ),
+                      _actionButton(
+                        icon: Icons.delete,
+                        label: 'Delete',
+                        onTap: onDelete,
+                        color: Colors.red,
+                      ),
+                      if (selectedCount == 1)
+                        _actionButton(
+                          icon: Icons.edit,
+                          label: 'Rename',
+                          onTap: onRename,
+                        ),
+                      if (canArchive)
+                        _actionButton(
+                          icon: Icons.archive,
+                          label: 'Zip',
+                          onTap: onCompress,
+                        ),
+                    ],
+                  ],
+                  if (clipboardCount != null && !isSelecting && canWrite) ...[
+                    _actionButton(
+                      icon: Icons.paste,
+                      label: 'Paste ($clipboardCount)',
+                      onTap: onPaste,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    _actionButton(
+                      icon: Icons.close,
+                      label: 'Clear',
+                      onTap: onClearClipboard,
+                      color: Colors.grey,
+                    ),
+                  ],
+                ],
               ),
-              _actionButton(
-                icon: Icons.copy,
-                label: 'Copy',
-                onTap: onCopy,
-              ),
-              if (canWrite) ...[
-                _actionButton(
-                  icon: Icons.cut,
-                  label: 'Cut',
-                  onTap: onCut,
-                ),
-                _actionButton(
-                  icon: Icons.delete,
-                  label: 'Delete',
-                  onTap: onDelete,
-                  color: Colors.red,
-                ),
-                if (selectedCount == 1)
-                  _actionButton(
-                    icon: Icons.edit,
-                    label: 'Rename',
-                    onTap: onRename,
-                  ),
-                if (selectedCount == 1)
-                  _actionButton(
-                    icon: Icons.info_outline,
-                    label: 'Info',
-                    onTap: onInfo,
-                  ),
-                if (canArchive)
-                  _actionButton(
-                    icon: Icons.archive,
-                    label: 'Zip',
-                    onTap: onCompress,
-                  ),
-              ],
-            ],
-            if (clipboardCount != null && !isSelecting && canWrite) ...[
-              _actionButton(
-                icon: Icons.paste,
-                label: 'Paste ($clipboardCount)',
-                onTap: onPaste,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              _actionButton(
-                icon: Icons.close,
-                label: 'Clear',
-                onTap: onClearClipboard,
-                color: Colors.grey,
-              ),
-            ],
-          ],
+            ),
+          ),
         ),
       ),
     );

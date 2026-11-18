@@ -17,9 +17,9 @@ PdfColor _pdf(Color c) => PdfColor.fromInt(c.toARGB32());
 
 /// Page margins and spacing presets for PDF exports.
 enum PdfMarginMode {
-  compact('compact', '紧凑 (16pt)', 16.0, 0.6),
-  standard('standard', '标准 (36pt)', 36.0, 1.0),
-  relaxed('relaxed', '宽松 (54pt)', 54.0, 1.5);
+  compact('compact', 'Compact (16pt)', 16.0, 0.6),
+  standard('standard', 'Standard (36pt)', 36.0, 1.0),
+  relaxed('relaxed', 'Relaxed (54pt)', 54.0, 1.5);
 
   final String id;
   final String label;

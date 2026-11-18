@@ -138,14 +138,20 @@ impl FtpFs {
                 message: format!(
                     "FTP connection to {}:{} timed out",
                     config.host.as_deref().unwrap_or("127.0.0.1"),
-                    config.port.unwrap_or(21)
+                    config
+                        .port
+                        .or_else(|| RemoteConfig::default_port(config.kind))
+                        .unwrap_or(21)
                 ),
             })?
     }
 
     async fn connect_client_inner(config: &RemoteConfig) -> Result<FtpClient, VfsError> {
         let host = config.host.as_deref().unwrap_or("127.0.0.1");
-        let port = config.port.unwrap_or(21);
+        let port = config
+            .port
+            .or_else(|| RemoteConfig::default_port(config.kind))
+            .unwrap_or(21);
         let addr = format!("{host}:{port}");
 
         let user = config.username.as_deref().unwrap_or("anonymous");

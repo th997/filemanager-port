@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../l10n/app_localizations.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
 import '../theme/app_ui_tokens.dart';
@@ -234,6 +234,8 @@ class _SettingsPageState extends State<SettingsPage> {
         return 'English';
       case 'zh':
         return '中文';
+      case 'ja':
+        return '日本語';
       default:
         return l10n.languageSystem;
     }
@@ -330,6 +332,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       DropdownMenuItem(value: 'system', child: Text(l10n.languageSystem, style: const TextStyle(fontSize: 12))),
                       const DropdownMenuItem(value: 'en', child: Text('English', style: TextStyle(fontSize: 12))),
                       const DropdownMenuItem(value: 'zh', child: Text('中文', style: TextStyle(fontSize: 12))),
+                      const DropdownMenuItem(value: 'ja', child: Text('日本語', style: TextStyle(fontSize: 12))),
                     ],
                     onChanged: (code) {
                       if (code == null) return;
@@ -357,15 +360,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.open_in_browser,
                     color: Colors.blue,
                   ),
-                  title: Text(
-                    Localizations.localeOf(context).languageCode == 'zh'
-                        ? '上传使用系统文件选择器'
-                        : 'Use System Picker for Upload',
-                  ),
+                  title: Text(l10n.uploadWithSystemPicker),
                   subtitle: Text(
-                    Localizations.localeOf(context).languageCode == 'zh'
-                        ? '直接调用系统原生文件管理器，支持系统书签与路径粘贴'
-                        : 'Invoke native OS file dialog with system bookmarks',
+                    l10n.uploadWithSystemPickerDesc,
                     style: const TextStyle(fontSize: 10),
                   ),
                   value: PreferencesService.instance.useSystemPicker,
@@ -397,7 +394,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: 12),
 
-          _buildSectionHeader(context, 'Media Playback (远程播放缓冲)'),
+          _buildSectionHeader(context, l10n.mediaPlayback),
           Card(
             child: Column(
               children: [
@@ -406,8 +403,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.timer_outlined,
                     color: Colors.teal,
                   ),
-                  title: const Text('Buffer Duration (缓冲时长)'),
-                  subtitle: Text('$_bufferDurationSec s forward buffer',
+                  title: Text(l10n.bufferDuration),
+                  subtitle: Text('$_bufferDurationSec s',
                       style: const TextStyle(fontSize: 11)),
                   trailing: DropdownButton<int>(
                     value: _bufferDurationSec,
@@ -415,11 +412,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     items: const [
                       DropdownMenuItem(
                           value: 5,
-                          child: Text('5s (低延迟)',
+                          child: Text('5s',
                               style: TextStyle(fontSize: 12))),
                       DropdownMenuItem(
                           value: 15,
-                          child: Text('15s (推荐)',
+                          child: Text('15s',
                               style: TextStyle(fontSize: 12))),
                       DropdownMenuItem(
                           value: 30,
@@ -448,8 +445,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.memory,
                     color: Colors.purple,
                   ),
-                  title: const Text('Buffer Size (缓冲大小)'),
-                  subtitle: Text('$_bufferSizeMb MB pool size',
+                  title: Text(l10n.bufferSize),
+                  subtitle: Text('$_bufferSizeMb MB',
                       style: const TextStyle(fontSize: 11)),
                   trailing: DropdownButton<int>(
                     value: _bufferSizeMb,
@@ -457,14 +454,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     items: const [
                       DropdownMenuItem(
                           value: 4,
-                          child: Text('4 MB (省内存)',
+                          child: Text('4 MB',
                               style: TextStyle(fontSize: 12))),
                       DropdownMenuItem(
                           value: 8,
                           child: Text('8 MB', style: TextStyle(fontSize: 12))),
                       DropdownMenuItem(
                           value: 16,
-                          child: Text('16 MB (推荐)',
+                          child: Text('16 MB',
                               style: TextStyle(fontSize: 12))),
                       DropdownMenuItem(
                           value: 32,
@@ -474,7 +471,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           child: Text('64 MB', style: TextStyle(fontSize: 12))),
                       DropdownMenuItem(
                           value: 128,
-                          child: Text('128 MB (超大)',
+                          child: Text('128 MB',
                               style: TextStyle(fontSize: 12))),
                     ],
                     onChanged: (val) {
@@ -567,6 +564,28 @@ class _SettingsPageState extends State<SettingsPage> {
                     ));
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Supported protocols copied to clipboard')),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.policy_outlined,
+                    color: Colors.amber,
+                  ),
+                  title: Text(l10n.openSourceLicenses),
+                  subtitle: Text(
+                    l10n.openSourceLicensesSubtitle,
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    showLicensePage(
+                      context: context,
+                      applicationName: l10n.appTitle,
+                      applicationVersion: _versionLabel,
+                      applicationLegalese:
+                          'Copyright © 2026 FP File Manager Contributors. Released under the MIT License.',
                     );
                   },
                 ),

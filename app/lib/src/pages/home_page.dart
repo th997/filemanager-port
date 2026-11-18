@@ -10,7 +10,7 @@ import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
 import '../theme/app_ui_tokens.dart';
-import '../../l10n/app_localizations.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
 import 'gallery_page.dart';

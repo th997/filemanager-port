@@ -6,7 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
-import '../../l10n/app_localizations.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
 import '../services/storage_service.dart';
@@ -97,17 +97,7 @@ class _RemotesPageState extends State<RemotesPage> {
       setState(() {
         _remotes = rems;
         _loading = false;
-        for (final r in rems) {
-          _status[r.id] =
-              _isUnreadable(r) ? _ConnStatus.unknown : _ConnStatus.checking;
-        }
       });
-      // Probe reachability in the background so the list shows live
-      // status dots without blocking the page on slow servers.
-      for (final r in rems) {
-        if (_isUnreadable(r)) continue;
-        _probeStatus(r, skipInitialSetState: true);
-      }
     } catch (e) {
       // Without this the page stays on its spinner after a storage failure.
       if (!mounted) return;
@@ -119,29 +109,6 @@ class _RemotesPageState extends State<RemotesPage> {
         ),
       );
     }
-  }
-
-  Future<void> _probeStatus(RemoteConfigDto remote, {bool skipInitialSetState = false}) async {
-    if (!skipInitialSetState) {
-      if (_status[remote.id] == _ConnStatus.checking) return;
-      if (mounted) {
-        setState(() => _status[remote.id] = _ConnStatus.checking);
-      }
-    }
-    bool ok;
-    try {
-      // Bounded: a host whose packets are silently dropped by a
-      // firewall otherwise keeps the dot on "checking" for the whole
-      // OS TCP timeout (~2 minutes), which reads as the app hanging.
-      ok = await StorageService.instance
-          .testConnection(remote)
-          .timeout(const Duration(seconds: 8), onTimeout: () => false);
-    } catch (_) {
-      ok = false;
-    }
-    if (!mounted) return;
-    setState(() =>
-        _status[remote.id] = ok ? _ConnStatus.online : _ConnStatus.offline);
   }
 
   Color _statusColor(_ConnStatus s) {
@@ -463,79 +430,87 @@ class _RemotesPageState extends State<RemotesPage> {
       }
     } catch (_) {}
 
-    if (!mounted) return;
-    final imported = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Restore Connections'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Paste JSON backup text below:',
-                style: TextStyle(fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: controller,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  hintText: '[{"id": "...", "name": "...", "kind": "s3", ...}]',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
+    bool? imported;
+    try {
+      imported = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Restore Connections'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paste JSON backup text below:',
+                  style: TextStyle(fontSize: 12),
                 ),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-              ),
-            ],
+                const SizedBox(height: 8),
+                TextField(
+                  controller: controller,
+                  maxLines: 8,
+                  decoration: const InputDecoration(
+                    hintText: '[{"id": "...", "name": "...", "kind": "s3", ...}]',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final text = controller.text.trim();
+                if (text.isEmpty) return;
+                try {
+                  final count = await StorageService.instance.importRemotesJson(text);
+                  final failures = StorageService.instance.lastImportFailures;
+                  if (ctx.mounted) {
+                    Navigator.of(ctx).pop(true);
+                  }
+                  if (mounted) {
+                    final detail = failures.isEmpty
+                        ? ''
+                        : '; ${failures.length} failed: ${failures.join(', ')}';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Imported $count connection(s)$detail'),
+                        backgroundColor: failures.isEmpty
+                            ? Theme.of(context).colorScheme.success
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text('Import failed: $e'),
+                        backgroundColor: Theme.of(ctx).colorScheme.error,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Import'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              try {
-                final count = await StorageService.instance.importRemotesJson(text);
-                final failures = StorageService.instance.lastImportFailures;
-                if (ctx.mounted) {
-                  Navigator.of(ctx).pop(true);
-                }
-                if (mounted) {
-                  final detail = failures.isEmpty
-                      ? ''
-                      : '; ${failures.length} failed: ${failures.join(', ')}';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Imported $count connection(s)$detail'),
-                      backgroundColor: failures.isEmpty
-                          ? Theme.of(context).colorScheme.success
-                          : Theme.of(context).colorScheme.error,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(
-                      content: Text('Import failed: $e'),
-                      backgroundColor: Theme.of(ctx).colorScheme.error,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Import'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
     if (imported == true) {
       _loadRemotes();
     }
@@ -709,22 +684,23 @@ class _RemotesPageState extends State<RemotesPage> {
                                         clipBehavior: Clip.none,
                                         children: [
                                           AppCircleBadge(icon: icon, color: color),
-                                          Positioned(
-                                            right: -1,
-                                            bottom: -1,
-                                            child: Container(
-                                              width: 10,
-                                              height: 10,
-                                              decoration: BoxDecoration(
-                                                color: _statusColor(_status[r.id] ?? _ConnStatus.unknown),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(
-                                                  color: Theme.of(context).cardColor,
-                                                  width: 1.5,
+                                          if (_status[r.id] != null && _status[r.id] != _ConnStatus.unknown)
+                                            Positioned(
+                                              right: -1,
+                                              bottom: -1,
+                                              child: Container(
+                                                width: 10,
+                                                height: 10,
+                                                decoration: BoxDecoration(
+                                                  color: _statusColor(_status[r.id]!),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Theme.of(context).cardColor,
+                                                    width: 1.5,
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
                                         ],
                                       ),
                                       title: Text(r.name),

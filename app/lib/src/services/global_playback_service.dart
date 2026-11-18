@@ -222,8 +222,11 @@ class GlobalPlaybackService extends ChangeNotifier {
       notifyListeners();
     });
     _desktopPosSub = player.stream.position.listen((pos) {
+      final prevSec = position.inSeconds;
       position = pos;
-      notifyListeners();
+      if (pos.inSeconds != prevSec) {
+        notifyListeners();
+      }
     });
     _desktopDurSub = player.stream.duration.listen((dur) {
       duration = dur;
@@ -294,7 +297,11 @@ class GlobalPlaybackService extends ChangeNotifier {
       _updateNowPlaying(force: true);
     } else if (desktopPlayer != null) {
       final newPos = position + Duration(seconds: seconds);
-      desktopPlayer!.seek(newPos);
+      final maxMs = duration.inMilliseconds;
+      final clamped = maxMs > 0
+          ? Duration(milliseconds: newPos.inMilliseconds.clamp(0, maxMs))
+          : (newPos.isNegative ? Duration.zero : newPos);
+      desktopPlayer!.seek(clamped);
     }
   }
 

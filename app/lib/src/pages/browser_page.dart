@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../dialogs/download_prompt_dialog.dart';
 import '../dialogs/file_picker_dialog.dart';
 import '../dialogs/folder_picker_dialog.dart';
@@ -880,11 +881,11 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      final l10n = AppLocalizations.of(context);
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        isZh ? '正在下载 ${item.name}…' : 'Downloading ${item.name}…',
+        l10n.downloadingItem(item.name),
         onRetry: startTask,
       );
       if (completed != true || !mounted) return;
@@ -892,8 +893,9 @@ class BrowserPageState extends State<BrowserPage> {
       final dstPath = dstDir.isEmpty ? name : '$dstDir/$name';
       await _openLocalCopy(destination.root, dstPath, item);
     } catch (e) {
-      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-      _showError(isZh ? '下载失败: $e' : 'Download failed: $e');
+      if (mounted) {
+        _showError(AppLocalizations.of(context).downloadFailed(e.toString()));
+      }
     }
   }
 
@@ -1685,9 +1687,9 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _uploadFiles({bool forceInApp = false}) async {
     if (_remotes.isEmpty) await _loadRemotesMetadata();
     if (!mounted) return;
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     if (_isAtMultiBucketRoot) {
-      _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再上传文件。' : 'You are at the multi-bucket root. Please enter a bucket first before uploading files.');
+      _showError(l10n.bucketRootUploadError);
       return;
     }
 
@@ -1698,7 +1700,6 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _uploadFilesSystem() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final recentDirs = PreferencesService.instance.getRecentUploadDirs();
     final initialDir = recentDirs.isNotEmpty ? recentDirs.first : null;
 
@@ -1706,7 +1707,7 @@ class BrowserPageState extends State<BrowserPage> {
     try {
       files = await openFiles(
         initialDirectory: initialDir,
-        confirmButtonText: isZh ? '上传' : 'Upload',
+        confirmButtonText: AppLocalizations.of(context).upload,
       );
     } catch (_) {
       return _uploadFilesInApp();
@@ -1732,10 +1733,9 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _uploadFilesInApp() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final picked = await FilePickerDialog.show(
       context,
-      title: isZh ? '上传文件/文件夹到当前目录' : 'Upload Items to Current Folder',
+      title: AppLocalizations.of(context).uploadItemsToCurrentFolder,
     );
     if (picked == null || picked.groups.isEmpty || !mounted) return;
 
@@ -1755,9 +1755,8 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _uploadFolder({bool forceInApp = false}) async {
     if (_remotes.isEmpty) await _loadRemotesMetadata();
     if (!mounted) return;
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     if (_isAtMultiBucketRoot) {
-      _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再上传文件夹。' : 'You are at the multi-bucket root. Please enter a bucket first before uploading a folder.');
+      _showError(AppLocalizations.of(context).bucketRootFolderUploadError);
       return;
     }
 
@@ -1768,7 +1767,6 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _uploadFolderSystem() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final recentDirs = PreferencesService.instance.getRecentUploadDirs();
     final initialDir = recentDirs.isNotEmpty ? recentDirs.first : null;
 
@@ -1776,7 +1774,7 @@ class BrowserPageState extends State<BrowserPage> {
     try {
       selectedPath = await getDirectoryPath(
         initialDirectory: initialDir,
-        confirmButtonText: isZh ? '上传此文件夹' : 'Upload folder',
+        confirmButtonText: AppLocalizations.of(context).uploadThisFolder,
       );
     } catch (_) {
       return _uploadFolderInApp();
@@ -1795,12 +1793,11 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _uploadFolderInApp() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final picked = await FolderPickerDialog.show(
       context,
-      title: isZh ? '选择要上传的文件夹' : 'Select Folder to Upload',
+      title: AppLocalizations.of(context).selectFolderToUpload,
       initialRoot: PlatformPaths.defaultRoot(),
-      confirmLabel: isZh ? '上传此文件夹' : 'Upload this folder',
+      confirmLabel: AppLocalizations.of(context).uploadThisFolder,
     );
     if (picked == null || !mounted) return;
 
@@ -1813,7 +1810,7 @@ class BrowserPageState extends State<BrowserPage> {
       final isWindows = srcRoot.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(srcRoot);
       final parts = srcRoot.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
       if (parts.isEmpty || srcRoot == PlatformPaths.defaultRoot() || (isNativeRoot(srcRoot) && parts.length <= 2)) {
-        _showError(isZh ? '请选择需要上传的具体文件夹' : 'Please select a specific folder to upload');
+        _showError(AppLocalizations.of(context).pleaseSelectSpecificFolder);
         return;
       }
       final folderName = parts.last;
@@ -1858,11 +1855,11 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      final l10n = AppLocalizations.of(context);
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        isZh ? '正在下载文件…' : 'Downloading Files…',
+        l10n.downloadingFiles,
         onRetry: startTask,
       );
       if (!mounted) return;
@@ -1870,23 +1867,21 @@ class BrowserPageState extends State<BrowserPage> {
       if (completed == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              isZh ? '已下载到 ${dest.path}' : 'Downloaded to ${dest.path}',
-            ),
+            content: Text(l10n.downloadedTo(dest.path)),
           ),
         );
       }
     } catch (e) {
-      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-      _showError(isZh ? '下载失败: $e' : 'Download failed: $e');
+      if (mounted) {
+        _showError(AppLocalizations.of(context).downloadFailed(e.toString()));
+      }
     }
   }
 
   Future<void> _downloadSingle(EntryItem item) async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final dest = await FolderPickerDialog.show(
       context,
-      title: isZh ? '选择下载目标文件夹' : 'Select Download Destination',
+      title: AppLocalizations.of(context).downloadDestination,
       initialRoot: PlatformPaths.defaultRoot(),
     );
     if (dest == null || !mounted) return;
@@ -1906,28 +1901,24 @@ class BrowserPageState extends State<BrowserPage> {
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        isZh ? '正在下载 ${item.name}…' : 'Downloading ${item.name}…',
+        AppLocalizations.of(context).downloadingItem(item.name),
         onRetry: startTask,
       );
       if (!mounted) return;
       if (completed == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              isZh
-                  ? '已下载 ${item.name} 到 ${dest.path}'
-                  : 'Downloaded ${item.name} to ${dest.path}',
-            ),
+            content: Text(AppLocalizations.of(context).downloadedTo(dest.path)),
           ),
         );
       }
     } catch (e) {
-      _showError(isZh ? '下载失败: $e' : 'Download failed: $e');
+      _showError(AppLocalizations.of(context).downloadFailed(e.toString()));
     }
   }
 
   Future<void> _createFolder() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     final isBucket = _isAtMultiBucketRoot;
     final ctrl = TextEditingController();
     final String? name;
@@ -1935,13 +1926,13 @@ class BrowserPageState extends State<BrowserPage> {
       name = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text(isBucket ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket') : (isZh ? '新建文件夹' : 'New Folder')),
+          title: Text(isBucket ? l10n.newBucket : l10n.newFolder),
           content: TextField(
             controller: ctrl,
             autofocus: true,
             decoration: InputDecoration(
-              labelText: isBucket ? (isZh ? '存储桶名称' : 'Bucket Name') : (isZh ? '文件夹名称' : 'Folder Name'),
-              hintText: isBucket ? (isZh ? '仅支持小写字母、数字和连字符 (3-63字符)' : 'Lowercase letters, numbers, hyphens (3-63 chars)') : null,
+              labelText: isBucket ? l10n.bucketName : l10n.folderName,
+              hintText: isBucket ? l10n.bucketNameHint : null,
               border: const OutlineInputBorder(),
             ),
             onSubmitted: (v) {
@@ -1949,14 +1940,14 @@ class BrowserPageState extends State<BrowserPage> {
             },
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(isZh ? '取消' : 'Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(l10n.cancel)),
             ListenableBuilder(
               listenable: ctrl,
               builder: (ctx, _) => FilledButton(
                 onPressed: ctrl.text.trim().isEmpty
                     ? null
                     : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: Text(isZh ? '创建' : 'Create'),
+                child: Text(l10n.create),
               ),
             ),
           ],
@@ -1971,9 +1962,7 @@ class BrowserPageState extends State<BrowserPage> {
         final valid = RegExp(r'^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$').hasMatch(name) && !name.contains('..');
         if (!valid) {
           if (mounted) {
-            _showError(isZh
-                ? '存储桶名称不符合规范。必须为 3-63 个字符，仅支持小写字母、数字和连字符 (-)，且必须以字母或数字开头和结尾。'
-                : 'Invalid bucket name. Must be 3-63 characters, only lowercase letters, numbers, and hyphens, and start/end with a letter or digit.');
+            _showError(AppLocalizations.of(context).invalidBucketName);
           }
           return;
         }
@@ -1984,7 +1973,7 @@ class BrowserPageState extends State<BrowserPage> {
         _load(refresh: true);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isZh ? '创建失败: $e' : 'Failed to create: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context).failedToCreate(e.toString()))));
         }
       }
     }
@@ -2097,8 +2086,7 @@ class BrowserPageState extends State<BrowserPage> {
     if (_remotes.isEmpty) await _loadRemotesMetadata();
     if (!mounted) return;
     if (_isAtMultiBucketRoot && (destRel.isEmpty || destRel == '/')) {
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
-      _showError(isZh ? '当前处于多存储桶根目录，请先打开一个存储桶 (Bucket) 再进行传输。' : 'You are at the multi-bucket root. Please enter a bucket first before transferring items.');
+      _showError(AppLocalizations.of(context).bucketRootTransferError);
       return;
     }
     // Detect name clashes in the destination first and let the user decide
@@ -2154,6 +2142,7 @@ class BrowserPageState extends State<BrowserPage> {
       if (choice == null) return;
       policy = choice;
     }
+    if (!mounted) return;
 
     Future<String> startTask() => isCut
         ? TaskService.instance.move(
@@ -2171,17 +2160,15 @@ class BrowserPageState extends State<BrowserPage> {
             conflictPolicy: policy,
           );
 
+    final l10n = AppLocalizations.of(context);
     try {
       final taskId = await startTask();
 
       if (!mounted) return;
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        isZh
-            ? (isCut ? '正在移动文件…' : '正在复制文件…')
-            : (isCut ? 'Moving Files…' : 'Copying Files…'),
+        isCut ? l10n.movingFiles : l10n.copyingFiles,
         onRetry: startTask,
       );
       // A cancelled move may have already removed some sources, so a cut
@@ -2189,8 +2176,9 @@ class BrowserPageState extends State<BrowserPage> {
       if (isCut && completed == true) onCutCompleted?.call();
       if (mounted) _load(refresh: true);
     } catch (e) {
-      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-      _showError(isZh ? '${isCut ? '移动' : '复制'}失败: $e' : '${isCut ? 'Move' : 'Copy'} failed: $e');
+      if (mounted) {
+        _showError(isCut ? l10n.moveFailed(e.toString()) : l10n.copyFailed(e.toString()));
+      }
     }
   }
 
@@ -2380,26 +2368,25 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      final l10n = AppLocalizations.of(context);
       final completed = await TaskProgressDialog.show(
         context,
         taskId,
-        isZh ? '正在创建副本…' : 'Duplicating…',
+        l10n.creatingCopy,
         onRetry: startTask,
       );
       if (completed == true && mounted) {
         _load(refresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              isZh ? '已创建 "$candidate"' : 'Created "$candidate"',
-            ),
+            content: Text(l10n.createdCandidate(candidate)),
           ),
         );
       }
     } catch (e) {
-      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-      _showError(isZh ? '创建副本失败: $e' : 'Duplicate failed: $e');
+      if (mounted) {
+        _showError(AppLocalizations.of(context).duplicateFailed(e.toString()));
+      }
     }
   }
 
@@ -2529,11 +2516,11 @@ class BrowserPageState extends State<BrowserPage> {
             TaskService.instance.delete(root: _root, paths: paths);
         final taskId = await startTask();
         if (!mounted) return;
-        final isZh = Localizations.localeOf(context).languageCode == 'zh';
+        final l10n = AppLocalizations.of(context);
         final done = await TaskProgressDialog.show(
           context,
           taskId,
-          isZh ? '正在删除…' : 'Deleting…',
+          l10n.deleting,
           onRetry: startTask,
         );
         if (!mounted) return;
@@ -2542,15 +2529,14 @@ class BrowserPageState extends State<BrowserPage> {
         if (done == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                isZh ? '已删除 $count 项' : 'Deleted $count item${count == 1 ? '' : 's'}',
-              ),
+              content: Text(l10n.deletedCount(count)),
             ),
           );
         }
       } catch (e) {
-        final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-        _showError(isZh ? '删除失败: $e' : 'Delete failed: $e');
+        if (mounted) {
+          _showError(AppLocalizations.of(context).deleteFailed(e.toString()));
+        }
       }
     }
   }
@@ -2685,19 +2671,20 @@ class BrowserPageState extends State<BrowserPage> {
             );
         final taskId = await startTask();
         if (!mounted) return;
-        final isZh = Localizations.localeOf(context).languageCode == 'zh';
+        final l10n = AppLocalizations.of(context);
         await TaskProgressDialog.show(
           context,
           taskId,
-          isZh ? '正在压缩…' : 'Compressing…',
+          l10n.compressing,
           onRetry: startTask,
         );
         if (!mounted) return;
         _clearSelection();
         _load(refresh: true);
       } catch (e) {
-        final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-        _showError(isZh ? '压缩失败: $e' : 'Compress failed: $e');
+        if (mounted) {
+          _showError(AppLocalizations.of(context).compressFailed(e.toString()));
+        }
       }
     }
   }
@@ -2712,17 +2699,18 @@ class BrowserPageState extends State<BrowserPage> {
           );
       final taskId = await startTask();
       if (!mounted) return;
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
+      final l10n = AppLocalizations.of(context);
       await TaskProgressDialog.show(
         context,
         taskId,
-        isZh ? '正在解压…' : 'Extracting Archive…',
+        l10n.extracting,
         onRetry: startTask,
       );
       if (mounted) _load(refresh: true);
     } catch (e) {
-      final isZh = mounted ? Localizations.localeOf(context).languageCode == 'zh' : false;
-      _showError(isZh ? '解压失败: $e' : 'Extract failed: $e');
+      if (mounted) {
+        _showError(AppLocalizations.of(context).extractFailed(e.toString()));
+      }
     }
   }
 
@@ -3079,25 +3067,25 @@ class BrowserPageState extends State<BrowserPage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite) {
-            final item = _entries.firstWhere(
-              (e) => _fullEntryPath(e) == _selectedPaths.first,
-              orElse: () => _entries.first,
-            );
-            _duplicateEntry(item);
+          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite && _entries.isNotEmpty) {
+            final target = _selectedPaths.first;
+            final idx = _entries.indexWhere((e) => _fullEntryPath(e) == target);
+            if (idx >= 0) {
+              _duplicateEntry(_entries[idx]);
+            }
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite) {
-            final item = _entries.firstWhere(
-              (e) => _fullEntryPath(e) == _selectedPaths.first,
-              orElse: () => _entries.first,
-            );
-            _duplicateEntry(item);
+          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite && _entries.isNotEmpty) {
+            final target = _selectedPaths.first;
+            final idx = _entries.indexWhere((e) => _fullEntryPath(e) == target);
+            if (idx >= 0) {
+              _duplicateEntry(_entries[idx]);
+            }
           }
         },
         const SingleActivator(LogicalKeyboardKey.f2): () {
-          if (_isSelecting && _selectedPaths.length == 1 && _canWrite) {
+          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite) {
             _renameSelected();
           }
         },
@@ -3395,7 +3383,6 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _showSortBottomSheet() {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -3414,12 +3401,12 @@ class BrowserPageState extends State<BrowserPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isZh ? '排序方式' : 'Sort By',
+                        AppLocalizations.of(context).sortBy,
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       TextButton.icon(
                         icon: Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 16),
-                        label: Text(_sortAsc ? (isZh ? '升序' : 'Ascending') : (isZh ? '降序' : 'Descending')),
+                        label: Text(_sortAsc ? AppLocalizations.of(context).ascending : AppLocalizations.of(context).descending),
                         onPressed: () {
                           setState(() => _sortAsc = !_sortAsc);
                           setModalState(() {});
@@ -3438,15 +3425,13 @@ class BrowserPageState extends State<BrowserPage> {
                       size: 20,
                     ),
                     title: Text(
-                      isZh
-                          ? (field == SortField.name
-                              ? '按名称'
-                              : field == SortField.size
-                                  ? '按大小'
-                                  : field == SortField.modified
-                                      ? '按修改日期'
-                                      : '按文件类型')
-                          : field.label,
+                      field == SortField.name
+                          ? AppLocalizations.of(context).sortByName
+                          : field == SortField.size
+                              ? AppLocalizations.of(context).sortBySize
+                              : field == SortField.modified
+                                  ? AppLocalizations.of(context).sortByDate
+                                  : AppLocalizations.of(context).sortByType,
                     ),
                     trailing: _sortField == field
                         ? Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 16)
@@ -3476,7 +3461,6 @@ class BrowserPageState extends State<BrowserPage> {
   List<Widget> _toolbarActions() {
     // Phones get a tighter bar so more icons fit before scrolling.
     final compact = MediaQuery.sizeOf(context).width < 600;
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     Widget action(IconData icon, String tooltip, VoidCallback onPressed) {
       // `shrinkWrap` drops the 48px Material tap-target box, which otherwise
       // leaves a wide gap between neighbouring icons.
@@ -3493,8 +3477,8 @@ class BrowserPageState extends State<BrowserPage> {
 
     if (_isSelecting) {
       return [
-        action(Icons.select_all, isZh ? '全选' : 'Select All (Ctrl+A)', _selectAll),
-        action(Icons.swap_horiz, isZh ? '反选' : 'Invert Selection (Ctrl+Shift+A)', _invertSelection),
+        action(Icons.select_all, AppLocalizations.of(context).selectAll, _selectAll),
+        action(Icons.swap_horiz, AppLocalizations.of(context).invertSelection, _invertSelection),
       ];
     }
 
@@ -3503,8 +3487,8 @@ class BrowserPageState extends State<BrowserPage> {
       // list (no blank area to click) had no discoverable way in at all.
       // Phones get it from the overflow menu to keep the icon row narrow.
       if (_canWrite && !compact) ...[
-        action(Icons.cloud_upload_outlined, isZh ? '上传文件' : 'Upload files', _uploadFiles),
-        action(Icons.drive_folder_upload_outlined, isZh ? '上传文件夹' : 'Upload folder', _uploadFolder),
+        action(Icons.cloud_upload_outlined, AppLocalizations.of(context).uploadFiles, _uploadFiles),
+        action(Icons.drive_folder_upload_outlined, AppLocalizations.of(context).uploadFolder, _uploadFolder),
       ],
       if (!compact) ...[
         action(
@@ -3571,11 +3555,11 @@ class BrowserPageState extends State<BrowserPage> {
       if (Navigator.of(context).canPop())
         action(
           Icons.home_outlined,
-          isZh ? '返回主页' : 'Home Dashboard',
+          AppLocalizations.of(context).homeDashboard,
           () => Navigator.of(context).popUntil((route) => route.isFirst),
         ),
       PopupMenuButton<String>(
-        tooltip: isZh ? '更多选项' : 'Options',
+        tooltip: AppLocalizations.of(context).options,
         icon: Icon(Icons.more_vert, size: compact ? 18 : 20),
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
@@ -3625,7 +3609,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   const Icon(Icons.cloud_upload_outlined, size: 18),
                   const SizedBox(width: 8),
-                  Text(isZh ? '上传文件' : 'Upload files'),
+                  Text(AppLocalizations.of(context).uploadFiles),
                 ],
               ),
             ),
@@ -3635,7 +3619,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   const Icon(Icons.drive_folder_upload_outlined, size: 18),
                   const SizedBox(width: 8),
-                  Text(isZh ? '上传文件夹' : 'Upload folder'),
+                  Text(AppLocalizations.of(context).uploadFolder),
                 ],
               ),
             ),
@@ -3645,7 +3629,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   const Icon(Icons.folder_shared_outlined, size: 18),
                   const SizedBox(width: 8),
-                  Text(isZh ? '应用内浏览上传…' : 'Browse in-app to upload…'),
+                  Text(AppLocalizations.of(context).browseInAppUpload),
                 ],
               ),
             ),
@@ -3655,7 +3639,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   const Icon(Icons.create_new_folder_outlined, size: 18),
                   const SizedBox(width: 8),
-                  Text(_isAtMultiBucketRoot ? (isZh ? '新建存储桶 (Bucket)' : 'New Bucket') : (isZh ? '新建文件夹' : 'New folder')),
+                  Text(_isAtMultiBucketRoot ? AppLocalizations.of(context).newBucket : AppLocalizations.of(context).newFolder),
                 ],
               ),
             ),
@@ -3668,7 +3652,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   Icon(_isSearching ? Icons.search_off : Icons.search, size: 18),
                   const SizedBox(width: 8),
-                  Text(_isSearching ? (isZh ? '关闭搜索' : 'Close search') : (isZh ? '搜索文件' : 'Search files')),
+                  Text(_isSearching ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchFiles),
                 ],
               ),
             ),
@@ -3678,7 +3662,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   Icon(_isGrid ? Icons.view_list : Icons.grid_view, size: 18),
                   const SizedBox(width: 8),
-                  Text(_isGrid ? (isZh ? '切换为列表视图' : 'Switch to List') : (isZh ? '切换为网格视图' : 'Switch to Grid')),
+                  Text(_isGrid ? AppLocalizations.of(context).switchToList : AppLocalizations.of(context).switchToGrid),
                 ],
               ),
             ),
@@ -3688,7 +3672,7 @@ class BrowserPageState extends State<BrowserPage> {
                 children: [
                   const Icon(Icons.sort, size: 18),
                   const SizedBox(width: 8),
-                  Text(isZh ? '文件排序方式…' : 'Sort by…'),
+                  Text(AppLocalizations.of(context).sortBy),
                 ],
               ),
             ),
@@ -3699,7 +3683,7 @@ class BrowserPageState extends State<BrowserPage> {
                   children: [
                     const Icon(Icons.vertical_split, size: 18),
                     const SizedBox(width: 8),
-                    Text(isZh ? '分屏浏览' : 'Split view'),
+                    Text(AppLocalizations.of(context).splitView),
                   ],
                 ),
               ),
@@ -3711,14 +3695,14 @@ class BrowserPageState extends State<BrowserPage> {
               children: [
                 const Icon(Icons.checklist, size: 18),
                 const SizedBox(width: 8),
-                Text(isZh ? '多选模式' : 'Select items'),
+                Text(AppLocalizations.of(context).selectItems),
               ],
             ),
           ),
           CheckedPopupMenuItem<String>(
             value: 'toggle_hidden',
             checked: _showHidden,
-            child: Text(isZh ? '显示隐藏文件' : 'Show hidden files'),
+            child: Text(AppLocalizations.of(context).showHiddenFiles),
           ),
         ],
       ),
@@ -3843,13 +3827,14 @@ class BrowserPageState extends State<BrowserPage> {
 
   /// Bytes of the files currently listed; folders are skipped because their
   /// size is unknown until they are walked.
-  int _selectedCacheCount = -1;
+  int _selectedCacheHash = -1;
   int _selectedCacheEntriesLen = -1;
   BigInt _selectedBytesCache = BigInt.zero;
 
   BigInt get _selectedBytes {
     if (_selectedPaths.isEmpty) return BigInt.zero;
-    if (_selectedCacheCount == _selectedPaths.length &&
+    final selHash = Object.hashAllUnordered(_selectedPaths);
+    if (_selectedCacheHash == selHash &&
         _selectedCacheEntriesLen == _entries.length) {
       return _selectedBytesCache;
     }
@@ -3877,7 +3862,7 @@ class BrowserPageState extends State<BrowserPage> {
         }
       }
     }
-    _selectedCacheCount = _selectedPaths.length;
+    _selectedCacheHash = selHash;
     _selectedCacheEntriesLen = _entries.length;
     _selectedBytesCache = total;
     return total;
@@ -4083,7 +4068,6 @@ class BrowserPageState extends State<BrowserPage> {
     final list = _filteredAndSortedEntries;
     if (list.isEmpty) {
       final isFiltered = _filterQuery.isNotEmpty;
-      final isZh = Localizations.localeOf(context).languageCode == 'zh';
       return RefreshIndicator(
         onRefresh: () async => _load(refresh: true),
         child: LayoutBuilder(
@@ -4151,13 +4135,13 @@ class BrowserPageState extends State<BrowserPage> {
                           children: [
                             FilledButton.tonalIcon(
                               icon: Icon(_isAtMultiBucketRoot ? Icons.create_new_folder_outlined : Icons.create_new_folder),
-                              label: Text(_isAtMultiBucketRoot ? (isZh ? '新建存储桶' : 'New Bucket') : (isZh ? '新建文件夹' : 'New Folder')),
+                              label: Text(_isAtMultiBucketRoot ? AppLocalizations.of(context).newBucket : AppLocalizations.of(context).newFolder),
                               onPressed: _createFolder,
                             ),
                             if (!_isAtMultiBucketRoot)
                               FilledButton.tonalIcon(
                                 icon: const Icon(Icons.note_add_outlined),
-                                label: Text(isZh ? '新建文件' : 'New File'),
+                                label: Text(AppLocalizations.of(context).newFile),
                                 onPressed: _createFile,
                               ),
                             if (_canNavigateUp)

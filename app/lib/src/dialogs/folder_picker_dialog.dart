@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
@@ -228,14 +229,14 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   }
 
   Future<void> _switchToSystemPicker() async {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     final initialDir = _currentPath.isNotEmpty && Directory(_currentPath).existsSync()
         ? _currentPath
         : null;
     try {
       final selectedPath = await getDirectoryPath(
         initialDirectory: initialDir,
-        confirmButtonText: isZh ? '上传此文件夹' : 'Upload folder',
+        confirmButtonText: l10n.uploadThisFolder,
       );
       if (selectedPath == null || selectedPath.isEmpty || !mounted) return;
 
@@ -250,6 +251,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final recentDirs = isNativeRoot(_root)
         ? PreferencesService.instance.getRecentUploadDirs()
         : const <String>[];
@@ -391,15 +393,12 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           child: Text(() {
             if (_selectedFolder != null) {
               final label = widget.confirmLabel;
-              if (label != null && label.contains('上传')) {
-                return '上传 "$_selectedFolder"';
+              if (label != null && (label.contains('上传') || label.toLowerCase().contains('upload') || label.contains('アップロード'))) {
+                return '${l10n.upload} "$_selectedFolder"';
               }
-              if (label != null && label.toLowerCase().contains('upload')) {
-                return 'Upload "$_selectedFolder"';
-              }
-              return '选择 "$_selectedFolder"';
+              return '${l10n.selectFolderToUpload} "$_selectedFolder"';
             }
-            return widget.confirmLabel ?? 'Use this folder';
+            return widget.confirmLabel ?? l10n.uploadThisFolder;
           }()),
         ),
       ],

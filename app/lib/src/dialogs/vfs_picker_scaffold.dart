@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 
@@ -69,7 +70,7 @@ class VfsPickerScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = Localizations.of<AppLocalizations>(context, AppLocalizations);
 
     return AlertDialog(
       title: Row(
@@ -78,7 +79,7 @@ class VfsPickerScaffold extends StatelessWidget {
           if (onSystemPicker != null)
             TextButton.icon(
               icon: const Icon(Icons.open_in_browser, size: 16),
-              label: Text(isZh ? '系统选择器' : 'System Picker'),
+              label: Text(l10n?.systemPicker ?? 'Use System Picker'),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -103,7 +104,7 @@ class VfsPickerScaffold extends StatelessWidget {
                     const Icon(Icons.history, size: 14, color: Colors.grey),
                     const SizedBox(width: 4),
                     Text(
-                      isZh ? '最近目录:' : 'Recent:',
+                      l10n?.recentDirs ?? 'Recent:',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Colors.grey,

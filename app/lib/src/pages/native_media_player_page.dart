@@ -7,6 +7,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/servers.dart';
 import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
@@ -250,6 +251,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       }
 
       await _controller!.initialize();
+      if (!mounted || _controller == null) return;
       _controller!.addListener(_onControllerUpdate);
 
       GlobalPlaybackService.instance.setIosSession(
@@ -788,14 +790,28 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _speedHudTimer?.cancel();
     ScreenBrightness.instance.resetApplicationScreenBrightness().catchError((_) {});
     WakelockPlus.disable().catchError((_) {});
-    _saveResumePosition();
+    if (!_isExplicitlyClosed) {
+      _saveResumePosition();
+    }
 
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      SystemChrome.setPreferredOrientations(const []);
     }
 
-    if (_isExplicitlyClosed || !GlobalPlaybackService.instance.hasActiveSession) {
+    if (_isExplicitlyClosed) {
+      // _closeAndExit() already handed the controller to
+      // GlobalPlaybackService.stop(), which disposed it and stopped the
+      // loopback stream. Touching them again here would double-dispose.
+      final c = _controller;
+      _controller = null;
+      if (c != null) {
+        try {
+          c.removeListener(_onControllerUpdate);
+        } catch (_) {}
+      }
+      _startedStream = false;
+    } else if (!GlobalPlaybackService.instance.hasActiveSession) {
       final c = _controller;
       _controller = null;
       if (c != null) {
@@ -854,7 +870,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                 ? AppBar(
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      tooltip: '最小化 / Minimize',
+                      tooltip: AppLocalizations.of(context).minimize,
                       onPressed: () async {
                         _saveResumePosition();
                         if (context.mounted) {
@@ -1044,7 +1060,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white),
-                        tooltip: '关闭 / Close',
+                        tooltip: AppLocalizations.of(context).close,
                         onPressed: _closeAndExit,
                       ),
                     ],

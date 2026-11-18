@@ -1,4 +1,4 @@
-# Cross-Platform File Manager (Rust + Flutter)
+# FP File Manager (Rust + Flutter)
 
 [English](README.md) | [简体中文](README_zh.md) | [日本語](README_ja.md)
 

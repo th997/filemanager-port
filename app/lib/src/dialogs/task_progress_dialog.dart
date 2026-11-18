@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/tasks.dart';
 import '../services/task_service.dart';
 
@@ -97,15 +98,11 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   /// it; until this button existed the modal dialog was a cage.
   void _background() {
     final messenger = ScaffoldMessenger.of(context);
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     _pop(false);
     messenger.showSnackBar(
       SnackBar(
-        content: Text(
-          isZh
-              ? '已转入后台运行 — 可在 主页 → 任务 查看进度'
-              : 'Running in background — track it under Home → Tasks',
-        ),
+        content: Text(l10n.switchedToBackground),
       ),
     );
   }
@@ -126,8 +123,8 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
       _subscribe();
     } catch (e) {
       if (mounted) {
-        final isZh = Localizations.localeOf(context).languageCode == 'zh';
-        setState(() => _retryError = isZh ? '重试失败: $e' : 'Retry failed: $e');
+        final l10n = AppLocalizations.of(context);
+        setState(() => _retryError = l10n.retryFailed(e.toString()));
       }
     }
   }
@@ -157,101 +154,96 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
     return false;
   }
 
-  String _dialogTitle(String title, bool isZh) {
-    if (!isZh) return title;
+  String _dialogTitle(String title, AppLocalizations l10n) {
     final uploadMatch = RegExp(r'^Uploading\s+(\d+)\s+item\(s\)\.\.\.$').firstMatch(title);
     if (uploadMatch != null) {
-      return '正在上传 ${uploadMatch.group(1)} 项…';
+      return l10n.uploadingItems(uploadMatch.group(1)!);
     }
     final uploadFolderMatch = RegExp(r'^Uploading\s+folder\s+"(.*)"\.\.\.$').firstMatch(title);
     if (uploadFolderMatch != null) {
-      return '正在上传文件夹 "${uploadFolderMatch.group(1)}"…';
+      return l10n.uploadingFolder(uploadFolderMatch.group(1)!);
     }
     final downloadFileMatch = RegExp(r'^Downloading\s+(.*)\.\.\.$').firstMatch(title);
     if (downloadFileMatch != null) {
-      return '正在下载 ${downloadFileMatch.group(1)}…';
+      return l10n.downloadingFile(downloadFileMatch.group(1)!);
     }
     switch (title) {
       case 'Downloading Files…':
-        return '正在下载文件…';
+        return l10n.downloadingFiles;
       case 'Duplicating…':
-        return '正在创建副本…';
+        return l10n.creatingCopy;
       case 'Deleting…':
-        return '正在删除…';
+        return l10n.deleting;
       case 'Compressing…':
-        return '正在压缩…';
+        return l10n.compressing;
       case 'Extracting Archive…':
-        return '正在解压…';
+        return l10n.extracting;
       case 'Moving Files…':
-        return '正在移动文件…';
+        return l10n.movingFiles;
       case 'Copying Files…':
-        return '正在复制文件…';
+        return l10n.copyingFiles;
       default:
         return title;
     }
   }
 
-  String? _speedLine(TaskProgressDto p, bool isZh) {
+  String? _speedLine(TaskProgressDto p, AppLocalizations l10n) {
     if (_isFinalizing) {
-      return isZh
-          ? '数据已全部发送，正在等待服务端校验与合并…'
-          : 'All data transferred, waiting for server verification…';
+      return l10n.waitingServerVerify;
     }
     final parts = <String>[];
     final speed = _speed.speedText();
     if (speed != null) parts.add(speed);
-    final eta = _speed.etaText(p.completed, p.total, isZh: isZh);
+    final eta = _speed.etaText(p.completed, p.total, l10n: l10n);
     if (eta != null) parts.add(eta);
     if (parts.isEmpty) {
-      return isZh ? '正在传输…' : 'Transferring…';
+      return l10n.transferring;
     }
     return parts.join(' • ');
   }
 
-  String _statusLabel(String state, bool isZh) {
+  String _statusLabel(String state, AppLocalizations l10n) {
     if (_isFinalizing) {
-      return isZh ? '正在完成（服务端处理中）…' : 'Finalizing (server processing)…';
+      return l10n.finalizingServer;
     }
     switch (state) {
       case 'pending':
-        return isZh ? '等待中…' : 'Waiting…';
+        return l10n.waiting;
       case 'running':
-        return isZh ? '进行中…' : 'In progress…';
+        return l10n.inProgress;
       case 'completed':
-        return isZh ? '已完成' : 'Completed';
+        return l10n.completed;
       case 'failed':
-        return isZh ? '失败' : 'Failed';
+        return l10n.failed;
       case 'cancelled':
-        return isZh ? '已取消' : 'Cancelled';
+        return l10n.cancelled;
       default:
         return state;
     }
   }
 
   /// Bytes when the task measured a byte total; otherwise a plain item count.
-  String _processedLabel(TaskProgressDto p, bool isZh) {
+  String _processedLabel(TaskProgressDto p, AppLocalizations l10n) {
     final total = p.total;
     if (total != null) {
       final isItemCount = p.label == 'MoveItems' || p.label == 'Delete';
       if (isItemCount) {
-        return isZh ? '${p.completed} / $total 项' : '${p.completed} of $total items';
+        return l10n.itemsOutOfTotal(p.completed.toInt(), total.toInt());
       }
-      return isZh
-          ? '${formatBytes(p.completed)} / ${formatBytes(total)}'
-          : '${formatBytes(p.completed)} of ${formatBytes(total)}';
+      return '${formatBytes(p.completed)} / ${formatBytes(total)}';
     }
-    return isZh ? '${p.completed} 项' : '${p.completed} items';
+    return l10n.itemsCount(p.completed.toInt());
   }
 
   @override
   Widget build(BuildContext context) {
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l10n = AppLocalizations.of(context);
     final p = _latest;
     final state = p?.state ?? 'pending';
     final fraction = p?.fraction;
 
     return AlertDialog(
-      title: Text(_dialogTitle(widget.title, isZh)),
+      title: Text(_dialogTitle(widget.title, l10n)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,7 +253,7 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
             children: [
               Expanded(
                 child: Text(
-                  _statusLabel(state, isZh),
+                  _statusLabel(state, l10n),
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -274,7 +266,7 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  isZh ? '100% (处理中)' : '100% (processing)',
+                  l10n.processingPercent,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
               ] else if (fraction != null)
@@ -304,23 +296,21 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
           if (p != null) ...[
             const SizedBox(height: 4),
             Text(
-              _processedLabel(p, isZh),
+              _processedLabel(p, l10n),
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
           if (p != null && p.skipped > BigInt.zero) ...[
             const SizedBox(height: 4),
             Text(
-              isZh
-                  ? '${p.skipped} 项已跳过（已存在）'
-                  : '${p.skipped} skipped (already exists)',
+              l10n.skippedAlreadyExists(p.skipped.toInt()),
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
-          if (state == 'running' && p != null && _speedLine(p, isZh) != null) ...[
+          if (state == 'running' && p != null && _speedLine(p, l10n) != null) ...[
             const SizedBox(height: 4),
             Text(
-              _speedLine(p, isZh)!,
+              _speedLine(p, l10n)!,
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
@@ -338,31 +328,31 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
           if (widget.onRetry != null)
             FilledButton(
               onPressed: _retry,
-              child: Text(isZh ? '重试' : 'Retry'),
+              child: Text(l10n.retry),
             ),
           if (p?.error != null)
             TextButton.icon(
               icon: const Icon(Icons.copy, size: 16),
-              label: Text(isZh ? '复制错误' : 'Copy Error'),
+              label: Text(l10n.copyError),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: p!.error!));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(isZh ? '错误信息已复制到剪贴板' : 'Error copied to clipboard')),
+                  SnackBar(content: Text(l10n.errorCopied)),
                 );
               },
             ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(isZh ? '关闭' : 'Close'),
+            child: Text(l10n.close),
           ),
         ] else ...[
           TextButton(
             onPressed: _background,
-            child: Text(isZh ? '后台运行' : 'Background'),
+            child: Text(l10n.runInBackground),
           ),
           TextButton(
             onPressed: _cancel,
-            child: Text(isZh ? '取消' : 'Cancel'),
+            child: Text(l10n.cancel),
           ),
         ],
       ],

@@ -51,6 +51,7 @@ pub struct Database {
 impl Database {
     pub fn open(db_path: impl AsRef<Path>, trash_dir: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open(db_path.as_ref())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         let trash_path = trash_dir.as_ref().to_path_buf();
         let _ = std::fs::create_dir_all(&trash_path);
         let data_dir = db_path

@@ -222,7 +222,9 @@ async fn copy_recursive_impl(
     };
     {
         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-        p.state = TaskState::Running;
+        if p.state != TaskState::Cancelled {
+            p.state = TaskState::Running;
+        }
         p.current = Some(src_path.clone());
     }
 
@@ -353,6 +355,12 @@ async fn copy_single_file(
         let _ = dst_vfs.remove(&tmp_path).await;
         return Err(e);
     }
+    // The bytes may all be in the temp file already when cancel arrives;
+    // publishing it then would silently complete a cancelled copy.
+    if cancel.is_cancelled() {
+        let _ = dst_vfs.remove(&tmp_path).await;
+        return Err(VfsError::Unsupported { operation: "cancelled" });
+    }
 
     match dst_vfs.rename(&tmp_path, &target).await {
         Ok(()) => Ok(()),
@@ -423,10 +431,19 @@ async fn stream_into(
             }
             return Err(VfsError::Unsupported { operation: "cancelled" });
         }
-        let n = reader.read(&mut buf).await.map_err(|e| VfsError::Backend {
-            path: src_path.clone(),
-            source: e,
-        })?;
+        let n = tokio::select! {
+            _ = cancel.cancelled() => {
+                if unreported > 0 {
+                    let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                    p.completed += unreported;
+                }
+                return Err(VfsError::Unsupported { operation: "cancelled" });
+            }
+            res = reader.read(&mut buf) => res.map_err(|e| VfsError::Backend {
+                path: src_path.clone(),
+                source: e,
+            })?,
+        };
         if n == 0 {
             break;
         }
@@ -486,7 +503,9 @@ async fn delete_recursive_impl(
 
     {
         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-        p.state = TaskState::Running;
+        if p.state != TaskState::Cancelled {
+            p.state = TaskState::Running;
+        }
         p.current = Some(path.clone());
     }
 

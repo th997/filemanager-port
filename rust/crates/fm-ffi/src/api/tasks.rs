@@ -255,6 +255,7 @@ pub async fn start_copy_task(
         };
 
         let result = run.await;
+        super::file_manager::invalidate_dir_cache(&dst_root);
         if let Err(e) = &result {
             eprintln!("copy task {tid} failed: {e}");
         }
@@ -333,7 +334,24 @@ pub async fn start_move_task(
                         }
                         ConflictPolicy::Overwrite => {
                             if dst_taken {
-                                let _ = dst_vfs.remove(&dst_p).await;
+                                let dst_is_dir = dst_vfs
+                                    .stat(&dst_p)
+                                    .await
+                                    .map(|s| s.kind == EntryKind::Dir)
+                                    .unwrap_or(false);
+                                let src_is_dir = src_vfs
+                                    .stat(&src_p)
+                                    .await
+                                    .map(|s| s.kind == EntryKind::Dir)
+                                    .unwrap_or(false);
+                                if dst_is_dir && !src_is_dir {
+                                    failures.push(format!("{file_name}: destination is a directory"));
+                                    continue;
+                                }
+                                if !dst_is_dir && src_is_dir {
+                                    // rename() cannot replace a file with a tree.
+                                    let _ = dst_vfs.remove(&dst_p).await;
+                                }
                             }
                             dst_p.clone()
                         }
@@ -408,6 +426,8 @@ pub async fn start_move_task(
         };
 
         let result = run.await;
+        super::file_manager::invalidate_dir_cache(&src_root);
+        super::file_manager::invalidate_dir_cache(&dst_root);
         if let Err(e) = &result {
             eprintln!("move task {tid} failed: {e}");
         }
@@ -444,6 +464,7 @@ pub async fn start_delete_task(root: String, paths: Vec<String>) -> Result<Strin
         };
 
         let result = run.await;
+        super::file_manager::invalidate_dir_cache(&root);
         if let Err(e) = &result {
             eprintln!("delete task {tid} failed: {e}");
         }
@@ -468,19 +489,21 @@ pub async fn start_compress_task(
             finish(&progress, &cancel, Err("cancelled".into()));
             return;
         }
-        let root = PathBuf::from(src_root);
-        let items: Vec<PathBuf> = src_paths
-            .into_iter()
-            .map(|rel| {
-                let p = PathBuf::from(&rel);
-                if p.is_absolute() && p.starts_with(&root) {
-                    p
-                } else {
-                    let trimmed = rel.trim_start_matches(['/', '\\']);
-                    root.join(trimmed)
-                }
-            })
-            .collect();
+        let root = PathBuf::from(&src_root);
+        let mut items: Vec<PathBuf> = Vec::with_capacity(src_paths.len());
+        for rel in src_paths {
+            let p = PathBuf::from(&rel);
+            if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                finish(&progress, &cancel, Err(format!("invalid path: {rel}")));
+                return;
+            }
+            if p.is_absolute() && p.starts_with(&root) {
+                items.push(p);
+            } else {
+                let trimmed = rel.trim_start_matches(['/', '\\']);
+                items.push(root.join(trimmed));
+            }
+        }
 
         let dst = PathBuf::from(dst_archive_path);
         // Archiving blocks on the filesystem; keep the async worker free.

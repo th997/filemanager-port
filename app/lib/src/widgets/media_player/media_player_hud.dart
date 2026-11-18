@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import 'media_player_controls.dart';
 
 /// Floating HUD shown during long-press 2x (or custom) fast-forward.
@@ -61,6 +62,7 @@ class MediaPlayerSpeedToastHud extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = Localizations.of<AppLocalizations>(context, AppLocalizations);
     final speedText =
         speed == speed.roundToDouble() ? speed.toInt().toString() : '$speed';
     return Positioned(
@@ -88,7 +90,7 @@ class MediaPlayerSpeedToastHud extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '$speedText× 播放速度',
+                '$speedText× ${l10n?.playbackSpeed ?? '播放速度'}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
