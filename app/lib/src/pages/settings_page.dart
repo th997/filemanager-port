@@ -130,18 +130,18 @@ class _SettingsPageState extends State<SettingsPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Clear Temporary Cache?'),
+        title: Text(AppLocalizations.of(context).clearTempCacheQuestion),
         content: Text(
-          'This will delete ${_formatBytes(_cacheSizeBytes)} of temporary thumbnail, media, and preview cache. Your saved files and connections are safe.',
+          AppLocalizations.of(context).clearTempCacheDesc(_formatBytes(_cacheSizeBytes)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Clear'),
+            child: Text(AppLocalizations.of(context).clear),
           ),
         ],
       ),
@@ -164,13 +164,13 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Temporary cache cleared')),
+        SnackBar(content: Text(AppLocalizations.of(context).tempCacheCleared)),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not clear cache: $e'),
+            content: Text(AppLocalizations.of(context).couldNotClearCache('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -488,14 +488,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: 12),
 
-          _buildSectionHeader(context, 'Storage & Cache'),
+          _buildSectionHeader(context, l10n.storageAndCache),
           Card(
             child: ListTile(
               leading: const AppCircleBadge(
                 icon: Icons.cleaning_services_outlined,
                 color: Colors.orange,
               ),
-              title: const Text('Temporary Cache'),
+              title: Text(l10n.temporaryCache),
               subtitle: Text(
                 '${_formatBytes(_cacheSizeBytes)} • thumbnails, media chunks & previews',
                 style: const TextStyle(fontSize: 10),
@@ -512,7 +512,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                       ),
                       onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
-                      child: const Text('Clear'),
+                      child: Text(l10n.clear),
                     ),
             ),
           ),
@@ -531,18 +531,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: Text(l10n.appTitle),
                   subtitle: Text(
                     '${_versionLabel ?? 'Rust Core'}\n'
-                    '${_buildTimeLabel != null ? 'Build: $_buildTimeLabel\n' : ''}'
-                    'Platform: ${_platformLabel ?? Platform.operatingSystem}',
+                    '${_buildTimeLabel != null ? '${l10n.buildLabel(_buildTimeLabel!)}\n' : ''}'
+                    '${l10n.platformLabel(_platformLabel ?? Platform.operatingSystem)}',
                     style: const TextStyle(fontSize: 10),
                   ),
                   trailing: const Icon(Icons.copy, size: 16),
                   onTap: () {
                     final info = '${l10n.appTitle} ${_versionLabel ?? ""}\n'
-                        '${_buildTimeLabel != null ? 'Build: $_buildTimeLabel\n' : ''}'
-                        'Platform: ${_platformLabel ?? Platform.operatingSystem}';
+                        '${_buildTimeLabel != null ? '${l10n.buildLabel(_buildTimeLabel!)}\n' : ''}'
+                        '${l10n.platformLabel(_platformLabel ?? Platform.operatingSystem)}';
                     Clipboard.setData(ClipboardData(text: info));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('App info copied to clipboard')),
+                      SnackBar(content: Text(l10n.appInfoCopied)),
                     );
                   },
                 ),
@@ -563,7 +563,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       text: 'Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP, SMB, ZIP, TAR, 7Z',
                     ));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Supported protocols copied to clipboard')),
+                      SnackBar(content: Text(l10n.supportedProtocolsCopied)),
                     );
                   },
                 ),

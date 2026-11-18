@@ -6,6 +6,7 @@ import '../rust/api/remotes.dart';
 import '../services/error_text.dart';
 import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 class RemoteWizardDialog extends StatefulWidget {
   final RemoteConfigDto? initialConfig;
@@ -169,18 +170,19 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     );
   }
 
-  String? _portError() {
-    final t = _portController.text.trim();
-    if (t.isEmpty) return null;
-    final p = int.tryParse(t);
-    if (p == null) return 'Port must be a number.';
-    if (p < 1 || p > 65535) return 'Port must be between 1 and 65535.';
+  String? _validatePort(String? value) {
+    final l10n = AppLocalizations.of(context);
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return null;
+    final p = int.tryParse(v);
+    if (p == null) return l10n.portMustBeNumber;
+    if (p < 1 || p > 65535) return l10n.portRangeError;
     return null;
   }
 
   Future<void> _testConnection() async {
     if (!_formKey.currentState!.validate()) return;
-    final portError = _portError();
+    final portError = _validatePort(_portController.text);
     if (portError != null) {
       setState(() {
         _testSuccess = false;
@@ -201,18 +203,20 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
           .testConnection(config)
           .timeout(const Duration(seconds: 8));
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         setState(() {
           _testing = false;
           _testSuccess = ok;
-          _testResult = ok ? 'Connection successful!' : 'Connection returned false';
+          _testResult = ok ? l10n.connectionSuccessful : l10n.connectionReturnedFalse;
         });
       }
     } catch (e) {
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         setState(() {
           _testing = false;
           _testSuccess = false;
-          _testResult = 'Connection failed: ${friendlyErrorText(e)}';
+          _testResult = l10n.connectionFailedWithError(friendlyErrorText(e, l10n));
         });
       }
     }
@@ -228,9 +232,10 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       final clash = existing.where((r) => r.id == config.id && r.id != oldId);
       if (clash.isNotEmpty) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context);
           setState(() {
             _testSuccess = false;
-            _testResult = 'ID "${config.id}" is already used by "${clash.first.name}"';
+            _testResult = l10n.idAlreadyUsed(config.id, clash.first.name);
           });
         }
         return;
@@ -247,15 +252,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
           if (mounted) {
             setState(() {
               _testSuccess = true;
-              _testResult =
-                  'Saved, but the old entry "$oldId" could not be removed: $e';
+            _testResult = AppLocalizations.of(context).savedOldEntryRemoveFailed(oldId, '$e');
             });
           }
         }
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _testResult = 'Could not save: $e');
+        setState(() => _testResult = AppLocalizations.of(context).couldNotSave('$e'));
         _testSuccess = false;
       }
       return;
@@ -267,8 +271,9 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AlertDialog(
-      title: Text(widget.initialConfig == null ? 'Add Remote Storage' : 'Edit Remote Storage'),
+      title: Text(widget.initialConfig == null ? l10n.addRemoteStorage : l10n.editRemoteStorage),
       actionsOverflowButtonSpacing: 8,
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 500),
@@ -283,14 +288,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: _kind,
-                  decoration: const InputDecoration(labelText: 'Protocol / Provider', border: OutlineInputBorder()),
-                  items: const [
-                    DropdownMenuItem(value: 's3', child: Text('Amazon S3 / S3-Compatible (MinIO, R2)')),
-                    DropdownMenuItem(value: 'oss', child: Text('Aliyun OSS (阿里云对象存储)')),
-                    DropdownMenuItem(value: 'webdav', child: Text('WebDAV (Nextcloud, OwnCloud)')),
-                    DropdownMenuItem(value: 'sftp', child: Text('SFTP (SSH File Transfer)')),
-                    DropdownMenuItem(value: 'ftp', child: Text('FTP / FTPS')),
-                    DropdownMenuItem(value: 'smb', child: Text('SMB / Windows Share (Samba)')),
+                  decoration: InputDecoration(labelText: l10n.protocolProvider, border: const OutlineInputBorder()),
+                  items: [
+                    DropdownMenuItem(value: 's3', child: Text(l10n.providerS3)),
+                    DropdownMenuItem(value: 'oss', child: Text(l10n.providerOss)),
+                    DropdownMenuItem(value: 'webdav', child: Text(l10n.providerWebdav)),
+                    DropdownMenuItem(value: 'sftp', child: Text(l10n.providerSftp)),
+                    DropdownMenuItem(value: 'ftp', child: Text(l10n.providerFtp)),
+                    DropdownMenuItem(value: 'smb', child: Text(l10n.providerSmb)),
                   ],
                   onChanged: (val) {
                     if (val != null) {
@@ -313,19 +318,19 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'Display Name', border: OutlineInputBorder()),
-                  validator: (v) => v == null || v.trim().isEmpty ? 'Please enter a name' : null,
+                  decoration: InputDecoration(labelText: l10n.displayName, border: const OutlineInputBorder()),
+                  validator: (v) => v == null || v.trim().isEmpty ? l10n.pleaseEnterName : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _idController,
                   decoration: InputDecoration(
-                    labelText: 'Identifier / ID (e.g. sftp_mac, my_nas)',
-                    hintText: 'Used in remote paths: remote://id/...',
+                    labelText: l10n.identifierLabel,
+                    hintText: l10n.identifierHint,
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.auto_fix_high, size: 20),
-                      tooltip: 'Generate clean ID from Name',
+                      tooltip: l10n.generateIdTooltip,
                       onPressed: () {
                         setState(() {
                           _idManuallyEdited = true;
@@ -336,9 +341,9 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   ),
                   onChanged: (_) => _idManuallyEdited = true,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Please enter an identifier';
+                    if (v == null || v.trim().isEmpty) return l10n.pleaseEnterId;
                     if (!RegExp(r'^[a-zA-Z0-9_\-]+$').hasMatch(v.trim())) {
-                      return 'Identifier may only contain letters, numbers, hyphens and underscores';
+                      return l10n.idCharsetError;
                     }
                     return null;
                   },
@@ -348,17 +353,17 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                 if (_kind == 's3' || _kind == 'oss') ...[
                   TextFormField(
                     controller: _bucketController,
-                    decoration: const InputDecoration(
-                      labelText: 'Bucket Name (Optional, empty for all buckets)',
-                      hintText: 'Leave empty to browse all buckets, or comma-separated',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: l10n.bucketNameOptional,
+                      hintText: l10n.bucketNameOptionalHint,
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _endpointController,
                     decoration: InputDecoration(
-                      labelText: _kind == 's3' ? 'Endpoint (Optional for AWS, required for MinIO/R2)' : 'Endpoint (e.g. https://oss-cn-hangzhou.aliyuncs.com)',
+                      labelText: _kind == 's3' ? l10n.endpointHintS3 : l10n.endpointHintGeneric,
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -366,11 +371,11 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   if (_kind == 's3') ...[
                     TextFormField(
                       controller: _regionController,
-                      decoration: const InputDecoration(labelText: 'Region (e.g. us-east-1, auto)', border: OutlineInputBorder()),
+                      decoration: InputDecoration(labelText: l10n.regionLabel, border: const OutlineInputBorder()),
                     ),
                     const SizedBox(height: 12),
                     CheckboxListTile(
-                      title: const Text('Use Path-Style (for MinIO / local S3)'),
+                      title: Text(l10n.usePathStyle),
                       value: _pathStyle,
                       onChanged: (v) => setState(() => _pathStyle = v ?? false),
                       contentPadding: EdgeInsets.zero,
@@ -378,17 +383,17 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   ],
                   TextFormField(
                     controller: _keyIdController,
-                    decoration: const InputDecoration(labelText: 'Access Key ID', border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: l10n.accessKeyId, border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _keySecretController,
                     decoration: InputDecoration(
-                      labelText: 'Secret Access Key',
+                      labelText: l10n.secretAccessKey,
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(_obscureSecretKey ? Icons.visibility_off : Icons.visibility),
-                        tooltip: _obscureSecretKey ? 'Show secret key' : 'Hide secret key',
+                        tooltip: _obscureSecretKey ? l10n.showSecretKey : l10n.hideSecretKey,
                         onPressed: () => setState(() => _obscureSecretKey = !_obscureSecretKey),
                       ),
                     ),
@@ -397,23 +402,23 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                 ] else if (_kind == 'webdav') ...[
                   TextFormField(
                     controller: _endpointController,
-                    decoration: const InputDecoration(labelText: 'WebDAV URL (e.g. https://example.com/dav)', border: OutlineInputBorder()),
-                    validator: (v) => v == null || v.trim().isEmpty ? 'URL is required' : null,
+                    decoration: InputDecoration(labelText: l10n.webdavUrlLabel, border: const OutlineInputBorder()),
+                    validator: (v) => v == null || v.trim().isEmpty ? l10n.urlRequired : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _usernameController,
-                    decoration: const InputDecoration(labelText: 'Username', border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: l10n.username, border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
                     decoration: InputDecoration(
-                      labelText: 'Password',
+                      labelText: l10n.password,
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                        tooltip: _obscurePassword ? l10n.showPassword : l10n.hidePassword,
                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
@@ -433,8 +438,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                         flex: 3,
                         child: TextFormField(
                           controller: _hostController,
-                          decoration: const InputDecoration(labelText: 'Host / IP', border: OutlineInputBorder()),
-                          validator: (v) => v == null || v.trim().isEmpty ? 'Host is required' : null,
+                          decoration: InputDecoration(labelText: l10n.hostIp, border: const OutlineInputBorder()),
+                          validator: (v) => v == null || v.trim().isEmpty ? l10n.hostRequired : null,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -443,7 +448,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                         child: TextFormField(
                           controller: _portController,
                           decoration: InputDecoration(
-                            labelText: 'Port',
+                            labelText: l10n.port,
                             hintText: _kind == 'sftp' ? '22' : (_kind == 'smb' ? '445' : '21'),
                             border: const OutlineInputBorder(),
                           ),
@@ -452,8 +457,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                             final t = (v ?? '').trim();
                             if (t.isEmpty) return null; // default per protocol
                             final p = int.tryParse(t);
-                            if (p == null) return 'Numbers only';
-                            if (p < 1 || p > 65535) return 'Use 1–65535';
+                            if (p == null) return l10n.numbersOnly;
+                            if (p < 1 || p > 65535) return l10n.portRangeShort;
                             return null;
                           },
                         ),
@@ -463,17 +468,17 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _usernameController,
-                    decoration: const InputDecoration(labelText: 'Username', border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: l10n.username, border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
                     decoration: InputDecoration(
-                      labelText: 'Password',
+                      labelText: l10n.password,
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                        tooltip: _obscurePassword ? l10n.showPassword : l10n.hidePassword,
                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
@@ -482,13 +487,12 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _rootPathController,
-                    decoration: const InputDecoration(labelText: 'Remote Root Path', border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: l10n.remoteRootPath, border: const OutlineInputBorder()),
                   ),
                   if (_kind == 'ftp') ...[
                     const SizedBox(height: 12),
                     _insecureWarning(
-                      'FTP is not encrypted: the password and files travel in '
-                      'plain text. Prefer SFTP when the server offers it.',
+                          l10n.ftpCleartextWarning,
                     ),
                   ],
                 ],
@@ -532,11 +536,11 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                            tooltip: 'Copy Error',
+                            tooltip: l10n.copyError,
                             onPressed: () {
                               Clipboard.setData(ClipboardData(text: _testResult!));
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Error copied to clipboard')),
+                                SnackBar(content: Text(l10n.errorCopied)),
                               );
                             },
                           ),
@@ -553,18 +557,18 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         OutlinedButton.icon(
           onPressed: _testing ? null : _testConnection,
           icon: _testing
               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.network_check),
-          label: const Text('Test Connection'),
+          label: Text(l10n.testConnection),
         ),
         FilledButton(
           onPressed: _save,
-          child: const Text('Save'),
+          child: Text(l10n.save),
         ),
       ],
     );

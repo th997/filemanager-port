@@ -1,0 +1,7 @@
+CFBundleDisplayName = "FPファイルマネージャー";
+CFBundleName = "FPファイルマネージャー";
+NSDocumentsFolderUsageDescription = "ファイルを管理するためにDocumentsフォルダへのアクセスが必要です。";
+NSDownloadsFolderUsageDescription = "ファイルを管理するためにDownloadsフォルダへのアクセスが必要です。";
+NSDesktopFolderUsageDescription = "ファイルを管理するためにデスクトップフォルダへのアクセスが必要です。";
+NSRemovableVolumesUsageDescription = "外部ストレージを管理するためにリムーバブルボリュームへのアクセスが必要です。";
+NSNetworkVolumesUsageDescription = "共有ファイルを管理するためにネットワークボリュームへのアクセスが必要です。";

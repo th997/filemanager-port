@@ -1,0 +1,3 @@
+CFBundleDisplayName = "FPファイルマネージャー";
+CFBundleName = "FPファイルマネージャー";
+NSPhotoLibraryUsageDescription = "ファイルマネージャー内で写真を閲覧・プレビューするために使用します。";

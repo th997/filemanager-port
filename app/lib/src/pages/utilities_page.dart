@@ -70,7 +70,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not read storage stats: $e'),
+          content: Text(AppLocalizations.of(context).couldNotReadStorageStats('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -96,7 +96,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not clear archive cache: $e'),
+            content: Text(AppLocalizations.of(context).couldNotClearArchiveCache('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -106,7 +106,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     if (mounted) {
       setState(() => _archiveCacheBytes = 0);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Archive cache cleared')),
+        SnackBar(content: Text(AppLocalizations.of(context).archiveCacheCleared)),
       );
     }
   }
@@ -121,14 +121,14 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       if (mounted) {
         setState(() => _cacheSizeBytes = cacheBytes);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Temporary cache cleared')),
+          SnackBar(content: Text(AppLocalizations.of(context).tempCacheCleared)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not clear cache: $e'),
+            content: Text(AppLocalizations.of(context).couldNotClearCache('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -142,15 +142,15 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Empty Recycle Bin'),
+        title: Text(AppLocalizations.of(context).emptyRecycleBin),
         actionsOverflowButtonSpacing: 8,
-        content: Text('Permanently delete all $_trashCount items? This cannot be undone.'),
+        content: Text(AppLocalizations.of(context).emptyTrashUtilityConfirm(_trashCount)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Empty All'),
+            child: Text(AppLocalizations.of(context).emptyAll),
           ),
         ],
       ),
@@ -161,13 +161,13 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         await _loadData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Recycle bin emptied')),
+            SnackBar(content: Text(AppLocalizations.of(context).recycleBinEmptied)),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not empty trash: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+            SnackBar(content: Text(AppLocalizations.of(context).couldNotEmptyTrashError('$e')), backgroundColor: Theme.of(context).colorScheme.error),
           );
         }
       }
@@ -177,7 +177,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   Future<void> _pickShareFolder() async {
     final picked = await FolderPickerDialog.show(
       context,
-      title: 'Choose shared folder',
+      title: AppLocalizations.of(context).chooseSharedFolder,
       initialRoot: _shareRoot,
     );
     if (picked != null && mounted) {
@@ -192,7 +192,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       if (portText.isNotEmpty && (port == null || port < 1 || port > 65535)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Port must be a number between 1 and 65535 (got "$portText")'),
+            content: Text(AppLocalizations.of(context).portValidationError(portText)),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -220,7 +220,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         if (mounted) {
           setState(() => _starting = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start server: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+            SnackBar(content: Text(AppLocalizations.of(context).failedToStartServer('$e')), backgroundColor: Theme.of(context).colorScheme.error),
           );
         }
       }
@@ -241,7 +241,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         if (!stopped) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Could not stop the LAN server'),
+              content: Text(AppLocalizations.of(context).couldNotStopLanServer),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -262,9 +262,9 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       final docIdx = path.indexOf('/Documents');
       if (docIdx != -1) {
         final sub = path.substring(docIdx);
-        return sub == '/Documents' ? 'Documents' : 'Documents${sub.substring('/Documents'.length)}';
+        return sub == '/Documents' ? AppLocalizations.of(context).documentsDir : '${AppLocalizations.of(context).documentsDir}${sub.substring('/Documents'.length)}';
       }
-      return 'Documents';
+      return AppLocalizations.of(context).documentsDir;
     }
     return path;
   }
@@ -279,7 +279,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
-            tooltip: 'Refresh',
+            tooltip: l10n.refresh,
             onPressed: _loadData,
           ),
         ],
@@ -584,7 +584,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                                   visualDensity: VisualDensity.compact,
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                  tooltip: _obscurePwd ? 'Show password' : 'Hide password',
+                                  tooltip: _obscurePwd ? l10n.showPassword : l10n.hidePassword,
                                   onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
                                 ),
                               ),

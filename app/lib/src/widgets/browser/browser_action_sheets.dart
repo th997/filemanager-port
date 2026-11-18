@@ -11,6 +11,7 @@ Future<String?> showBrowserEntryModalBottomSheet({
   required bool canWrite,
   required bool canArchive,
 }) {
+  final l10n = AppLocalizations.of(context);
   return showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -30,87 +31,87 @@ Future<String?> showBrowserEntryModalBottomSheet({
             ListTile(
               leading: Icon(item.icon, color: item.iconColor(ctx)),
               title: Text(item.name, overflow: TextOverflow.ellipsis),
-              subtitle: Text(item.isDir ? 'Folder' : item.formattedSize),
+              subtitle: Text(item.isDir ? l10n.folderLabel : item.formattedSize),
             ),
             const Divider(height: 1),
             if (!item.isDir)
               ListTile(
                 leading: const Icon(Icons.open_in_new),
-                title: const Text('Open with'),
+                title: Text(l10n.openWith),
                 onTap: () => Navigator.of(ctx).pop('open_with'),
               ),
             if (isRemoteOrArchive)
               ListTile(
                 leading: const Icon(Icons.download_outlined, color: Colors.blue),
-                title: const Text('Download to local'),
+                title: Text(l10n.downloadToLocal),
                 onTap: () => Navigator.of(ctx).pop('download'),
               ),
             ListTile(
               leading: const Icon(Icons.copy),
-              title: const Text('Copy'),
+              title: Text(l10n.copy),
               onTap: () => Navigator.of(ctx).pop('copy'),
             ),
             ListTile(
               leading: const Icon(Icons.link),
-              title: const Text('Copy Path'),
+              title: Text(l10n.copyPath),
               onTap: () => Navigator.of(ctx).pop('copy_path'),
             ),
             if (canWrite)
               ListTile(
                 leading: const Icon(Icons.cut),
-                title: const Text('Cut'),
+                title: Text(l10n.cut),
                 onTap: () => Navigator.of(ctx).pop('cut'),
               ),
             ListTile(
               leading: const Icon(Icons.checklist),
-              title: const Text('Select items'),
+              title: Text(l10n.selectItems),
               onTap: () => Navigator.of(ctx).pop('select'),
             ),
             if (item.isArchive && canArchive)
               ListTile(
                 leading: const Icon(Icons.unarchive),
-                title: const Text('Extract Here'),
+                title: Text(l10n.extractHere),
                 onTap: () => Navigator.of(ctx).pop('extract'),
               )
             else if (canWrite && canArchive)
               ListTile(
                 leading: const Icon(Icons.archive),
-                title: const Text('Compress to ZIP'),
+                title: Text(l10n.compressToZip),
                 onTap: () => Navigator.of(ctx).pop('compress'),
               ),
             if (item.isDir)
               ListTile(
                 leading: const Icon(Icons.bookmark_add_outlined),
-                title: const Text('Bookmark This Folder'),
+                title: Text(l10n.bookmarkThisFolder),
                 onTap: () => Navigator.of(ctx).pop('bookmark'),
               ),
             if (!item.isDir)
               ListTile(
                 leading: const Icon(Icons.share_outlined),
-                title: const Text('Share'),
+                title: Text(l10n.share),
                 onTap: () => Navigator.of(ctx).pop('share'),
               ),
             if (canWrite)
               ListTile(
                 leading: const Icon(Icons.drive_file_rename_outline),
-                title: const Text('Rename'),
+                title: Text(l10n.rename),
                 onTap: () => Navigator.of(ctx).pop('rename'),
               ),
             if (canWrite)
               ListTile(
                 leading: const Icon(Icons.control_point_duplicate),
-                title: const Text('Duplicate'),
+                title: Text(l10n.duplicate),
                 onTap: () => Navigator.of(ctx).pop('duplicate'),
               ),
             if (canWrite)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('Delete', style: TextStyle(color: Colors.red)),
+                title: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
                 onTap: () => Navigator.of(ctx).pop('delete'),
               ),
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('Properties'),
+              title: Text(l10n.properties),
               onTap: () => Navigator.of(ctx).pop('info'),
             ),
           ],
@@ -129,6 +130,7 @@ Future<String?> showBrowserContextMenu({
   required bool canWrite,
   required bool canArchive,
 }) {
+  final l10n = AppLocalizations.of(context);
   return showMenu<String>(
     context: context,
     constraints: BoxConstraints(
@@ -148,138 +150,138 @@ Future<String?> showBrowserContextMenu({
           children: [
             Icon(item.isDir ? Icons.folder_open : Icons.open_in_new, size: 18),
             const SizedBox(width: 8),
-            Text(item.isDir ? 'Open' : 'Open'),
+            Text(l10n.open),
           ],
         ),
       ),
       if (!item.isDir)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'open_with',
           child: Row(
             children: [
-              Icon(Icons.open_in_browser, size: 18),
-              SizedBox(width: 8),
-              Text('Open with'),
+              const Icon(Icons.open_in_browser, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.openWith),
             ],
           ),
         ),
       if (isRemoteOrArchive)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'download',
           child: Row(
             children: [
-              Icon(Icons.download, size: 18, color: Colors.blue),
-              SizedBox(width: 8),
-              Text('Download to local'),
+              const Icon(Icons.download, size: 18, color: Colors.blue),
+              const SizedBox(width: 8),
+              Text(l10n.downloadToLocal),
             ],
           ),
         ),
       const PopupMenuDivider(),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'copy',
         child: Row(
           children: [
-            Icon(Icons.copy, size: 18),
-            SizedBox(width: 8),
-            Text('Copy'),
+            const Icon(Icons.copy, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.copy),
           ],
         ),
       ),
       if (canWrite)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'cut',
           child: Row(
             children: [
-              Icon(Icons.cut, size: 18),
-              SizedBox(width: 8),
-              Text('Cut'),
+              const Icon(Icons.cut, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.cut),
             ],
           ),
         ),
       if (canWrite)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'rename',
           child: Row(
             children: [
-              Icon(Icons.drive_file_rename_outline, size: 18),
-              SizedBox(width: 8),
-              Text('Rename'),
+              const Icon(Icons.drive_file_rename_outline, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.rename),
             ],
           ),
         ),
       if (canWrite)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'duplicate',
           child: Row(
             children: [
-              Icon(Icons.control_point_duplicate, size: 18),
-              SizedBox(width: 8),
-              Text('Duplicate'),
+              const Icon(Icons.control_point_duplicate, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.duplicate),
             ],
           ),
         ),
       if (canWrite)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete, size: 18, color: Colors.red),
-              SizedBox(width: 8),
-              Text('Delete', style: TextStyle(color: Colors.red)),
+              const Icon(Icons.delete, size: 18, color: Colors.red),
+              const SizedBox(width: 8),
+              Text(l10n.delete, style: const TextStyle(color: Colors.red)),
             ],
           ),
         ),
       const PopupMenuDivider(),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'copy_path',
         child: Row(
           children: [
-            Icon(Icons.link, size: 18),
-            SizedBox(width: 8),
-            Text('Copy Path'),
+            const Icon(Icons.link, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.copyPath),
           ],
         ),
       ),
       if (item.isArchive && canArchive)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'extract',
           child: Row(
             children: [
-              Icon(Icons.unarchive, size: 18),
-              SizedBox(width: 8),
-              Text('Extract Here'),
+              const Icon(Icons.unarchive, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.extractHere),
             ],
           ),
         )
       else if (canWrite && canArchive)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'compress',
           child: Row(
             children: [
-              Icon(Icons.archive, size: 18),
-              SizedBox(width: 8),
-              Text('Compress to ZIP'),
+              const Icon(Icons.archive, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.compressToZip),
             ],
           ),
         ),
       if (item.isDir)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'bookmark',
           child: Row(
             children: [
-              Icon(Icons.bookmark_add_outlined, size: 18),
-              SizedBox(width: 8),
-              Text('Bookmark This Folder'),
+              const Icon(Icons.bookmark_add_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.bookmarkThisFolder),
             ],
           ),
         ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'info',
         child: Row(
           children: [
-            Icon(Icons.info_outline, size: 18),
-            SizedBox(width: 8),
-            Text('Properties'),
+            const Icon(Icons.info_outline, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.properties),
           ],
         ),
       ),
@@ -381,58 +383,58 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.paste, size: 18),
               const SizedBox(width: 8),
-              Text('Paste (${clipboardCount ?? 0})'),
+              Text(l10n.pasteCount(clipboardCount ?? 0)),
             ],
           ),
         ),
       const PopupMenuDivider(),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'refresh',
         child: Row(
           children: [
-            Icon(Icons.refresh, size: 18),
-            SizedBox(width: 8),
-            Text('Refresh'),
+            const Icon(Icons.refresh, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.refresh),
           ],
         ),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'select_all',
         child: Row(
           children: [
-            Icon(Icons.select_all, size: 18),
-            SizedBox(width: 8),
-            Text('Select All'),
+            const Icon(Icons.select_all, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.selectAll),
           ],
         ),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'invert_selection',
         child: Row(
           children: [
-            Icon(Icons.swap_horiz, size: 18),
-            SizedBox(width: 8),
-            Text('Invert Selection'),
+            const Icon(Icons.swap_horiz, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.invertSelection),
           ],
         ),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'bookmark',
         child: Row(
           children: [
-            Icon(Icons.bookmark_add_outlined, size: 18),
-            SizedBox(width: 8),
-            Text('Bookmark This Folder'),
+            const Icon(Icons.bookmark_add_outlined, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.bookmarkThisFolder),
           ],
         ),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'copy_path',
         child: Row(
           children: [
-            Icon(Icons.copy, size: 18),
-            SizedBox(width: 8),
-            Text('Copy Folder Path'),
+            const Icon(Icons.copy, size: 18),
+            const SizedBox(width: 8),
+            Text(l10n.copyFolderPath),
           ],
         ),
       ),

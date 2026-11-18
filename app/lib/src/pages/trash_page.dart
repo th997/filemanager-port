@@ -4,6 +4,7 @@ import '../rust/api/metadata.dart';
 import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 class TrashPage extends StatefulWidget {
   const TrashPage({super.key});
@@ -52,7 +53,7 @@ class _TrashPageState extends State<TrashPage> {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not load the Recycle Bin: $e'),
+          content: Text(AppLocalizations.of(context).couldNotLoadTrash('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -91,19 +92,19 @@ class _TrashPageState extends State<TrashPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Recycled Item Details'),
+        title: Text(AppLocalizations.of(context).recycledItemDetails),
         content: SizedBox(
           width: 400,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _detailRow('Name', name),
-              _detailRow('Type', item.isDir ? 'Folder' : 'File'),
-              _detailRow('Size', '${_formatSize(item.size)} (${item.size} bytes)'),
-              _detailRow('Deleted', '$dateStr (${_deletedAgo(item)})'),
+              _detailRow(AppLocalizations.of(context).nameLabel, name),
+              _detailRow(AppLocalizations.of(context).typeLabel, item.isDir ? AppLocalizations.of(context).folderLabel : AppLocalizations.of(context).fileLabel),
+              _detailRow(AppLocalizations.of(context).sizeLabel, AppLocalizations.of(context).yesBytes(_formatSize(item.size), '${item.size}')),
+              _detailRow(AppLocalizations.of(context).taskDelete, '$dateStr (${_deletedAgo(item)})'),
               const SizedBox(height: 6),
-              const Text('Original Path:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              Text(AppLocalizations.of(context).originalPathColon, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.all(8),
@@ -121,12 +122,12 @@ class _TrashPageState extends State<TrashPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.copy, size: 16),
-                      tooltip: 'Copy path',
+                      tooltip: AppLocalizations.of(context).copyPath,
                       visualDensity: VisualDensity.compact,
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: item.originalPath));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Path copied to clipboard')),
+                          SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
                         );
                       },
                     ),
@@ -139,11 +140,11 @@ class _TrashPageState extends State<TrashPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
+            child: Text(AppLocalizations.of(context).close),
           ),
           FilledButton.icon(
             icon: const Icon(Icons.restore, size: 16),
-            label: const Text('Restore'),
+            label: Text(AppLocalizations.of(context).restore),
             onPressed: () {
               Navigator.of(ctx).pop();
               _restore(item);
@@ -185,7 +186,7 @@ class _TrashPageState extends State<TrashPage> {
               const Divider(),
               ListTile(
                 leading: Icon(Icons.restore, color: Theme.of(context).colorScheme.success),
-                title: const Text('Restore Item'),
+                title: Text(AppLocalizations.of(context).restoreItem),
                 onTap: () {
                   Navigator.pop(ctx);
                   _restore(item);
@@ -193,7 +194,7 @@ class _TrashPageState extends State<TrashPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.info_outline),
-                title: const Text('View Details'),
+                title: Text(AppLocalizations.of(context).viewDetails),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showItemDetails(item);
@@ -201,19 +202,19 @@ class _TrashPageState extends State<TrashPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.copy_outlined),
-                title: const Text('Copy Original Path'),
+                title: Text(AppLocalizations.of(context).copyOriginalPath),
                 onTap: () {
                   Navigator.pop(ctx);
                   Clipboard.setData(ClipboardData(text: item.originalPath));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Original path copied to clipboard')),
+                    SnackBar(content: Text(AppLocalizations.of(context).originalPathCopied)),
                   );
                 },
               ),
               ListTile(
                 leading: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
                 title: Text(
-                  'Delete Permanently',
+                  AppLocalizations.of(context).deletePermanently,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
@@ -267,7 +268,7 @@ class _TrashPageState extends State<TrashPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not restore "$name": $e'),
+            content: Text(AppLocalizations.of(context).couldNotRestoreNamed(name, '$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -276,7 +277,7 @@ class _TrashPageState extends State<TrashPage> {
     }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Restored "$name"')),
+        SnackBar(content: Text(AppLocalizations.of(context).restoredNamed(name))),
       );
     }
   }
@@ -286,14 +287,14 @@ class _TrashPageState extends State<TrashPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Permanently'),
-        content: Text('Permanently delete "$name"?'),
+        title: Text(AppLocalizations.of(context).deletePermanently),
+        content: Text(AppLocalizations.of(context).permanentlyDeleteConfirm(name)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: Text(AppLocalizations.of(context).delete),
           ),
         ],
       ),
@@ -309,7 +310,7 @@ class _TrashPageState extends State<TrashPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Could not delete "$name": $e'),
+              content: Text(AppLocalizations.of(context).couldNotDeleteNamed(name, '$e')),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -318,7 +319,7 @@ class _TrashPageState extends State<TrashPage> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted "$name"')),
+          SnackBar(content: Text(AppLocalizations.of(context).deletedItem(name))),
         );
       }
     }
@@ -328,17 +329,17 @@ class _TrashPageState extends State<TrashPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Empty Recycle Bin'),
+        title: Text(AppLocalizations.of(context).emptyRecycleBin),
         content: Text(
-          'Permanently delete all ${_items.length} items '
-          '(${_formatSize(_totalSize)})? This cannot be undone.',
+          AppLocalizations.of(context).permanentlyDeleteAllTrash(_items.length, _formatSize(_totalSize))
+,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Empty All'),
+            child: Text(AppLocalizations.of(context).emptyAll),
           ),
         ],
       ),
@@ -350,7 +351,7 @@ class _TrashPageState extends State<TrashPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Could not empty recycle bin: $e'),
+              content: Text(AppLocalizations.of(context).couldNotEmptyTrash('$e')),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -360,7 +361,7 @@ class _TrashPageState extends State<TrashPage> {
       _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recycle bin emptied')),
+          SnackBar(content: Text(AppLocalizations.of(context).recycleBinEmptied)),
         );
       }
     }
@@ -371,13 +372,13 @@ class _TrashPageState extends State<TrashPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Restore All Items'),
-        content: Text('Restore all $count items to their original locations?'),
+        title: Text(AppLocalizations.of(context).restoreAllItems),
+        content: Text(AppLocalizations.of(context).restoreAllConfirm(count)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Restore All'),
+            child: Text(AppLocalizations.of(context).restoreAll),
           ),
         ],
       ),
@@ -406,9 +407,10 @@ class _TrashPageState extends State<TrashPage> {
           SnackBar(
             content: Text(
               failures.isEmpty
-                  ? 'Restored $successCount of $count items'
-                  : 'Restored $successCount of $count. Still in trash: '
-                      '${failures.take(3).join(', ')}${failures.length > 3 ? '…' : ''}',
+                  ? AppLocalizations.of(context).restoredCountOfTotal(successCount, count)
+                  : AppLocalizations.of(context).restoredPartialTrash(
+                          successCount, count, failures.length,
+                          '${failures.take(3).join(', ')}${failures.length > 3 ? '…' : ''}'),
             ),
             backgroundColor: failures.isEmpty ? null : scheme.warning,
           ),
@@ -462,19 +464,19 @@ class _TrashPageState extends State<TrashPage> {
       appBar: AppBar(
         title: Text(
           _restoringTotal > 0
-              ? 'Restoring $_restoringDone / $_restoringTotal…'
+              ? AppLocalizations.of(context).restoringProgress(_restoringDone, _restoringTotal)
               : _items.isEmpty
-                  ? 'Recycle Bin'
+                  ? AppLocalizations.of(context).recycleBin
                   : MediaQuery.sizeOf(context).width < 500
-                      ? 'Recycle Bin (${_items.length})'
-                      : 'Recycle Bin • ${_items.length} items, ${_formatSize(_totalSize)}',
+                      ? '${AppLocalizations.of(context).recycleBin} (${_items.length})'
+                      : AppLocalizations.of(context).recycleBinSummary(_items.length, _formatSize(_totalSize)),
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
           if (_items.isNotEmpty) ...[
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: _showSearch ? 'Close Search' : 'Search Trash',
+              tooltip: _showSearch ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchTrash,
               onPressed: () {
                 setState(() {
                   _showSearch = !_showSearch;
@@ -487,12 +489,12 @@ class _TrashPageState extends State<TrashPage> {
             ),
             IconButton(
               icon: const Icon(Icons.settings_backup_restore),
-              tooltip: 'Restore All Items',
+              tooltip: AppLocalizations.of(context).restoreAllItems,
               onPressed: _restoringTotal > 0 ? null : _restoreAll,
             ),
             IconButton(
               icon: const Icon(Icons.delete_sweep),
-              tooltip: 'Empty Recycle Bin',
+              tooltip: AppLocalizations.of(context).emptyRecycleBin,
               // Emptying mid-restore deleted items the restore loop was
               // still working on, and left the final count wrong.
               onPressed: _restoringTotal > 0 ? null : _clearAll,
@@ -512,7 +514,7 @@ class _TrashPageState extends State<TrashPage> {
                       controller: _searchController,
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Filter recycled files...',
+                        hintText: AppLocalizations.of(context).filterRecycledHint,
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 20),
                         suffixIcon: _searchQuery.isNotEmpty
@@ -542,8 +544,8 @@ class _TrashPageState extends State<TrashPage> {
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                                 child: AppEmptyState(
                                   icon: Icons.delete_outline,
-                                  title: _items.isEmpty ? 'Recycle Bin is empty' : 'No matching items in trash',
-                                  subtitle: _items.isEmpty ? 'Deleted files and folders will appear here.' : null,
+                                  title: _items.isEmpty ? AppLocalizations.of(context).recycleBinIsEmpty : AppLocalizations.of(context).noMatchingItemsTrash,
+                                  subtitle: _items.isEmpty ? AppLocalizations.of(context).trashEmptyHint : null,
                                 ),
                               ),
                             ),
@@ -576,7 +578,7 @@ class _TrashPageState extends State<TrashPage> {
                                       AppIconButton(
                                         icon: Icons.restore,
                                         color: Theme.of(context).colorScheme.success,
-                                        tooltip: 'Restore',
+                                        tooltip: AppLocalizations.of(context).restore,
                                         onPressed: _restoringTotal > 0
                                             ? null
                                             : () => _restore(item),
@@ -584,7 +586,7 @@ class _TrashPageState extends State<TrashPage> {
                                       AppIconButton(
                                         icon: Icons.delete_forever,
                                         color: Theme.of(context).colorScheme.error,
-                                        tooltip: 'Delete Permanently',
+                                        tooltip: AppLocalizations.of(context).deletePermanently,
                                         onPressed: _restoringTotal > 0
                                             ? null
                                             : () => _delete(item),

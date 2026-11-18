@@ -16,4 +16,8 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string);
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
 
+// Registers the current executable in HKEY_CURRENT_USER for Windows Explorer's
+// "Open with" menu across all in-app supported file extensions and directories.
+void RegisterWindowsOpenWithAssociations();
+
 #endif  // RUNNER_UTILS_H_

@@ -269,20 +269,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
       input = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Go to Line'),
+          title: Text(AppLocalizations.of(context).goToLine),
           content: TextField(
             controller: ctrl,
             autofocus: true,
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
-              labelText: 'Line number (1 - $totalLines)',
+              labelText: AppLocalizations.of(context).lineNumberRange(totalLines),
               border: const OutlineInputBorder(),
             ),
             onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('Go')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: Text(AppLocalizations.of(context).go)),
           ],
         ),
       );
@@ -296,7 +296,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Enter a line number between 1 and $totalLines'),
+          content: Text(AppLocalizations.of(context).enterLineNumberBetween(totalLines)),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -493,7 +493,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Replaced $count occurrence${count == 1 ? '' : 's'}',
+          AppLocalizations.of(context).replacedOccurrences(count),
         ),
       ),
     );
@@ -691,18 +691,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
       final discard = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Reload File'),
-          content: const Text(
-            'Discard unsaved changes and reload the file from disk?',
+          title: Text(AppLocalizations.of(context).reloadFile),
+          content: Text(
+            AppLocalizations.of(context).reloadFileConfirm,
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+              child: Text(AppLocalizations.of(context).cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Reload'),
+              child: Text(AppLocalizations.of(context).reload),
             ),
           ],
         ),
@@ -731,14 +731,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
         });
         _webViewController?.reload();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File saved successfully')),
+          SnackBar(content: Text(AppLocalizations.of(context).fileSavedSuccess)),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+          SnackBar(content: Text(AppLocalizations.of(context).saveFailed('$e')), backgroundColor: Theme.of(context).colorScheme.error),
         );
       }
     }
@@ -773,7 +773,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('PDF Export failed: $e'),
+            content: Text(AppLocalizations.of(context).pdfExportFailed('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -813,16 +813,16 @@ class _TextEditorPageState extends State<TextEditorPage> {
       final shouldSave = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Save Changes?'),
-          content: const Text('Do you want to save your changes before opening in the external browser?'),
+          title: Text(AppLocalizations.of(context).saveChangesQuestion),
+          content: Text(AppLocalizations.of(context).saveBeforeBrowserPrompt),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Open without Saving'),
+              child: Text(AppLocalizations.of(context).openWithoutSaving),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Save and Open'),
+              child: Text(AppLocalizations.of(context).saveAndOpen),
             ),
           ],
         ),
@@ -837,7 +837,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to open in browser: $e'),
+            content: Text(AppLocalizations.of(context).failedOpenInBrowser('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -946,20 +946,20 @@ class _TextEditorPageState extends State<TextEditorPage> {
             final discard = await showDialog<String>(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('Unsaved Changes'),
-                content: const Text('You have unsaved changes. Save them before closing?'),
+                title: Text(AppLocalizations.of(context).unsavedChanges),
+                content: Text(AppLocalizations.of(context).saveBeforeClosingPrompt),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop('cancel'),
-                    child: const Text('Cancel'),
+                    child: Text(AppLocalizations.of(context).cancel),
                   ),
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop('discard'),
-                    child: const Text('Discard'),
+                    child: Text(AppLocalizations.of(context).discard),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(ctx).pop('save'),
-                    child: const Text('Save'),
+                    child: Text(AppLocalizations.of(context).save),
                   ),
                 ],
               ),
@@ -982,7 +982,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
               actions: [
                 IconButton(
                   icon: Icon(_showFind ? Icons.search_off : Icons.search),
-                  tooltip: 'Find in file (Ctrl+F)',
+                  tooltip: AppLocalizations.of(context).findInFileTooltip,
                   onPressed: () {
                     if (_showFind) {
                       _closeFind();
@@ -994,7 +994,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 if (canPreview)
                   IconButton(
                     icon: Icon(_mode == TextFileMode.preview ? Icons.code : Icons.visibility),
-                    tooltip: _mode == TextFileMode.preview ? 'Show source' : 'Show preview',
+                    tooltip: _mode == TextFileMode.preview ? AppLocalizations.of(context).showSource : AppLocalizations.of(context).showPreview,
                     onPressed: () => _setMode(
                       _mode == TextFileMode.preview ? TextFileMode.code : TextFileMode.preview,
                     ),
@@ -1007,7 +1007,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   ),
                 if (_isMarkdown && _mode == TextFileMode.preview) ...[
                   PopupMenuButton<MarkdownThemeType>(
-                    tooltip: 'Markdown Theme',
+                    tooltip: AppLocalizations.of(context).markdownTheme,
                     icon: const Icon(Icons.palette_outlined),
                     initialValue: _markdownTheme,
                     onSelected: (theme) {
@@ -1065,7 +1065,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     )
                   else
                     PopupMenuButton<String>(
-                      tooltip: 'Export to PDF',
+                      tooltip: AppLocalizations.of(context).exportToPdf,
                       icon: const Icon(Icons.picture_as_pdf_outlined),
                       onSelected: (val) {
                         if (val == 'preview') {
@@ -1080,23 +1080,23 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         }
                       },
                       itemBuilder: (ctx) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'preview',
                           child: Row(
                             children: [
                               Icon(Icons.print_outlined, size: 18),
                               SizedBox(width: 10),
-                              Text('Print / Preview PDF'),
+                              Text(AppLocalizations.of(context).printPreviewPdf),
                             ],
                           ),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'share',
                           child: Row(
                             children: [
                               Icon(Icons.share_outlined, size: 18),
                               SizedBox(width: 10),
-                              Text('Share / Save PDF'),
+                              Text(AppLocalizations.of(context).shareSavePdf),
                             ],
                           ),
                         ),
@@ -1105,7 +1105,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           enabled: false,
                           height: 28,
                           child: Text(
-                            'Margins / Spacing',
+                            AppLocalizations.of(context).marginsSpacing,
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(context).colorScheme.outline,
@@ -1117,15 +1117,15 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           CheckedPopupMenuItem<String>(
                             value: 'margin_${mode.id}',
                             checked: _pdfMargin == mode,
-                            child: Text(mode.label),
+                            child: Text(mode.localizedName(AppLocalizations.of(context))),
                           ),
                       ],
                     ),
                 ],
                 if (widget.readOnly)
-                  const IconButton(
+                  IconButton(
                     icon: Icon(Icons.lock_outline),
-                    tooltip: 'Read-only location — this file cannot be edited here',
+                    tooltip: AppLocalizations.of(context).readOnlyCannotEditTooltip,
                     onPressed: null,
                   )
                 else ...[
@@ -1141,7 +1141,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                               Icons.save_outlined,
                               color: _isDirty ? Theme.of(context).colorScheme.primary : null,
                             ),
-                      tooltip: _isDirty ? 'Save changes (Ctrl+S)' : 'Saved',
+                      tooltip: _isDirty ? AppLocalizations.of(context).saveChangesTooltip : AppLocalizations.of(context).savedLabel,
                       onPressed: (_isDirty && !_saving && _error == null)
                           ? () {
                               HapticFeedback.lightImpact();
@@ -1152,12 +1152,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   if (_mode != TextFileMode.edit)
                     IconButton(
                       icon: const Icon(Icons.edit),
-                      tooltip: 'Edit',
+                      tooltip: AppLocalizations.of(context).editLabel,
                       onPressed: () => _setMode(TextFileMode.edit),
                     ),
                 ],
                 PopupMenuButton<String>(
-                  tooltip: 'Text Options',
+                  tooltip: AppLocalizations.of(context).textOptions,
                   icon: const Icon(Icons.tune),
                     onSelected: (val) {
                       if (val == 'zoom_in') {
@@ -1181,7 +1181,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       } else if (val == 'copy_all') {
                         Clipboard.setData(ClipboardData(text: _controller.text));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('All text copied to clipboard')),
+                          SnackBar(content: Text(AppLocalizations.of(context).allTextCopied)),
                         );
                       }
                     },
@@ -1197,33 +1197,33 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             ],
                           ),
                         ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'reload',
                         child: Row(
                           children: [
                             Icon(Icons.refresh, size: 20),
                             SizedBox(width: 8),
-                            Text('Reload from Disk (Ctrl+R)'),
+                            Text(AppLocalizations.of(context).reloadFromDiskShortcut),
                           ],
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'copy_all',
                         child: Row(
                           children: [
                             Icon(Icons.copy, size: 20),
                             SizedBox(width: 8),
-                            Text('Copy All Text'),
+                            Text(AppLocalizations.of(context).copyAllText),
                           ],
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'goto_line',
                         child: Row(
                           children: [
                             Icon(Icons.format_list_numbered, size: 20),
                             SizedBox(width: 8),
-                            Text('Go to Line... (Ctrl+G)'),
+                            Text(AppLocalizations.of(context).goToLineShortcut),
                           ],
                         ),
                       ),
@@ -1234,7 +1234,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           children: [
                             const Icon(Icons.zoom_in, size: 20),
                             const SizedBox(width: 8),
-                            Text('Larger (Ctrl+=) (${_fontSize.toInt() + 1}pt)'),
+                            Text(AppLocalizations.of(context).largerFontShortcut(_fontSize.toInt() + 1)),
                           ],
                         ),
                       ),
@@ -1244,18 +1244,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
                           children: [
                             const Icon(Icons.zoom_out, size: 20),
                             const SizedBox(width: 8),
-                            Text('Smaller (Ctrl+-) (${_fontSize.toInt() - 1}pt)'),
+                            Text(AppLocalizations.of(context).smallerFontShortcut(_fontSize.toInt() - 1)),
                           ],
                         ),
                       ),
                       if (_fontSize != 13.0)
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'reset_zoom',
                           child: Row(
                             children: [
                               Icon(Icons.restart_alt, size: 20),
                               SizedBox(width: 8),
-                              Text('Reset Size (Ctrl+0) (13pt)'),
+                              Text(AppLocalizations.of(context).resetFontShortcut),
                             ],
                           ),
                         ),
@@ -1263,7 +1263,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       CheckedPopupMenuItem(
                         value: 'toggle_wrap',
                         checked: _wordWrap,
-                        child: const Text('Word Wrap'),
+                        child: Text(AppLocalizations.of(context).wordWrap),
                       ),
                     ],
                   ),
@@ -1276,12 +1276,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.undo),
-                            tooltip: 'Undo (Ctrl+Z)',
+                            tooltip: AppLocalizations.of(context).undoShortcut,
                             onPressed: value.canUndo ? _undoController.undo : null,
                           ),
                           IconButton(
                             icon: const Icon(Icons.redo),
-                            tooltip: 'Redo (Ctrl+Y)',
+                            tooltip: AppLocalizations.of(context).redoShortcut,
                             onPressed: value.canRedo ? _undoController.redo : null,
                           ),
                         ],
@@ -1301,9 +1301,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             children: [
                               const Icon(Icons.error_outline, size: 48, color: Colors.red),
                               const SizedBox(height: 12),
-                              Text('Failed to open file: $_error'),
+                              Text(AppLocalizations.of(context).failedToOpenFile('$_error')),
                               const SizedBox(height: 16),
-                              FilledButton(onPressed: _loadFile, child: const Text('Retry')),
+                              FilledButton(onPressed: _loadFile, child: Text(AppLocalizations.of(context).retry)),
                             ],
                           ),
                         ),
@@ -1315,8 +1315,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                               color: Colors.amber.withValues(alpha: 0.15),
-                              child: const Text(
-                                'Read-only location — changes cannot be saved here.',
+                              child: Text(
+                                AppLocalizations.of(context).readOnlyCannotSave,
                                 style: TextStyle(fontSize: 12),
                               ),
                             ),
@@ -1348,13 +1348,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
               controller: _findController,
               focusNode: _findFocusNode,
               decoration: InputDecoration(
-                hintText: 'Find in file...',
+                hintText: AppLocalizations.of(context).findInFileHint,
                 isDense: true,
                 border: InputBorder.none,
                 suffixIcon: _findController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 16),
-                        tooltip: 'Clear',
+                        tooltip: AppLocalizations.of(context).clear,
                         onPressed: () {
                           _findDebounce?.cancel();
                           _findController.clear();
@@ -1386,12 +1386,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ),
           IconButton(
             icon: const Icon(Icons.arrow_upward, size: 18),
-            tooltip: 'Previous match',
+            tooltip: AppLocalizations.of(context).previousMatch,
             onPressed: _matchIndices.isEmpty ? null : _prevMatch,
           ),
           IconButton(
             icon: const Icon(Icons.arrow_downward, size: 18),
-            tooltip: 'Next match',
+            tooltip: AppLocalizations.of(context).nextMatch,
             onPressed: _matchIndices.isEmpty ? null : _nextMatch,
           ),
           if (!widget.readOnly)
@@ -1400,7 +1400,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
                 size: 18,
               ),
-              tooltip: 'Toggle replace (Ctrl+H)',
+              tooltip: AppLocalizations.of(context).toggleReplaceShortcut,
               onPressed: () {
                 setState(() => _showReplace = !_showReplace);
                 if (_showReplace) _replaceFocusNode.requestFocus();
@@ -1408,7 +1408,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
             ),
           IconButton(
             icon: const Icon(Icons.close, size: 18),
-            tooltip: 'Close find (Esc)',
+            tooltip: AppLocalizations.of(context).closeFindShortcut,
             onPressed: _closeFind,
           ),
             ],
@@ -1424,8 +1424,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     child: TextField(
                       controller: _replaceController,
                       focusNode: _replaceFocusNode,
-                      decoration: const InputDecoration(
-                        hintText: 'Replace with...',
+                      decoration: InputDecoration(
+                        hintText: AppLocalizations.of(context).replaceWithHint,
                         isDense: true,
                         border: InputBorder.none,
                       ),
@@ -1434,11 +1434,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   ),
                   TextButton(
                     onPressed: _matchIndices.isEmpty ? null : _replaceCurrent,
-                    child: const Text('Replace'),
+                    child: Text(AppLocalizations.of(context).replace),
                   ),
                   TextButton(
                     onPressed: _matchIndices.isEmpty ? null : _replaceAll,
-                    child: const Text('Replace All'),
+                    child: Text(AppLocalizations.of(context).replaceAll),
                   ),
                 ],
               ),
@@ -1485,7 +1485,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     const Icon(Icons.analytics_outlined, size: 22),
                     const SizedBox(width: 8),
                     Text(
-                      'Document Details',
+                      AppLocalizations.of(context).documentDetails,
                       style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -1493,13 +1493,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     const Spacer(),
                     TextButton.icon(
                       icon: const Icon(Icons.copy, size: 16),
-                      label: const Text('Copy All'),
+                      label: Text(AppLocalizations.of(context).copyAll),
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: text));
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Document copied to clipboard'),
+                          SnackBar(
+                            content: Text(AppLocalizations.of(context).documentCopied),
                             duration: Duration(seconds: 2),
                           ),
                         );
@@ -1508,13 +1508,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   ],
                 ),
                 const Divider(),
-                _statRow('File', widget.fileName),
-                _statRow('Lines', '$lines'),
-                _statRow('Words', '$words'),
-                _statRow('Characters', '$chars'),
-                _statRow('Byte Size', '$bytes bytes'),
-                _statRow('Line Endings', lineEnding),
-                _statRow('Cursor Position', 'Line $_cursorLine, Col $_cursorCol'),
+                _statRow(AppLocalizations.of(context).fileLabel, widget.fileName),
+                _statRow(AppLocalizations.of(context).linesLabel, '$lines'),
+                _statRow(AppLocalizations.of(context).wordsLabel, '$words'),
+                _statRow(AppLocalizations.of(context).charactersLabel, '$chars'),
+                _statRow(AppLocalizations.of(context).byteSizeLabel, AppLocalizations.of(context).bytesUnit('$bytes')),
+                _statRow(AppLocalizations.of(context).lineEndingsLabel, lineEnding),
+                _statRow(AppLocalizations.of(context).cursorPositionLabel, AppLocalizations.of(context).cursorLineCol(_cursorLine, _cursorCol)),
                 const SizedBox(height: 8),
               ],
             ),
@@ -1570,10 +1570,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final lines = _cachedLines;
     final words = _cachedWords;
     final modeLabel = widget.readOnly
-        ? 'Read-only location'
+        ? AppLocalizations.of(context).readOnlyLocation
         : _mode == TextFileMode.preview
-            ? 'Preview'
-            : (_mode == TextFileMode.code ? 'Viewing source' : 'Editing');
+            ? AppLocalizations.of(context).previewModeLabel
+            : (_mode == TextFileMode.code ? AppLocalizations.of(context).viewingSourceLabel : AppLocalizations.of(context).editingModeLabel);
 
     return InkWell(
       onTap: _showDocumentStats,
@@ -1594,14 +1594,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   color: Colors.amber.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text('Modified', style: TextStyle(fontSize: 10, color: Colors.amber)),
+                child: Text(AppLocalizations.of(context).modifiedLabel, style: const TextStyle(fontSize: 10, color: Colors.amber)),
               ),
             ],
             const Spacer(),
             Text(
-              'Ln $_cursorLine, Col $_cursorCol  •  Lines: $lines  •  '
-              '${words == null ? '' : 'Words: $words  •  '}Chars: $chars  •  '
-              '${_fontSize.toInt()}pt${_wordWrap ? '  •  Wrap' : ''}',
+              '${AppLocalizations.of(context).editorStatusLine(_cursorLine, _cursorCol, lines)}'
+              '${words == null ? '' : AppLocalizations.of(context).editorStatusWords(words)}${AppLocalizations.of(context).editorStatusChars(chars)}'
+              '${_fontSize.toInt()}pt${_wordWrap ? '  •  ${AppLocalizations.of(context).wrapIndicator}' : ''}',
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(width: 4),
@@ -1638,7 +1638,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Document is empty',
+                      AppLocalizations.of(context).documentIsEmpty,
                       style: TextStyle(
                         fontSize: 14,
                         color: themeConfig.textColor.withValues(alpha: 0.6),
@@ -1649,7 +1649,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.edit, size: 16),
-                        label: const Text('Edit in Source Mode'),
+                        label: Text(AppLocalizations.of(context).editInSourceMode),
                         onPressed: () => _setMode(TextFileMode.code),
                       ),
                     ],

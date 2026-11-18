@@ -6,21 +6,26 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('EntryItem Tests', () {
-    test('detects archive types correctly', () {
-      final zipEntry = EntryItem(
-        EntryDto(name: 'data.zip', path: '/data.zip', isDir: false, hidden: false, isSymlink: false),
-      );
-      expect(zipEntry.isArchive, isTrue);
-
-      final tarEntry = EntryItem(
-        EntryDto(name: 'archive.tar.gz', path: '/archive.tar.gz', isDir: false, hidden: false, isSymlink: false),
-      );
-      expect(tarEntry.isArchive, isTrue);
-
-      final sevenzEntry = EntryItem(
-        EntryDto(name: 'backup.7z', path: '/backup.7z', isDir: false, hidden: false, isSymlink: false),
-      );
-      expect(sevenzEntry.isArchive, isTrue);
+    test('detects all archive types correctly', () {
+      for (final name in [
+        'data.zip',
+        'app.apk',
+        'bundle.apkm',
+        'split.apks',
+        'assets.obb',
+        'comic.cbz',
+        'lib.jar',
+        'src.tar',
+        'pkg.tgz',
+        'archive.tar.gz',
+        'backup.7z',
+        'book.epub',
+      ]) {
+        final entry = EntryItem(
+          EntryDto(name: name, path: '/$name', isDir: false, hidden: false, isSymlink: false),
+        );
+        expect(entry.isArchive, isTrue, reason: 'Expected $name to be archive');
+      }
 
       final textEntry = EntryItem(
         EntryDto(name: 'doc.txt', path: '/doc.txt', isDir: false, hidden: false, isSymlink: false),
@@ -28,16 +33,37 @@ void main() {
       expect(textEntry.isArchive, isFalse);
     });
 
-    test('detects text/code types correctly', () {
-      final rsEntry = EntryItem(
-        EntryDto(name: 'main.rs', path: '/main.rs', isDir: false, hidden: false, isSymlink: false),
-      );
-      expect(rsEntry.isText, isTrue);
-
-      final jsonEntry = EntryItem(
-        EntryDto(name: 'config.json', path: '/config.json', isDir: false, hidden: false, isSymlink: false),
-      );
-      expect(jsonEntry.isText, isTrue);
+    test('detects all text/code types and special filenames correctly', () {
+      for (final name in [
+        'main.rs',
+        'app.dart',
+        'config.json',
+        'tsconfig.jsonc',
+        'data.json5',
+        'map.geojson',
+        'world.topojson',
+        'bundle.js.map',
+        'Cargo.lock',
+        'index.htm',
+        'page.xhtml',
+        'icon.svg',
+        'Info.plist',
+        'module.mjs',
+        'View.jsx',
+        'Screen.tsx',
+        'run.bash',
+        'rc.zsh',
+        'native.cc',
+        'Dockerfile',
+        'Makefile',
+        '.eslintrc',
+        '.gitignore',
+      ]) {
+        final entry = EntryItem(
+          EntryDto(name: name, path: '/$name', isDir: false, hidden: false, isSymlink: false),
+        );
+        expect(entry.isText, isTrue, reason: 'Expected $name to be text');
+      }
     });
 
     test('detects image types correctly', () {

@@ -39,6 +39,13 @@ extension SortFieldLabel on SortField {
         SortField.modified => 'Date',
         SortField.type => 'Type',
       };
+
+  String localizedLabel(AppLocalizations l10n) => switch (this) {
+        SortField.name => l10n.sortLabelName,
+        SortField.size => l10n.sortLabelSize,
+        SortField.modified => l10n.sortLabelDate,
+        SortField.type => l10n.sortLabelType,
+      };
 }
 
 class ClipboardState {
@@ -228,12 +235,13 @@ class BrowserPageState extends State<BrowserPage> {
 
   String get _selectedSummary {
     final count = _selectedPaths.length;
-    if (count == 0) return 'Select items';
+    if (count == 0) return AppLocalizations.of(context).selectItems;
     final totalBytes = _selectedBytes;
     if (totalBytes > BigInt.zero) {
-      return '$count selected (${_formatBytes(totalBytes)})';
+      return AppLocalizations.of(context)
+          .selectedCountBytesLabel(count, _formatBytes(totalBytes));
     }
-    return '$count selected';
+    return AppLocalizations.of(context).selectedCountLabel(count);
   }
 
   // Pagination state
@@ -337,7 +345,7 @@ class BrowserPageState extends State<BrowserPage> {
       if (mounted) {
         setState(() => _loadingMore = false);
         // Without this the "Load more" button just does nothing on failure.
-        _showError('Could not load more: ${_friendlyError(e)}');
+        _showError(AppLocalizations.of(context).couldNotLoadMore(_friendlyError(e)));
       }
     }
   }
@@ -604,7 +612,7 @@ class BrowserPageState extends State<BrowserPage> {
             _loading = false;
             _refreshing = false;
           });
-          _showError('Refresh failed: ${_friendlyError(e)}');
+          _showError(AppLocalizations.of(context).refreshFailed(_friendlyError(e)));
         } else {
           setState(() {
             _error = _friendlyError(e);
@@ -974,7 +982,7 @@ class BrowserPageState extends State<BrowserPage> {
     final result = await OpenFilex.open(joinNative(root, path));
     if (!mounted) return;
     if (result.type == ResultType.noAppToOpen) {
-      _showError('Downloaded, but no installed app can open ${item.name}');
+      _showError(AppLocalizations.of(context).downloadedNoAppToOpen(item.name));
     } else if (result.type != ResultType.done) {
       _showError(result.message);
     }
@@ -1043,7 +1051,8 @@ class BrowserPageState extends State<BrowserPage> {
         if (!await PermissionService.instance.hasInstallPackagesAccess()) {
           final granted = await PermissionService.instance.requestInstallPackagesAccess();
           if (!granted) {
-            _showError('Allow installing unknown apps to open APK files');
+            if (!mounted) return;
+            _showError(AppLocalizations.of(context).allowInstallApkPrompt);
             return;
           }
         }
@@ -1051,12 +1060,13 @@ class BrowserPageState extends State<BrowserPage> {
       final result = await FileOpenService.instance.openWith(_root, _fullEntryPath(item));
       if (!mounted) return;
       if (result.type == ResultType.noAppToOpen) {
-        _showError('No installed app can open ${item.name}');
+        _showError(AppLocalizations.of(context).noAppToOpenFile(item.name));
       } else if (result.type != ResultType.done) {
         _showError(result.message);
       }
     } catch (e) {
-      _showError('Cannot open file: $e');
+      if (!mounted) return;
+      _showError(AppLocalizations.of(context).cannotOpenFile('$e'));
     }
   }
 
@@ -1064,13 +1074,14 @@ class BrowserPageState extends State<BrowserPage> {
     try {
       await FileOpenService.instance.share(_root, _fullEntryPath(item));
     } catch (e) {
-      _showError('Cannot share file: $e');
+      if (!mounted) return;
+      _showError(AppLocalizations.of(context).cannotShareFile('$e'));
     }
   }
 
   /// Backend errors arrive as `kind: detail` strings. Turn the common ones
   /// into something a user can act on instead of echoing the Rust wording.
-  String _friendlyError(Object error) => friendlyErrorText(error);
+  String _friendlyError(Object error) => friendlyErrorText(error, mounted ? AppLocalizations.of(context) : null);
 
   /// Two layers: the local filter keeps narrowing the loaded pages as you
   /// type (instant, 1+ chars), and a debounced recursive search on the
@@ -1117,7 +1128,7 @@ class BrowserPageState extends State<BrowserPage> {
     } catch (e) {
       if (!mounted || seq != _searchSeq) return;
       setState(() => _searchBusy = false);
-      _showError('Search failed: ${_friendlyError(e)}');
+      _showError(AppLocalizations.of(context).searchFailed(_friendlyError(e)));
     }
   }
 
@@ -1147,18 +1158,18 @@ class BrowserPageState extends State<BrowserPage> {
               Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
               const SizedBox(height: 12),
               Text(
-                'No results for "${_filterQuery.trim()}"',
+                AppLocalizations.of(context).noSearchResultsFor(_filterQuery.trim()),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Searched this folder and its subfolders.',
+              Text(
+                AppLocalizations.of(context).searchedThisAndSubfolders,
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.clear, size: 16),
-                label: const Text('Clear search'),
+                label: Text(AppLocalizations.of(context).clearSearch),
                 onPressed: () {
                   setState(() {
                     _filterQuery = '';
@@ -1180,7 +1191,7 @@ class BrowserPageState extends State<BrowserPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
           child: Text(
             _searchResults.length >= 200
-                ? 'First 200 results (narrow the search to see more)'
+                ? AppLocalizations.of(context).first200Results
                 : '${_searchResults.length} result${_searchResults.length == 1 ? '' : 's'} in this folder and subfolders',
             style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
@@ -1218,7 +1229,7 @@ class BrowserPageState extends State<BrowserPage> {
     var p = item.path;
     if (p.startsWith('/')) p = p.substring(1);
     final idx = p.lastIndexOf('/');
-    if (idx < 0) return 'Current folder';
+    if (idx < 0) return AppLocalizations.of(context).currentFolder;
     return p.substring(0, idx);
   }
 
@@ -1251,7 +1262,7 @@ class BrowserPageState extends State<BrowserPage> {
     if (match != null) {
       _openEntry(match);
     } else {
-      _showError('File is beyond the first page of "$parent"; open the folder to view it.');
+      _showError(AppLocalizations.of(context).fileBeyondFirstPage(parent));
     }
   }
 
@@ -1320,7 +1331,7 @@ class BrowserPageState extends State<BrowserPage> {
         });
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Copied ${item.name} to clipboard')),
+          SnackBar(content: Text(AppLocalizations.of(context).copiedItemToClipboard(item.name))),
         );
         break;
       case 'cut':
@@ -1329,7 +1340,7 @@ class BrowserPageState extends State<BrowserPage> {
         });
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cut ${item.name} to clipboard')),
+          SnackBar(content: Text(AppLocalizations.of(context).cutItemToClipboard(item.name))),
         );
         break;
       case 'select':
@@ -1376,7 +1387,7 @@ class BrowserPageState extends State<BrowserPage> {
     Clipboard.setData(ClipboardData(text: full));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Path copied to clipboard')),
+      SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
     );
   }
 
@@ -1434,7 +1445,7 @@ class BrowserPageState extends State<BrowserPage> {
       case 'copy_path':
         Clipboard.setData(ClipboardData(text: _displayFullPath));
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Folder path copied to clipboard')),
+          SnackBar(content: Text(AppLocalizations.of(context).folderPathCopied)),
         );
         break;
     }
@@ -1579,7 +1590,7 @@ class BrowserPageState extends State<BrowserPage> {
       if (_totalCount > 10000) {
         // Returning matters: falling through selected only the loaded pages,
         // so the counter claimed a selection that was not the whole folder.
-        _showError('Too many items to select all at once ($_totalCount)');
+        _showError(AppLocalizations.of(context).tooManyItemsSelectAll(_totalCount));
         return;
       } else {
         try {
@@ -1602,7 +1613,7 @@ class BrowserPageState extends State<BrowserPage> {
             _totalCount = paged.total;
           });
         } catch (e) {
-          _showError('Could not load all items: ${_friendlyError(e)}');
+          _showError(AppLocalizations.of(context).couldNotLoadAllItems(_friendlyError(e)));
         }
       }
     }
@@ -1836,12 +1847,12 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _downloadSelected() async {
     if (_selectedPaths.isEmpty) return;
     if (!_isRemoteOrArchive(_root)) {
-      _showError('Already local: use Copy to place these files elsewhere.');
+      _showError(AppLocalizations.of(context).alreadyLocalUseCopy);
       return;
     }
     final dest = await FolderPickerDialog.show(
       context,
-      title: 'Select Download Destination',
+      title: AppLocalizations.of(context).downloadDestination,
       initialRoot: PlatformPaths.defaultRoot(),
     );
     if (dest == null || !mounted) return;
@@ -1986,13 +1997,13 @@ class BrowserPageState extends State<BrowserPage> {
       name = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('New Text File'),
+          title: Text(AppLocalizations.of(context).newTextFile),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'File Name',
-              hintText: 'e.g. notes.txt',
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context).fileNameLabel,
+              hintText: AppLocalizations.of(context).fileNameHint,
               border: OutlineInputBorder(),
             ),
             onSubmitted: (v) {
@@ -2000,14 +2011,14 @@ class BrowserPageState extends State<BrowserPage> {
             },
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
             ListenableBuilder(
               listenable: ctrl,
               builder: (ctx, _) => FilledButton(
                 onPressed: ctrl.text.trim().isEmpty
                     ? null
                     : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: const Text('Create'),
+                child: Text(AppLocalizations.of(context).create),
               ),
             ),
           ],
@@ -2038,7 +2049,7 @@ class BrowserPageState extends State<BrowserPage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to create file: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+            SnackBar(content: Text(AppLocalizations.of(context).failedToCreateFile('$e')), backgroundColor: Theme.of(context).colorScheme.error),
           );
         }
       }
@@ -2055,7 +2066,7 @@ class BrowserPageState extends State<BrowserPage> {
       _clearSelection();
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${_clipboard!.paths.length} items ${isCut ? "cut" : "copied"} to clipboard')),
+      SnackBar(content: Text(isCut ? AppLocalizations.of(context).cutItemsCount(_clipboard!.paths.length) : AppLocalizations.of(context).copiedItemsCount(_clipboard!.paths.length))),
     );
   }
 
@@ -2112,7 +2123,7 @@ class BrowserPageState extends State<BrowserPage> {
       final choice = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Already exists'),
+          title: Text(AppLocalizations.of(context).alreadyExists),
           actionsOverflowButtonSpacing: 6,
           content: Text(
             conflicts.length == 1
@@ -2122,19 +2133,19 @@ class BrowserPageState extends State<BrowserPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'skip'),
-              child: const Text('Skip'),
+              child: Text(AppLocalizations.of(context).skip),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'rename'),
-              child: const Text('Keep both'),
+              child: Text(AppLocalizations.of(context).keepBoth),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: Text(AppLocalizations.of(context).cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, 'overwrite'),
-              child: const Text('Replace'),
+              child: Text(AppLocalizations.of(context).replace),
             ),
           ],
         ),
@@ -2191,7 +2202,7 @@ class BrowserPageState extends State<BrowserPage> {
     if (!_canWrite) {
       // The drop target accepted the drag but nothing landed, with no
       // explanation, so a read-only folder looked like a broken app.
-      _showError('This location is read-only — cannot drop files here');
+      _showError(AppLocalizations.of(context).readOnlyCannotDrop);
       return;
     }
     final byParent = <String, List<String>>{};
@@ -2238,7 +2249,7 @@ class BrowserPageState extends State<BrowserPage> {
     if (safe.isEmpty) {
       // The drag landed but nothing happened; say why instead of silently
       // swallowing a folder dropped onto itself.
-      _showError('Cannot drop a folder onto itself or into its own subfolder');
+      _showError(AppLocalizations.of(context).cannotDropFolderIntoSelf);
       return;
     }
     await _transfer(
@@ -2409,26 +2420,26 @@ class BrowserPageState extends State<BrowserPage> {
           color: canTrash ? scheme.primary : scheme.error,
           size: 28,
         ),
-        title: Text(count == 1 ? 'Delete "${paths.first.split('/').last}"?' : 'Delete $count items?'),
+        title: Text(count == 1 ? AppLocalizations.of(context).deleteSingleConfirmTitle(paths.first.split('/').last) : AppLocalizations.of(context).deleteMultipleConfirmTitle(count)),
         content: Text(
           canTrash
-              ? 'Choose whether to move to Recycle Bin or delete permanently.'
+              ? AppLocalizations.of(context).deleteChoiceTrashOrPermanent
               : permanent
-                  ? 'Delete permanently? This cannot be undone.'
-                  : 'This item is on a remote server and cannot be moved to the '
-                      'local Recycle Bin. It will be deleted permanently.',
+                  ? AppLocalizations.of(context).deletePermanentWarning
+                  : AppLocalizations.of(context).deleteRemotePermanentWarning,
+
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
           if (canTrash) ...[
             TextButton.icon(
               icon: Icon(Icons.delete_forever, size: 18, color: scheme.error),
-              label: Text('Permanent Delete', style: TextStyle(color: scheme.error)),
+              label: Text(AppLocalizations.of(context).permanentDelete, style: TextStyle(color: scheme.error)),
               onPressed: () => Navigator.of(ctx).pop('permanent'),
             ),
             FilledButton.icon(
               icon: const Icon(Icons.delete_outline, size: 18),
-              label: const Text('Recycle Bin'),
+              label: Text(AppLocalizations.of(context).recycleBin),
               onPressed: () => Navigator.of(ctx).pop('trash'),
             ),
           ] else
@@ -2436,7 +2447,7 @@ class BrowserPageState extends State<BrowserPage> {
               icon: const Icon(Icons.delete_forever, size: 18),
               style: FilledButton.styleFrom(backgroundColor: scheme.error),
               onPressed: () => Navigator.of(ctx).pop('permanent'),
-              label: const Text('Permanent Delete'),
+              label: Text(AppLocalizations.of(context).permanentDelete),
             ),
         ],
       ),
@@ -2462,12 +2473,12 @@ class BrowserPageState extends State<BrowserPage> {
           if (!failures.any((f) => f.startsWith('${p.split('/').last}:')))
             joinNative(_root, p),
       };
+      if (!mounted) return;
       if (failures.isNotEmpty) {
         _showError(
-          'Could not move ${failures.length} of ${paths.length} items to Recycle Bin:\n${failures.take(5).join('\n')}',
+          AppLocalizations.of(context).couldNotMoveToTrash(failures.length, paths.length, failures.take(5).join('\n')),
         );
       }
-      if (!mounted) return;
       _clearSelection();
       _load();
       if (movedPaths.isNotEmpty) {
@@ -2483,12 +2494,12 @@ class BrowserPageState extends State<BrowserPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Moved ${movedPaths.length} item${movedPaths.length == 1 ? '' : 's'} to Recycle Bin',
+              movedPaths.length == 1 ? AppLocalizations.of(context).movedOneToTrash : AppLocalizations.of(context).movedManyToTrash(movedPaths.length),
             ),
             action: newIds.isEmpty
                 ? null
                 : SnackBarAction(
-                    label: 'Undo',
+                    label: AppLocalizations.of(context).undo,
                     onPressed: () async {
                       final failures = <String>[];
                       for (final id in newIds) {
@@ -2502,7 +2513,7 @@ class BrowserPageState extends State<BrowserPage> {
                       _load(refresh: true);
                       if (failures.isNotEmpty) {
                         _showError(
-                          'Could not restore ${failures.length} item${failures.length == 1 ? '' : 's'}',
+                          AppLocalizations.of(context).couldNotRestoreItems(failures.length),
                         );
                       }
                     },
@@ -2570,11 +2581,11 @@ class BrowserPageState extends State<BrowserPage> {
       newName = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Rename'),
+          title: Text(AppLocalizations.of(context).rename),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'New Name', border: OutlineInputBorder()),
+            decoration: InputDecoration(labelText: AppLocalizations.of(context).newName, border: const OutlineInputBorder()),
             onSubmitted: (v) {
               if (v.trim().isNotEmpty) {
                 Navigator.of(ctx).pop(v.trim());
@@ -2582,14 +2593,14 @@ class BrowserPageState extends State<BrowserPage> {
             },
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
             ListenableBuilder(
               listenable: ctrl,
               builder: (ctx, _) => FilledButton(
                 onPressed: ctrl.text.trim().isEmpty
                     ? null
                     : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: const Text('Rename'),
+                child: Text(AppLocalizations.of(context).rename),
               ),
             ),
           ],
@@ -2600,8 +2611,9 @@ class BrowserPageState extends State<BrowserPage> {
     }
 
     if (newName != null && newName.isNotEmpty && newName != oldName) {
+      if (!mounted) return;
       if (newName.contains('/') || newName.contains('\\')) {
-        _showError('A name cannot contain "/" or "\\"');
+        _showError(AppLocalizations.of(context).nameCannotContainSlash);
         return;
       }
       final parent = oldPath.contains('/') ? oldPath.substring(0, oldPath.lastIndexOf('/')) : '';
@@ -2612,7 +2624,8 @@ class BrowserPageState extends State<BrowserPage> {
         _clearSelection();
         _load(refresh: true);
       } catch (e) {
-        _showError('Rename failed: $e');
+        if (!mounted) return;
+        _showError(AppLocalizations.of(context).renameFailed('$e'));
       }
     }
   }
@@ -2632,11 +2645,11 @@ class BrowserPageState extends State<BrowserPage> {
       zipName = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Compress to ZIP'),
+          title: Text(AppLocalizations.of(context).compressToZip),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Archive Name', border: OutlineInputBorder()),
+            decoration: InputDecoration(labelText: AppLocalizations.of(context).archiveName, border: const OutlineInputBorder()),
             onSubmitted: (v) {
               if (v.trim().isNotEmpty) {
                 Navigator.of(ctx).pop(v.trim());
@@ -2644,14 +2657,14 @@ class BrowserPageState extends State<BrowserPage> {
             },
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
             ListenableBuilder(
               listenable: ctrl,
               builder: (ctx, _) => FilledButton(
                 onPressed: ctrl.text.trim().isEmpty
                     ? null
                     : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: const Text('Compress'),
+                child: Text(AppLocalizations.of(context).compress),
               ),
             ),
           ],
@@ -2724,14 +2737,14 @@ class BrowserPageState extends State<BrowserPage> {
   Future<void> _addBookmark({required String root, required String path}) async {
     final segments = path.split('/').where((s) => s.isNotEmpty).toList();
     final name = segments.isEmpty
-        ? (root.split('/').last.isEmpty ? 'Root' : root.split('/').last)
+        ? (root.split('/').last.isEmpty ? AppLocalizations.of(context).rootLabel : root.split('/').last)
         : segments.last;
     final bookmarks = await StorageService.instance.getBookmarks();
     final exists = bookmarks.any((b) => b.root == root && b.path == path);
     if (exists) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"$name" is already bookmarked')),
+          SnackBar(content: Text(AppLocalizations.of(context).alreadyBookmarked(name))),
         );
       }
       return;
@@ -2739,7 +2752,7 @@ class BrowserPageState extends State<BrowserPage> {
     await StorageService.instance.addBookmark(name: name, root: root, path: path);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bookmarked "$name"')),
+        SnackBar(content: Text(AppLocalizations.of(context).bookmarkedName(name))),
       );
     }
   }
@@ -2747,6 +2760,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// Walks a folder to total its files. Bounded so a huge tree cannot freeze
   /// the dialog; the count is marked approximate when the cap is hit.
   Future<String> _measureDirectory(String path) async {
+    final l10n = AppLocalizations.of(context);
     var total = 0;
     var count = 0;
     var capped = false;
@@ -2777,9 +2791,9 @@ class BrowserPageState extends State<BrowserPage> {
     try {
       await walk(Directory(path), 0);
     } catch (_) {
-      return 'Directory';
+      return l10n.directoryLabel;
     }
-    if (count == 0) return 'Directory (empty)';
+    if (count == 0) return l10n.directoryEmptyLabel;
     final size = EntryItem(
       EntryDto(
         name: '',
@@ -2831,38 +2845,38 @@ class BrowserPageState extends State<BrowserPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _infoRow('Name', item.name),
-              _infoRow('Path', fullPath),
-              if (ext != null) _infoRow('Extension', ext.toUpperCase()),
+              _infoRow(AppLocalizations.of(context).nameLabel, item.name),
+              _infoRow(AppLocalizations.of(context).pathLabel, fullPath),
+              if (ext != null) _infoRow(AppLocalizations.of(context).extensionLabel, ext.toUpperCase()),
               if (item.isDir)
                 ValueListenableBuilder<String?>(
                   valueListenable: dirSizeNotifier,
                   builder: (_, size, _) => _infoRow(
-                    'Size',
-                    size ?? 'Measuring…',
+                    AppLocalizations.of(context).sizeLabel,
+                    size ?? AppLocalizations.of(context).measuring,
                   ),
                 )
               else
                 _infoRow(
-                  'Size',
-                  '${item.formattedSize}${item.size != null ? " (${item.size} bytes)" : ""}',
+                  AppLocalizations.of(context).sizeLabel,
+                  item.size != null ? AppLocalizations.of(context).yesBytes(item.formattedSize, '${item.size}') : AppLocalizations.of(context).unknownSize,
                 ),
-              _infoRow('Modified', item.formattedModified),
-              _infoRow('Type', item.isDir ? 'Directory' : (item.isArchive ? 'Archive' : 'File')),
-              _infoRow('Hidden', item.hidden ? 'Yes' : 'No'),
-              if (item.isSymlink) _infoRow('Symlink', 'Yes'),
+              _infoRow(AppLocalizations.of(context).modifiedLabel, item.formattedModified),
+              _infoRow(AppLocalizations.of(context).typeLabel, item.isDir ? AppLocalizations.of(context).directoryLabel : (item.isArchive ? AppLocalizations.of(context).archiveLabel : AppLocalizations.of(context).fileLabel)),
+              _infoRow(AppLocalizations.of(context).hiddenLabel, item.hidden ? AppLocalizations.of(context).yes : AppLocalizations.of(context).no),
+              if (item.isSymlink) _infoRow(AppLocalizations.of(context).symlinkLabel, AppLocalizations.of(context).yes),
             ],
           ),
         ),
         actions: [
           FilledButton.tonalIcon(
             icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy Path'),
+            label: Text(AppLocalizations.of(context).copyPath),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: fullPath));
               Navigator.of(ctx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Path copied to clipboard')),
+                SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
               );
             },
           ),
@@ -2872,9 +2886,9 @@ class BrowserPageState extends State<BrowserPage> {
                 Navigator.of(ctx).pop();
                 _extractArchive(item);
               },
-              child: const Text('Extract Here'),
+              child: Text(AppLocalizations.of(context).extractHere),
             ),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).close)),
         ],
       ),
     );
@@ -2966,10 +2980,10 @@ class BrowserPageState extends State<BrowserPage> {
           toolbarHeight: 40,
           leading: IconButton(
             icon: const Icon(Icons.close, size: 18),
-            tooltip: 'Exit split view',
+            tooltip: AppLocalizations.of(context).exitSplitView,
             onPressed: _toggleSplit,
           ),
-          title: const Text('Split view', style: TextStyle(fontSize: 14)),
+          title: Text(AppLocalizations.of(context).splitView, style: const TextStyle(fontSize: 14)),
         ),
         body: LayoutBuilder(
           builder: (ctx, constraints) {
@@ -3210,7 +3224,7 @@ class BrowserPageState extends State<BrowserPage> {
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.all(4),
                 constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                tooltip: 'Cancel selection (Esc)',
+                tooltip: AppLocalizations.of(context).cancelSelectionEsc,
                 onPressed: _clearSelection,
               )
             : (MediaQuery.sizeOf(context).width >= 600 && !widget.embedded && Navigator.of(context).canPop()
@@ -3219,7 +3233,7 @@ class BrowserPageState extends State<BrowserPage> {
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(4),
                     constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                    tooltip: 'Back to previous page',
+                    tooltip: AppLocalizations.of(context).backToPreviousPage,
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 : null),
@@ -3238,7 +3252,7 @@ class BrowserPageState extends State<BrowserPage> {
                   curve: Curves.easeOut,
                 );
               },
-              tooltip: 'Back to top',
+              tooltip: AppLocalizations.of(context).backToTop,
               child: const Icon(Icons.arrow_upward, size: 18),
             )
           : null,
@@ -3340,7 +3354,7 @@ class BrowserPageState extends State<BrowserPage> {
             focusNode: _searchFocusNode,
             autofocus: true,
             decoration: InputDecoration(
-              hintText: 'Search files & subfolders…',
+              hintText: AppLocalizations.of(context).searchFilesSubfoldersHint,
               border: InputBorder.none,
               suffixIcon: _filterQuery.isNotEmpty
                   ? Row(
@@ -3493,7 +3507,7 @@ class BrowserPageState extends State<BrowserPage> {
       if (!compact) ...[
         action(
           _isSearching ? Icons.search_off : Icons.search,
-          'Search',
+          AppLocalizations.of(context).searchAction,
           () {
             setState(() {
               _isSearching = !_isSearching;
@@ -3507,10 +3521,10 @@ class BrowserPageState extends State<BrowserPage> {
           },
         ),
         if (!widget.embedded)
-          action(Icons.vertical_split, 'Split view', _toggleSplit),
+          action(Icons.vertical_split, AppLocalizations.of(context).splitView, _toggleSplit),
         action(
           _isGrid ? Icons.view_list : Icons.grid_view,
-          _isGrid ? 'List view' : 'Grid view',
+          _isGrid ? AppLocalizations.of(context).listView : AppLocalizations.of(context).gridView,
           () {
             setState(() => _isGrid = !_isGrid);
             _saveViewPreferences();
@@ -3520,7 +3534,7 @@ class BrowserPageState extends State<BrowserPage> {
         PopupMenuButton<SortField>(
           // The current order was only visible inside the opened menu, so the
           // button looked identical whatever the list was sorted by.
-          tooltip: 'Sort: ${_sortField.label} ${_sortAsc ? '↑' : '↓'}',
+          tooltip: AppLocalizations.of(context).sortStatusTooltip(_sortField.localizedLabel(AppLocalizations.of(context)), _sortAsc ? '↑' : '↓'),
           icon: Icon(Icons.sort, size: compact ? 18 : 20),
           padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
@@ -3735,7 +3749,7 @@ class BrowserPageState extends State<BrowserPage> {
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(4),
                     constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                    tooltip: 'Cancel selection (Esc)',
+                    tooltip: AppLocalizations.of(context).cancelSelectionEsc,
                     onPressed: _clearSelection,
                   )
                 // Embedded split panes have no route of their own to pop;
@@ -3749,7 +3763,7 @@ class BrowserPageState extends State<BrowserPage> {
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(4),
                     constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                    tooltip: 'Back to previous page',
+                    tooltip: AppLocalizations.of(context).backToPreviousPage,
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 Expanded(child: _toolbarContent(segments)),
@@ -3769,12 +3783,12 @@ class BrowserPageState extends State<BrowserPage> {
     } else if (_root.startsWith('remote://')) {
       final remoteId = _root.substring('remote://'.length);
       final remote = _findRemote(remoteId);
-      rootLabel = remote != null ? '☁️ ${remote.name}' : 'Remote';
+      rootLabel = remote != null ? '☁️ ${remote.name}' : AppLocalizations.of(context).remote;
     } else if (_root.startsWith('archive://')) {
-      rootLabel = 'Archive';
+      rootLabel = AppLocalizations.of(context).archiveLabel;
     } else if (_root == '/storage/emulated/0') {
       // Last segment of this path is "0", which reads as a drive letter.
-      rootLabel = 'Internal Storage';
+      rootLabel = AppLocalizations.of(context).internalStorage;
     } else {
       rootLabel = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? _root;
     }
@@ -3818,7 +3832,7 @@ class BrowserPageState extends State<BrowserPage> {
         final full = isNativeRoot(_root) ? joinNative(_root, path) : '$_root/$path';
         Clipboard.setData(ClipboardData(text: full));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Copied path: $full')),
+          SnackBar(content: Text(AppLocalizations.of(context).copiedPathValue(full))),
         );
       },
       onAcceptDrop: (data, targetRelPath) => _acceptDrop(data, targetRelPath),
@@ -3901,7 +3915,7 @@ class BrowserPageState extends State<BrowserPage> {
       child: Row(
         children: [
           if (showCaps) ...[
-            Text('Capabilities: ', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            Text(AppLocalizations.of(context).capabilitiesPrefix, style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
             _capChip('read', caps.read),
             _capChip('write', caps.write),
             _capChip('rename', caps.rename),
@@ -4036,7 +4050,7 @@ class BrowserPageState extends State<BrowserPage> {
             children: [
               const Icon(Icons.error_outline, size: 48, color: Colors.red),
               const SizedBox(height: 12),
-              Text('Failed to load directory', style: Theme.of(context).textTheme.titleMedium),
+              Text(AppLocalizations.of(context).failedToLoadDir, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Text(_error!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 16),
@@ -4044,12 +4058,12 @@ class BrowserPageState extends State<BrowserPage> {
                 spacing: 8,
                 alignment: WrapAlignment.center,
                 children: [
-                  FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+                  FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: Text(AppLocalizations.of(context).retry)),
                   if (_canNavigateUp)
                     OutlinedButton.icon(
                       onPressed: _navigateUp,
                       icon: const Icon(Icons.arrow_upward),
-                      label: const Text('Go up'),
+                      label: Text(AppLocalizations.of(context).goUp),
                     ),
                 ],
               ),
@@ -4093,17 +4107,17 @@ class BrowserPageState extends State<BrowserPage> {
                       const SizedBox(height: 12),
                       Text(
                         isFiltered
-                            ? 'No files matching "$_filterQuery"'
+                            ? AppLocalizations.of(context).noFilesMatching(_filterQuery)
                             : (_entries.isNotEmpty && !_showHidden)
-                                ? 'Only hidden files here'
-                                : 'Directory is empty',
+                                ? AppLocalizations.of(context).onlyHiddenFilesHere
+                                : AppLocalizations.of(context).directoryIsEmpty,
                         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       if (isFiltered) ...[
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.clear, size: 16),
-                          label: const Text('Clear Filter'),
+                          label: Text(AppLocalizations.of(context).clearFilter),
                           onPressed: () {
                             // Leaving `_isSearching` on kept an empty search
                             // box open after the filter it belonged to was gone.
@@ -4120,7 +4134,7 @@ class BrowserPageState extends State<BrowserPage> {
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.visibility, size: 16),
-                          label: const Text('Show Hidden Files'),
+                          label: Text(AppLocalizations.of(context).showHiddenFiles),
                           onPressed: () {
                             setState(() => _showHidden = true);
                             _saveViewPreferences();
@@ -4147,7 +4161,7 @@ class BrowserPageState extends State<BrowserPage> {
                             if (_canNavigateUp)
                               OutlinedButton.icon(
                                 icon: const Icon(Icons.arrow_upward, size: 16),
-                                label: const Text('Go Up'),
+                                label: Text(AppLocalizations.of(context).goUp),
                                 onPressed: _navigateUp,
                               ),
                           ],
@@ -4156,7 +4170,7 @@ class BrowserPageState extends State<BrowserPage> {
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.arrow_upward, size: 16),
-                          label: const Text('Go Up'),
+                          label: Text(AppLocalizations.of(context).goUp),
                           onPressed: _navigateUp,
                         ),
                       ],
@@ -4206,7 +4220,7 @@ class BrowserPageState extends State<BrowserPage> {
                       )
                     : IconButton(
                         icon: const Icon(Icons.more_horiz, size: 18),
-                        tooltip: 'Load more',
+                        tooltip: AppLocalizations.of(context).loadMore,
                         onPressed: _loadMore,
                       ),
               );
@@ -4356,7 +4370,7 @@ class BrowserPageState extends State<BrowserPage> {
                       )
                     : TextButton.icon(
                         icon: const Icon(Icons.expand_more, size: 18),
-                        label: const Text('Load more'),
+                        label: Text(AppLocalizations.of(context).loadMore),
                         onPressed: _loadMore,
                       ),
               ),

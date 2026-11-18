@@ -19,7 +19,7 @@ void main() {
               recentDirs: const ['/home/user/downloads', '/home/user/documents'],
               onNavigateTo: (dir) => navigatedDir = dir,
               quickTargets: const [
-                QuickTarget(name: 'Downloads', path: '/home/user/downloads', root: '/home/user/downloads', relPath: ''),
+                QuickTarget(name: 'Downloads', kind: 'downloads', path: '/home/user/downloads', root: '/home/user/downloads', relPath: ''),
               ],
               onSelectTarget: (t) => selectedTarget = t,
               currentPath: '/home/user',

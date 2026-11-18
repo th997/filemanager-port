@@ -318,7 +318,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Auto-playing next: ${nextTrack.fileName}'),
+                content: Text(AppLocalizations.of(context).autoPlayingNext(nextTrack.fileName)),
                 duration: const Duration(seconds: 2),
                 behavior: SnackBarBehavior.floating,
               ),
@@ -633,7 +633,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
               Icons.skip_next,
               color: _hasNext ? Colors.white : Colors.white38,
             ),
-            tooltip: 'Next episode (N)',
+            tooltip: AppLocalizations.of(context).nextEpisodeShortcut,
             onPressed: _hasNext ? () => _openTrack(_index + 1) : null,
           )
         : const SizedBox.shrink();
@@ -788,12 +788,12 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                 if (widget.playlist.length > 1) ...[
                   IconButton(
                     icon: const Icon(Icons.queue_music),
-                    tooltip: 'Playlist (${_index + 1}/${widget.playlist.length})',
+                    tooltip: AppLocalizations.of(context).playlistProgress(_index + 1, widget.playlist.length),
                     onPressed: _showPlaylist,
                   ),
                   IconButton(
                     icon: Icon(_autoNext ? Icons.playlist_play : Icons.playlist_remove),
-                    tooltip: _autoNext ? 'Auto-next: On' : 'Auto-next: Off',
+                    tooltip: _autoNext ? AppLocalizations.of(context).autoNextOn : AppLocalizations.of(context).autoNextOff,
                     color: _autoNext ? Colors.blueAccent : Colors.white60,
                     onPressed: () {
                       setState(() {
@@ -805,7 +805,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                 ],
                 IconButton(
                   icon: Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
-                  tooltip: _isLooping ? 'Loop: Single' : 'Loop: Off',
+                  tooltip: _isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff,
                   color: _isLooping ? Colors.blueAccent : Colors.white,
                   onPressed: () {
                     setState(() {
@@ -824,14 +824,14 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.fullscreen),
-                  tooltip: 'Fullscreen (F)',
+                  tooltip: AppLocalizations.of(context).fullscreenShortcut,
                   onPressed: () {
                     _videoKey.currentState?.toggleFullscreen();
                   },
                 ),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
-                  tooltip: 'Playback options',
+                  tooltip: AppLocalizations.of(context).playbackOptions,
                   onSelected: (action) {
                     switch (action) {
                       case 'prev':
@@ -869,27 +869,27 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                             size: 20,
                           ),
                           const SizedBox(width: 10),
-                          Text(_volume == 0 ? 'Unmute (M)' : 'Mute (M) (${_volume.toInt()}%)'),
+                          Text(_volume == 0 ? AppLocalizations.of(context).unmuteShortcut : AppLocalizations.of(context).muteShortcut(_volume.toInt())),
                         ],
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'rewind',
                       child: Row(
                         children: [
                           Icon(Icons.replay_10, size: 20),
                           SizedBox(width: 10),
-                          Text('Rewind 10s'),
+                          Text(AppLocalizations.of(context).rewind10s),
                         ],
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'forward',
                       child: Row(
                         children: [
                           Icon(Icons.forward_10, size: 20),
                           SizedBox(width: 10),
-                          Text('Forward 10s'),
+                          Text(AppLocalizations.of(context).forward10s),
                         ],
                       ),
                     ),
@@ -905,29 +905,29 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                               color: _autoNext ? Colors.blueAccent : null,
                             ),
                             const SizedBox(width: 10),
-                            Text(_autoNext ? 'Auto-next (On)' : 'Auto-next (Off)'),
+                            Text(_autoNext ? AppLocalizations.of(context).autoNextMenuOn : AppLocalizations.of(context).autoNextMenuOff),
                           ],
                         ),
                       ),
                       PopupMenuItem(
                         value: 'prev',
                         enabled: _hasPrev,
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.skip_previous, size: 20),
-                            SizedBox(width: 10),
-                            Text('Previous (P)'),
+                            const Icon(Icons.skip_previous, size: 20),
+                            const SizedBox(width: 10),
+                            Text(AppLocalizations.of(context).previousShortcut),
                           ],
                         ),
                       ),
                       PopupMenuItem(
                         value: 'next',
                         enabled: _hasNext,
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.skip_next, size: 20),
-                            SizedBox(width: 10),
-                            Text('Next (N)'),
+                            const Icon(Icons.skip_next, size: 20),
+                            const SizedBox(width: 10),
+                            Text(AppLocalizations.of(context).nextShortcut),
                           ],
                         ),
                       ),
@@ -952,7 +952,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                         size: 48, color: Colors.redAccent),
                     const SizedBox(height: 12),
                     Text(
-                      'Cannot play this file',
+                      AppLocalizations.of(context).cannotPlayFile,
                       style: Theme.of(context)
                           .textTheme
                           .titleMedium
@@ -969,7 +969,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                     OutlinedButton.icon(
                       onPressed: _retry,
                       icon: const Icon(Icons.refresh, size: 16),
-                      label: const Text('Retry'),
+                      label: Text(AppLocalizations.of(context).retry),
                       style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white),
                     ),

@@ -5,6 +5,7 @@ import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 class RecentPage extends StatefulWidget {
   const RecentPage({super.key});
@@ -81,7 +82,7 @@ class _RecentPageState extends State<RecentPage> {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not load recent locations: $e'),
+          content: Text(AppLocalizations.of(context).couldNotLoadRecent('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -104,7 +105,7 @@ class _RecentPageState extends State<RecentPage> {
     final full = h.path.isEmpty ? rootLabel : '$rootLabel/${h.path}';
     Clipboard.setData(ClipboardData(text: full));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied path: $full')),
+      SnackBar(content: Text(AppLocalizations.of(context).copiedPathValue(full))),
     );
   }
 
@@ -117,13 +118,13 @@ class _RecentPageState extends State<RecentPage> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Bookmarked "$title"')),
+          SnackBar(content: Text(AppLocalizations.of(context).bookmarkedName(title))),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to bookmark: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+          SnackBar(content: Text(AppLocalizations.of(context).failedToBookmark('$e')), backgroundColor: Theme.of(context).colorScheme.error),
         );
       }
     }
@@ -145,7 +146,7 @@ class _RecentPageState extends State<RecentPage> {
       _loadHistory();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not remove "$title": $e'),
+          content: Text(AppLocalizations.of(context).couldNotRemoveItem(title, '$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -154,9 +155,9 @@ class _RecentPageState extends State<RecentPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Removed "$title"'),
+        content: Text(AppLocalizations.of(context).removedName(title)),
         action: SnackBarAction(
-          label: 'Undo',
+          label: AppLocalizations.of(context).undo,
           onPressed: () async {
             // Re-record the visit, then put it back where it was in the list.
             // The restored row is found by root+path: the database orders by
@@ -183,14 +184,14 @@ class _RecentPageState extends State<RecentPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Clear History'),
-        content: const Text('Remove all recent locations? Bookmarks are kept.'),
+        title: Text(AppLocalizations.of(context).clearHistory),
+        content: Text(AppLocalizations.of(context).clearHistoryConfirm),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Clear'),
+            child: Text(AppLocalizations.of(context).clear),
           ),
         ],
       ),
@@ -204,7 +205,7 @@ class _RecentPageState extends State<RecentPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not clear history: $e'),
+          content: Text(AppLocalizations.of(context).couldNotClearHistory('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -214,9 +215,9 @@ class _RecentPageState extends State<RecentPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Cleared ${cleared.length} recent locations'),
+        content: Text(AppLocalizations.of(context).clearedRecentLocations(cleared.length)),
         action: SnackBarAction(
-          label: 'Undo',
+          label: AppLocalizations.of(context).undo,
           onPressed: () async {
             for (final h in cleared.reversed) {
               await StorageService.instance.recordHistory(root: h.root, path: h.path);
@@ -282,7 +283,7 @@ class _RecentPageState extends State<RecentPage> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.folder_open),
-                title: const Text('Open'),
+                title: Text(AppLocalizations.of(context).open),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openHistory(h);
@@ -290,7 +291,7 @@ class _RecentPageState extends State<RecentPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.copy_outlined),
-                title: const Text('Copy Path'),
+                title: Text(AppLocalizations.of(context).copyPath),
                 onTap: () {
                   Navigator.pop(ctx);
                   _copyHistoryPath(h);
@@ -298,7 +299,7 @@ class _RecentPageState extends State<RecentPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.bookmark_add_outlined),
-                title: const Text('Bookmark Location'),
+                title: Text(AppLocalizations.of(context).bookmarkLocation),
                 onTap: () {
                   Navigator.pop(ctx);
                   _bookmarkHistory(h, title);
@@ -307,7 +308,7 @@ class _RecentPageState extends State<RecentPage> {
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
                 title: Text(
-                  'Remove from History',
+                  AppLocalizations.of(context).removeFromHistory,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
@@ -334,12 +335,12 @@ class _RecentPageState extends State<RecentPage> {
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
-        title: const Text('Recent History'),
+        title: Text(AppLocalizations.of(context).recentHistory),
         actions: [
           if (_history.isNotEmpty) ...[
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: _showSearch ? 'Close Search' : 'Search History',
+              tooltip: _showSearch ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchHistory,
               onPressed: () {
                 setState(() {
                   _showSearch = !_showSearch;
@@ -352,12 +353,12 @@ class _RecentPageState extends State<RecentPage> {
             ),
             TextButton(
               onPressed: _clearHistory,
-              child: const Text('Clear', style: TextStyle(fontSize: 12)),
+              child: Text(AppLocalizations.of(context).clear, style: const TextStyle(fontSize: 12)),
             ),
           ],
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: AppLocalizations.of(context).refresh,
             onPressed: _loadHistory,
           ),
         ],
@@ -373,7 +374,7 @@ class _RecentPageState extends State<RecentPage> {
                       controller: _searchController,
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Filter recent locations...',
+                        hintText: AppLocalizations.of(context).filterRecentHint,
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 18),
                         suffixIcon: _searchQuery.isNotEmpty
@@ -403,10 +404,10 @@ class _RecentPageState extends State<RecentPage> {
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                                 child: AppEmptyState(
                                   icon: _history.isEmpty ? Icons.history : Icons.search_off,
-                                  title: _history.isEmpty ? 'No recent browsing history' : 'No matching locations',
+                                  title: _history.isEmpty ? AppLocalizations.of(context).noRecentHistory : AppLocalizations.of(context).noMatchingLocations,
                                   subtitle: _history.isEmpty
-                                      ? 'Directories and files you browse will show up here.'
-                                      : 'Nothing matches "$_searchQuery".',
+                                      ? AppLocalizations.of(context).recentEmptyHint
+                                      : AppLocalizations.of(context).nothingMatchesQuery(_searchQuery),
                                 ),
                               ),
                             ),
@@ -443,7 +444,7 @@ class _RecentPageState extends State<RecentPage> {
                                         style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       ),
                                       PopupMenuButton<String>(
-                                        tooltip: 'Actions',
+                                        tooltip: AppLocalizations.of(context).actionsTooltip,
                                         icon: const Icon(Icons.more_vert, size: 16),
                                         padding: EdgeInsets.zero,
                                         style: IconButton.styleFrom(
@@ -456,23 +457,23 @@ class _RecentPageState extends State<RecentPage> {
                                           if (v == 'remove') _removeEntry(h, title);
                                         },
                                         itemBuilder: (_) => [
-                                          const PopupMenuItem(
+                                          PopupMenuItem(
                                             value: 'copy',
                                             child: Row(
                                               children: [
                                                 Icon(Icons.copy_outlined, size: 18),
                                                 SizedBox(width: 8),
-                                                Text('Copy Path'),
+                                                Text(AppLocalizations.of(context).copyPath),
                                               ],
                                             ),
                                           ),
-                                          const PopupMenuItem(
+                                          PopupMenuItem(
                                             value: 'bookmark',
                                             child: Row(
                                               children: [
                                                 Icon(Icons.bookmark_add_outlined, size: 18),
                                                 SizedBox(width: 8),
-                                                Text('Bookmark Location'),
+                                                Text(AppLocalizations.of(context).bookmarkLocation),
                                               ],
                                             ),
                                           ),
@@ -487,7 +488,7 @@ class _RecentPageState extends State<RecentPage> {
                                                 ),
                                                 const SizedBox(width: 8),
                                                 Text(
-                                                  'Remove',
+                                                  AppLocalizations.of(context).remove,
                                                   style: TextStyle(
                                                     color: Theme.of(context).colorScheme.error,
                                                   ),

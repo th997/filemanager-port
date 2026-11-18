@@ -12,21 +12,27 @@ import 'package:re_highlight/re_highlight.dart';
 
 import '../theme/markdown_themes.dart';
 import 'highlight_service.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 PdfColor _pdf(Color c) => PdfColor.fromInt(c.toARGB32());
 
 /// Page margins and spacing presets for PDF exports.
 enum PdfMarginMode {
-  compact('compact', 'Compact (16pt)', 16.0, 0.6),
-  standard('standard', 'Standard (36pt)', 36.0, 1.0),
-  relaxed('relaxed', 'Relaxed (54pt)', 54.0, 1.5);
+  compact('compact', 16.0, 0.6),
+  standard('standard', 36.0, 1.0),
+  relaxed('relaxed', 54.0, 1.5);
 
   final String id;
-  final String label;
   final double pageMargin;
   final double spacingScale;
 
-  const PdfMarginMode(this.id, this.label, this.pageMargin, this.spacingScale);
+  const PdfMarginMode(this.id, this.pageMargin, this.spacingScale);
+
+  String localizedName(AppLocalizations l10n) => switch (id) {
+        'compact' => l10n.pdfMarginCompact,
+        'relaxed' => l10n.pdfMarginRelaxed,
+        _ => l10n.pdfMarginStandard,
+      };
 
   static PdfMarginMode fromId(String? id) {
     for (final m in PdfMarginMode.values) {

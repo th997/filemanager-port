@@ -157,7 +157,7 @@ class _TaskProgressDialogState extends State<TaskProgressDialog> {
   String _dialogTitle(String title, AppLocalizations l10n) {
     final uploadMatch = RegExp(r'^Uploading\s+(\d+)\s+item\(s\)\.\.\.$').firstMatch(title);
     if (uploadMatch != null) {
-      return l10n.uploadingItems(uploadMatch.group(1)!);
+      return l10n.uploadingItems(int.parse(uploadMatch.group(1)!));
     }
     final uploadFolderMatch = RegExp(r'^Uploading\s+folder\s+"(.*)"\.\.\.$').firstMatch(title);
     if (uploadFolderMatch != null) {

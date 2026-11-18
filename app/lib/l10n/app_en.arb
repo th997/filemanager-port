@@ -1,5 +1,9 @@
 {
   "@@locale": "en",
+  "@quickDrive": {"placeholders": {"letter": {"type": "String"}}},
+  "@monthYearLabel": {"placeholders": {"month": {"type": "String"}, "year": {"type": "int"}}},
+  "@selectedCountLabel": {"placeholders": {"count": {"type": "int"}}},
+  "@selectedCountBytesLabel": {"placeholders": {"count": {"type": "int"}, "size": {"type": "String"}}},
   "aboutSection": "About & System",
   "accentClassicBlue": "Classic blue",
   "accentColor": "Accent color",
@@ -9,6 +13,7 @@
   "accentGrape": "Grape",
   "accentIndigo": "Indigo",
   "accentSunset": "Sunset",
+  "actionInfo": "Info",
   "allPhotos": "All photos",
   "almostDone": "Almost done",
   "appTitle": "FP File Manager",
@@ -30,6 +35,7 @@
   "cancelling": "Cancelling…",
   "cannotCancelTask": "This task cannot be cancelled",
   "cannotClearFinishedTasks": "{count} finished task(s) could not be cleared",
+  "@cannotClearFinishedTasks": {"placeholders": {"count": {"type": "int"}}},
   "cannotDismissTask": "Could not dismiss task",
   "change": "Change",
   "clear": "Clear",
@@ -40,38 +46,52 @@
   "cloudToolsSettings": "Cloud, Tools & Settings",
   "completed": "Completed",
   "compressFailed": "Compress failed: {error}",
+  "@compressFailed": {"placeholders": {"error": {"type": "String"}}},
   "compressing": "Compressing…",
   "connectServer": "Connect a server",
   "copyError": "Copy Error",
   "copyFailed": "Copy failed: {error}",
+  "@copyFailed": {"placeholders": {"error": {"type": "String"}}},
   "copyPassword": "Copy password",
   "copyUrl": "Copy URL",
   "copyingFiles": "Copying files…",
   "create": "Create",
   "createdCandidate": "Created \"{name}\"",
+  "@createdCandidate": {"placeholders": {"name": {"type": "String"}}},
   "creatingCopy": "Creating copy…",
   "darkTheme": "Dark theme",
   "delete": "Delete",
   "deleteFailed": "Delete failed: {error}",
+  "@deleteFailed": {"placeholders": {"error": {"type": "String"}}},
   "deletedCount": "Deleted {count} items",
+  "@deletedCount": {"placeholders": {"count": {"type": "int"}}},
   "deleting": "Deleting…",
   "descending": "Descending",
   "desktopHtmlPreviewHint": "Desktop HTML preview is simplified. For full JS/CSS styling, open in browser.",
   "dismiss": "Dismiss",
   "downloadDestination": "Select Download Destination",
   "downloadFailed": "Download failed: {error}",
+  "@downloadFailed": {"placeholders": {"error": {"type": "String"}}},
   "downloadedTo": "Downloaded to {path}",
+  "@downloadedTo": {"placeholders": {"path": {"type": "String"}}},
   "downloadingFile": "Downloading {file}…",
+  "@downloadingFile": {"placeholders": {"file": {"type": "String"}}},
   "downloadingFiles": "Downloading files…",
   "downloadingItem": "Downloading {name}…",
+  "@downloadingItem": {"placeholders": {"name": {"type": "String"}}},
   "duplicateFailed": "Duplicate failed: {error}",
+  "@duplicateFailed": {"placeholders": {"error": {"type": "String"}}},
   "emptyRecycleBin": "Empty Recycle Bin",
+  "endpointHintS3": "Endpoint (Optional for AWS, required for MinIO/R2)",
+  "endpointHintGeneric": "Endpoint (e.g. https://oss-cn-hangzhou.aliyuncs.com)",
   "errorCopied": "Error copied to clipboard",
   "exportPreviewCache": "Export & Preview Cache",
   "extractFailed": "Extract failed: {error}",
+  "@extractFailed": {"placeholders": {"error": {"type": "String"}}},
   "extracting": "Extracting…",
   "failed": "Failed",
   "failedToCreate": "Failed to create: {error}",
+  "@failedToCreate": {"placeholders": {"error": {"type": "String"}}},
   "finalizingServer": "Finalizing (server processing)…",
   "folderLabel": "Folder",
   "folderName": "Folder Name",
@@ -79,11 +99,15 @@
   "gallery": "Gallery",
   "homeDashboard": "Home Dashboard",
   "hoursLeft": "About {hours} hours left",
+  "@hoursLeft": {"placeholders": {"hours": {"type": "int"}}},
   "hoursMinutesLeft": "About {hours} hr {minutes} min left",
+  "@hoursMinutesLeft": {"placeholders": {"hours": {"type": "int"}, "minutes": {"type": "int"}}},
   "inProgress": "In progress",
   "invertSelection": "Invert Selection",
   "itemsCount": "{count} items",
+  "@itemsCount": {"placeholders": {"count": {"type": "int"}}},
   "itemsOutOfTotal": "{completed} of {total} items",
+  "@itemsOutOfTotal": {"placeholders": {"completed": {"type": "int"}, "total": {"type": "int"}}},
   "lanSharing": "LAN HTTP Web Sharing",
   "language": "Language",
   "languageSystem": "Follow system",
@@ -92,7 +116,22 @@
   "mediaPlayback": "Media Playback (Remote Buffer)",
   "minimize": "Minimize",
   "minutesLeft": "About {minutes} min left",
+  "@minutesLeft": {"placeholders": {"minutes": {"type": "int"}}},
+  "monthYearLabel": "{month} {year}",
+  "monthSeptember": "September",
+  "monthOctober": "October",
+  "monthNovember": "November",
+  "monthMay": "May",
+  "monthMarch": "March",
+  "monthJune": "June",
+  "monthJuly": "July",
+  "monthJanuary": "January",
+  "monthFebruary": "February",
+  "monthDecember": "December",
+  "monthAugust": "August",
+  "monthApril": "April",
   "moveFailed": "Move failed: {error}",
+  "@moveFailed": {"placeholders": {"error": {"type": "String"}}},
   "movingFiles": "Moving files…",
   "newBucket": "New Bucket",
   "newFile": "New File",
@@ -105,11 +144,23 @@
   "passwordCopied": "Password copied to clipboard",
   "passwordFieldHelper": "Leave empty to access via token link without password; set to also allow password login",
   "passwordFieldLabel": "Password (Optional)",
+  "pdfMarginStandard": "Standard (36pt)",
+  "pdfMarginRelaxed": "Relaxed (54pt)",
+  "pdfMarginCompact": "Compact (16pt)",
   "playbackSpeed": "Playback Speed",
   "pleaseSelectSpecificFolder": "Please select a specific folder to upload",
   "port": "Port",
   "previewImage": "Preview Image",
   "processingPercent": "100% (processing)",
+  "quickVolumes": "Volumes",
+  "quickRoot": "Root /",
+  "quickPictures": "Pictures",
+  "quickHome": "Home",
+  "quickDrive": "Drive ({letter}:)",
+  "quickDownloads": "Downloads",
+  "quickDownload": "Download",
+  "quickDesktop": "Desktop",
+  "quickDcim": "DCIM (Photos)",
   "readOnly": " (read-only)",
   "readOnlyMode": "Read Only (disallow web uploads)",
   "recent": "Recent",
@@ -119,6 +170,7 @@
   "remoteArchiveCache": "Remote Archive Cache",
   "retry": "Retry",
   "retryFailed": "Retry failed: {error}",
+  "@retryFailed": {"placeholders": {"error": {"type": "String"}}},
   "runInBackground": "Background",
   "runningOnLan": "🟢 Running on LAN",
   "save": "Save",
@@ -126,18 +178,23 @@
   "scriptEnabledTooltip": "Scripts enabled: page can access files in shared dir, click to disable",
   "searchFiles": "Search files",
   "secondsLeft": "About {seconds} sec left",
+  "@secondsLeft": {"placeholders": {"seconds": {"type": "int"}}},
   "selectAll": "Select All",
   "selectFolderToUpload": "Select Folder to Upload",
   "selectItems": "Select items",
+  "selectedCountLabel": "{count} selected",
+  "selectedCountBytesLabel": "{count} selected ({size})",
   "settings": "Settings",
   "settingsCardSubtitle": "Theme, System info, About",
   "shareInstructions": "Open the following URL in a browser on the same Wi-Fi to access (contains token, do not share publicly):",
   "sharePasswordLabel": "Password",
   "sharePasswordNotice": "Generated share password: {pwd}",
+  "@sharePasswordNotice": {"placeholders": {"pwd": {"type": "String"}}},
   "shared": "Shared",
   "sharedPathCopied": "Shared path copied",
   "showHiddenFiles": "Show hidden files",
   "skippedAlreadyExists": "{count} items skipped (already exist)",
+  "@skippedAlreadyExists": {"placeholders": {"count": {"type": "int"}}},
   "sortBy": "Sort By",
   "splitView": "Split view",
   "stopped": "⚪ Stopped",
@@ -161,8 +218,15 @@
   "themeSystem": "System",
   "toolbarAtBottom": "Toolbar at bottom",
   "toolbarAtBottomDesc": "Move the address bar and icons below the file list",
+  "toolbarUpOneLevel": "Up one level",
+  "toolbarJump": "Jump",
+  "toolbarForwardHistory": "Forward in history (Alt+→)",
+  "toolbarEditAddress": "Edit address (Cmd/Ctrl+L)",
+  "toolbarBackHistory": "Back in history (Alt+←)",
   "transferring": "Transferring…",
   "trashCountNotice": "{count} items in trash",
+  "@trashCountNotice": {"placeholders": {"count": {"type": "int"}}},
+  "unknownDate": "Unknown date",
   "upload": "Upload",
   "uploadFiles": "Upload Files",
   "uploadFolder": "Upload Folder",
@@ -171,7 +235,9 @@
   "uploadWithSystemPicker": "Upload using system file picker",
   "uploadWithSystemPickerDesc": "Directly invokes native OS file picker, supporting system bookmarks and path paste",
   "uploadingFolder": "Uploading folder \"{folder}\"…",
+  "@uploadingFolder": {"placeholders": {"folder": {"type": "String"}}},
   "uploadingItems": "Uploading {count} items…",
+  "@uploadingItems": {"placeholders": {"count": {"type": "int"}}},
   "urlCopied": "URL copied to clipboard",
   "utilities": "Utilities",
   "waiting": "Waiting…",
@@ -185,5 +251,1293 @@
   "sortByDate": "Date modified",
   "sortByType": "Type",
   "openSourceLicenses": "Open Source Licenses",
-  "openSourceLicensesSubtitle": "Licenses and notices of third-party open-source software"
+  "openSourceLicensesSubtitle": "Licenses and notices of third-party open-source software",
+  "open": "Open",
+  "openWith": "Open with",
+  "download": "Download",
+  "downloadToLocal": "Download to local",
+  "copy": "Copy",
+  "cut": "Cut",
+  "pasteCount": "Paste ({count})",
+  "@pasteCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "copyPath": "Copy Path",
+  "copyFolderPath": "Copy Folder Path",
+  "copyFilePath": "Copy File Path",
+  "copyOriginalPath": "Copy Original Path",
+  "pathCopied": "Path copied to clipboard",
+  "folderPathCopied": "Folder path copied to clipboard",
+  "copiedPathValue": "Copied path: {path}",
+  "@copiedPathValue": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "copiedValue": "Copied: {value}",
+  "@copiedValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "copiedItemToClipboard": "Copied {name} to clipboard",
+  "@copiedItemToClipboard": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cutItemToClipboard": "Cut {name} to clipboard",
+  "@cutItemToClipboard": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "copiedItemsCount": "{count} items copied to clipboard",
+  "@copiedItemsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "cutItemsCount": "{count} items cut to clipboard",
+  "@cutItemsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "rename": "Rename",
+  "newName": "New Name",
+  "duplicate": "Duplicate",
+  "share": "Share",
+  "properties": "Properties",
+  "details": "Details",
+  "extractHere": "Extract Here",
+  "compress": "Compress",
+  "compressToZip": "Compress to ZIP",
+  "archiveName": "Archive Name",
+  "bookmarkThisFolder": "Bookmark This Folder",
+  "bookmarkLocation": "Bookmark Location",
+  "bookmarkedName": "Bookmarked \"{name}\"",
+  "@bookmarkedName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "alreadyBookmarked": "\"{name}\" is already bookmarked",
+  "@alreadyBookmarked": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "refresh": "Refresh",
+  "undo": "Undo",
+  "discard": "Discard",
+  "go": "Go",
+  "goUp": "Go Up",
+  "loadMore": "Load more",
+  "clearFilter": "Clear Filter",
+  "clearSearch": "Clear search",
+  "searchAction": "Search",
+  "remove": "Remove",
+  "removedName": "Removed \"{name}\"",
+  "@removedName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unknownSize": "Unknown",
+  "wrapIndicator": "Wrap",
+  "yes": "Yes",
+  "no": "No",
+  "ok": "OK",
+  "typeLabel": "Type",
+  "nameLabel": "Name",
+  "pathLabel": "Path",
+  "extensionLabel": "Extension",
+  "sizeLabel": "Size",
+  "modifiedLabel": "Modified",
+  "hiddenLabel": "Hidden",
+  "symlinkLabel": "Symlink",
+  "directoryLabel": "Directory",
+  "directoryEmptyLabel": "Directory (empty)",
+  "fileLabel": "File",
+  "archiveLabel": "Archive",
+  "measuring": "Measuring…",
+  "bytesUnit": "{count} bytes",
+  "@bytesUnit": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "yesBytes": "{formatted} ({raw} bytes)",
+  "@yesBytes": {
+    "placeholders": {
+      "formatted": {
+        "type": "String"
+      },
+      "raw": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadFileTitle": "Download file?",
+  "downloadFileStreamHint": "This file cannot be previewed while streaming, so it has to be downloaded first.",
+  "saveDestination": "Save destination",
+  "chooseDownloadFolder": "Choose download folder",
+  "folderIsEmpty": "Folder is empty",
+  "noMatchingItems": "No matching items",
+  "openFolderTooltip": "Open folder",
+  "deselectAll": "Deselect All",
+  "filterFilesFoldersHint": "Filter files & folders...",
+  "noSubfolders": "No subfolders",
+  "noMatchingSubfolders": "No matching subfolders",
+  "hideHiddenFolders": "Hide hidden folders",
+  "showHiddenFolders": "Show hidden folders",
+  "hideHiddenFiles": "Hide hidden files",
+  "filterSubfoldersHint": "Filter subfolders...",
+  "cannotReadFolderPrefix": "Cannot read this folder: ",
+  "failedCreateFolder": "Failed to create folder: {error}",
+  "@failedCreateFolder": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "filterEllipsis": "Filter...",
+  "parentFolderTooltip": "Parent folder",
+  "clickToCopyPath": "Click to copy path",
+  "folderNameHint": "e.g. Documents",
+  "folderNameInputLabel": "Folder name",
+  "couldNotRequestFileAccess": "Could not request file access: {error}",
+  "@couldNotRequestFileAccess": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotRefreshHome": "Could not refresh home data: {error}",
+  "@couldNotRefreshHome": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "storagePermissionRequired": "Storage permission is required to browse files. Grant \"All files access\" in the next screen.",
+  "requesting": "Requesting…",
+  "grant": "Grant",
+  "remoteProtocolsSubtitle": "S3, OSS, SFTP, WebDAV...",
+  "utilitiesTrashSubtitle": "{count} in trash • Web share",
+  "@utilitiesTrashSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "utilitiesDefaultSubtitle": "Recycle bin, Web share, Cache",
+  "tasksDefaultSubtitle": "Transfers and operations",
+  "bookmarksDefaultSubtitle": "Saved folders",
+  "recentDefaultSubtitle": "Browsing history",
+  "sortLabelName": "Name",
+  "sortLabelSize": "Size",
+  "sortLabelDate": "Date",
+  "sortLabelType": "Type",
+  "couldNotLoadMore": "Could not load more: {error}",
+  "@couldNotLoadMore": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "refreshFailed": "Refresh failed: {error}",
+  "@refreshFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadedNoAppToOpen": "Downloaded, but no installed app can open {name}",
+  "@downloadedNoAppToOpen": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "allowInstallApkPrompt": "Allow installing unknown apps to open APK files",
+  "noAppToOpenFile": "No installed app can open {name}",
+  "@noAppToOpenFile": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cannotOpenFile": "Cannot open file: {error}",
+  "@cannotOpenFile": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "cannotShareFile": "Cannot share file: {error}",
+  "@cannotShareFile": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "searchFailed": "Search failed: {error}",
+  "@searchFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "noSearchResultsFor": "No results for \"{query}\"",
+  "@noSearchResultsFor": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "searchedThisAndSubfolders": "Searched this folder and its subfolders.",
+  "first200Results": "First 200 results (narrow the search to see more)",
+  "currentFolder": "Current folder",
+  "fileBeyondFirstPage": "File is beyond the first page of \"{parent}\"; open the folder to view it.",
+  "@fileBeyondFirstPage": {
+    "placeholders": {
+      "parent": {
+        "type": "String"
+      }
+    }
+  },
+  "tooManyItemsSelectAll": "Too many items to select all at once ({count})",
+  "@tooManyItemsSelectAll": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "couldNotLoadAllItems": "Could not load all items: {error}",
+  "@couldNotLoadAllItems": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "alreadyLocalUseCopy": "Already local: use Copy to place these files elsewhere.",
+  "fileNameLabel": "File Name",
+  "fileNameHint": "e.g. notes.txt",
+  "failedToCreateFile": "Failed to create file: {error}",
+  "@failedToCreateFile": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "alreadyExists": "Already exists",
+  "skip": "Skip",
+  "keepBoth": "Keep both",
+  "replace": "Replace",
+  "readOnlyCannotDrop": "This location is read-only — cannot drop files here",
+  "cannotDropFolderIntoSelf": "Cannot drop a folder onto itself or into its own subfolder",
+  "deleteSingleConfirmTitle": "Delete \"{name}\"?",
+  "@deleteSingleConfirmTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteMultipleConfirmTitle": "Delete {count} items?",
+  "@deleteMultipleConfirmTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deleteChoiceTrashOrPermanent": "Choose whether to move to Recycle Bin or delete permanently.",
+  "deletePermanentWarning": "Delete permanently? This cannot be undone.",
+  "deleteRemotePermanentWarning": "This item is on a remote server and cannot be moved to the local Recycle Bin. It will be deleted permanently.",
+  "permanentDelete": "Permanent Delete",
+  "couldNotMoveToTrash": "Could not move {failed} of {total} items to Recycle Bin:\n{details}",
+  "@couldNotMoveToTrash": {
+    "placeholders": {
+      "failed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "movedOneToTrash": "Moved 1 item to Recycle Bin",
+  "movedManyToTrash": "Moved {count} items to Recycle Bin",
+  "@movedManyToTrash": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "couldNotRestoreItems": "Could not restore {count} item(s)",
+  "@couldNotRestoreItems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nameCannotContainSlash": "A name cannot contain \"/\" or \"\\\"",
+  "renameFailed": "Rename failed: {error}",
+  "@renameFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "rootLabel": "Root",
+  "exitSplitView": "Exit split view",
+  "cancelSelectionEsc": "Cancel selection (Esc)",
+  "backToPreviousPage": "Back to previous page",
+  "backToTop": "Back to top",
+  "searchFilesSubfoldersHint": "Search files & subfolders…",
+  "listView": "List view",
+  "gridView": "Grid view",
+  "sortStatusTooltip": "Sort: {field} {arrow}",
+  "@sortStatusTooltip": {
+    "placeholders": {
+      "field": {
+        "type": "String"
+      },
+      "arrow": {
+        "type": "String"
+      }
+    }
+  },
+  "internalStorage": "Internal Storage",
+  "capabilitiesPrefix": "Capabilities: ",
+  "failedToLoadDir": "Failed to load directory",
+  "noFilesMatching": "No files matching \"{query}\"",
+  "@noFilesMatching": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "onlyHiddenFilesHere": "Only hidden files here",
+  "directoryIsEmpty": "Directory is empty",
+  "enterPathToJumpHint": "Enter path to jump...",
+  "goToLine": "Go to Line",
+  "lineNumberRange": "Line number (1 - {total})",
+  "@lineNumberRange": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "enterLineNumberBetween": "Enter a line number between 1 and {total}",
+  "@enterLineNumberBetween": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "replacedOccurrences": "Replaced {count} occurrence(s)",
+  "@replacedOccurrences": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reloadFile": "Reload File",
+  "reloadFileConfirm": "Discard unsaved changes and reload the file from disk?",
+  "reload": "Reload",
+  "fileSavedSuccess": "File saved successfully",
+  "saveFailed": "Save failed: {error}",
+  "@saveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "pdfExportFailed": "PDF Export failed: {error}",
+  "@pdfExportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "saveChangesQuestion": "Save Changes?",
+  "saveBeforeBrowserPrompt": "Do you want to save your changes before opening in the external browser?",
+  "openWithoutSaving": "Open without Saving",
+  "saveAndOpen": "Save and Open",
+  "failedOpenInBrowser": "Failed to open in browser: {error}",
+  "@failedOpenInBrowser": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "unsavedChanges": "Unsaved Changes",
+  "saveBeforeClosingPrompt": "You have unsaved changes. Save them before closing?",
+  "findInFileTooltip": "Find in file (Ctrl+F)",
+  "showSource": "Show source",
+  "showPreview": "Show preview",
+  "markdownTheme": "Markdown Theme",
+  "exportToPdf": "Export to PDF",
+  "printPreviewPdf": "Print / Preview PDF",
+  "shareSavePdf": "Share / Save PDF",
+  "marginsSpacing": "Margins / Spacing",
+  "readOnlyCannotEditTooltip": "Read-only location — this file cannot be edited here",
+  "saveChangesTooltip": "Save changes (Ctrl+S)",
+  "savedLabel": "Saved",
+  "editLabel": "Edit",
+  "textOptions": "Text Options",
+  "allTextCopied": "All text copied to clipboard",
+  "reloadFromDiskShortcut": "Reload from Disk (Ctrl+R)",
+  "copyAllText": "Copy All Text",
+  "goToLineShortcut": "Go to Line... (Ctrl+G)",
+  "largerFontShortcut": "Larger (Ctrl+=) ({pt} pt)",
+  "@largerFontShortcut": {
+    "placeholders": {
+      "pt": {
+        "type": "int"
+      }
+    }
+  },
+  "smallerFontShortcut": "Smaller (Ctrl+-) ({pt} pt)",
+  "@smallerFontShortcut": {
+    "placeholders": {
+      "pt": {
+        "type": "int"
+      }
+    }
+  },
+  "resetFontShortcut": "Reset Size (Ctrl+0) (13pt)",
+  "wordWrap": "Word Wrap",
+  "undoShortcut": "Undo (Ctrl+Z)",
+  "redoShortcut": "Redo (Ctrl+Y)",
+  "failedToOpenFile": "Failed to open file: {error}",
+  "@failedToOpenFile": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "readOnlyCannotSave": "Read-only location — changes cannot be saved here.",
+  "findInFileHint": "Find in file...",
+  "previousMatch": "Previous match",
+  "nextMatch": "Next match",
+  "toggleReplaceShortcut": "Toggle replace (Ctrl+H)",
+  "closeFindShortcut": "Close find (Esc)",
+  "replaceWithHint": "Replace with...",
+  "replaceAll": "Replace All",
+  "documentDetails": "Document Details",
+  "copyAll": "Copy All",
+  "documentCopied": "Document copied to clipboard",
+  "linesLabel": "Lines",
+  "wordsLabel": "Words",
+  "charactersLabel": "Characters",
+  "byteSizeLabel": "Byte Size",
+  "lineEndingsLabel": "Line Endings",
+  "cursorPositionLabel": "Cursor Position",
+  "cursorLineCol": "Line {line}, Col {col}",
+  "@cursorLineCol": {
+    "placeholders": {
+      "line": {
+        "type": "int"
+      },
+      "col": {
+        "type": "int"
+      }
+    }
+  },
+  "readOnlyLocation": "Read-only location",
+  "previewModeLabel": "Preview",
+  "viewingSourceLabel": "Viewing source",
+  "editingModeLabel": "Editing",
+  "editorStatusLine": "Ln {line}, Col {col}  •  Lines: {lines}  •  ",
+  "@editorStatusLine": {
+    "placeholders": {
+      "line": {
+        "type": "int"
+      },
+      "col": {
+        "type": "int"
+      },
+      "lines": {
+        "type": "int"
+      }
+    }
+  },
+  "editorStatusWords": "Words: {words}  •  ",
+  "@editorStatusWords": {
+    "placeholders": {
+      "words": {
+        "type": "int"
+      }
+    }
+  },
+  "editorStatusChars": "Chars: {chars}  •  ",
+  "@editorStatusChars": {
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "documentIsEmpty": "Document is empty",
+  "editInSourceMode": "Edit in Source Mode",
+  "couldNotScanPhotos": "Could not scan for photos.\n{error}",
+  "@couldNotScanPhotos": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "photoLibraryDenied": "Photo library access denied.\nEnable it in Settings → Privacy → Photos.",
+  "couldNotLoadMorePhotos": "Could not load more photos: {error}",
+  "@couldNotLoadMorePhotos": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "cannotOpenPhoto": "Cannot open photo: {error}",
+  "@cannotOpenPhoto": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "photoNoLongerAvailable": "Photo is no longer available",
+  "openInViewer": "Open in Viewer",
+  "sharePhoto": "Share Photo",
+  "photosTitle": "Photos",
+  "rescan": "Rescan",
+  "scrollToTop": "Scroll to top",
+  "noPhotosFound": "No photos found",
+  "openSettings": "Open Settings",
+  "cannotReadImageDetails": "Cannot read image details: {error}",
+  "@cannotReadImageDetails": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "imageDetailsUnavailable": "Image details are no longer available",
+  "imageDetails": "Image Details",
+  "dimensionsLabel": "Dimensions",
+  "dateTakenLabel": "Date taken",
+  "cameraLabel": "Camera",
+  "locationLabel": "Location",
+  "cannotLoadImage": "Cannot load image: {error}",
+  "@cannotLoadImage": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "imageFileNotFoundLocally": "Image file not found locally",
+  "failedToLoadImage": "Failed to load image",
+  "imagePathCopied": "Image path copied",
+  "cannotCopyPath": "Cannot copy path: {error}",
+  "@cannotCopyPath": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "cannotShareImage": "Cannot share image: {error}",
+  "@cannotShareImage": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteImageConfirm": "Are you sure you want to delete this image? This action cannot be undone.",
+  "deletedItem": "Deleted {name}",
+  "@deletedItem": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "failedToDelete": "Failed to delete: {error}",
+  "@failedToDelete": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "shareImage": "Share Image",
+  "rotate90": "Rotate 90°",
+  "rotate90Shortcut": "Rotate 90° (R)",
+  "deleteImage": "Delete Image",
+  "moreOptions": "More options",
+  "zoomInShortcut": "Zoom in (+)",
+  "zoomOutShortcut": "Zoom out (-)",
+  "resetZoomShortcut": "Reset zoom (0)",
+  "previousImage": "Previous image",
+  "nextImage": "Next image",
+  "autoPlayingNext": "Auto-playing next: {name}",
+  "@autoPlayingNext": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "nextEpisodeShortcut": "Next episode (N)",
+  "playlistProgress": "Playlist ({current}/{total})",
+  "@playlistProgress": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "autoNextOn": "Auto-next: On",
+  "autoNextOff": "Auto-next: Off",
+  "loopSingle": "Loop: Single",
+  "loopOff": "Loop: Off",
+  "fullscreenShortcut": "Fullscreen (F)",
+  "fullscreen": "Fullscreen",
+  "exitFullscreen": "Exit Fullscreen",
+  "playbackOptions": "Playback options",
+  "unmuteShortcut": "Unmute (M)",
+  "muteShortcut": "Mute (M) ({percent}%)",
+  "@muteShortcut": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "rewind10s": "Rewind 10s",
+  "forward10s": "Forward 10s",
+  "autoNextMenuOn": "Auto-next (On)",
+  "autoNextMenuOff": "Auto-next (Off)",
+  "previousShortcut": "Previous (P)",
+  "nextShortcut": "Next (N)",
+  "cannotPlayFile": "Cannot play this file",
+  "unknownPlaybackError": "Unknown playback error",
+  "couldNotLoadBookmarks": "Could not load bookmarks: {error}",
+  "@couldNotLoadBookmarks": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "renameBookmark": "Rename Bookmark",
+  "bookmarkNameLabel": "Bookmark Name",
+  "couldNotRenameBookmark": "Could not rename bookmark: {error}",
+  "@couldNotRenameBookmark": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotRemoveBookmark": "Could not remove bookmark: {error}",
+  "@couldNotRemoveBookmark": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotRestoreBookmark": "Could not restore bookmark: {error}",
+  "@couldNotRestoreBookmark": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "searchBookmarks": "Search Bookmarks",
+  "filterBookmarksHint": "Filter bookmarks...",
+  "noBookmarksSaved": "No bookmarks saved yet",
+  "noMatchingBookmarks": "No matching bookmarks",
+  "bookmarksEmptyHint": "In the file browser, long-press a folder (or right-click it) and choose \"Bookmark This Folder\".",
+  "nothingMatchesQuery": "Nothing matches \"{query}\".",
+  "@nothingMatchesQuery": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "bookmarkActions": "Bookmark actions",
+  "couldNotLoadRecent": "Could not load recent locations: {error}",
+  "@couldNotLoadRecent": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "failedToBookmark": "Failed to bookmark: {error}",
+  "@failedToBookmark": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotRemoveItem": "Could not remove \"{name}\": {error}",
+  "@couldNotRemoveItem": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "clearHistory": "Clear History",
+  "clearHistoryConfirm": "Remove all recent locations? Bookmarks are kept.",
+  "couldNotClearHistory": "Could not clear history: {error}",
+  "@couldNotClearHistory": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "clearedRecentLocations": "Cleared {count} recent locations",
+  "@clearedRecentLocations": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "removeFromHistory": "Remove from History",
+  "recentHistory": "Recent History",
+  "searchHistory": "Search History",
+  "filterRecentHint": "Filter recent locations...",
+  "noRecentHistory": "No recent browsing history",
+  "noMatchingLocations": "No matching locations",
+  "recentEmptyHint": "Directories and files you browse will show up here.",
+  "actionsTooltip": "Actions",
+  "couldNotLoadTrash": "Could not load the Recycle Bin: {error}",
+  "@couldNotLoadTrash": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "recycledItemDetails": "Recycled Item Details",
+  "originalPathColon": "Original Path:",
+  "originalPathCopied": "Original path copied to clipboard",
+  "restore": "Restore",
+  "restoreItem": "Restore Item",
+  "viewDetails": "View Details",
+  "deletePermanently": "Delete Permanently",
+  "couldNotRestoreNamed": "Could not restore \"{name}\": {error}",
+  "@couldNotRestoreNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "restoredNamed": "Restored \"{name}\"",
+  "@restoredNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "permanentlyDeleteConfirm": "Permanently delete \"{name}\"?",
+  "@permanentlyDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotDeleteNamed": "Could not delete \"{name}\": {error}",
+  "@couldNotDeleteNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyAll": "Empty All",
+  "permanentlyDeleteAllTrash": "Permanently delete all {count} items ({size})? This cannot be undone.",
+  "@permanentlyDeleteAllTrash": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotEmptyTrash": "Could not empty recycle bin: {error}",
+  "@couldNotEmptyTrash": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "recycleBinEmptied": "Recycle bin emptied",
+  "restoreAllItems": "Restore All Items",
+  "restoreAllConfirm": "Restore all {count} items to their original locations?",
+  "@restoreAllConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "restoreAll": "Restore All",
+  "restoredCountOfTotal": "Restored {done} of {total} items",
+  "@restoredCountOfTotal": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "restoredPartialTrash": "Restored {done} of {total}. Still in trash: {failed} ({sample})",
+  "@restoredPartialTrash": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      },
+      "sample": {
+        "type": "String"
+      }
+    }
+  },
+  "restoringProgress": "Restoring {done} / {total}…",
+  "@restoringProgress": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "recycleBinSummary": "Recycle Bin • {count} items, {size}",
+  "@recycleBinSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "searchTrash": "Search Trash",
+  "filterRecycledHint": "Filter recycled files...",
+  "recycleBinIsEmpty": "Recycle Bin is empty",
+  "noMatchingItemsTrash": "No matching items in trash",
+  "trashEmptyHint": "Deleted files and folders will appear here.",
+  "connectAndBrowse": "Connect & Browse",
+  "testConnection": "Test Connection",
+  "copyUri": "Copy URI",
+  "editConfiguration": "Edit Configuration",
+  "deleteRemote": "Delete Remote",
+  "addedRemote": "Added remote: {name}",
+  "@addedRemote": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteRemoteConfirm": "Remove \"{name}\"?\n\nThis only removes the saved connection from this app. Files on the remote server are not touched.",
+  "@deleteRemoteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "connectionNoReadableDetails": "This connection has no readable details. Edit it to re-enter them.",
+  "testingRemote": "Testing \"{name}\"…",
+  "@testingRemote": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "connectedToRemote": "Connected to \"{name}\"",
+  "@connectedToRemote": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cannotReachRemote": "Cannot reach \"{name}\"",
+  "@cannotReachRemote": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "noConnectionsToExport": "No connections to export",
+  "backupConnectionsCount": "Backup Connections ({count})",
+  "@backupConnectionsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "backupConnectionsDesc": "Export your configured connections as JSON. You can copy it or share/save to Files.",
+  "copyToClipboard": "Copy to Clipboard",
+  "connectionsCopied": "Connections copied to clipboard",
+  "shareSaveToFiles": "Share / Save to Files",
+  "exportFailed": "Export failed: {error}",
+  "@exportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "restoreConnections": "Restore Connections",
+  "pasteJsonBackupHint": "Paste JSON backup text below:",
+  "importedConnections": "Imported {count} connection(s){detail}",
+  "@importedConnections": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "importFailed": "Import failed: {error}",
+  "@importFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "importAction": "Import",
+  "searchRemotes": "Search Remotes",
+  "addConnection": "Add Connection",
+  "backupRestore": "Backup / Restore",
+  "backupExport": "Backup / Export",
+  "restoreImport": "Restore / Import",
+  "filterRemotesHint": "Filter remote connections...",
+  "noRemoteConnections": "No remote connections configured",
+  "noRemoteConnectionsDesc": "Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.",
+  "addRemoteStorage": "Add Remote Storage",
+  "editRemoteStorage": "Edit Remote Storage",
+  "noMatchingConnections": "No matching connections",
+  "addAnotherRemote": "Add Another Remote",
+  "detailsUnavailableReconnect": "Details unavailable — re-enter to reconnect",
+  "remoteActions": "Remote actions",
+  "couldNotLoadConnections": "Could not load connections: {error}",
+  "@couldNotLoadConnections": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "portMustBeNumber": "Port must be a number.",
+  "portRangeError": "Port must be between 1 and 65535.",
+  "connectionSuccessful": "Connection successful!",
+  "connectionReturnedFalse": "Connection returned false",
+  "connectionFailedWithError": "Connection failed: {error}",
+  "@connectionFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "idAlreadyUsed": "ID \"{id}\" is already used by \"{name}\"",
+  "@idAlreadyUsed": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "savedOldEntryRemoveFailed": "Saved, but the old entry \"{oldId}\" could not be removed: {error}",
+  "@savedOldEntryRemoveFailed": {
+    "placeholders": {
+      "oldId": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotSave": "Could not save: {error}",
+  "@couldNotSave": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "protocolProvider": "Protocol / Provider",
+  "providerS3": "Amazon S3 / S3-Compatible (MinIO, R2)",
+  "providerOss": "Aliyun OSS",
+  "providerWebdav": "WebDAV (Nextcloud, OwnCloud)",
+  "providerSftp": "SFTP (SSH File Transfer)",
+  "providerFtp": "FTP / FTPS",
+  "providerSmb": "SMB / Windows Share (Samba)",
+  "displayName": "Display Name",
+  "pleaseEnterName": "Please enter a name",
+  "identifierLabel": "Identifier / ID (e.g. sftp_mac, my_nas)",
+  "identifierHint": "Used in remote paths: remote://id/...",
+  "generateIdTooltip": "Generate clean ID from Name",
+  "pleaseEnterId": "Please enter an identifier",
+  "idCharsetError": "Identifier may only contain letters, numbers, hyphens and underscores",
+  "bucketNameOptional": "Bucket Name (Optional, empty for all buckets)",
+  "bucketNameOptionalHint": "Leave empty to browse all buckets, or comma-separated",
+  "regionLabel": "Region (e.g. us-east-1, auto)",
+  "usePathStyle": "Use Path-Style (for MinIO / local S3)",
+  "accessKeyId": "Access Key ID",
+  "secretAccessKey": "Secret Access Key",
+  "showSecretKey": "Show secret key",
+  "hideSecretKey": "Hide secret key",
+  "webdavUrlLabel": "WebDAV URL (e.g. https://example.com/dav)",
+  "urlRequired": "URL is required",
+  "username": "Username",
+  "password": "Password",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
+  "hostIp": "Host / IP",
+  "hostRequired": "Host is required",
+  "numbersOnly": "Numbers only",
+  "portRangeShort": "Use 1–65535",
+  "remoteRootPath": "Remote Root Path",
+  "ftpCleartextWarning": "FTP is not encrypted: the password and files travel in cleartext. Use SFTP or FTPS on untrusted networks.",
+  "clearTempCacheQuestion": "Clear Temporary Cache?",
+  "clearTempCacheDesc": "This will delete {size} of temporary thumbnail, media, and preview cache. Your saved files and connections are safe.",
+  "@clearTempCacheDesc": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "tempCacheCleared": "Temporary cache cleared",
+  "couldNotClearCache": "Could not clear cache: {error}",
+  "@couldNotClearCache": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "temporaryCache": "Temporary Cache",
+  "appInfoCopied": "App info copied to clipboard",
+  "supportedProtocolsCopied": "Supported protocols copied to clipboard",
+  "buildLabel": "Build: {time}",
+  "@buildLabel": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "platformLabel": "Platform: {platform}",
+  "@platformLabel": {
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotReadStorageStats": "Could not read storage stats: {error}",
+  "@couldNotReadStorageStats": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotClearArchiveCache": "Could not clear archive cache: {error}",
+  "@couldNotClearArchiveCache": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "archiveCacheCleared": "Archive cache cleared",
+  "emptyTrashUtilityConfirm": "Permanently delete all {count} items? This cannot be undone.",
+  "@emptyTrashUtilityConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "couldNotEmptyTrashError": "Could not empty trash: {error}",
+  "@couldNotEmptyTrashError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chooseSharedFolder": "Choose shared folder",
+  "portValidationError": "Port must be a number between 1 and 65535 (got \"{port}\")",
+  "@portValidationError": {
+    "placeholders": {
+      "port": {
+        "type": "String"
+      }
+    }
+  },
+  "failedToStartServer": "Failed to start server: {error}",
+  "@failedToStartServer": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "couldNotStopLanServer": "Could not stop the LAN server",
+  "documentsDir": "Documents",
+  "errorFolderNotFound": "This folder no longer exists. It may have been deleted or renamed.\n({raw})",
+  "@errorFolderNotFound": {
+    "placeholders": {
+      "raw": {
+        "type": "String"
+      }
+    }
+  },
+  "errorPermissionDenied": "Permission denied. Grant storage access or pick another folder.\n({raw})",
+  "@errorPermissionDenied": {
+    "placeholders": {
+      "raw": {
+        "type": "String"
+      }
+    }
+  },
+  "errorSignInFailed": "Sign-in failed. Check the username and password.\n({raw})",
+  "@errorSignInFailed": {
+    "placeholders": {
+      "raw": {
+        "type": "String"
+      }
+    }
+  },
+  "errorServerTimeout": "The server took too long to respond. Check the address and your network.\n({raw})",
+  "@errorServerTimeout": {
+    "placeholders": {
+      "raw": {
+        "type": "String"
+      }
+    }
+  },
+  "errorCannotReachServer": "Cannot reach the server. Check the address, port and your network.\n({raw})",
+  "@errorCannotReachServer": {
+    "placeholders": {
+      "raw": {
+        "type": "String"
+      }
+    }
+  }
 }

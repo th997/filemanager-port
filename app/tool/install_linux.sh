@@ -36,4 +36,4 @@ echo "=== Updating Desktop and Icon Databases ==="
 update-desktop-database "$APP_DIR_USER" 2>/dev/null || true
 gtk-update-icon-cache -f -t "$ICON_BASE" 2>/dev/null || true
 
-echo "=== Done! You can run 'filemanager' from terminal or find 'FP文件管理器' in your Application Menu. ==="
+echo "=== Done! You can run 'filemanager' from terminal or find 'FP File Manager' in your Application Menu / Open With. ==="

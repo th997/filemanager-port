@@ -10,6 +10,7 @@ import '../models/entry_item.dart';
 import '../services/platform_paths.dart';
 import '../theme/app_ui_tokens.dart';
 import 'image_viewer_page.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 /// One picture shown by the gallery.
 ///
@@ -118,7 +119,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       setState(() {
         _photos = [];
         _loading = false;
-        _notice = 'Could not scan for photos.\n$e';
+        _notice = mounted ? AppLocalizations.of(context).couldNotScanPhotos('$e') : 'Could not scan for photos.\n$e';
       });
       return;
     }
@@ -135,7 +136,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     final permission = await PhotoManager.requestPermissionExtend();
     if (!permission.isAuth && !permission.hasAccess) {
       _permissionDenied = true;
-      _notice = 'Photo library access denied.\nEnable it in Settings → Privacy → Photos.';
+      _notice = mounted ? AppLocalizations.of(context).photoLibraryDenied : 'Photo library access denied.';
       return [];
     }
     final paths = await PhotoManager.getAssetPathList(
@@ -179,7 +180,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         _albumTotal = _photos.length;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not load more photos: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).couldNotLoadMorePhotos('$e'))),
       );
       return;
     }
@@ -224,7 +225,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot open photo: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+          SnackBar(content: Text(AppLocalizations.of(context).cannotOpenPhoto('$e')), backgroundColor: Theme.of(context).colorScheme.error),
         );
       }
       return;
@@ -232,7 +233,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     if (file == null || !mounted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo is no longer available')),
+          SnackBar(content: Text(AppLocalizations.of(context).photoNoLongerAvailable)),
         );
       }
       return;
@@ -267,7 +268,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
       if (file != null && mounted) {
         Clipboard.setData(ClipboardData(text: file.path));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Copied: ${file.path.split(Platform.pathSeparator).last}')),
+          SnackBar(content: Text(AppLocalizations.of(context).copiedValue(file.path.split(Platform.pathSeparator).last))),
         );
       }
     } catch (_) {}
@@ -306,7 +307,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.fullscreen),
-                title: const Text('Open in Viewer'),
+                title: Text(AppLocalizations.of(context).openInViewer),
                 onTap: () {
                   Navigator.pop(ctx);
                   _open(index);
@@ -315,7 +316,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               if (file != null) ...[
                 ListTile(
                   leading: const Icon(Icons.share),
-                  title: const Text('Share Photo'),
+                  title: Text(AppLocalizations.of(context).sharePhoto),
                   onTap: () {
                     Navigator.pop(ctx);
                     SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
@@ -323,7 +324,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                 ),
                 ListTile(
                   leading: const Icon(Icons.copy_outlined),
-                  title: const Text('Copy File Path'),
+                  title: Text(AppLocalizations.of(context).copyFilePath),
                   onTap: () {
                     Navigator.pop(ctx);
                     _copyPhotoPath(index);
@@ -344,13 +345,13 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         appBar: AppBar(
           title: Text(
             _loading
-                ? 'Photos'
-                : 'Photos (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
+                ? AppLocalizations.of(context).photosTitle
+                : '${AppLocalizations.of(context).photosTitle} (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),
-              tooltip: 'Rescan',
+              tooltip: AppLocalizations.of(context).rescan,
               onPressed: _scan,
             ),
           ],
@@ -366,7 +367,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                     curve: Curves.easeOutCubic,
                   );
                 },
-                tooltip: 'Scroll to top',
+                tooltip: AppLocalizations.of(context).scrollToTop,
                 child: const Icon(Icons.arrow_upward),
               )
             : null,
@@ -386,14 +387,14 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: AppEmptyState(
                 icon: Icons.photo_library_outlined,
-                title: _notice ?? 'No photos found',
+                title: _notice ?? AppLocalizations.of(context).noPhotosFound,
                 subtitle: _notice == null && PlatformPaths.galleryDirs().isNotEmpty
                     ? PlatformPaths.galleryDirs().join('\n')
                     : null,
                 action: _permissionDenied
                     ? FilledButton.tonalIcon(
                         icon: const Icon(Icons.settings, size: 16),
-                        label: const Text('Open Settings'),
+                        label: Text(AppLocalizations.of(context).openSettings),
                         onPressed: () => PhotoManager.openSetting(),
                       )
                     : null,
@@ -413,13 +414,17 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     );
   }
 
-  static const _monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
-
-  String _monthLabel(DateTime? d) =>
-      d == null ? 'Unknown date' : '${_monthNames[d.month - 1]} ${d.year}';
+  String _monthLabel(DateTime? d) {
+    final l10n = AppLocalizations.of(context);
+    if (d == null) return l10n.unknownDate;
+    final months = [
+      l10n.monthJanuary, l10n.monthFebruary, l10n.monthMarch,
+      l10n.monthApril, l10n.monthMay, l10n.monthJune,
+      l10n.monthJuly, l10n.monthAugust, l10n.monthSeptember,
+      l10n.monthOctober, l10n.monthNovember, l10n.monthDecember,
+    ];
+    return l10n.monthYearLabel(months[d.month - 1], d.year);
+  }
 
   List<({String label, int startIndex, List<_Photo> slice})>? _groupedPhotos;
   int _lastGroupedLength = -1;

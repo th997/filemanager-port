@@ -40,8 +40,10 @@ class ExternalFileService {
       if (initialArgs != null && initialArgs.isNotEmpty) {
         for (final arg in initialArgs) {
           if (arg.startsWith('-')) continue;
-          final f = File(arg);
-          final d = Directory(arg);
+          final cleaned = cleanPath(arg);
+          if (cleaned.isEmpty) continue;
+          final f = File(cleaned);
+          final d = Directory(cleaned);
           if (f.existsSync()) {
             _handlePath(f.absolute.path);
             return;

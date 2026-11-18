@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_ui_tokens.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 /// Unified address bar supporting breadcrumb navigation and text-based path jumping.
 class BrowserUnifiedAddressBar extends StatelessWidget {
@@ -49,6 +50,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (isEditingAddress) {
       return Container(
         height: 32,
@@ -75,8 +77,8 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
                 controller: addressController,
                 autofocus: true,
                 style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                decoration: const InputDecoration(
-                  hintText: 'Enter path to jump...',
+                decoration: InputDecoration(
+                  hintText: AppLocalizations.of(context).enterPathToJumpHint,
                   isDense: true,
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 6),
@@ -89,7 +91,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              tooltip: 'Jump',
+              tooltip: l10n.toolbarJump,
               onPressed: () => onJumpToAddress(addressController.text),
             ),
             IconButton(
@@ -97,7 +99,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              tooltip: 'Cancel',
+              tooltip: l10n.cancel,
               onPressed: onCancelEdit,
             ),
           ],
@@ -127,14 +129,14 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               icon: Icons.chevron_left,
               size: 28,
               iconSize: 16,
-              tooltip: 'Back in history (Alt+←)',
+              tooltip: l10n.toolbarBackHistory,
               onPressed: canGoBack ? onGoBack : null,
             ),
             AppIconButton(
               icon: Icons.chevron_right,
               size: 28,
               iconSize: 16,
-              tooltip: 'Forward in history (Alt+→)',
+              tooltip: l10n.toolbarForwardHistory,
               onPressed: canGoForward ? onGoForward : null,
             ),
           ],
@@ -143,7 +145,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               icon: Icons.arrow_upward,
               size: 28,
               iconSize: 16,
-              tooltip: 'Up one level',
+              tooltip: l10n.toolbarUpOneLevel,
               onPressed: canNavigateUp ? onNavigateUp : null,
             ),
           if (!isCompact)
@@ -151,7 +153,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               icon: Icons.refresh,
               size: 28,
               iconSize: 16,
-              tooltip: 'Refresh',
+              tooltip: l10n.refresh,
               onPressed: onRefresh,
             ),
           if (!isCompact || canNavigateUp)
@@ -226,7 +228,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            tooltip: 'Edit address (Cmd/Ctrl+L)',
+            tooltip: l10n.toolbarEditAddress,
             onPressed: onStartEdit,
           ),
         ],

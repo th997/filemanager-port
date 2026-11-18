@@ -180,7 +180,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not request file access: $e'),
+            content: Text(AppLocalizations.of(context).couldNotRequestFileAccess('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -213,9 +213,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not refresh home data: $e'),
+            content: Text(AppLocalizations.of(context).couldNotRefreshHome('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
-            action: SnackBarAction(label: 'Retry', onPressed: _loadMetadata),
+            action: SnackBarAction(label: AppLocalizations.of(context).retry, onPressed: _loadMetadata),
           ),
         );
       }
@@ -242,7 +242,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: AppLocalizations.of(context).refresh,
             onPressed: _loadMetadata,
           ),
         ],
@@ -288,9 +288,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         children: [
           const Icon(Icons.folder_off_outlined, size: 20, color: Colors.orange),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Storage permission is required to browse files. Grant "All files access" in the next screen.',
+              AppLocalizations.of(context).storagePermissionRequired,
               style: TextStyle(fontSize: 11),
             ),
           ),
@@ -303,7 +303,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             onPressed: _requestingAccess ? null : _requestStorageAccess,
             child: Text(
-              _requestingAccess ? 'Requesting…' : 'Grant',
+              _requestingAccess ? AppLocalizations.of(context).requesting : AppLocalizations.of(context).grant,
               style: const TextStyle(fontSize: 11),
             ),
           ),
@@ -427,36 +427,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           },
         ),
         ...targets.map((t) {
-        IconData icon = Icons.folder;
-        Color iconColor = Colors.blue;
-        final key = '${t.name} ${t.relPath} ${t.path}'.toLowerCase();
-        if (key.contains('download') || key.contains('下载')) {
-          icon = Icons.download;
-          iconColor = Colors.teal;
-        } else if (key.contains('photo') || key.contains('dcim') || key.contains('picture') || key.contains('图片') || key.contains('相册')) {
-          icon = Icons.photo_library;
-          iconColor = Colors.purple;
-        } else if (key.contains('document') || key.contains('文档')) {
-          icon = Icons.description;
-          iconColor = Colors.indigo;
-        } else if (key.contains('home') || key.contains('主目录') || key.contains('用户')) {
-          icon = Icons.home;
-          iconColor = Colors.deepOrange;
-        } else if (key.contains('root') || key.contains('storage') || key.contains('drive') || key.contains('根目录') || key.contains('存储')) {
-          icon = Icons.storage;
-          iconColor = Colors.blueGrey;
+        IconData icon;
+        Color iconColor;
+        switch (t.kind) {
+          case 'download':
+          case 'downloads':
+            icon = Icons.download;
+            iconColor = Colors.teal;
+          case 'dcim':
+          case 'pictures':
+            icon = Icons.photo_library;
+            iconColor = Colors.purple;
+          case 'documents':
+            icon = Icons.description;
+            iconColor = Colors.indigo;
+          case 'home':
+            icon = Icons.home;
+            iconColor = Colors.deepOrange;
+          default:
+            icon = Icons.storage;
+            iconColor = Colors.blueGrey;
         }
 
         return _buildGridCard(
           icon: icon,
           iconColor: iconColor,
-          title: t.name,
+          title: t.displayName(AppLocalizations.of(context)),
           subtitle: t.path,
           onTap: () => _openTarget(t.root, t.relPath),
           onLongPress: () {
             Clipboard.setData(ClipboardData(text: t.path));
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Copied path: ${t.path}')),
+              SnackBar(content: Text(AppLocalizations.of(context).copiedPathValue(t.path))),
             );
           },
         );
@@ -474,7 +476,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           iconColor: const Color(0xFF1E88E5),
           title: AppLocalizations.of(context).remote,
           subtitle: _remotes.isEmpty
-              ? 'S3, OSS, SFTP, WebDAV...'
+              ? AppLocalizations.of(context).remoteProtocolsSubtitle
               : '${_remotes.length} connection${_remotes.length > 1 ? "s" : ""}',
           onTap: () {
             Navigator.of(context).push(
@@ -488,7 +490,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           icon: Icons.build_outlined,
           iconColor: const Color(0xFF5E35B1),
           title: AppLocalizations.of(context).utilities,
-          subtitle: _trashCount > 0 ? '$_trashCount in trash • Web share' : 'Recycle bin, Web share, Cache',
+          subtitle: _trashCount > 0 ? AppLocalizations.of(context).utilitiesTrashSubtitle(_trashCount) : AppLocalizations.of(context).utilitiesDefaultSubtitle,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const UtilitiesPage()),
@@ -503,7 +505,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           title: AppLocalizations.of(context).tasks,
           subtitle: _activeTaskCount > 0
               ? '$_activeTaskCount running'
-              : 'Transfers and operations',
+              : AppLocalizations.of(context).tasksDefaultSubtitle,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const TasksPage()),
@@ -517,7 +519,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           iconColor: const Color(0xFFFB8C00),
           title: AppLocalizations.of(context).bookmarks,
           subtitle: _bookmarks.isEmpty
-              ? 'Saved folders'
+              ? AppLocalizations.of(context).bookmarksDefaultSubtitle
               : '${_bookmarks.length} bookmark${_bookmarks.length > 1 ? "s" : ""}',
           onTap: () {
             Navigator.of(context).push(
@@ -532,7 +534,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           iconColor: const Color(0xFF3949AB),
           title: AppLocalizations.of(context).recent,
           subtitle: _history.isEmpty
-              ? 'Browsing history'
+              ? AppLocalizations.of(context).recentDefaultSubtitle
               : '${_history.length} location${_history.length > 1 ? "s" : ""}',
           onTap: () {
             Navigator.of(context).push(

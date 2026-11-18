@@ -274,12 +274,12 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
 
     Widget bodyWidget;
     if (_folders.isEmpty && _files.isEmpty) {
-      bodyWidget = const Center(
-        child: Text('Folder is empty', style: TextStyle(color: Colors.grey)),
+      bodyWidget = Center(
+        child: Text(AppLocalizations.of(context).folderIsEmpty, style: const TextStyle(color: Colors.grey)),
       );
     } else if (displayedFolders.isEmpty && displayedFiles.isEmpty) {
-      bodyWidget = const Center(
-        child: Text('No matching items', style: TextStyle(color: Colors.grey, fontSize: 12)),
+      bodyWidget = Center(
+        child: Text(AppLocalizations.of(context).noMatchingItems, style: const TextStyle(color: Colors.grey, fontSize: 12)),
       );
     } else {
       bodyWidget = ListView.builder(
@@ -315,7 +315,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.chevron_right, size: 18),
-                tooltip: 'Open folder',
+                tooltip: AppLocalizations.of(context).openFolderTooltip,
                 onPressed: () => _openFolder(folder.name),
               ),
               onTap: () => _openFolder(folder.name),
@@ -392,8 +392,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
             ),
             label: Text(
               _visibleItems.every((f) => _selectedPaths.contains(_fullPath(f)))
-                  ? 'Deselect All'
-                  : 'Select All',
+              ? l10n.deselectAll
+              : l10n.selectAll,
               style: const TextStyle(fontSize: 12),
             ),
             onPressed: _selectAll,
@@ -402,7 +402,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
       showFilter: (_folders.length + _files.length > 5) || _filterQuery.isNotEmpty,
       filterController: _filterController,
       filterQuery: _filterQuery,
-      filterHintText: 'Filter files & folders...',
+      filterHintText: l10n.filterFilesFoldersHint,
       onFilterChanged: (v) => setState(() => _filterQuery = v),
       onFilterClear: () {
         setState(() {

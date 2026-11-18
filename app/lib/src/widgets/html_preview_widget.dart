@@ -629,7 +629,7 @@ class _HtmlPreviewWidgetState extends State<HtmlPreviewWidget> {
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _initWebView,
-                child: const Text('Retry'),
+                child: Text(AppLocalizations.of(context).retry),
               ),
             ],
           ),

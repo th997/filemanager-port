@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/file_open_service.dart';
 import '../services/task_service.dart';
 import '../widgets/app_swipe_back.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 /// One image shown by [ImageViewerPage].
 ///
@@ -189,7 +190,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot read image details: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+        SnackBar(content: Text(AppLocalizations.of(context).cannotReadImageDetails('$e')), backgroundColor: Theme.of(context).colorScheme.error),
       );
       return;
     }
@@ -199,7 +200,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       // A cached copy can be evicted between opening the viewer and tapping
       // Details; silently returning made the button look broken.
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image details are no longer available')),
+        SnackBar(content: Text(AppLocalizations.of(context).imageDetailsUnavailable)),
       );
       return;
     }
@@ -270,7 +271,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Image Details'),
+        title: Text(AppLocalizations.of(context).imageDetails),
         actionsOverflowButtonSpacing: 8,
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -279,15 +280,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _detailRow('Name', entry.name),
+                _detailRow(AppLocalizations.of(context).nameLabel, entry.name),
                 if (dimensions != null)
-                  _detailRow('Dimensions', '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
-                if (dateTaken != null) _detailRow('Date taken', dateTaken),
-                if (camera != null) _detailRow('Camera', camera),
-                if (gpsText != null) _detailRow('Location', gpsText),
-                _detailRow('Size', _formatSize(stat.size)),
-                _detailRow('Modified', stat.modified.toString().split('.').first),
-                _detailRow('Path', imagePath),
+                  _detailRow(AppLocalizations.of(context).dimensionsLabel, '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
+                if (dateTaken != null) _detailRow(AppLocalizations.of(context).dateTakenLabel, dateTaken),
+                if (camera != null) _detailRow(AppLocalizations.of(context).cameraLabel, camera),
+                if (gpsText != null) _detailRow(AppLocalizations.of(context).locationLabel, gpsText),
+                _detailRow(AppLocalizations.of(context).sizeLabel, _formatSize(stat.size)),
+                _detailRow(AppLocalizations.of(context).modifiedLabel, stat.modified.toString().split('.').first),
+                _detailRow(AppLocalizations.of(context).pathLabel, imagePath),
               ],
             ),
           ),
@@ -295,18 +296,18 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         actions: [
           FilledButton.tonalIcon(
             icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy Path'),
+            label: Text(AppLocalizations.of(context).copyPath),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: imagePath));
               Navigator.of(ctx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Path copied to clipboard')),
+                SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
               );
             },
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
+            child: Text(AppLocalizations.of(context).close),
           ),
         ],
       ),
@@ -468,7 +469,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Cannot load image: ${snapshot.error}',
+                    AppLocalizations.of(context).cannotLoadImage('${snapshot.error}'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70),
                   ),
@@ -476,7 +477,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   OutlinedButton.icon(
                     onPressed: () => setState(() {}),
                     icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('Retry'),
+                    label: Text(AppLocalizations.of(context).retry),
                   ),
                 ],
               ),
@@ -494,15 +495,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Widget _imageFromFile(String path, bool interactive) {
     final file = File(path);
     if (!file.existsSync()) {
-      return const Center(
-        child: Text('Image file not found locally', style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text(AppLocalizations.of(context).imageFileNotFoundLocally, style: const TextStyle(color: Colors.white70)),
       );
     }
     return Image.file(
       file,
       fit: BoxFit.contain,
-      errorBuilder: (ctx, err, stack) => const Center(
-        child: Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+      errorBuilder: (ctx, err, stack) => Center(
+        child: Text(AppLocalizations.of(context).failedToLoadImage, style: const TextStyle(color: Colors.white70)),
       ),
     );
   }
@@ -515,13 +516,13 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       await Clipboard.setData(ClipboardData(text: native));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image path copied')),
+        SnackBar(content: Text(AppLocalizations.of(context).imagePathCopied)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Cannot copy path: $e'),
+          content: Text(AppLocalizations.of(context).cannotCopyPath('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -535,7 +536,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot share image: $e'), backgroundColor: Theme.of(context).colorScheme.error),
+        SnackBar(content: Text(AppLocalizations.of(context).cannotShareImage('$e')), backgroundColor: Theme.of(context).colorScheme.error),
       );
     }
   }
@@ -547,19 +548,19 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.delete_outline, color: Colors.red, size: 28),
-        title: Text('Delete "${entry.name}"?'),
-        content: const Text(
-          'Are you sure you want to delete this image? This action cannot be undone.',
+        title: Text(AppLocalizations.of(context).deleteSingleConfirmTitle(entry.name)),
+        content: Text(
+          AppLocalizations.of(context).deleteImageConfirm,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: Text(AppLocalizations.of(context).delete),
           ),
         ],
       ),
@@ -580,7 +581,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       HapticFeedback.lightImpact();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deleted ${entry.name}')),
+        SnackBar(content: Text(AppLocalizations.of(context).deletedItem(entry.name))),
       );
 
       setState(() {
@@ -601,7 +602,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to delete: $e'),
+          content: Text(AppLocalizations.of(context).failedToDelete('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -629,7 +630,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.share),
-                title: const Text('Share Image'),
+                title: Text(AppLocalizations.of(context).shareImage),
                 onTap: () {
                   Navigator.pop(ctx);
                   _shareCurrent();
@@ -637,7 +638,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.copy_all_outlined),
-                title: const Text('Copy Path'),
+                title: Text(AppLocalizations.of(context).copyPath),
                 onTap: () {
                   Navigator.pop(ctx);
                   _copyCurrentPath();
@@ -645,7 +646,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.rotate_right),
-                title: const Text('Rotate 90°'),
+                title: Text(AppLocalizations.of(context).rotate90),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
@@ -653,7 +654,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.info_outline),
-                title: const Text('Image Details'),
+                title: Text(AppLocalizations.of(context).imageDetails),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showImageDetails();
@@ -661,7 +662,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('Delete Image', style: TextStyle(color: Colors.red)),
+                title: Text(AppLocalizations.of(context).deleteImage, style: const TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _deleteCurrent();
@@ -739,22 +740,22 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.rotate_right),
-                tooltip: 'Rotate 90° (R)',
+                tooltip: AppLocalizations.of(context).rotate90Shortcut,
                 onPressed: () => setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
               ),
               IconButton(
                 icon: const Icon(Icons.share),
-                tooltip: 'Share image',
+                tooltip: AppLocalizations.of(context).shareImage,
                 onPressed: _shareCurrent,
               ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete image',
+                tooltip: AppLocalizations.of(context).deleteImage,
                 onPressed: _deleteCurrent,
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
-                tooltip: 'More options',
+                tooltip: AppLocalizations.of(context).moreOptions,
                 onSelected: (action) {
                   switch (action) {
                     case 'zoom_in':
@@ -778,65 +779,65 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   }
                 },
                 itemBuilder: (ctx) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'details',
                     child: Row(
                       children: [
                         Icon(Icons.info_outline, size: 20),
                         SizedBox(width: 10),
-                        Text('Details'),
+                        Text(AppLocalizations.of(context).details),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'copy_path',
                     child: Row(
                       children: [
                         Icon(Icons.copy_all_outlined, size: 20),
                         SizedBox(width: 10),
-                        Text('Copy Path'),
+                        Text(AppLocalizations.of(context).copyPath),
                       ],
                     ),
                   ),
                   const PopupMenuDivider(),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'zoom_in',
                     child: Row(
                       children: [
                         Icon(Icons.zoom_in, size: 20),
                         SizedBox(width: 10),
-                        Text('Zoom in (+)'),
+                        Text(AppLocalizations.of(context).zoomInShortcut),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'zoom_out',
                     child: Row(
                       children: [
                         Icon(Icons.zoom_out, size: 20),
                         SizedBox(width: 10),
-                        Text('Zoom out (-)'),
+                        Text(AppLocalizations.of(context).zoomOutShortcut),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'reset_zoom',
                     child: Row(
                       children: [
                         Icon(Icons.zoom_out_map, size: 20),
                         SizedBox(width: 10),
-                        Text('Reset zoom (0)'),
+                        Text(AppLocalizations.of(context).resetZoomShortcut),
                       ],
                     ),
                   ),
                   const PopupMenuDivider(),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [
                         Icon(Icons.delete_outline, size: 20, color: Colors.red),
                         SizedBox(width: 10),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
+                        Text(AppLocalizations.of(context).delete, style: const TextStyle(color: Colors.red)),
                       ],
                     ),
                   ),
@@ -934,7 +935,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     child: IconButton(
                       icon: const Icon(Icons.chevron_left, size: 32),
                       color: Colors.white70,
-                      tooltip: 'Previous image',
+                      tooltip: AppLocalizations.of(context).previousImage,
                       onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
                     ),
                   ),
@@ -947,7 +948,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     child: IconButton(
                       icon: const Icon(Icons.chevron_right, size: 32),
                       color: Colors.white70,
-                      tooltip: 'Next image',
+                      tooltip: AppLocalizations.of(context).nextImage,
                       onPressed: _index < _entries.length - 1 ? () => _goTo(_index + 1) : null,
                     ),
                   ),

@@ -1,0 +1,7 @@
+CFBundleDisplayName = "FP文件管理器";
+CFBundleName = "FP文件管理器";
+NSDocumentsFolderUsageDescription = "文件管理器需要访问您的“文稿”文件夹以管理文件。";
+NSDownloadsFolderUsageDescription = "文件管理器需要访问您的“下载”文件夹以管理文件。";
+NSDesktopFolderUsageDescription = "文件管理器需要访问您的“桌面”文件夹以管理文件。";
+NSRemovableVolumesUsageDescription = "文件管理器需要访问可移动卷以管理外部存储。";
+NSNetworkVolumesUsageDescription = "文件管理器需要访问网络卷以管理共享文件。";

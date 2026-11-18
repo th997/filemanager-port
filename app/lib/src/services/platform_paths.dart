@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 
 class PlatformPaths {
@@ -179,6 +180,7 @@ class PlatformPaths {
       if (docs != null) {
         targets.add(QuickTarget(
           name: 'Documents',
+          kind: 'documents',
           path: docs,
           root: docs,
           relPath: '',
@@ -190,30 +192,35 @@ class PlatformPaths {
       targets.addAll([
         const QuickTarget(
           name: 'Internal Storage',
+          kind: 'storage',
           path: '/storage/emulated/0',
           root: '/storage/emulated/0',
           relPath: '',
         ),
         const QuickTarget(
           name: 'Download',
+          kind: 'download',
           path: '/storage/emulated/0/Download',
           root: '/storage/emulated/0',
           relPath: 'Download',
         ),
         const QuickTarget(
           name: 'DCIM (Photos)',
+          kind: 'dcim',
           path: '/storage/emulated/0/DCIM',
           root: '/storage/emulated/0',
           relPath: 'DCIM',
         ),
         const QuickTarget(
           name: 'Pictures',
+          kind: 'pictures',
           path: '/storage/emulated/0/Pictures',
           root: '/storage/emulated/0',
           relPath: 'Pictures',
         ),
         const QuickTarget(
           name: 'Documents',
+          kind: 'documents',
           path: '/storage/emulated/0/Documents',
           root: '/storage/emulated/0',
           relPath: 'Documents',
@@ -224,18 +231,21 @@ class PlatformPaths {
       targets.addAll([
         QuickTarget(
           name: 'Home',
+          kind: 'home',
           path: home,
           root: home,
           relPath: '',
         ),
         QuickTarget(
           name: 'Downloads',
+          kind: 'downloads',
           path: '$home\\Downloads',
           root: home,
           relPath: 'Downloads',
         ),
         QuickTarget(
           name: 'Documents',
+          kind: 'documents',
           path: '$home\\Documents',
           root: home,
           relPath: 'Documents',
@@ -247,6 +257,7 @@ class PlatformPaths {
           targets.add(
             QuickTarget(
               name: 'Drive ($letter:)',
+              kind: 'drive',
               path: drive,
               root: drive,
               relPath: '',
@@ -259,18 +270,21 @@ class PlatformPaths {
       targets.addAll([
         QuickTarget(
           name: 'Home',
+          kind: 'home',
           path: home,
           root: home,
           relPath: '',
         ),
         QuickTarget(
           name: 'Downloads',
+          kind: 'downloads',
           path: '$home/Downloads',
           root: home,
           relPath: 'Downloads',
         ),
         QuickTarget(
           name: 'Documents',
+          kind: 'documents',
           path: '$home/Documents',
           root: home,
           relPath: 'Documents',
@@ -278,6 +292,7 @@ class PlatformPaths {
         if (Platform.isMacOS) ...[
           QuickTarget(
             name: 'Desktop',
+            kind: 'desktop',
             path: '$home/Desktop',
             root: home,
             relPath: 'Desktop',
@@ -285,6 +300,7 @@ class PlatformPaths {
           if (Directory('/Volumes').existsSync())
             const QuickTarget(
               name: 'Volumes',
+              kind: 'volumes',
               path: '/Volumes',
               root: '/Volumes',
               relPath: '',
@@ -292,6 +308,7 @@ class PlatformPaths {
         ],
         const QuickTarget(
           name: 'Root /',
+          kind: 'root',
           path: '/',
           root: '/',
           relPath: '',
@@ -304,14 +321,48 @@ class PlatformPaths {
 
 class QuickTarget {
   final String name;
+  final String kind;
   final String path;
   final String root;
   final String relPath;
 
   const QuickTarget({
     required this.name,
+    required this.kind,
     required this.path,
     required this.root,
     required this.relPath,
   });
+
+  /// Localized display name; [name] stays as the English fallback for when
+  /// no localizations are available (e.g. background isolates).
+  String displayName(AppLocalizations? l10n) {
+    if (l10n == null) return name;
+    switch (kind) {
+      case 'storage':
+        return l10n.internalStorage;
+      case 'documents':
+        return l10n.documentsDir;
+      case 'download':
+        return l10n.quickDownload;
+      case 'downloads':
+        return l10n.quickDownloads;
+      case 'dcim':
+        return l10n.quickDcim;
+      case 'pictures':
+        return l10n.quickPictures;
+      case 'home':
+        return l10n.quickHome;
+      case 'desktop':
+        return l10n.quickDesktop;
+      case 'volumes':
+        return l10n.quickVolumes;
+      case 'root':
+        return l10n.quickRoot;
+      case 'drive':
+        return l10n.quickDrive(path[0]);
+      default:
+        return name;
+    }
+  }
 }

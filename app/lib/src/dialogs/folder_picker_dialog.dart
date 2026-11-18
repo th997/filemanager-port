@@ -205,7 +205,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to create folder: $e'),
+              content: Text(AppLocalizations.of(context).failedCreateFolder('$e')),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -267,16 +267,16 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
     Widget bodyWidget;
     if (_folders.isEmpty) {
-      bodyWidget = const Center(
+      bodyWidget = Center(
         child: Text(
-          'No subfolders',
+          AppLocalizations.of(context).noSubfolders,
           style: TextStyle(fontSize: 12),
         ),
       );
     } else if (filtered.isEmpty) {
-      bodyWidget = const Center(
+      bodyWidget = Center(
         child: Text(
-          'No matching subfolders',
+          AppLocalizations.of(context).noMatchingSubfolders,
           style: TextStyle(fontSize: 12),
         ),
       );
@@ -306,7 +306,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
             ),
             trailing: IconButton(
               icon: const Icon(Icons.chevron_right, size: 20),
-              tooltip: 'Open',
+              tooltip: AppLocalizations.of(context).open,
               onPressed: () => _open(folder.name),
             ),
             onTap: () {
@@ -342,18 +342,18 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         setState(() => _showHidden = !_showHidden);
         _load();
       },
-      hiddenTooltip: _showHidden ? 'Hide hidden folders' : 'Show hidden folders',
+      hiddenTooltip: _showHidden ? l10n.hideHiddenFolders : l10n.showHiddenFolders,
       pathActions: [
         IconButton(
           icon: const Icon(Icons.create_new_folder_outlined),
-          tooltip: 'New Folder',
+          tooltip: l10n.newFolder,
           onPressed: _createNewFolder,
         ),
       ],
       showFilter: _folders.length > 5 || _filterQuery.isNotEmpty,
       filterController: _filterController,
       filterQuery: _filterQuery,
-      filterHintText: 'Filter subfolders...',
+      filterHintText: l10n.filterSubfoldersHint,
       onFilterChanged: (v) => setState(() => _filterQuery = v),
       onFilterClear: () {
         setState(() {
@@ -363,7 +363,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       },
       loading: _loading,
       error: _error,
-      errorPrefix: 'Cannot read this folder: ',
+      errorPrefix: l10n.cannotReadFolderPrefix,
       onRetry: _load,
       body: bodyWidget,
       maxWidth: 500,
@@ -371,7 +371,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           // Picking a folder that just failed to list would hand the caller a

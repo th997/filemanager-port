@@ -219,7 +219,7 @@ class _TasksPageState extends State<TasksPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.refresh,
             onPressed: _refresh,
           ),
           if (hasTerminal)

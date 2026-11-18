@@ -9,11 +9,11 @@
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
-		<string>zh</string>
 		<string>ja</string>
+		<string>zh-Hans</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>FP文件管理器</string>
+	<string>FP File Manager</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -34,35 +34,260 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>All Files</string>
+			<string>Folders</string>
 			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
+			<string>Viewer</string>
 			<key>LSHandlerRank</key>
-			<string>Default</string>
+			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.item</string>
-				<string>public.content</string>
-				<string>public.data</string>
-				<string>public.text</string>
-				<string>public.plain-text</string>
-				<string>public.utf8-plain-text</string>
-				<string>public.html</string>
-				<string>public.xml</string>
-				<string>public.json</string>
-				<string>public.source-code</string>
-				<string>public.image</string>
-				<string>public.audiovisual-content</string>
-				<string>public.movie</string>
-				<string>public.audio</string>
-				<string>com.adobe.pdf</string>
+				<string>public.folder</string>
+				<string>public.directory</string>
+				<string>public.volume</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Archive Files</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>zip</string>
+				<string>apk</string>
+				<string>apkm</string>
+				<string>apks</string>
+				<string>obb</string>
+				<string>cbz</string>
+				<string>jar</string>
+				<string>tar</string>
+				<string>tgz</string>
+				<string>gz</string>
+				<string>7z</string>
+				<string>epub</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
 				<string>public.archive</string>
 				<string>public.zip-archive</string>
 				<string>com.pkware.zip-archive</string>
 				<string>org.gnu.gnu-zip-archive</string>
+				<string>org.gnu.gnu-zip-tar-archive</string>
 				<string>org.7-zip.7-zip-archive</string>
 				<string>public.tar-archive</string>
-				<string>public.database</string>
+				<string>org.idpf.epub-container</string>
+				<string>com.sun.java-archive</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Text and Source Code Files</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>txt</string>
+				<string>md</string>
+				<string>markdown</string>
+				<string>json</string>
+				<string>jsonc</string>
+				<string>json5</string>
+				<string>geojson</string>
+				<string>topojson</string>
+				<string>map</string>
+				<string>lock</string>
+				<string>yaml</string>
+				<string>yml</string>
+				<string>xml</string>
+				<string>plist</string>
+				<string>svg</string>
+				<string>rs</string>
+				<string>dart</string>
+				<string>c</string>
+				<string>cpp</string>
+				<string>cc</string>
+				<string>h</string>
+				<string>hpp</string>
+				<string>py</string>
+				<string>js</string>
+				<string>mjs</string>
+				<string>jsx</string>
+				<string>ts</string>
+				<string>tsx</string>
+				<string>html</string>
+				<string>htm</string>
+				<string>xhtml</string>
+				<string>css</string>
+				<string>toml</string>
+				<string>sh</string>
+				<string>bash</string>
+				<string>zsh</string>
+				<string>log</string>
+				<string>ini</string>
+				<string>cfg</string>
+				<string>csv</string>
+				<string>java</string>
+				<string>kt</string>
+				<string>go</string>
+				<string>swift</string>
+				<string>sql</string>
+				<string>properties</string>
+				<string>diff</string>
+				<string>patch</string>
+				<string>conf</string>
+				<string>gradle</string>
+				<string>dockerfile</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.text</string>
+				<string>public.plain-text</string>
+				<string>public.utf8-plain-text</string>
+				<string>public.source-code</string>
+				<string>public.script</string>
+				<string>public.shell-script</string>
+				<string>public.python-script</string>
+				<string>public.c-source</string>
+				<string>public.c-header</string>
+				<string>public.c-plus-plus-source</string>
+				<string>public.c-plus-plus-header</string>
+				<string>public.java-source</string>
+				<string>public.swift-source</string>
+				<string>public.json</string>
+				<string>public.xml</string>
+				<string>public.yaml</string>
+				<string>public.html</string>
+				<string>public.xhtml</string>
+				<string>public.css</string>
+				<string>public.svg-image</string>
+				<string>public.comma-separated-values-text</string>
+				<string>public.delimited-values-text</string>
+				<string>public.log</string>
+				<string>com.apple.property-list</string>
+				<string>com.netscape.javascript-source</string>
+				<string>net.daringfireball.markdown</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Image Files</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>jpg</string>
+				<string>jpeg</string>
+				<string>png</string>
+				<string>gif</string>
+				<string>webp</string>
+				<string>bmp</string>
+				<string>heic</string>
+				<string>heif</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.jpeg</string>
+				<string>public.png</string>
+				<string>com.compuserve.gif</string>
+				<string>org.webmproject.webp</string>
+				<string>com.microsoft.bmp</string>
+				<string>public.heic</string>
+				<string>public.heif</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Video Files</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>mp4</string>
+				<string>mkv</string>
+				<string>avi</string>
+				<string>mov</string>
+				<string>webm</string>
+				<string>flv</string>
+				<string>3gp</string>
+				<string>m4v</string>
+				<string>ts</string>
+				<string>wmv</string>
+				<string>rmvb</string>
+				<string>rm</string>
+				<string>vob</string>
+				<string>ogv</string>
+				<string>m2ts</string>
+				<string>mts</string>
+				<string>f4v</string>
+				<string>asf</string>
+				<string>divx</string>
+				<string>mpg</string>
+				<string>mpeg</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.movie</string>
+				<string>public.video</string>
+				<string>public.audiovisual-content</string>
+				<string>public.mpeg-4</string>
+				<string>com.apple.quicktime-movie</string>
+				<string>public.avi</string>
+				<string>public.mpeg</string>
+				<string>public.mpeg-2-transport-stream</string>
+				<string>public.3gpp</string>
+				<string>org.matroska.mkv</string>
+				<string>org.webmproject.webm</string>
+				<string>com.microsoft.advanced-systems-format</string>
+				<string>com.real.realmedia</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio Files</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>mp3</string>
+				<string>flac</string>
+				<string>wav</string>
+				<string>ogg</string>
+				<string>m4a</string>
+				<string>aac</string>
+				<string>opus</string>
+				<string>wma</string>
+				<string>amr</string>
+				<string>ape</string>
+				<string>alac</string>
+				<string>aiff</string>
+				<string>mka</string>
+				<string>oga</string>
+				<string>wv</string>
+				<string>mid</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.mp3</string>
+				<string>public.mpeg-4-audio</string>
+				<string>com.microsoft.waveform-audio</string>
+				<string>public.aiff-audio</string>
+				<string>public.ulaw-audio</string>
+				<string>public.midi-audio</string>
+				<string>org.xiph.flac</string>
+				<string>org.xiph.ogg-audio</string>
+				<string>org.xiph.opus</string>
 			</array>
 		</dict>
 	</array>

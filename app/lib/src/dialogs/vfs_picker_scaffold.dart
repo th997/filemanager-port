@@ -54,7 +54,7 @@ class VfsPickerScaffold extends StatelessWidget {
     this.showFilter = false,
     this.filterController,
     this.filterQuery = '',
-    this.filterHintText = 'Filter...',
+    this.filterHintText = '',
     this.onFilterChanged,
     this.onFilterClear,
     required this.loading,
@@ -79,7 +79,7 @@ class VfsPickerScaffold extends StatelessWidget {
           if (onSystemPicker != null)
             TextButton.icon(
               icon: const Icon(Icons.open_in_browser, size: 16),
-              label: Text(l10n?.systemPicker ?? 'Use System Picker'),
+              label: Text(l10n?.systemPicker ?? 'System Picker'),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -147,7 +147,7 @@ class VfsPickerScaffold extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ActionChip(
-                            label: Text(target.name, style: const TextStyle(fontSize: 12)),
+                            label: Text(target.displayName(l10n), style: const TextStyle(fontSize: 12)),
                             onPressed: () => onSelectTarget?.call(target),
                           ),
                         ),
@@ -159,7 +159,7 @@ class VfsPickerScaffold extends StatelessWidget {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_upward),
-                    tooltip: 'Parent folder',
+                    tooltip: l10n?.parentFolderTooltip ?? 'Parent folder',
                     onPressed: canGoUp ? onUp : null,
                   ),
                   Expanded(
@@ -167,11 +167,11 @@ class VfsPickerScaffold extends StatelessWidget {
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: currentPath));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Path copied to clipboard')),
+                          SnackBar(content: Text(l10n?.pathCopied ?? 'Path copied to clipboard')),
                         );
                       },
                       child: Tooltip(
-                        message: 'Click to copy path',
+                        message: l10n?.clickToCopyPath ?? 'Click to copy path',
                         child: Text(
                           currentPath,
                           maxLines: 1,
@@ -183,7 +183,7 @@ class VfsPickerScaffold extends StatelessWidget {
                   ),
                   IconButton(
                     icon: Icon(showHidden ? Icons.visibility : Icons.visibility_off, size: 18),
-                    tooltip: hiddenTooltip ?? (showHidden ? 'Hide hidden files' : 'Show hidden files'),
+                      tooltip: hiddenTooltip ?? (showHidden ? (l10n?.hideHiddenFiles ?? 'Hide hidden files') : (l10n?.showHiddenFiles ?? 'Show hidden files')),
                     onPressed: onToggleHidden,
                   ),
                   ...pathActions,
@@ -196,7 +196,7 @@ class VfsPickerScaffold extends StatelessWidget {
                   child: TextField(
                     controller: filterController,
                     decoration: InputDecoration(
-                      hintText: filterHintText,
+                      hintText: filterHintText.isEmpty ? (l10n?.filterEllipsis ?? 'Filter...') : filterHintText,
                       isDense: true,
                       prefixIcon: const Icon(Icons.search, size: 18),
                       suffixIcon: filterQuery.isNotEmpty
@@ -229,7 +229,7 @@ class VfsPickerScaffold extends StatelessWidget {
                                   const SizedBox(height: 8),
                                   OutlinedButton.icon(
                                     icon: const Icon(Icons.refresh, size: 16),
-                                    label: const Text('Retry'),
+                                    label: Text(l10n?.retry ?? 'Retry'),
                                     onPressed: onRetry,
                                   ),
                                 ],
@@ -253,18 +253,19 @@ class VfsPickerScaffold extends StatelessWidget {
 
 /// Shows a standard "New Folder" input dialog.
 Future<String?> showNewFolderDialog(BuildContext context) async {
+  final l10n = AppLocalizations.of(context);
   final nameController = TextEditingController();
   final name = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('New Folder'),
+      title: Text(l10n.newFolder),
       content: TextField(
         controller: nameController,
         autofocus: true,
-        decoration: const InputDecoration(
-          labelText: 'Folder name',
-          hintText: 'e.g. Documents',
-          border: OutlineInputBorder(),
+        decoration: InputDecoration(
+          labelText: l10n.folderNameInputLabel,
+          hintText: l10n.folderNameHint,
+          border: const OutlineInputBorder(),
         ),
         onSubmitted: (val) {
           if (val.trim().isNotEmpty) {
@@ -275,7 +276,7 @@ Future<String?> showNewFolderDialog(BuildContext context) async {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         ListenableBuilder(
           listenable: nameController,
@@ -283,7 +284,7 @@ Future<String?> showNewFolderDialog(BuildContext context) async {
             onPressed: nameController.text.trim().isEmpty
                 ? null
                 : () => Navigator.of(ctx).pop(nameController.text.trim()),
-            child: const Text('Create'),
+            child: Text(l10n.create),
           ),
         ),
       ],

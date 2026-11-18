@@ -78,7 +78,7 @@ class _RemotesPageState extends State<RemotesPage> {
             : '${r.kind}://${r.host ?? ""}:${r.port ?? ""}');
     Clipboard.setData(ClipboardData(text: uri));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied: $uri')),
+      SnackBar(content: Text(AppLocalizations.of(context).copiedValue(uri))),
     );
   }
 
@@ -104,7 +104,7 @@ class _RemotesPageState extends State<RemotesPage> {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not load connections: $e'),
+          content: Text(AppLocalizations.of(context).couldNotLoadConnections('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -168,7 +168,7 @@ class _RemotesPageState extends State<RemotesPage> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.folder_open),
-                title: const Text('Connect & Browse'),
+                title: Text(AppLocalizations.of(context).connectAndBrowse),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openRemote(r);
@@ -176,7 +176,7 @@ class _RemotesPageState extends State<RemotesPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.network_check),
-                title: const Text('Test Connection'),
+                title: Text(AppLocalizations.of(context).testConnection),
                 onTap: () {
                   Navigator.pop(ctx);
                   _testRemote(r);
@@ -184,7 +184,7 @@ class _RemotesPageState extends State<RemotesPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.copy_outlined),
-                title: const Text('Copy URI'),
+                title: Text(AppLocalizations.of(context).copyUri),
                 onTap: () {
                   Navigator.pop(ctx);
                   _copyRemoteUri(r);
@@ -192,7 +192,7 @@ class _RemotesPageState extends State<RemotesPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
-                title: const Text('Edit Configuration'),
+                title: Text(AppLocalizations.of(context).editConfiguration),
                 onTap: () {
                   Navigator.pop(ctx);
                   _editRemote(r);
@@ -201,7 +201,7 @@ class _RemotesPageState extends State<RemotesPage> {
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
                 title: Text(
-                  'Delete Remote',
+                  AppLocalizations.of(context).deleteRemote,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
@@ -225,7 +225,7 @@ class _RemotesPageState extends State<RemotesPage> {
       _loadRemotes();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added remote: ${created.name}')),
+          SnackBar(content: Text(AppLocalizations.of(context).addedRemote(created.name))),
         );
       }
     }
@@ -246,15 +246,15 @@ class _RemotesPageState extends State<RemotesPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Remote'),
+        title: Text(AppLocalizations.of(context).deleteRemote),
         content: Text(
-          'Remove "${remote.name}"?\n\n'
-          'This only removes the saved connection from this app. Files on the '
-          'server are not touched.',
+          AppLocalizations.of(context).deleteRemoteConfirm(remote.name)
+
+          ,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(AppLocalizations.of(context).delete)),
         ],
       ),
     );
@@ -267,7 +267,7 @@ class _RemotesPageState extends State<RemotesPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Could not delete "${remote.name}": $e'),
+              content: Text(AppLocalizations.of(context).couldNotDeleteNamed(remote.name, '$e')),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
@@ -277,7 +277,7 @@ class _RemotesPageState extends State<RemotesPage> {
       _loadRemotes();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted "${remote.name}"')),
+          SnackBar(content: Text(AppLocalizations.of(context).deletedItem(remote.name))),
         );
       }
     }
@@ -288,8 +288,8 @@ class _RemotesPageState extends State<RemotesPage> {
     // Nothing to test: the stored config could not be decrypted.
     if (_isUnreadable(remote)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This connection has no readable details. Edit it to re-enter them.'),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).connectionNoReadableDetails),
         ),
       );
       return;
@@ -298,11 +298,12 @@ class _RemotesPageState extends State<RemotesPage> {
     // whose result could overwrite the first one's.
     if (_status[remote.id] == _ConnStatus.checking) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Testing "${remote.name}"…'), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text(AppLocalizations.of(context).testingRemote(remote.name)), duration: const Duration(seconds: 2)),
     );
     bool ok;
     String? error;
     setState(() => _status[remote.id] = _ConnStatus.checking);
+    final l10n = AppLocalizations.of(context);
     try {
       // A firewalled host sits in the OS TCP timeout for minutes, leaving the
       // row on "checking" and the button looking dead. Bound it like the
@@ -315,7 +316,7 @@ class _RemotesPageState extends State<RemotesPage> {
       error = 'timed out after 8 seconds';
     } catch (e) {
       ok = false;
-      error = friendlyErrorText(e);
+      error = friendlyErrorText(e, l10n);
     }
     if (!mounted) return;
     setState(() =>
@@ -324,7 +325,7 @@ class _RemotesPageState extends State<RemotesPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ok ? 'Connected to "${remote.name}"' : 'Cannot reach "${remote.name}"${error == null ? '' : ': $error'}',
+          ok ? AppLocalizations.of(context).connectedToRemote(remote.name) : '${AppLocalizations.of(context).cannotReachRemote(remote.name)}${error == null ? '' : ': $error'}',
         ),
         backgroundColor: ok ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.error,
       ),
@@ -354,7 +355,7 @@ class _RemotesPageState extends State<RemotesPage> {
     try {
       if (_remotes.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No connections to export')),
+          SnackBar(content: Text(AppLocalizations.of(context).noConnectionsToExport)),
         );
         return;
       }
@@ -371,30 +372,30 @@ class _RemotesPageState extends State<RemotesPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Backup Connections (${_remotes.length})',
+                  AppLocalizations.of(context).backupConnectionsCount(_remotes.length),
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Export your configured connections as JSON. You can copy it or share/save to Files.',
+                Text(
+                  AppLocalizations.of(context).backupConnectionsDesc,
                   style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   icon: const Icon(Icons.copy, size: 18),
-                  label: const Text('Copy to Clipboard'),
+                  label: Text(AppLocalizations.of(context).copyToClipboard),
                   onPressed: () {
                     Navigator.of(ctx).pop();
                     Clipboard.setData(ClipboardData(text: jsonStr));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Connections copied to clipboard')),
+                      SnackBar(content: Text(AppLocalizations.of(context).connectionsCopied)),
                     );
                   },
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.share, size: 18),
-                  label: const Text('Share / Save to Files'),
+                  label: Text(AppLocalizations.of(context).shareSaveToFiles),
                   onPressed: () {
                     Navigator.of(ctx).pop();
                     SharePlus.instance.share(ShareParams(
@@ -412,7 +413,7 @@ class _RemotesPageState extends State<RemotesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Export failed: $e'),
+            content: Text(AppLocalizations.of(context).exportFailed('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -439,15 +440,15 @@ class _RemotesPageState extends State<RemotesPage> {
       imported = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Restore Connections'),
+          title: Text(AppLocalizations.of(context).restoreConnections),
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Paste JSON backup text below:',
+                Text(
+                  AppLocalizations.of(context).pasteJsonBackupHint,
                   style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 8),
@@ -467,7 +468,7 @@ class _RemotesPageState extends State<RemotesPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+              child: Text(AppLocalizations.of(context).cancel),
             ),
             FilledButton(
               onPressed: () async {
@@ -485,7 +486,7 @@ class _RemotesPageState extends State<RemotesPage> {
                         : '; ${failures.length} failed: ${failures.join(', ')}';
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Imported $count connection(s)$detail'),
+                        content: Text(AppLocalizations.of(context).importedConnections(count, detail)),
                         backgroundColor: failures.isEmpty
                             ? Theme.of(context).colorScheme.success
                             : Theme.of(context).colorScheme.error,
@@ -496,14 +497,14 @@ class _RemotesPageState extends State<RemotesPage> {
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(
                       SnackBar(
-                        content: Text('Import failed: $e'),
+                        content: Text(AppLocalizations.of(ctx).importFailed('$e')),
                         backgroundColor: Theme.of(ctx).colorScheme.error,
                       ),
                     );
                   }
                 }
               },
-              child: const Text('Import'),
+              child: Text(AppLocalizations.of(context).importAction),
             ),
           ],
         ),
@@ -528,7 +529,7 @@ class _RemotesPageState extends State<RemotesPage> {
           if (_remotes.isNotEmpty)
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: _showSearch ? 'Close Search' : 'Search Remotes',
+              tooltip: _showSearch ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchRemotes,
               onPressed: () {
                 setState(() {
                   _showSearch = !_showSearch;
@@ -541,16 +542,16 @@ class _RemotesPageState extends State<RemotesPage> {
             ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: 'Add Connection',
+            tooltip: AppLocalizations.of(context).addConnection,
             onPressed: _addRemote,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: AppLocalizations.of(context).refresh,
             onPressed: _loadRemotes,
           ),
           PopupMenuButton<String>(
-            tooltip: 'Backup / Restore',
+            tooltip: AppLocalizations.of(context).backupRestore,
             icon: const Icon(Icons.more_vert),
             onSelected: (val) {
               if (val == 'export') {
@@ -560,23 +561,23 @@ class _RemotesPageState extends State<RemotesPage> {
               }
             },
             itemBuilder: (ctx) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'export',
                 child: Row(
                   children: [
                     Icon(Icons.upload_file, size: 18),
                     SizedBox(width: 8),
-                    Text('Backup / Export'),
+                    Text(AppLocalizations.of(context).backupExport),
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'import',
                 child: Row(
                   children: [
                     Icon(Icons.download_for_offline, size: 18),
                     SizedBox(width: 8),
-                    Text('Restore / Import'),
+                    Text(AppLocalizations.of(context).restoreImport),
                   ],
                 ),
               ),
@@ -595,7 +596,7 @@ class _RemotesPageState extends State<RemotesPage> {
                       controller: _searchController,
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Filter remote connections...',
+                        hintText: AppLocalizations.of(context).filterRemotesHint,
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 18),
                         suffixIcon: _searchQuery.isNotEmpty
@@ -625,12 +626,12 @@ class _RemotesPageState extends State<RemotesPage> {
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                                 child: AppEmptyState(
                                   icon: Icons.cloud_queue,
-                                  title: 'No remote connections configured',
-                                  subtitle: 'Connect Amazon S3, Aliyun OSS, WebDAV, SFTP, FTP or SMB network storage.',
+                                  title: AppLocalizations.of(context).noRemoteConnections,
+                                  subtitle: AppLocalizations.of(context).noRemoteConnectionsDesc,
                                   action: FilledButton.icon(
                                     onPressed: _addRemote,
                                     icon: const Icon(Icons.add, size: 18),
-                                    label: const Text('Add Remote Storage'),
+                                    label: Text(AppLocalizations.of(context).addRemoteStorage),
                                   ),
                                 ),
                               ),
@@ -644,8 +645,8 @@ class _RemotesPageState extends State<RemotesPage> {
                                     constraints: BoxConstraints(minHeight: constraints.maxHeight),
                                     child: AppEmptyState(
                                       icon: Icons.search_off,
-                                      title: 'No matching connections',
-                                      subtitle: 'Nothing matches "$_searchQuery".',
+                                      title: AppLocalizations.of(context).noMatchingConnections,
+                                      subtitle: AppLocalizations.of(context).nothingMatchesQuery(_searchQuery),
                                     ),
                                   ),
                                 ),
@@ -662,7 +663,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                         child: OutlinedButton.icon(
                                           onPressed: _addRemote,
                                           icon: const Icon(Icons.add, size: 18),
-                                          label: const Text('Add Another Remote'),
+                                          label: Text(AppLocalizations.of(context).addAnotherRemote),
                                         ),
                                       ),
                                     );
@@ -672,7 +673,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                   final (icon, color) = _remoteVisuals(r.kind);
                                   final unreadable = _isUnreadable(r);
                                   final sub = unreadable
-                                      ? 'Details unavailable — re-enter to reconnect'
+                                      ? AppLocalizations.of(context).detailsUnavailableReconnect
                                       : (r.endpoint ??
                                           (r.bucket != null
                                               ? 'Bucket: ${r.bucket}'
@@ -714,7 +715,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                         children: [
                                           PopupMenuButton<String>(
                                             icon: const Icon(Icons.more_vert, size: 20),
-                                            tooltip: 'Remote actions',
+                                            tooltip: AppLocalizations.of(context).remoteActions,
                                             onSelected: (action) {
                                               switch (action) {
                                                 case 'test':
@@ -732,33 +733,33 @@ class _RemotesPageState extends State<RemotesPage> {
                                               }
                                             },
                                             itemBuilder: (ctx) => [
-                                              const PopupMenuItem(
+                                              PopupMenuItem(
                                                 value: 'test',
                                                 child: Row(
                                                   children: [
                                                     Icon(Icons.network_check, size: 18),
                                                     SizedBox(width: 8),
-                                                    Text('Test Connection'),
+                                                    Text(AppLocalizations.of(context).testConnection),
                                                   ],
                                                 ),
                                               ),
-                                              const PopupMenuItem(
+                                              PopupMenuItem(
                                                 value: 'copy',
                                                 child: Row(
                                                   children: [
                                                     Icon(Icons.copy_outlined, size: 18),
                                                     SizedBox(width: 8),
-                                                    Text('Copy URI'),
+                                                    Text(AppLocalizations.of(context).copyUri),
                                                   ],
                                                 ),
                                               ),
-                                              const PopupMenuItem(
+                                              PopupMenuItem(
                                                 value: 'edit',
                                                 child: Row(
                                                   children: [
                                                     Icon(Icons.edit_outlined, size: 18),
                                                     SizedBox(width: 8),
-                                                    Text('Edit'),
+                                                    Text(AppLocalizations.of(context).editLabel),
                                                   ],
                                                 ),
                                               ),
@@ -773,7 +774,7 @@ class _RemotesPageState extends State<RemotesPage> {
                                                     ),
                                                     const SizedBox(width: 8),
                                                     Text(
-                                                      'Delete',
+                                                      AppLocalizations.of(context).delete,
                                                       style: TextStyle(
                                                         color: Theme.of(context).colorScheme.error,
                                                       ),

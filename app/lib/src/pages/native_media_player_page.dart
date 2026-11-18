@@ -330,7 +330,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
     if (val.hasError) {
       setState(() {
-        _error = val.errorDescription ?? 'Unknown playback error';
+        _error = val.errorDescription ?? (mounted ? AppLocalizations.of(context).unknownPlaybackError : 'Unknown playback error');
       });
       return;
     }
@@ -350,7 +350,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Auto-playing next: ${nextTrack.fileName}'),
+            content: Text(AppLocalizations.of(context).autoPlayingNext(nextTrack.fileName)),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
@@ -896,7 +896,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                         IconButton(
                           icon: const Icon(Icons.queue_music, color: Colors.white),
                           tooltip:
-                              'Playlist (${_index + 1}/${widget.playlist.length})',
+                              AppLocalizations.of(context).playlistProgress(_index + 1, widget.playlist.length),
                           onPressed: _showPlaylist,
                         ),
                         IconButton(
@@ -907,7 +907,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                             color: _autoNext ? Colors.blueAccent : Colors.white70,
                           ),
                           tooltip:
-                              _autoNext ? 'Auto-next: On' : 'Auto-next: Off',
+                              _autoNext ? AppLocalizations.of(context).autoNextOn : AppLocalizations.of(context).autoNextOff,
                           onPressed: () {
                             setState(() {
                               _autoNext = !_autoNext;
@@ -922,7 +922,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           _isLooping ? Icons.repeat_one : Icons.repeat,
                           color: _isLooping ? Colors.blueAccent : Colors.white,
                         ),
-                        tooltip: _isLooping ? 'Loop: Single' : 'Loop: Off',
+                        tooltip: _isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff,
                         onPressed: () {
                           setState(() {
                             _isLooping = !_isLooping;
@@ -940,13 +940,13 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           color: Colors.white,
                         ),
                         tooltip: _isFullscreen
-                            ? 'Exit Fullscreen'
-                            : 'Fullscreen',
+                            ? AppLocalizations.of(context).exitFullscreen
+                            : AppLocalizations.of(context).fullscreen,
                         onPressed: _toggleFullscreen,
                       ),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, color: Colors.white),
-                        tooltip: 'Playback options',
+                        tooltip: AppLocalizations.of(context).playbackOptions,
                         onSelected: (action) {
                           switch (action) {
                             case 'prev':
@@ -988,28 +988,28 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                                 ),
                                 const SizedBox(width: 10),
                                 Text(_volume == 0
-                                    ? 'Unmute (M)'
-                                    : 'Mute (M) (${(_volume * 100).toInt()}%)'),
+                                    ? AppLocalizations.of(context).unmuteShortcut
+                                    : AppLocalizations.of(context).muteShortcut((_volume * 100).toInt())),
                               ],
                             ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'rewind',
                             child: Row(
                               children: [
                                 Icon(Icons.replay_10, size: 20),
                                 SizedBox(width: 10),
-                                Text('Rewind 10s'),
+                                Text(AppLocalizations.of(context).rewind10s),
                               ],
                             ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'forward',
                             child: Row(
                               children: [
                                 Icon(Icons.forward_10, size: 20),
                                 SizedBox(width: 10),
-                                Text('Forward 10s'),
+                                Text(AppLocalizations.of(context).forward10s),
                               ],
                             ),
                           ),
@@ -1028,30 +1028,30 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                                   ),
                                   const SizedBox(width: 10),
                                   Text(_autoNext
-                                      ? 'Auto-next (On)'
-                                      : 'Auto-next (Off)'),
+                                      ? AppLocalizations.of(context).autoNextMenuOn
+                                      : AppLocalizations.of(context).autoNextMenuOff),
                                 ],
                               ),
                             ),
                             PopupMenuItem(
                               value: 'prev',
                               enabled: _hasPrev,
-                              child: const Row(
+                              child: Row(
                                 children: [
-                                  Icon(Icons.skip_previous, size: 20),
-                                  SizedBox(width: 10),
-                                  Text('Previous (P)'),
+                                  const Icon(Icons.skip_previous, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text(AppLocalizations.of(context).previousShortcut),
                                 ],
                               ),
                             ),
                             PopupMenuItem(
                               value: 'next',
                               enabled: _hasNext,
-                              child: const Row(
+                              child: Row(
                                 children: [
-                                  Icon(Icons.skip_next, size: 20),
-                                  SizedBox(width: 10),
-                                  Text('Next (N)'),
+                                  const Icon(Icons.skip_next, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text(AppLocalizations.of(context).nextShortcut),
                                 ],
                               ),
                             ),
@@ -1223,7 +1223,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
           const SizedBox(height: 12),
           Text(
-            'Cannot play this file',
+            AppLocalizations.of(context).cannotPlayFile,
             style: Theme.of(context)
                 .textTheme
                 .titleMedium
@@ -1238,7 +1238,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           const SizedBox(height: 16),
           FilledButton.icon(
             icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
+            label: Text(AppLocalizations.of(context).retry),
             onPressed: _openCurrentTrack,
           ),
         ],
@@ -1287,12 +1287,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               ),
               IconButton(
                 icon: const Icon(Icons.replay_10, color: Colors.white),
-                tooltip: 'Rewind 10s',
+                tooltip: AppLocalizations.of(context).rewind10s,
                 onPressed: () => _seekRelative(-10),
               ),
               IconButton(
                 icon: const Icon(Icons.forward_10, color: Colors.white),
-                tooltip: 'Forward 10s',
+                tooltip: AppLocalizations.of(context).forward10s,
                 onPressed: () => _seekRelative(10),
               ),
               if (widget.playlist.length > 1) ...[
@@ -1301,7 +1301,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                     Icons.skip_previous,
                     color: _hasPrev ? Colors.white : Colors.white38,
                   ),
-                  tooltip: 'Previous (P)',
+                  tooltip: AppLocalizations.of(context).previousShortcut,
                   onPressed: _hasPrev ? () => _openTrack(_index - 1) : null,
                 ),
                 IconButton(
@@ -1309,7 +1309,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                     Icons.skip_next,
                     color: _hasNext ? Colors.white : Colors.white38,
                   ),
-                  tooltip: 'Next episode (N)',
+                  tooltip: AppLocalizations.of(context).nextEpisodeShortcut,
                   onPressed: _hasNext ? () => _openTrack(_index + 1) : null,
                 ),
               ],

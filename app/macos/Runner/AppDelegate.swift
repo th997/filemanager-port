@@ -34,11 +34,33 @@ class AppDelegate: FlutterAppDelegate {
     }
   }
 
-  override func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-    AppDelegate.pendingFilePath = filename
+  private static func dispatchOpenedFile(_ path: String) {
+    guard !path.isEmpty else { return }
+    AppDelegate.pendingFilePath = path
     if let channel = AppDelegate.openFileChannel {
-      channel.invokeMethod("onFileOpened", arguments: filename)
+      channel.invokeMethod("onFileOpened", arguments: path)
     }
+  }
+
+  override func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+    AppDelegate.dispatchOpenedFile(filename)
     return true
+  }
+
+  override func application(_ sender: NSApplication, openFiles filenames: [String]) {
+    if let first = filenames.first {
+      AppDelegate.dispatchOpenedFile(first)
+    }
+    sender.reply(toOpenOrPrint: .success)
+  }
+
+  override func application(_ application: NSApplication, open urls: [URL]) {
+    for url in urls {
+      if url.isFileURL {
+        AppDelegate.dispatchOpenedFile(url.path)
+        break
+      }
+    }
+    application.reply(toOpenOrPrint: .success)
   }
 }

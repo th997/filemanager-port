@@ -5,6 +5,7 @@ import '../rust/api/remotes.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 class BookmarksPage extends StatefulWidget {
   const BookmarksPage({super.key});
@@ -51,7 +52,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not load bookmarks: $e'),
+          content: Text(AppLocalizations.of(context).couldNotLoadBookmarks('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -109,7 +110,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
         : '${_rootLabel(b.root)}/${b.path}';
     Clipboard.setData(ClipboardData(text: full));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied path: $full')),
+      SnackBar(content: Text(AppLocalizations.of(context).copiedPathValue(full))),
     );
   }
 
@@ -153,7 +154,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.folder_open),
-                title: const Text('Open'),
+                title: Text(AppLocalizations.of(context).open),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openBookmark(b);
@@ -161,7 +162,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.copy_outlined),
-                title: const Text('Copy Path'),
+                title: Text(AppLocalizations.of(context).copyPath),
                 onTap: () {
                   Navigator.pop(ctx);
                   _copyBookmarkPath(b);
@@ -169,7 +170,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
-                title: const Text('Rename'),
+                title: Text(AppLocalizations.of(context).rename),
                 onTap: () {
                   Navigator.pop(ctx);
                   _renameBookmark(b);
@@ -178,7 +179,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
                 title: Text(
-                  'Remove',
+                  AppLocalizations.of(context).remove,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
@@ -204,15 +205,15 @@ class _BookmarksPageState extends State<BookmarksPage> {
       newName = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Rename Bookmark'),
+          title: Text(AppLocalizations.of(context).renameBookmark),
           actionsOverflowButtonSpacing: 8,
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: TextField(
               controller: ctrl,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Bookmark Name',
+              decoration: InputDecoration(
+                labelText: AppLocalizations.of(context).bookmarkNameLabel,
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (v) {
@@ -223,7 +224,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
             // An empty name used to close the dialog and then do nothing.
             ListenableBuilder(
               listenable: ctrl,
@@ -231,7 +232,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 onPressed: ctrl.text.trim().isEmpty
                     ? null
                     : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: const Text('Rename'),
+                child: Text(AppLocalizations.of(context).rename),
               ),
             ),
           ],
@@ -254,7 +255,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not rename bookmark: $e'),
+            content: Text(AppLocalizations.of(context).couldNotRenameBookmark('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -275,7 +276,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
       setState(() => _bookmarks = original);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not remove bookmark: $e'),
+          content: Text(AppLocalizations.of(context).couldNotRemoveBookmark('$e')),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -284,9 +285,9 @@ class _BookmarksPageState extends State<BookmarksPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Removed "${bm.name}"'),
+        content: Text(AppLocalizations.of(context).removedName(bm.name)),
         action: SnackBarAction(
-          label: 'Undo',
+          label: AppLocalizations.of(context).undo,
           onPressed: () async {
             // Undo is the only way back from a delete; failing silently left
             // the bookmark gone with no hint that the restore did not work.
@@ -300,7 +301,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Could not restore bookmark: $e'),
+                  content: Text(AppLocalizations.of(context).couldNotRestoreBookmark('$e')),
                   backgroundColor: Theme.of(context).colorScheme.error,
                 ),
               );
@@ -318,12 +319,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
-        title: const Text('Bookmarks'),
+        title: Text(AppLocalizations.of(context).bookmarks),
         actions: [
           if (_bookmarks.isNotEmpty)
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: _showSearch ? 'Close Search' : 'Search Bookmarks',
+              tooltip: _showSearch ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchBookmarks,
               onPressed: () {
                 setState(() {
                   _showSearch = !_showSearch;
@@ -336,7 +337,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: AppLocalizations.of(context).refresh,
             onPressed: _loadBookmarks,
           ),
         ],
@@ -352,7 +353,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                       controller: _searchController,
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Filter bookmarks...',
+                        hintText: AppLocalizations.of(context).filterBookmarksHint,
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 18),
                         suffixIcon: _searchQuery.isNotEmpty
@@ -382,10 +383,10 @@ class _BookmarksPageState extends State<BookmarksPage> {
                           constraints: BoxConstraints(minHeight: constraints.maxHeight),
                           child: AppEmptyState(
                             icon: Icons.bookmark_border,
-                            title: _searchQuery.isEmpty ? 'No bookmarks saved yet' : 'No matching bookmarks',
+                            title: _searchQuery.isEmpty ? AppLocalizations.of(context).noBookmarksSaved : AppLocalizations.of(context).noMatchingBookmarks,
                             subtitle: _searchQuery.isEmpty
-                                ? 'In the file browser, long-press a folder (or right-click it) and choose "Bookmark This Folder".'
-                                : 'Nothing matches "$_searchQuery".',
+                                ? AppLocalizations.of(context).bookmarksEmptyHint
+                                : AppLocalizations.of(context).nothingMatchesQuery(_searchQuery),
                           ),
                         ),
                       ),
@@ -412,7 +413,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                             ),
                             trailing: PopupMenuButton<String>(
                               icon: const Icon(Icons.more_vert, size: 20),
-                              tooltip: 'Bookmark actions',
+                              tooltip: AppLocalizations.of(context).bookmarkActions,
                               onSelected: (action) {
                                 switch (action) {
                                   case 'copy':
@@ -427,23 +428,23 @@ class _BookmarksPageState extends State<BookmarksPage> {
                                 }
                               },
                               itemBuilder: (ctx) => [
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'rename',
                                   child: Row(
                                     children: [
                                       Icon(Icons.edit_outlined, size: 18),
                                       SizedBox(width: 8),
-                                      Text('Rename'),
+                                      Text(AppLocalizations.of(context).rename),
                                     ],
                                   ),
                                 ),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'copy',
                                   child: Row(
                                     children: [
                                       Icon(Icons.copy_outlined, size: 18),
                                       SizedBox(width: 8),
-                                      Text('Copy Path'),
+                                      Text(AppLocalizations.of(context).copyPath),
                                     ],
                                   ),
                                 ),
@@ -458,7 +459,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'Remove',
+                                        AppLocalizations.of(context).remove,
                                         style: TextStyle(
                                           color: Theme.of(context).colorScheme.error,
                                         ),

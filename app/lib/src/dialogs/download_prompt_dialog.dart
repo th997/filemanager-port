@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import 'folder_picker_dialog.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 /// Outcome of the large-file download prompt.
 class DownloadChoice {
@@ -71,7 +72,7 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
     final targets = PlatformPaths.quickTargets();
     if (targets.isNotEmpty) {
       final preferred = targets.firstWhere(
-        (t) => t.name.toLowerCase().startsWith('download'),
+        (t) => t.kind == 'download' || t.kind == 'downloads',
         orElse: () => targets.first,
       );
       return PickedFolder(root: preferred.root, relPath: preferred.relPath);
@@ -83,7 +84,7 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
   Future<void> _changeDestination() async {
     final picked = await FolderPickerDialog.show(
       context,
-      title: 'Choose download folder',
+      title: AppLocalizations.of(context).chooseDownloadFolder,
       initialRoot: _destination.root,
       initialPath: _destination.relPath,
     );
@@ -116,8 +117,9 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AlertDialog(
-      title: const Text('Download file?'),
+      title: Text(l10n.downloadFileTitle),
       content: SizedBox(
         width: 400,
         child: Column(
@@ -157,12 +159,12 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
             ),
             const SizedBox(height: 14),
             Text(
-              'This file cannot be previewed while streaming, so it has to be downloaded first.',
+              l10n.downloadFileStreamHint,
               style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 14),
-            const Text(
-              'Save destination',
+            Text(
+              l10n.saveDestination,
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
@@ -187,7 +189,7 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
                   ),
                   TextButton(
                     onPressed: _changeDestination,
-                    child: const Text('Change'),
+                    child: Text(l10n.change),
                   ),
                 ],
               ),
@@ -198,12 +200,12 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           onPressed: () =>
               Navigator.of(context).pop(DownloadChoice(_destination)),
-          child: const Text('Download'),
+          child: Text(l10n.download),
         ),
       ],
     );

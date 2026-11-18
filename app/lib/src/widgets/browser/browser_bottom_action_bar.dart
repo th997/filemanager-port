@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:filemanager/l10n/app_localizations.dart';
 
 /// Bottom action bar displayed when multi-selection is active or clipboard has items.
 class BrowserBottomActionBar extends StatelessWidget {
@@ -72,9 +73,10 @@ class BrowserBottomActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final selectionLabel = selectedBytes > BigInt.zero
-        ? '$selectedCount selected (${formatBytes(selectedBytes)})'
-        : '$selectedCount selected';
+        ? l10n.selectedCountBytesLabel(selectedCount, formatBytes(selectedBytes))
+        : l10n.selectedCountLabel(selectedCount);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -102,7 +104,7 @@ class BrowserBottomActionBar extends StatelessWidget {
                     if (isRemoteOrArchive)
                       _actionButton(
                         icon: Icons.download,
-                        label: 'Download',
+                        label: l10n.download,
                         onTap: onDownload,
                         color: Colors.blue,
                       ),
@@ -119,37 +121,37 @@ class BrowserBottomActionBar extends StatelessWidget {
                     ),
                     _actionButton(
                       icon: Icons.copy,
-                      label: 'Copy',
+                      label: l10n.copy,
                       onTap: onCopy,
                     ),
                     if (selectedCount == 1)
                       _actionButton(
                         icon: Icons.info_outline,
-                        label: 'Info',
+                        label: l10n.actionInfo,
                         onTap: onInfo,
                       ),
                     if (canWrite) ...[
                       _actionButton(
                         icon: Icons.cut,
-                        label: 'Cut',
+                        label: l10n.cut,
                         onTap: onCut,
                       ),
                       _actionButton(
                         icon: Icons.delete,
-                        label: 'Delete',
+                        label: l10n.delete,
                         onTap: onDelete,
                         color: Colors.red,
                       ),
                       if (selectedCount == 1)
                         _actionButton(
                           icon: Icons.edit,
-                          label: 'Rename',
+                          label: l10n.rename,
                           onTap: onRename,
                         ),
                       if (canArchive)
                         _actionButton(
                           icon: Icons.archive,
-                          label: 'Zip',
+                          label: l10n.compress,
                           onTap: onCompress,
                         ),
                     ],
@@ -157,13 +159,13 @@ class BrowserBottomActionBar extends StatelessWidget {
                   if (clipboardCount != null && !isSelecting && canWrite) ...[
                     _actionButton(
                       icon: Icons.paste,
-                      label: 'Paste ($clipboardCount)',
+                      label: l10n.pasteCount(clipboardCount!),
                       onTap: onPaste,
                       color: Theme.of(context).colorScheme.primary,
                     ),
                     _actionButton(
                       icon: Icons.close,
-                      label: 'Clear',
+                      label: l10n.clear,
                       onTap: onClearClipboard,
                       color: Colors.grey,
                     ),
