@@ -844,6 +844,18 @@ abstract class AppLocalizations {
   /// **'Compact (16pt)'**
   String get pdfMarginCompact;
 
+  /// No description provided for @pickFileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select File'**
+  String get pickFileTitle;
+
+  /// No description provided for @pickFilesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Files'**
+  String get pickFilesTitle;
+
   /// No description provided for @playbackSpeed.
   ///
   /// In en, this message translates to:
@@ -1029,6 +1041,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Select All'**
   String get selectAll;
+
+  /// No description provided for @selectCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Select ({count})'**
+  String selectCount(int count);
 
   /// No description provided for @selectFolderToUpload.
   ///
@@ -1768,6 +1786,12 @@ abstract class AppLocalizations {
   /// **'Hidden'**
   String get hiddenLabel;
 
+  /// No description provided for @hiddenFilesOff.
+  ///
+  /// In en, this message translates to:
+  /// **'hidden files off'**
+  String get hiddenFilesOff;
+
   /// No description provided for @symlinkLabel.
   ///
   /// In en, this message translates to:
@@ -1887,6 +1911,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hide hidden folders'**
   String get hideHiddenFolders;
+
+  /// No description provided for @showAllFileTypes.
+  ///
+  /// In en, this message translates to:
+  /// **'All files'**
+  String get showAllFileTypes;
 
   /// No description provided for @showHiddenFolders.
   ///
@@ -2103,6 +2133,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'First 200 results (narrow the search to see more)'**
   String get first200Results;
+
+  /// No description provided for @searchResultsInFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Results in this folder and subfolders: {count}'**
+  String searchResultsInFolder(int count);
+
+  /// No description provided for @searchFoundCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} found'**
+  String searchFoundCount(int count);
 
   /// No description provided for @currentFolder.
   ///
@@ -2517,6 +2559,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Save changes (Ctrl+S)'**
   String get saveChangesTooltip;
+
+  /// No description provided for @saveAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Save As...'**
+  String get saveAs;
+
+  /// No description provided for @saveToThisFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to this folder'**
+  String get saveToThisFolder;
+
+  /// No description provided for @savedToCachePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to app cache. Tap Save As to save to device storage.'**
+  String get savedToCachePrompt;
 
   /// No description provided for @savedLabel.
   ///
@@ -2961,6 +3021,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'More options'**
   String get moreOptions;
+
+  /// No description provided for @moreBelow.
+  ///
+  /// In en, this message translates to:
+  /// **'more below'**
+  String get moreBelow;
 
   /// No description provided for @zoomInShortcut.
   ///
@@ -3897,6 +3963,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hide password'**
   String get hidePassword;
+
+  /// No description provided for @authMethod.
+  ///
+  /// In en, this message translates to:
+  /// **'Authentication Method'**
+  String get authMethod;
+
+  /// No description provided for @authPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get authPassword;
+
+  /// No description provided for @authPrivateKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Private Key'**
+  String get authPrivateKey;
+
+  /// No description provided for @privateKeyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Private Key'**
+  String get privateKeyLabel;
+
+  /// No description provided for @privateKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste OpenSSH / PEM private key content here'**
+  String get privateKeyHint;
+
+  /// No description provided for @privateKeyRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Private key is required'**
+  String get privateKeyRequired;
+
+  /// No description provided for @selectKeyFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Key File'**
+  String get selectKeyFile;
+
+  /// No description provided for @passphraseLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Passphrase (Optional)'**
+  String get passphraseLabel;
+
+  /// No description provided for @passphraseHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty if key is not encrypted'**
+  String get passphraseHint;
+
+  /// No description provided for @showPassphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Show passphrase'**
+  String get showPassphrase;
+
+  /// No description provided for @hidePassphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide passphrase'**
+  String get hidePassphrase;
+
+  /// No description provided for @failedToReadKeyFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to read key file: {error}'**
+  String failedToReadKeyFile(String error);
 
   /// No description provided for @hostIp.
   ///

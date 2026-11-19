@@ -159,7 +159,11 @@ impl SftpFs {
         let mut key_failure: Option<String> = None;
 
         if let Some(priv_key_str) = &config.private_key {
-            let passphrase = config.password.as_deref();
+            let passphrase = config
+                .passphrase
+                .as_deref()
+                .or(config.password.as_deref())
+                .filter(|p| !p.is_empty());
             match russh::keys::decode_secret_key(priv_key_str, passphrase) {
                 Ok(key) => {
                     let rsa_hash = session.best_supported_rsa_hash().await.ok().flatten().flatten();

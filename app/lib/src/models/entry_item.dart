@@ -47,7 +47,7 @@ class EntryItem {
     '.gitignore', '.gitattributes', '.editorconfig', '.env',
   };
   static const Set<String> _imageExtensions = {
-    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif',
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif', 'ico', 'avif', 'tiff', 'tif',
   };
   static const Set<String> _videoExtensions = {
     'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', '3gp', 'm4v', 'ts', 'wmv',
@@ -57,6 +57,11 @@ class EntryItem {
     'mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'opus', 'wma', 'amr', 'ape',
     'alac', 'aiff', 'mka', 'oga', 'wv', 'mid',
   };
+
+  static bool isImageExtension(String ext) => _imageExtensions.contains(ext.toLowerCase());
+  static bool isVideoExtension(String ext) => _videoExtensions.contains(ext.toLowerCase());
+  static bool isAudioExtension(String ext) => _audioExtensions.contains(ext.toLowerCase());
+  static bool isMediaExtension(String ext) => isVideoExtension(ext) || isAudioExtension(ext);
 
   late final String extension = () {
     final dot = name.lastIndexOf('.');

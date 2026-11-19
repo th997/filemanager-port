@@ -151,6 +151,11 @@ class _FileManagerAppState extends State<FileManagerApp>
   }
 
   @override
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async {
+    return true;
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Mobile processes can be killed without a close event; flush the
     // debounced preference writes whenever the app leaves the foreground.

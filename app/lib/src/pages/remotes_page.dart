@@ -13,10 +13,14 @@ import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 
+import '../services/external_file_service.dart';
+
 enum _ConnStatus { unknown, checking, online, offline }
 
 class RemotesPage extends StatefulWidget {
-  const RemotesPage({super.key});
+  final ExternalPickRequest? pickRequest;
+
+  const RemotesPage({super.key, this.pickRequest});
 
   @override
   State<RemotesPage> createState() => _RemotesPageState();
@@ -125,15 +129,21 @@ class _RemotesPageState extends State<RemotesPage> {
     }
   }
 
-  void _openRemote(RemoteConfigDto remote) {
-    Navigator.of(context).push(
+  void _openRemote(RemoteConfigDto remote) async {
+    final picked = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => BrowserPage(
           initialRoot: 'remote://${remote.id}',
           initialPath: '',
+          pickRequest: widget.pickRequest,
         ),
       ),
-    ).then((_) => _loadRemotes());
+    );
+    if (picked != null && picked.isNotEmpty && mounted) {
+      Navigator.of(context).pop(picked);
+      return;
+    }
+    _loadRemotes();
   }
 
   void _showRemoteActionSheet(RemoteConfigDto r) {

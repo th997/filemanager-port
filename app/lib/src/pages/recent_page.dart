@@ -6,9 +6,12 @@ import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../services/external_file_service.dart';
 
 class RecentPage extends StatefulWidget {
-  const RecentPage({super.key});
+  final ExternalPickRequest? pickRequest;
+
+  const RecentPage({super.key, this.pickRequest});
 
   @override
   State<RecentPage> createState() => _RecentPageState();
@@ -240,15 +243,21 @@ class _RecentPageState extends State<RecentPage> {
     return '${then.year}-${then.month.toString().padLeft(2, '0')}-${then.day.toString().padLeft(2, '0')}';
   }
 
-  void _openHistory(HistoryDto h) {
-    Navigator.of(context).push(
+  void _openHistory(HistoryDto h) async {
+    final picked = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => BrowserPage(
           initialRoot: h.root,
           initialPath: h.path,
+          pickRequest: widget.pickRequest,
         ),
       ),
-    ).then((_) => _loadHistory());
+    );
+    if (picked != null && picked.isNotEmpty && mounted) {
+      Navigator.of(context).pop(picked);
+      return;
+    }
+    _loadHistory();
   }
 
   void _showHistoryActionSheet(HistoryDto h, String title) {

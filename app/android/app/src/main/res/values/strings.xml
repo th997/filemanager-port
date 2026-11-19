@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FP File Manager</string>
+    <string name="internal_storage">Internal Storage</string>
+    <string name="app_files">App Files</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="bookmarked_folders">Favorite Folders</string>
 </resources>

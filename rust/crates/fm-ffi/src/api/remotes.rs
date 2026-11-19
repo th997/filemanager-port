@@ -17,6 +17,8 @@ pub struct RemoteConfigDto {
     pub port: Option<u16>,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub passphrase: Option<String>,
     pub root_path: Option<String>,
     pub path_style: bool,
 }
@@ -65,7 +67,8 @@ impl From<RemoteConfigDto> for RemoteConfig {
             password: d.password,
             key_id: d.access_key_id,
             key_secret: d.secret_access_key,
-            private_key: None,
+            private_key: d.private_key,
+            passphrase: d.passphrase,
             path_style: d.path_style,
             // Managed by the connection layer, never by the UI: save_remote
             // re-attaches the stored pin when a remote is edited.
@@ -89,6 +92,8 @@ impl From<RemoteConfig> for RemoteConfigDto {
             port: c.port,
             username: c.username,
             password: c.password,
+            private_key: c.private_key,
+            passphrase: c.passphrase,
             root_path: Some(c.root),
             path_style: c.path_style,
         }
@@ -126,6 +131,8 @@ pub async fn list_remotes(db_path: String) -> Result<Vec<RemoteConfigDto>, Strin
                 port: None,
                 username: None,
                 password: None,
+                private_key: None,
+                passphrase: None,
                 root_path: None,
                 path_style: false,
             }),

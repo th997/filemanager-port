@@ -431,6 +431,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pdfMarginCompact => 'Compact (16pt)';
 
   @override
+  String get pickFileTitle => 'Select File';
+
+  @override
+  String get pickFilesTitle => 'Select Files';
+
+  @override
   String get playbackSpeed => 'Playback Speed';
 
   @override
@@ -531,6 +537,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get selectAll => 'Select All';
+
+  @override
+  String selectCount(int count) {
+    return 'Select ($count)';
+  }
 
   @override
   String get selectFolderToUpload => 'Select Folder to Upload';
@@ -945,6 +956,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hiddenLabel => 'Hidden';
 
   @override
+  String get hiddenFilesOff => 'hidden files off';
+
+  @override
   String get symlinkLabel => 'Symlink';
 
   @override
@@ -1008,6 +1022,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get hideHiddenFolders => 'Hide hidden folders';
+
+  @override
+  String get showAllFileTypes => 'All files';
 
   @override
   String get showHiddenFolders => 'Show hidden folders';
@@ -1144,6 +1161,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get first200Results =>
       'First 200 results (narrow the search to see more)';
+
+  @override
+  String searchResultsInFolder(int count) {
+    return 'Results in this folder and subfolders: $count';
+  }
+
+  @override
+  String searchFoundCount(int count) {
+    return '$count found';
+  }
 
   @override
   String get currentFolder => 'Current folder';
@@ -1397,6 +1424,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get saveChangesTooltip => 'Save changes (Ctrl+S)';
+
+  @override
+  String get saveAs => 'Save As...';
+
+  @override
+  String get saveToThisFolder => 'Save to this folder';
+
+  @override
+  String get savedToCachePrompt =>
+      'Saved to app cache. Tap Save As to save to device storage.';
 
   @override
   String get savedLabel => 'Saved';
@@ -1654,6 +1691,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get moreOptions => 'More options';
+
+  @override
+  String get moreBelow => 'more below';
 
   @override
   String get zoomInShortcut => 'Zoom in (+)';
@@ -2210,6 +2250,44 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get hidePassword => 'Hide password';
+
+  @override
+  String get authMethod => 'Authentication Method';
+
+  @override
+  String get authPassword => 'Password';
+
+  @override
+  String get authPrivateKey => 'Private Key';
+
+  @override
+  String get privateKeyLabel => 'Private Key';
+
+  @override
+  String get privateKeyHint => 'Paste OpenSSH / PEM private key content here';
+
+  @override
+  String get privateKeyRequired => 'Private key is required';
+
+  @override
+  String get selectKeyFile => 'Select Key File';
+
+  @override
+  String get passphraseLabel => 'Passphrase (Optional)';
+
+  @override
+  String get passphraseHint => 'Leave empty if key is not encrypted';
+
+  @override
+  String get showPassphrase => 'Show passphrase';
+
+  @override
+  String get hidePassphrase => 'Hide passphrase';
+
+  @override
+  String failedToReadKeyFile(String error) {
+    return 'Failed to read key file: $error';
+  }
 
   @override
   String get hostIp => 'Host / IP';

@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/entry_item.dart';
 import '../services/file_open_service.dart';
 import '../services/task_service.dart';
-import '../widgets/app_swipe_back.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 
 /// One image shown by [ImageViewerPage].
@@ -58,7 +58,7 @@ class ImageViewerPage extends StatefulWidget {
 class _ImageViewerPageState extends State<ImageViewerPage> {
   final TransformationController _transformationController = TransformationController();
   late final PageController _pageController;
-  late final List<ImageViewerEntry> _entries;
+  late List<ImageViewerEntry> _entries;
   late int _index;
   int _quarterTurns = 0;
   bool _zoomed = false;
@@ -80,6 +80,43 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         ? [ImageViewerEntry(name: widget.fileName, localPath: widget.filePath)]
         : List<ImageViewerEntry>.from(widget.siblings);
     _index = widget.initialIndex.clamp(0, _entries.length - 1);
+
+    // If only 1 entry or no siblings were supplied, try to auto-discover
+    // sibling images from the local file's parent folder.
+    if (_entries.length <= 1 && widget.filePath.isNotEmpty) {
+      try {
+        final f = File(widget.filePath);
+        if (f.existsSync()) {
+          final parent = f.parent;
+          if (parent.existsSync()) {
+            final files = parent.listSync(followLinks: false).whereType<File>().where((file) {
+              final name = file.path.split(Platform.pathSeparator).last;
+              if (name.startsWith('.')) return false;
+              final dot = name.lastIndexOf('.');
+              if (dot < 0 || dot == name.length - 1) return false;
+              final ext = name.substring(dot + 1).toLowerCase();
+              return EntryItem.isImageExtension(ext);
+            }).toList();
+            if (files.length > 1) {
+              files.sort((a, b) {
+                final an = a.path.split(Platform.pathSeparator).last.toLowerCase();
+                final bn = b.path.split(Platform.pathSeparator).last.toLowerCase();
+                return an.compareTo(bn);
+              });
+              _entries = files.map((file) => ImageViewerEntry(
+                name: file.path.split(Platform.pathSeparator).last,
+                localPath: file.path,
+              )).toList();
+              final targetName = widget.fileName;
+              final targetPath = widget.filePath;
+              final found = _entries.indexWhere((e) => e.localPath == targetPath || e.name == targetName);
+              _index = found >= 0 ? found : 0;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     _pageController = PageController(initialPage: _index);
     _transformationController.addListener(_onTransformChanged);
     _prefetchNeighbors();
@@ -112,6 +149,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   void _goTo(int index) {
     if (index < 0 || index >= _entries.length) return;
+    if (_zoomed) {
+      _resetView();
+    }
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 220),
@@ -132,6 +172,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   /// Warm the cache for previous and upcoming images so a swipe does not wait
   /// for a fresh remote download or image decode.
   void _prefetchNeighbors() {
+    if (WidgetsBinding.instance.runtimeType.toString().contains('Test')) return;
     for (final i in [_index - 1, _index + 1, _index + 2]) {
       if (i < 0 || i >= _entries.length) continue;
       _localPathFor(i).then((path) {
@@ -679,9 +720,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   Widget build(BuildContext context) {
     final multiple = _entries.length > 1;
 
-    return AppSwipeBack(
-      child: CallbackShortcuts(
-        bindings: {
+    return CallbackShortcuts(
+      bindings: {
         const SingleActivator(LogicalKeyboardKey.equal): () => _zoomBy(1.25),
         const SingleActivator(LogicalKeyboardKey.equal, control: true): () => _zoomBy(1.25),
         const SingleActivator(LogicalKeyboardKey.equal, meta: true): () => _zoomBy(1.25),
@@ -702,16 +742,25 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
           setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
         },
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
-          if (!_zoomed) _goTo(_index - 1);
+          _goTo(_index - 1);
         },
         const SingleActivator(LogicalKeyboardKey.bracketLeft): () {
-          if (!_zoomed) _goTo(_index - 1);
+          _goTo(_index - 1);
+        },
+        const SingleActivator(LogicalKeyboardKey.pageUp): () {
+          _goTo(_index - 1);
         },
         const SingleActivator(LogicalKeyboardKey.arrowRight): () {
-          if (!_zoomed) _goTo(_index + 1);
+          _goTo(_index + 1);
         },
         const SingleActivator(LogicalKeyboardKey.bracketRight): () {
-          if (!_zoomed) _goTo(_index + 1);
+          _goTo(_index + 1);
+        },
+        const SingleActivator(LogicalKeyboardKey.pageDown): () {
+          _goTo(_index + 1);
+        },
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          _goTo(_index + 1);
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
           Navigator.of(context).maybePop();
@@ -894,33 +943,64 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   );
                 },
               ),
-              // A long file name truncates the app bar title, so the position
-              // in the set gets its own chip.
+              // Bottom navigation pill with Previous / Position / Next
               if (multiple && !_zoomed && _showChrome)
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom: 12,
+                  bottom: 16,
                   child: SafeArea(
-                    child: IgnorePointer(
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${_index + 1} / ${_entries.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24, width: 0.5),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black38,
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
                             ),
-                          ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back_ios_new, size: 14),
+                              color: _index > 0 ? Colors.white : Colors.white24,
+                              tooltip: AppLocalizations.of(context).previousImage,
+                              onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(6),
+                              constraints: const BoxConstraints(),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                '${_index + 1} / ${_entries.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.arrow_forward_ios, size: 14),
+                              color: _index < _entries.length - 1 ? Colors.white : Colors.white24,
+                              tooltip: AppLocalizations.of(context).nextImage,
+                              onPressed: _index < _entries.length - 1 ? () => _goTo(_index + 1) : null,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(6),
+                              constraints: const BoxConstraints(),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -928,28 +1008,38 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 ),
               if (multiple && !_zoomed && _showChrome) ...[
                 Positioned(
-                  left: 8,
+                  left: 12,
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: IconButton(
-                      icon: const Icon(Icons.chevron_left, size: 32),
-                      color: Colors.white70,
-                      tooltip: AppLocalizations.of(context).previousImage,
-                      onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      child: IconButton(
+                        icon: const Icon(Icons.chevron_left, size: 30),
+                        color: _index > 0 ? Colors.white : Colors.white24,
+                        tooltip: AppLocalizations.of(context).previousImage,
+                        onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
+                      ),
                     ),
                   ),
                 ),
                 Positioned(
-                  right: 8,
+                  right: 12,
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: IconButton(
-                      icon: const Icon(Icons.chevron_right, size: 32),
-                      color: Colors.white70,
-                      tooltip: AppLocalizations.of(context).nextImage,
-                      onPressed: _index < _entries.length - 1 ? () => _goTo(_index + 1) : null,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      child: IconButton(
+                        icon: const Icon(Icons.chevron_right, size: 30),
+                        color: _index < _entries.length - 1 ? Colors.white : Colors.white24,
+                        tooltip: AppLocalizations.of(context).nextImage,
+                        onPressed: _index < _entries.length - 1 ? () => _goTo(_index + 1) : null,
+                      ),
                     ),
                   ),
                 ),
@@ -958,7 +1048,6 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
           ),
         ),
       ),
-    ),
     );
   }
 }

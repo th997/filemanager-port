@@ -66,6 +66,8 @@ pub struct RemoteConfig {
     pub key_id: Option<String>,
     pub key_secret: Option<String>,
     pub private_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passphrase: Option<String>,
     pub path_style: bool,
     /// Pinned SSH host key fingerprint in OpenSSH form (`SHA256:...`).
     /// When set, SFTP connections are rejected if the server presents a
@@ -95,6 +97,7 @@ impl std::fmt::Debug for RemoteConfig {
             .field("key_id", &self.key_id)
             .field("key_secret", &self.key_secret.as_ref().map(|_| "<redacted>"))
             .field("private_key", &self.private_key.as_ref().map(|_| "<redacted>"))
+            .field("passphrase", &self.passphrase.as_ref().map(|_| "<redacted>"))
             .field("path_style", &self.path_style)
             .field("host_key_fingerprint", &self.host_key_fingerprint)
             .finish()
@@ -207,6 +210,32 @@ mod tests {
         let rendered = format!("{credential:?}");
         assert!(!rendered.contains("hunter2"));
         assert!(rendered.contains("<redacted>"));
+
+        let config = RemoteConfig {
+            id: "sftp_test".into(),
+            kind: LocationKind::Sftp,
+            display_name: "SFTP Test".into(),
+            endpoint: None,
+            region: None,
+            bucket: None,
+            host: Some("127.0.0.1".into()),
+            port: Some(22),
+            root: "/".into(),
+            username: Some("user".into()),
+            password: Some("secret_password".into()),
+            key_id: None,
+            key_secret: Some("secret_key".into()),
+            private_key: Some("secret_ssh_key".into()),
+            passphrase: Some("secret_passphrase".into()),
+            path_style: false,
+            host_key_fingerprint: None,
+        };
+        let config_str = format!("{config:?}");
+        assert!(!config_str.contains("secret_password"));
+        assert!(!config_str.contains("secret_key"));
+        assert!(!config_str.contains("secret_ssh_key"));
+        assert!(!config_str.contains("secret_passphrase"));
+        assert!(config_str.contains("<redacted>"));
     }
 
     #[test]
@@ -245,6 +274,7 @@ mod tests {
                 key_id: None,
                 key_secret: None,
                 private_key: None,
+                passphrase: None,
                 path_style: false,
                 host_key_fingerprint: None,
             };

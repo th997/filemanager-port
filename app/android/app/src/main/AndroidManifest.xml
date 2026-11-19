@@ -11,10 +11,12 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:appCategory="productivity"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
+            android:label="@string/app_name"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
@@ -35,6 +37,38 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Register as an external file picker for ACTION_GET_CONTENT / ACTION_PICK / OI File Manager -->
+            <intent-filter>
+                <action android:name="android.intent.action.GET_CONTENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.OPENABLE" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.OPEN_DOCUMENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.OPENABLE" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="org.openintents.action.PICK_FILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!-- Register for opening folders / directories from external apps -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="resource/folder" />
+                <data android:mimeType="vnd.android.document/directory" />
             </intent-filter>
 
             <!-- Explicit MIME types for all in-app supported file categories (Archive, Text/Code, Image, Video, Audio) -->
@@ -206,6 +240,35 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- DocumentsProvider is disabled because Android DocumentsUI suppresses apps from
+             the drawer application list whenever a DOCUMENTS_PROVIDER is active.
+             Instead, FP File Manager acts directly as an app in the picker drawer,
+             allowing full access to local storage, categories, remotes, bookmarks, etc. -->
+        <!--
+        <provider
+            android:name=".FileManagerDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+        -->
+
+        <!-- Dedicated FileProvider for returning picked file URIs to calling apps -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.filepicker.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filemanager_file_paths" />
+        </provider>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

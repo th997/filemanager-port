@@ -8,3 +8,6 @@
 pub mod api;
 pub mod registry;
 mod frb_generated;
+
+#[cfg(target_os = "android")]
+mod saf_jni;

@@ -580,6 +580,7 @@ mod tests {
             key_id: None,
             key_secret: None,
             private_key: None,
+            passphrase: None,
             path_style: false,
             host_key_fingerprint: None,
         })

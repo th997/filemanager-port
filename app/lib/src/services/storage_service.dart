@@ -423,6 +423,8 @@ class StorageService {
     if (c.port != null) 'port': c.port,
     if (c.username != null) 'username': c.username,
     if (c.password != null) 'password': c.password,
+    if (c.privateKey != null) 'privateKey': c.privateKey,
+    if (c.passphrase != null) 'passphrase': c.passphrase,
     if (c.rootPath != null) 'rootPath': c.rootPath,
     'pathStyle': c.pathStyle,
   };
@@ -441,6 +443,8 @@ class StorageService {
         port: (m['port'] as num?)?.toInt(),
         username: m['username'] as String?,
         password: m['password'] as String?,
+        privateKey: m['privateKey'] as String?,
+        passphrase: m['passphrase'] as String?,
         rootPath: m['rootPath'] as String?,
         pathStyle: m['pathStyle'] as bool? ?? false,
       );

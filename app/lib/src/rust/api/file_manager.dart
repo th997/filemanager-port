@@ -7,8 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `extension_of`, `natural_compare`, `sort_dtos`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `compare_extensions`, `contains_ignore_case`, `dir_cache`, `extension_of`, `invalidate_dir_cache`, `natural_compare`, `sort_dtos`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DirCacheEntry`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 void initDatabase({required String dbPath}) =>
     RustLib.instance.api.crateApiFileManagerInitDatabase(dbPath: dbPath);

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FP文件管理器</string>
+    <string name="internal_storage">内部存储</string>
+    <string name="app_files">应用文件</string>
+    <string name="bookmarks">收藏夹</string>
+    <string name="bookmarked_folders">常用文件夹与位置</string>
 </resources>

@@ -30,6 +30,8 @@ std::wstring ReadRegistryString(HKEY root, const wchar_t* subkey,
                            reinterpret_cast<BYTE*>(result.data()),
                            &byte_len) != ERROR_SUCCESS) {
       result.clear();
+    } else if (!result.empty() && result.back() == L'\0') {
+      result.pop_back();
     }
   }
   ::RegCloseKey(key);
@@ -133,17 +135,24 @@ void RegisterWindowsOpenWithAssociations() {
     return;
   }
 
-  // Register once per executable path so a user who clears the associations is
-  // not overridden on every launch; moving the executable re-registers it.
+  // Register once per executable path and schema version so upgrades apply new
+  // shell entries while avoiding unnecessary registry writes on every launch.
   static const wchar_t* kProgIdPath = L"Software\\Classes\\FPFileManager.Document";
+  static const wchar_t* kRegistrationVersion = L"2";
   if (ReadRegistryString(HKEY_CURRENT_USER, kProgIdPath,
-                         L"RegisteredExecutable") == exe_path) {
+                         L"RegisteredExecutable") == exe_path &&
+      ReadRegistryString(HKEY_CURRENT_USER, kProgIdPath,
+                         L"RegistrationVersion") == kRegistrationVersion) {
     return;
   }
 
   std::wstring open_cmd = L"\"";
   open_cmd += exe_path;
   open_cmd += L"\" \"%1\"";
+
+  std::wstring bg_open_cmd = L"\"";
+  bg_open_cmd += exe_path;
+  bg_open_cmd += L"\" \"%V\"";
 
   std::wstring icon_spec = L"\"";
   icon_spec += exe_path;
@@ -175,7 +184,7 @@ void RegisterWindowsOpenWithAssociations() {
       L"Software\\Classes\\Applications\\filemanager.exe\\shell\\open\\command",
       nullptr, open_cmd.c_str());
 
-  // 3. Register SupportedTypes and OpenWithProgids for all in-app openable extensions
+  // 3. Register SupportedTypes, OpenWithProgids, and Windows Default Apps Capabilities
   static const wchar_t* kSupportedExtensions[] = {
       L".zip", L".apk", L".apkm", L".apks", L".obb", L".cbz", L".jar", L".tar", L".tgz", L".gz", L".7z", L".epub", L".txt", L".md", L".markdown", L".json", L".jsonc", L".json5", L".geojson", L".topojson", L".map", L".lock", L".yaml", L".yml", L".xml", L".plist", L".svg", L".rs", L".dart", L".c", L".cpp", L".cc", L".h", L".hpp", L".py", L".js", L".mjs", L".jsx", L".ts", L".tsx", L".html", L".htm", L".xhtml", L".css", L".toml", L".sh", L".bash", L".zsh", L".log", L".ini", L".cfg", L".csv", L".java", L".kt", L".go", L".swift", L".sql", L".properties", L".diff", L".patch", L".conf", L".gradle", L".dockerfile", L".jpg", L".jpeg", L".png", L".gif", L".webp", L".bmp", L".heic", L".heif", L".mp4", L".mkv", L".avi", L".mov", L".webm", L".flv", L".3gp", L".m4v", L".wmv", L".rmvb", L".rm", L".vob", L".ogv", L".m2ts", L".mts", L".f4v", L".asf", L".divx", L".mpg", L".mpeg", L".mp3", L".flac", L".wav", L".ogg", L".m4a", L".aac", L".opus", L".wma", L".amr", L".ape", L".alac", L".aiff", L".mka", L".oga", L".wv", L".mid"
   };
@@ -187,6 +196,18 @@ void RegisterWindowsOpenWithAssociations() {
       0, nullptr, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
       &supported_types_key, nullptr);
 
+  static const wchar_t* kCapabilitiesPath = L"Software\\FPFileManager\\Capabilities";
+  static const wchar_t* kCapabilitiesAssocPath =
+      L"Software\\FPFileManager\\Capabilities\\FileAssociations";
+  SetRegistryStringValue(HKEY_CURRENT_USER, kCapabilitiesPath,
+                         L"ApplicationName", L"FP File Manager");
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER, kCapabilitiesPath, L"ApplicationDescription",
+      L"Browse local, remote, and archive files with FP File Manager");
+  SetRegistryStringValue(HKEY_CURRENT_USER,
+                         L"Software\\RegisteredApplications",
+                         L"FPFileManager", kCapabilitiesPath);
+
   for (const wchar_t* ext : kSupportedExtensions) {
     if (supported_types_key != nullptr) {
       ::RegSetValueExW(supported_types_key, ext, 0, REG_SZ,
@@ -197,13 +218,20 @@ void RegisterWindowsOpenWithAssociations() {
     ext_progids_key += L"\\OpenWithProgids";
     SetRegistryNoneValue(HKEY_CURRENT_USER, ext_progids_key.c_str(),
                          L"FPFileManager.Document");
+    SetRegistryStringValue(HKEY_CURRENT_USER, kCapabilitiesAssocPath, ext,
+                           L"FPFileManager.Document");
   }
 
   if (supported_types_key != nullptr) {
     ::RegCloseKey(supported_types_key);
   }
 
-  // 4. Register folder context menu entry: HKCU\Software\Classes\Directory\shell\FPFileManager
+  // Fallback wildcard "Open with" entry for arbitrary files
+  SetRegistryNoneValue(HKEY_CURRENT_USER,
+                       L"Software\\Classes\\*\\OpenWithProgids",
+                       L"FPFileManager.Document");
+
+  // 4. Register folder, folder background, and drive context menu entries
   SetRegistryStringValue(
       HKEY_CURRENT_USER,
       L"Software\\Classes\\Directory\\shell\\FPFileManager", nullptr,
@@ -217,7 +245,35 @@ void RegisterWindowsOpenWithAssociations() {
       L"Software\\Classes\\Directory\\shell\\FPFileManager\\command",
       nullptr, open_cmd.c_str());
 
-  // 5. Remember which executable the associations point at.
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER,
+      L"Software\\Classes\\Directory\\Background\\shell\\FPFileManager",
+      nullptr, L"Open with FP File Manager");
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER,
+      L"Software\\Classes\\Directory\\Background\\shell\\FPFileManager",
+      L"Icon", icon_spec.c_str());
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER,
+      L"Software\\Classes\\Directory\\Background\\shell\\FPFileManager\\command",
+      nullptr, bg_open_cmd.c_str());
+
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER,
+      L"Software\\Classes\\Drive\\shell\\FPFileManager", nullptr,
+      L"Open with FP File Manager");
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER,
+      L"Software\\Classes\\Drive\\shell\\FPFileManager", L"Icon",
+      icon_spec.c_str());
+  SetRegistryStringValue(
+      HKEY_CURRENT_USER,
+      L"Software\\Classes\\Drive\\shell\\FPFileManager\\command",
+      nullptr, open_cmd.c_str());
+
+  // 5. Remember which executable and schema version the associations point at.
   SetRegistryStringValue(HKEY_CURRENT_USER, kProgIdPath,
                          L"RegisteredExecutable", exe_path);
+  SetRegistryStringValue(HKEY_CURRENT_USER, kProgIdPath,
+                         L"RegistrationVersion", kRegistrationVersion);
 }

@@ -427,6 +427,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get pdfMarginCompact => 'コンパクト (16pt)';
 
   @override
+  String get pickFileTitle => 'ファイルを選択';
+
+  @override
+  String get pickFilesTitle => 'ファイルを選択';
+
+  @override
   String get playbackSpeed => '再生速度';
 
   @override
@@ -525,6 +531,11 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get selectAll => 'すべて選択';
+
+  @override
+  String selectCount(int count) {
+    return '選択 ($count)';
+  }
 
   @override
   String get selectFolderToUpload => 'アップロードするフォルダーを選択';
@@ -932,6 +943,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get hiddenLabel => '隠しファイル';
 
   @override
+  String get hiddenFilesOff => '非表示ファイルを除く';
+
+  @override
   String get symlinkLabel => 'シンボリックリンク';
 
   @override
@@ -995,6 +1009,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get hideHiddenFolders => '隠しフォルダを非表示';
+
+  @override
+  String get showAllFileTypes => 'すべてのファイル';
 
   @override
   String get showHiddenFolders => '隠しフォルダを表示';
@@ -1128,6 +1145,16 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get first200Results => '最初の 200 件を表示中（さらに表示するには検索を絞り込んでください）';
+
+  @override
+  String searchResultsInFolder(int count) {
+    return 'このフォルダーとサブフォルダー内の結果：$count';
+  }
+
+  @override
+  String searchFoundCount(int count) {
+    return '$count 件見つかりました';
+  }
 
   @override
   String get currentFolder => '現在のフォルダ';
@@ -1372,6 +1399,15 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get saveChangesTooltip => '変更を保存 (Ctrl+S)';
+
+  @override
+  String get saveAs => '名前を付けて保存...';
+
+  @override
+  String get saveToThisFolder => 'このフォルダに保存';
+
+  @override
+  String get savedToCachePrompt => 'アプリキャッシュに保存されました。「名前を付けて保存」で端末に保存できます';
 
   @override
   String get savedLabel => '保存済み';
@@ -1627,6 +1663,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get moreOptions => 'その他のオプション';
+
+  @override
+  String get moreBelow => '下に続きあり';
 
   @override
   String get zoomInShortcut => '拡大 (+)';
@@ -2177,6 +2216,44 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get hidePassword => 'パスワードを非表示';
+
+  @override
+  String get authMethod => '認証方式';
+
+  @override
+  String get authPassword => 'パスワード';
+
+  @override
+  String get authPrivateKey => '秘密鍵';
+
+  @override
+  String get privateKeyLabel => '秘密鍵';
+
+  @override
+  String get privateKeyHint => 'ここにOpenSSH / PEM形式の秘密鍵を貼り付けます';
+
+  @override
+  String get privateKeyRequired => '秘密鍵を入力してください';
+
+  @override
+  String get selectKeyFile => '鍵ファイルを選択';
+
+  @override
+  String get passphraseLabel => 'パスフレーズ（任意）';
+
+  @override
+  String get passphraseHint => '鍵が暗号化されていない場合は空欄';
+
+  @override
+  String get showPassphrase => 'パスフレーズを表示';
+
+  @override
+  String get hidePassphrase => 'パスフレーズを非表示';
+
+  @override
+  String failedToReadKeyFile(String error) {
+    return '鍵ファイルの読み込みに失敗しました: $error';
+  }
 
   @override
   String get hostIp => 'ホスト / IP';

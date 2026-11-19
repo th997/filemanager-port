@@ -1996,8 +1996,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RemoteConfigDto dco_decode_remote_config_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return RemoteConfigDto(
       id: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
@@ -2011,8 +2011,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       port: dco_decode_opt_box_autoadd_u_16(arr[9]),
       username: dco_decode_opt_String(arr[10]),
       password: dco_decode_opt_String(arr[11]),
-      rootPath: dco_decode_opt_String(arr[12]),
-      pathStyle: dco_decode_bool(arr[13]),
+      privateKey: dco_decode_opt_String(arr[12]),
+      passphrase: dco_decode_opt_String(arr[13]),
+      rootPath: dco_decode_opt_String(arr[14]),
+      pathStyle: dco_decode_bool(arr[15]),
     );
   }
 
@@ -2430,6 +2432,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_port = sse_decode_opt_box_autoadd_u_16(deserializer);
     var var_username = sse_decode_opt_String(deserializer);
     var var_password = sse_decode_opt_String(deserializer);
+    var var_privateKey = sse_decode_opt_String(deserializer);
+    var var_passphrase = sse_decode_opt_String(deserializer);
     var var_rootPath = sse_decode_opt_String(deserializer);
     var var_pathStyle = sse_decode_bool(deserializer);
     return RemoteConfigDto(
@@ -2445,6 +2449,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       port: var_port,
       username: var_username,
       password: var_password,
+      privateKey: var_privateKey,
+      passphrase: var_passphrase,
       rootPath: var_rootPath,
       pathStyle: var_pathStyle,
     );
@@ -2845,6 +2851,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_16(self.port, serializer);
     sse_encode_opt_String(self.username, serializer);
     sse_encode_opt_String(self.password, serializer);
+    sse_encode_opt_String(self.privateKey, serializer);
+    sse_encode_opt_String(self.passphrase, serializer);
     sse_encode_opt_String(self.rootPath, serializer);
     sse_encode_bool(self.pathStyle, serializer);
   }

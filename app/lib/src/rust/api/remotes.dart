@@ -40,6 +40,8 @@ class RemoteConfigDto {
   final int? port;
   final String? username;
   final String? password;
+  final String? privateKey;
+  final String? passphrase;
   final String? rootPath;
   final bool pathStyle;
 
@@ -56,6 +58,8 @@ class RemoteConfigDto {
     this.port,
     this.username,
     this.password,
+    this.privateKey,
+    this.passphrase,
     this.rootPath,
     required this.pathStyle,
   });
@@ -74,6 +78,8 @@ class RemoteConfigDto {
       port.hashCode ^
       username.hashCode ^
       password.hashCode ^
+      privateKey.hashCode ^
+      passphrase.hashCode ^
       rootPath.hashCode ^
       pathStyle.hashCode;
 
@@ -94,6 +100,8 @@ class RemoteConfigDto {
           port == other.port &&
           username == other.username &&
           password == other.password &&
+          privateKey == other.privateKey &&
+          passphrase == other.passphrase &&
           rootPath == other.rootPath &&
           pathStyle == other.pathStyle;
 }

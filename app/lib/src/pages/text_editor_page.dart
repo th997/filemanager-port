@@ -8,10 +8,12 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/folder_picker_dialog.dart';
 import '../rust/api/file_manager.dart';
 import '../services/file_open_service.dart';
 import '../services/highlight_service.dart';
 import '../services/markdown_pdf_service.dart';
+import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../theme/markdown_themes.dart';
@@ -49,6 +51,10 @@ class TextEditorPage extends StatefulWidget {
 
 class _TextEditorPageState extends State<TextEditorPage> {
   late final SyntaxHighlightingEditingController _controller;
+  late String _root;
+  late String _path;
+  late String _fileName;
+  late bool _readOnly;
   bool _loading = true;
   bool _saving = false;
   bool _isDirty = false;
@@ -187,15 +193,25 @@ class _TextEditorPageState extends State<TextEditorPage> {
   int _cachedLines = 1;
   int? _cachedWords = 0;
 
-  String get _lowerName => widget.fileName.toLowerCase();
+  bool get _isTemporaryInbox =>
+      _root.contains('/cache/inbox') ||
+      _root.contains('\\cache\\inbox') ||
+      _root.endsWith('/inbox') ||
+      _root.endsWith('\\inbox');
+
+  String get _lowerName => _fileName.toLowerCase();
   bool get _isMarkdown => _lowerName.endsWith('.md') || _lowerName.endsWith('.markdown');
   bool get _isHtml => _lowerName.endsWith('.html') || _lowerName.endsWith('.htm') || _lowerName.endsWith('.xhtml');
 
   @override
   void initState() {
     super.initState();
+    _root = widget.root;
+    _path = widget.path;
+    _fileName = widget.fileName;
+    _readOnly = widget.readOnly;
     _controller = SyntaxHighlightingEditingController(
-      fileName: widget.fileName,
+      fileName: _fileName,
       brightnessProvider: () => Theme.of(context).brightness,
       fontSizeProvider: () => _fontSize,
     );
@@ -320,7 +336,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     setState(() {
       _showFind = true;
-      if (replace && !widget.readOnly) _showReplace = true;
+      if (replace && !_readOnly) _showReplace = true;
     });
     _findFocusNode.requestFocus();
     _updateMatches(jumpToMatch: false);
@@ -437,7 +453,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   /// Replaces the currently selected match. Matching is case-insensitive,
   /// mirroring find; the replacement text is inserted verbatim.
   void _replaceCurrent() {
-    if (widget.readOnly) return;
+    if (_readOnly) return;
     _ensureEditing();
     if (_matchIndices.isEmpty) return;
     final query = _findController.text;
@@ -462,7 +478,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   void _replaceAll() {
-    if (widget.readOnly) return;
+    if (_readOnly) return;
     _ensureEditing();
     final query = _findController.text;
     if (query.isEmpty) return;
@@ -661,7 +677,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     });
 
     try {
-      final content = await readTextFile(root: widget.root, path: widget.path);
+      final content = await readTextFile(root: _root, path: _path);
       if (mounted) {
         _clearLineCache();
         // Large preview files (> 128KB) automatically switch to code mode to avoid
@@ -719,8 +735,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final savedText = _controller.text;
     try {
       await writeTextFile(
-        root: widget.root,
-        path: widget.path,
+        root: _root,
+        path: _path,
         content: savedText,
       );
       // Edits made while the write was in flight keep the file dirty.
@@ -730,6 +746,108 @@ class _TextEditorPageState extends State<TextEditorPage> {
           _isDirty = _controller.text != savedText;
         });
         _webViewController?.reload();
+        if (_isTemporaryInbox) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context).savedToCachePrompt),
+              action: SnackBarAction(
+                label: AppLocalizations.of(context).saveAs,
+                onPressed: _saveAs,
+              ),
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context).fileSavedSuccess)),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).saveFailed('$e')), backgroundColor: Theme.of(context).colorScheme.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveAs() async {
+    if (_loading || _error != null || _saving) return;
+
+    final initialRoot = _isTemporaryInbox ? PlatformPaths.defaultRoot() : _root;
+    final initialPath = _isTemporaryInbox
+        ? ''
+        : (_path.contains('/') ? _path.substring(0, _path.lastIndexOf('/')) : '');
+
+    final dest = await FolderPickerDialog.show(
+      context,
+      title: AppLocalizations.of(context).saveAs,
+      initialRoot: initialRoot,
+      initialPath: initialPath,
+      confirmLabel: AppLocalizations.of(context).saveToThisFolder,
+    );
+    if (dest == null || !mounted) return;
+
+    final nameController = TextEditingController(text: _fileName);
+    final confirmedName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(AppLocalizations.of(context).saveAs),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: AppLocalizations.of(context).fileNameLabel,
+            hintText: AppLocalizations.of(context).fileNameHint,
+            border: const OutlineInputBorder(),
+          ),
+          onSubmitted: (val) {
+            final t = val.trim();
+            if (t.isNotEmpty) Navigator.of(ctx).pop(t);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(AppLocalizations.of(context).cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              final val = nameController.text.trim();
+              if (val.isNotEmpty) Navigator.of(ctx).pop(val);
+            },
+            child: Text(AppLocalizations.of(context).save),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmedName == null || confirmedName.isEmpty || !mounted) return;
+
+    setState(() => _saving = true);
+    final savedText = _controller.text;
+    final destRel = dest.relPath.isEmpty ? confirmedName : '${dest.relPath}/$confirmedName';
+
+    try {
+      await writeTextFile(
+        root: dest.root,
+        path: destRel,
+        content: savedText,
+      );
+
+      if (mounted) {
+        setState(() {
+          _root = dest.root;
+          _path = destRel;
+          _fileName = confirmedName;
+          _readOnly = false;
+          _saving = false;
+          _isDirty = _controller.text != savedText;
+        });
+        _controller.updateFileName(confirmedName);
+        _webViewController?.reload();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context).fileSavedSuccess)),
         );
@@ -738,7 +856,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).saveFailed('$e')), backgroundColor: Theme.of(context).colorScheme.error),
+          SnackBar(
+            content: Text(AppLocalizations.of(context).saveFailed('$e')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     }
@@ -757,14 +878,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
       if (share) {
         await MarkdownPdfService.instance.sharePdf(
           markdown: text,
-          title: widget.fileName,
+          title: _fileName,
           themeConfig: themeConfig,
           marginMode: _pdfMargin,
         );
       } else {
         await MarkdownPdfService.instance.printOrPreview(
           markdown: text,
-          title: widget.fileName,
+          title: _fileName,
           themeConfig: themeConfig,
           marginMode: _pdfMargin,
         );
@@ -832,7 +953,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
       }
     }
     try {
-      await FileOpenService.instance.openWith(widget.root, widget.path);
+      await FileOpenService.instance.openWith(_root, _path);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -847,7 +968,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   void _setMode(TextFileMode mode) {
     if (mode == TextFileMode.preview && !_isMarkdown && !_isHtml) return;
-    if (mode == TextFileMode.edit && widget.readOnly) return;
+    if (mode == TextFileMode.edit && _readOnly) return;
     setState(() => _mode = mode);
   }
 
@@ -863,6 +984,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
         },
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
           if (_isDirty && _error == null) _save();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true): () {
+          if (_error == null) _saveAs();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true, shift: true): () {
+          if (_error == null) _saveAs();
         },
         // The file may have changed on disk (another editor, a sync client);
         // reloading is the only way to see it without leaving the page.
@@ -975,9 +1102,24 @@ class _TextEditorPageState extends State<TextEditorPage> {
           },
           child: Scaffold(
             appBar: AppBar(
-              title: Text(
-                '${widget.fileName}${_isDirty ? ' •' : ''}',
-                overflow: TextOverflow.ellipsis,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$_fileName${_isDirty ? ' •' : ''}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (_isTemporaryInbox)
+                    Text(
+                      AppLocalizations.of(context).temporaryCache,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.normal,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                ],
               ),
               actions: [
                 IconButton(
@@ -1122,7 +1264,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       ],
                     ),
                 ],
-                if (widget.readOnly)
+                if (_readOnly)
                   IconButton(
                     icon: Icon(Icons.lock_outline),
                     tooltip: AppLocalizations.of(context).readOnlyCannotEditTooltip,
@@ -1178,6 +1320,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         _openInBrowser();
                       } else if (val == 'reload') {
                         _reload();
+                      } else if (val == 'save_as') {
+                        _saveAs();
                       } else if (val == 'copy_all') {
                         Clipboard.setData(ClipboardData(text: _controller.text));
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1197,6 +1341,16 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             ],
                           ),
                         ),
+                      PopupMenuItem(
+                        value: 'save_as',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.save_as_outlined, size: 20),
+                            const SizedBox(width: 8),
+                            Text(AppLocalizations.of(context).saveAs),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem(
                         value: 'reload',
                         child: Row(
@@ -1310,7 +1464,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       )
                     : Column(
                         children: [
-                          if (widget.readOnly)
+                          if (_readOnly)
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -1394,7 +1548,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
             tooltip: AppLocalizations.of(context).nextMatch,
             onPressed: _matchIndices.isEmpty ? null : _nextMatch,
           ),
-          if (!widget.readOnly)
+          if (!_readOnly)
             IconButton(
               icon: Icon(
                 _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
@@ -1413,7 +1567,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           ),
             ],
           ),
-          if (_showReplace && !widget.readOnly)
+          if (_showReplace && !_readOnly)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Row(
@@ -1508,7 +1662,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                   ],
                 ),
                 const Divider(),
-                _statRow(AppLocalizations.of(context).fileLabel, widget.fileName),
+                _statRow(AppLocalizations.of(context).fileLabel, _fileName),
                 _statRow(AppLocalizations.of(context).linesLabel, '$lines'),
                 _statRow(AppLocalizations.of(context).wordsLabel, '$words'),
                 _statRow(AppLocalizations.of(context).charactersLabel, '$chars'),
@@ -1569,7 +1723,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     final lines = _cachedLines;
     final words = _cachedWords;
-    final modeLabel = widget.readOnly
+    final modeLabel = _readOnly
         ? AppLocalizations.of(context).readOnlyLocation
         : _mode == TextFileMode.preview
             ? AppLocalizations.of(context).previewModeLabel
@@ -1645,7 +1799,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                         fontFamilyFallback: MarkdownThemeConfig.fontFamilyFallback,
                       ),
                     ),
-                    if (!widget.readOnly) ...[
+                    if (!_readOnly) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.edit, size: 16),
@@ -1684,8 +1838,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
           );
         }
         return HtmlPreviewWidget(
-          root: widget.root,
-          path: widget.path,
+          root: _root,
+          path: _path,
           rawHtml: _controller.text,
           isDirty: _isDirty,
           fontSize: _fontSize,
@@ -1760,7 +1914,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
     final span = HighlightService.instance.spanFor(
       text,
-      widget.fileName,
+      _fileName,
       brightness,
       fontSize: _fontSize,
     );
@@ -2056,7 +2210,7 @@ class _SpanWalker {
 }
 
 class SyntaxHighlightingEditingController extends TextEditingController {
-  final String fileName;
+  String fileName;
   final Brightness Function() brightnessProvider;
   final double Function()? fontSizeProvider;
 
@@ -2070,6 +2224,11 @@ class SyntaxHighlightingEditingController extends TextEditingController {
     required this.brightnessProvider,
     this.fontSizeProvider,
   });
+
+  void updateFileName(String newName) {
+    fileName = newName;
+    notifyListeners();
+  }
 
   void updateSearch({
     String? query,

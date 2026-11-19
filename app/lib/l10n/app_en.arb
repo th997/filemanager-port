@@ -1,9 +1,39 @@
 {
   "@@locale": "en",
-  "@quickDrive": {"placeholders": {"letter": {"type": "String"}}},
-  "@monthYearLabel": {"placeholders": {"month": {"type": "String"}, "year": {"type": "int"}}},
-  "@selectedCountLabel": {"placeholders": {"count": {"type": "int"}}},
-  "@selectedCountBytesLabel": {"placeholders": {"count": {"type": "int"}, "size": {"type": "String"}}},
+  "@quickDrive": {
+    "placeholders": {
+      "letter": {
+        "type": "String"
+      }
+    }
+  },
+  "@monthYearLabel": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      },
+      "year": {
+        "type": "int"
+      }
+    }
+  },
+  "@selectedCountLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@selectedCountBytesLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "aboutSection": "About & System",
   "accentClassicBlue": "Classic blue",
   "accentColor": "Accent color",
@@ -35,7 +65,13 @@
   "cancelling": "Cancelling…",
   "cannotCancelTask": "This task cannot be cancelled",
   "cannotClearFinishedTasks": "{count} finished task(s) could not be cleared",
-  "@cannotClearFinishedTasks": {"placeholders": {"count": {"type": "int"}}},
+  "@cannotClearFinishedTasks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "cannotDismissTask": "Could not dismiss task",
   "change": "Change",
   "clear": "Clear",
@@ -46,52 +82,124 @@
   "cloudToolsSettings": "Cloud, Tools & Settings",
   "completed": "Completed",
   "compressFailed": "Compress failed: {error}",
-  "@compressFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@compressFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "compressing": "Compressing…",
   "connectServer": "Connect a server",
   "copyError": "Copy Error",
   "copyFailed": "Copy failed: {error}",
-  "@copyFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@copyFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "copyPassword": "Copy password",
   "copyUrl": "Copy URL",
   "copyingFiles": "Copying files…",
   "create": "Create",
   "createdCandidate": "Created \"{name}\"",
-  "@createdCandidate": {"placeholders": {"name": {"type": "String"}}},
+  "@createdCandidate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "creatingCopy": "Creating copy…",
   "darkTheme": "Dark theme",
   "delete": "Delete",
   "deleteFailed": "Delete failed: {error}",
-  "@deleteFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@deleteFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "deletedCount": "Deleted {count} items",
-  "@deletedCount": {"placeholders": {"count": {"type": "int"}}},
+  "@deletedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "deleting": "Deleting…",
   "descending": "Descending",
   "desktopHtmlPreviewHint": "Desktop HTML preview is simplified. For full JS/CSS styling, open in browser.",
   "dismiss": "Dismiss",
   "downloadDestination": "Select Download Destination",
   "downloadFailed": "Download failed: {error}",
-  "@downloadFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@downloadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "downloadedTo": "Downloaded to {path}",
-  "@downloadedTo": {"placeholders": {"path": {"type": "String"}}},
+  "@downloadedTo": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
   "downloadingFile": "Downloading {file}…",
-  "@downloadingFile": {"placeholders": {"file": {"type": "String"}}},
+  "@downloadingFile": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
   "downloadingFiles": "Downloading files…",
   "downloadingItem": "Downloading {name}…",
-  "@downloadingItem": {"placeholders": {"name": {"type": "String"}}},
+  "@downloadingItem": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "duplicateFailed": "Duplicate failed: {error}",
-  "@duplicateFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@duplicateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "emptyRecycleBin": "Empty Recycle Bin",
   "endpointHintS3": "Endpoint (Optional for AWS, required for MinIO/R2)",
   "endpointHintGeneric": "Endpoint (e.g. https://oss-cn-hangzhou.aliyuncs.com)",
   "errorCopied": "Error copied to clipboard",
   "exportPreviewCache": "Export & Preview Cache",
   "extractFailed": "Extract failed: {error}",
-  "@extractFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@extractFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "extracting": "Extracting…",
   "failed": "Failed",
   "failedToCreate": "Failed to create: {error}",
-  "@failedToCreate": {"placeholders": {"error": {"type": "String"}}},
+  "@failedToCreate": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "finalizingServer": "Finalizing (server processing)…",
   "folderLabel": "Folder",
   "folderName": "Folder Name",
@@ -99,15 +207,45 @@
   "gallery": "Gallery",
   "homeDashboard": "Home Dashboard",
   "hoursLeft": "About {hours} hours left",
-  "@hoursLeft": {"placeholders": {"hours": {"type": "int"}}},
+  "@hoursLeft": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
   "hoursMinutesLeft": "About {hours} hr {minutes} min left",
-  "@hoursMinutesLeft": {"placeholders": {"hours": {"type": "int"}, "minutes": {"type": "int"}}},
+  "@hoursMinutesLeft": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "inProgress": "In progress",
   "invertSelection": "Invert Selection",
   "itemsCount": "{count} items",
-  "@itemsCount": {"placeholders": {"count": {"type": "int"}}},
+  "@itemsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "itemsOutOfTotal": "{completed} of {total} items",
-  "@itemsOutOfTotal": {"placeholders": {"completed": {"type": "int"}, "total": {"type": "int"}}},
+  "@itemsOutOfTotal": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "lanSharing": "LAN HTTP Web Sharing",
   "language": "Language",
   "languageSystem": "Follow system",
@@ -116,7 +254,13 @@
   "mediaPlayback": "Media Playback (Remote Buffer)",
   "minimize": "Minimize",
   "minutesLeft": "About {minutes} min left",
-  "@minutesLeft": {"placeholders": {"minutes": {"type": "int"}}},
+  "@minutesLeft": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
   "monthYearLabel": "{month} {year}",
   "monthSeptember": "September",
   "monthOctober": "October",
@@ -131,7 +275,13 @@
   "monthAugust": "August",
   "monthApril": "April",
   "moveFailed": "Move failed: {error}",
-  "@moveFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@moveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "movingFiles": "Moving files…",
   "newBucket": "New Bucket",
   "newFile": "New File",
@@ -147,6 +297,8 @@
   "pdfMarginStandard": "Standard (36pt)",
   "pdfMarginRelaxed": "Relaxed (54pt)",
   "pdfMarginCompact": "Compact (16pt)",
+  "pickFileTitle": "Select File",
+  "pickFilesTitle": "Select Files",
   "playbackSpeed": "Playback Speed",
   "pleaseSelectSpecificFolder": "Please select a specific folder to upload",
   "port": "Port",
@@ -170,7 +322,13 @@
   "remoteArchiveCache": "Remote Archive Cache",
   "retry": "Retry",
   "retryFailed": "Retry failed: {error}",
-  "@retryFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@retryFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "runInBackground": "Background",
   "runningOnLan": "🟢 Running on LAN",
   "save": "Save",
@@ -178,8 +336,22 @@
   "scriptEnabledTooltip": "Scripts enabled: page can access files in shared dir, click to disable",
   "searchFiles": "Search files",
   "secondsLeft": "About {seconds} sec left",
-  "@secondsLeft": {"placeholders": {"seconds": {"type": "int"}}},
+  "@secondsLeft": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "selectAll": "Select All",
+  "selectCount": "Select ({count})",
+  "@selectCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "selectFolderToUpload": "Select Folder to Upload",
   "selectItems": "Select items",
   "selectedCountLabel": "{count} selected",
@@ -189,12 +361,24 @@
   "shareInstructions": "Open the following URL in a browser on the same Wi-Fi to access (contains token, do not share publicly):",
   "sharePasswordLabel": "Password",
   "sharePasswordNotice": "Generated share password: {pwd}",
-  "@sharePasswordNotice": {"placeholders": {"pwd": {"type": "String"}}},
+  "@sharePasswordNotice": {
+    "placeholders": {
+      "pwd": {
+        "type": "String"
+      }
+    }
+  },
   "shared": "Shared",
   "sharedPathCopied": "Shared path copied",
   "showHiddenFiles": "Show hidden files",
   "skippedAlreadyExists": "{count} items skipped (already exist)",
-  "@skippedAlreadyExists": {"placeholders": {"count": {"type": "int"}}},
+  "@skippedAlreadyExists": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sortBy": "Sort By",
   "splitView": "Split view",
   "stopped": "⚪ Stopped",
@@ -225,7 +409,13 @@
   "toolbarBackHistory": "Back in history (Alt+←)",
   "transferring": "Transferring…",
   "trashCountNotice": "{count} items in trash",
-  "@trashCountNotice": {"placeholders": {"count": {"type": "int"}}},
+  "@trashCountNotice": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "unknownDate": "Unknown date",
   "upload": "Upload",
   "uploadFiles": "Upload Files",
@@ -235,9 +425,21 @@
   "uploadWithSystemPicker": "Upload using system file picker",
   "uploadWithSystemPickerDesc": "Directly invokes native OS file picker, supporting system bookmarks and path paste",
   "uploadingFolder": "Uploading folder \"{folder}\"…",
-  "@uploadingFolder": {"placeholders": {"folder": {"type": "String"}}},
+  "@uploadingFolder": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
   "uploadingItems": "Uploading {count} items…",
-  "@uploadingItems": {"placeholders": {"count": {"type": "int"}}},
+  "@uploadingItems": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "urlCopied": "URL copied to clipboard",
   "utilities": "Utilities",
   "waiting": "Waiting…",
@@ -378,6 +580,7 @@
   "sizeLabel": "Size",
   "modifiedLabel": "Modified",
   "hiddenLabel": "Hidden",
+  "hiddenFilesOff": "hidden files off",
   "symlinkLabel": "Symlink",
   "directoryLabel": "Directory",
   "directoryEmptyLabel": "Directory (empty)",
@@ -415,6 +618,7 @@
   "noSubfolders": "No subfolders",
   "noMatchingSubfolders": "No matching subfolders",
   "hideHiddenFolders": "Hide hidden folders",
+  "showAllFileTypes": "All files",
   "showHiddenFolders": "Show hidden folders",
   "hideHiddenFiles": "Hide hidden files",
   "filterSubfoldersHint": "Filter subfolders...",
@@ -535,6 +739,22 @@
   },
   "searchedThisAndSubfolders": "Searched this folder and its subfolders.",
   "first200Results": "First 200 results (narrow the search to see more)",
+  "searchResultsInFolder": "Results in this folder and subfolders: {count}",
+  "@searchResultsInFolder": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchFoundCount": "{count} found",
+  "@searchFoundCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "currentFolder": "Current folder",
   "fileBeyondFirstPage": "File is beyond the first page of \"{parent}\"; open the folder to view it.",
   "@fileBeyondFirstPage": {
@@ -739,6 +959,9 @@
   "marginsSpacing": "Margins / Spacing",
   "readOnlyCannotEditTooltip": "Read-only location — this file cannot be edited here",
   "saveChangesTooltip": "Save changes (Ctrl+S)",
+  "saveAs": "Save As...",
+  "saveToThisFolder": "Save to this folder",
+  "savedToCachePrompt": "Saved to app cache. Tap Save As to save to device storage.",
   "savedLabel": "Saved",
   "editLabel": "Edit",
   "textOptions": "Text Options",
@@ -934,6 +1157,7 @@
   "rotate90Shortcut": "Rotate 90° (R)",
   "deleteImage": "Delete Image",
   "moreOptions": "More options",
+  "moreBelow": "more below",
   "zoomInShortcut": "Zoom in (+)",
   "zoomOutShortcut": "Zoom out (-)",
   "resetZoomShortcut": "Reset zoom (0)",
@@ -1405,6 +1629,25 @@
   "password": "Password",
   "showPassword": "Show password",
   "hidePassword": "Hide password",
+  "authMethod": "Authentication Method",
+  "authPassword": "Password",
+  "authPrivateKey": "Private Key",
+  "privateKeyLabel": "Private Key",
+  "privateKeyHint": "Paste OpenSSH / PEM private key content here",
+  "privateKeyRequired": "Private key is required",
+  "selectKeyFile": "Select Key File",
+  "passphraseLabel": "Passphrase (Optional)",
+  "passphraseHint": "Leave empty if key is not encrypted",
+  "showPassphrase": "Show passphrase",
+  "hidePassphrase": "Hide passphrase",
+  "failedToReadKeyFile": "Failed to read key file: {error}",
+  "@failedToReadKeyFile": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "hostIp": "Host / IP",
   "hostRequired": "Host is required",
   "numbersOnly": "Numbers only",

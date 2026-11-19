@@ -15,6 +15,9 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
+    NSApp.servicesProvider = self
+    NSUpdateDynamicServices()
+
     if let controller = mainFlutterWindow?.contentViewController as? FlutterViewController {
       let channel = FlutterMethodChannel(
         name: "com.github.th997.filemanager/open_file",
@@ -32,6 +35,25 @@ class AppDelegate: FlutterAppDelegate {
         }
       }
     }
+  }
+
+  @objc func openInFileManager(
+    _ pboard: NSPasteboard,
+    userData: String?,
+    error: AutoreleasingUnsafeMutablePointer<NSString>
+  ) {
+    var targetPath: String?
+    if let urls = pboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+       let first = urls.first {
+      targetPath = first.path
+    } else if let paths = pboard.propertyList(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) as? [String],
+              let first = paths.first {
+      targetPath = first
+    }
+
+    guard let path = targetPath, !path.isEmpty else { return }
+    NSApp.activate(ignoringOtherApps: true)
+    AppDelegate.dispatchOpenedFile(path)
   }
 
   private static func dispatchOpenedFile(_ path: String) {

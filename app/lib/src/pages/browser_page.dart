@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../dialogs/download_prompt_dialog.dart';
 import '../dialogs/file_picker_dialog.dart';
@@ -13,8 +14,10 @@ import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/task_progress_dialog.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
+import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/error_text.dart';
+import '../services/external_file_service.dart';
 import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
 import '../services/permission_service.dart';
@@ -72,12 +75,18 @@ class BrowserPage extends StatefulWidget {
   /// split host to restore the left pane's location on exit).
   final void Function(String root, String path)? onLocationChanged;
 
+  /// When set, the browser acts as a file picker for another app's
+  /// GET_CONTENT / PICK request: taps select instead of open, and the
+  /// result is popped as a list of local paths.
+  final ExternalPickRequest? pickRequest;
+
   const BrowserPage({
     super.key,
     required this.initialRoot,
     this.initialPath = '',
     this.embedded = false,
     this.onLocationChanged,
+    this.pickRequest,
   });
 
   @override
@@ -216,6 +225,20 @@ class BrowserPageState extends State<BrowserPage> {
   // Multi-selection state
   bool _isSelecting = false;
 
+  bool get _pickMode => widget.pickRequest != null;
+  bool get _pickMultiple => widget.pickRequest?.allowMultiple ?? false;
+  bool _applyMimeFilter = true;
+
+  List<EntryItem> get _selectedItems => _entries
+      .where((e) => _selectedPaths.contains(_fullEntryPath(e)) && (!_pickMode || !e.isDir))
+      .toList();
+
+  List<EntryItem> get _visibleSearchResults => (_pickMode && _applyMimeFilter)
+      ? _searchResults
+          .where((e) => e.isDir || widget.pickRequest!.matchesFileName(e.name))
+          .toList()
+      : _searchResults;
+
   /// Anchor index (into the visible list) for Shift+click range selection.
   int? _selectionAnchor;
 
@@ -260,6 +283,8 @@ class BrowserPageState extends State<BrowserPage> {
     super.initState();
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
+    _applyMimeFilter = widget.pickRequest?.hasTypeFilter ?? false;
+    if (_pickMode) _clearPickCache();
     _loadViewPreferences();
     _scrollController.addListener(_onScroll);
     PreferencesService.toolbarAtBottom.addListener(_onToolbarPositionChanged);
@@ -733,6 +758,14 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   void _openEntry(EntryItem item) {
+    if (_pickMode && !item.isDir) {
+      if (_pickMultiple) {
+        _toggleSelect(_fullEntryPath(item));
+      } else {
+        _finishPick([item]);
+      }
+      return;
+    }
     if (_isSelecting) {
       _toggleSelect(_fullEntryPath(item));
       return;
@@ -993,9 +1026,56 @@ class BrowserPageState extends State<BrowserPage> {
   /// the VFS location, which the viewer exports lazily when each image is
   /// actually shown.
   (List<ImageViewerEntry>, int) _imageSiblings(EntryItem item) {
+    final native = isNativeRoot(_root);
+    if (native && _hasMore && _filterQuery.isEmpty) {
+      try {
+        final folderPath = _relPath.isEmpty ? _root : joinNative(_root, _relPath);
+        final dir = Directory(folderPath);
+        if (dir.existsSync()) {
+          final files = dir.listSync(followLinks: false).whereType<File>().where((f) {
+            final name = f.path.split(Platform.pathSeparator).last;
+            if (name.startsWith('.')) return false;
+            final dot = name.lastIndexOf('.');
+            if (dot < 0 || dot == name.length - 1) return false;
+            final ext = name.substring(dot + 1).toLowerCase();
+            return EntryItem.isImageExtension(ext);
+          }).toList();
+          if (files.isNotEmpty) {
+            if (_sortField == SortField.name) {
+              files.sort((a, b) {
+                final an = a.path.split(Platform.pathSeparator).last.toLowerCase();
+                final bn = b.path.split(Platform.pathSeparator).last.toLowerCase();
+                return _sortAsc ? an.compareTo(bn) : bn.compareTo(an);
+              });
+            } else if (_sortField == SortField.modified) {
+              files.sort((a, b) {
+                final am = a.statSync().modified;
+                final bm = b.statSync().modified;
+                return _sortAsc ? am.compareTo(bm) : bm.compareTo(am);
+              });
+            } else if (_sortField == SortField.size) {
+              files.sort((a, b) {
+                final as = a.statSync().size;
+                final bs = b.statSync().size;
+                return _sortAsc ? as.compareTo(bs) : bs.compareTo(as);
+              });
+            }
+            final entries = files.map((f) {
+              final name = f.path.split(Platform.pathSeparator).last;
+              return ImageViewerEntry(
+                name: name,
+                localPath: f.path,
+              );
+            }).toList();
+            final index = entries.indexWhere((e) => e.name == item.name);
+            return (entries, index < 0 ? 0 : index);
+          }
+        }
+      } catch (_) {}
+    }
+
     final images = _filteredAndSortedEntries.where((e) => !e.isDir && e.isImage).toList();
     if (images.isEmpty) return (const [], 0);
-    final native = isNativeRoot(_root);
     final entries = images
         .map((e) => native
             ? ImageViewerEntry(
@@ -1132,6 +1212,15 @@ class BrowserPageState extends State<BrowserPage> {
     }
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _clearSearch();
+      }
+    });
+  }
+
   /// Reset all search state (used when leaving search or navigating).
   void _clearSearch() {
     _searchDebounce?.cancel();
@@ -1192,15 +1281,15 @@ class BrowserPageState extends State<BrowserPage> {
           child: Text(
             _searchResults.length >= 200
                 ? AppLocalizations.of(context).first200Results
-                : '${_searchResults.length} result${_searchResults.length == 1 ? '' : 's'} in this folder and subfolders',
+                : AppLocalizations.of(context).searchResultsInFolder(_visibleSearchResults.length),
             style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: _searchResults.length,
+            itemCount: _visibleSearchResults.length,
             itemBuilder: (ctx, i) {
-              final item = _searchResults[i];
+              final item = _visibleSearchResults[i];
               return ListTile(
                 leading: Icon(item.icon),
                 title: Text(
@@ -1215,7 +1304,15 @@ class BrowserPageState extends State<BrowserPage> {
                 ),
                 trailing:
                     item.isDir ? const Icon(Icons.chevron_right, size: 18) : null,
-                onTap: () => _openSearchResult(item),
+                onTap: () {
+                  if (_pickMode && !_pickMultiple && !item.isDir) {
+                    var rel = item.path;
+                    if (rel.startsWith('/')) rel = rel.substring(1);
+                    _finishPickWith([(item, rel)]);
+                  } else {
+                    _openSearchResult(item);
+                  }
+                },
               );
             },
           ),
@@ -1280,6 +1377,12 @@ class BrowserPageState extends State<BrowserPage> {
   /// Long-press menu for one entry, matching the actions the original app
   /// offers on a file.
   Future<void> _showEntryActions(EntryItem item) async {
+    if (_pickMode) {
+      if (!item.isDir && _pickMultiple) {
+        _toggleSelect(_fullEntryPath(item));
+      }
+      return;
+    }
     HapticFeedback.mediumImpact();
     final action = await showBrowserEntryModalBottomSheet(
       context: context,
@@ -2926,6 +3029,7 @@ class BrowserPageState extends State<BrowserPage> {
   int _filteredCacheLength = -1;
   String _filteredCacheQuery = '';
   bool _filteredCacheShowHidden = false;
+  bool _filteredCacheMimeFilter = false;
   BigInt _cachedTotalListedBytes = BigInt.zero;
 
   List<EntryItem> get _filteredAndSortedEntries {
@@ -2934,7 +3038,8 @@ class BrowserPageState extends State<BrowserPage> {
         identical(_filteredCacheEntries, _entries) &&
         _filteredCacheLength == _entries.length &&
         _filteredCacheQuery == _filterQuery &&
-        _filteredCacheShowHidden == _showHidden) {
+        _filteredCacheShowHidden == _showHidden &&
+        _filteredCacheMimeFilter == _applyMimeFilter) {
       return cached;
     }
     final query = _filterQuery.toLowerCase();
@@ -2942,6 +3047,12 @@ class BrowserPageState extends State<BrowserPage> {
     final result = _entries.where((e) {
       if (!_showHidden && e.hidden) return false;
       if (query.isNotEmpty && !e.nameLower.contains(query)) {
+        return false;
+      }
+      if (_pickMode &&
+          _applyMimeFilter &&
+          !e.isDir &&
+          !widget.pickRequest!.matchesFileName(e.name)) {
         return false;
       }
       if (!e.isDir && e.size != null) {
@@ -2954,6 +3065,7 @@ class BrowserPageState extends State<BrowserPage> {
     _filteredCacheLength = _entries.length;
     _filteredCacheQuery = _filterQuery;
     _filteredCacheShowHidden = _showHidden;
+    _filteredCacheMimeFilter = _applyMimeFilter;
     _cachedTotalListedBytes = totalBytes;
     return result;
   }
@@ -3214,7 +3326,7 @@ class BrowserPageState extends State<BrowserPage> {
         }
       },
       child: Scaffold(
-      appBar: PreferencesService.toolbarAtBottom.value ? null : AppBar(
+      appBar: PreferencesService.toolbarAtBottom.value && !_pickMode ? null : AppBar(
         titleSpacing: MediaQuery.sizeOf(context).width < 600 ? 10 : 4,
         toolbarHeight: MediaQuery.sizeOf(context).width < 600 ? 40 : 46,
         automaticallyImplyLeading: false,
@@ -3227,7 +3339,25 @@ class BrowserPageState extends State<BrowserPage> {
                 tooltip: AppLocalizations.of(context).cancelSelectionEsc,
                 onPressed: _clearSelection,
               )
-            : (MediaQuery.sizeOf(context).width >= 600 && !widget.embedded && Navigator.of(context).canPop()
+            : _pickMode
+                ? (Navigator.of(context).canPop()
+                    ? IconButton(
+                        icon: const Icon(Icons.arrow_back, size: 18),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                        tooltip: AppLocalizations.of(context).backToPreviousPage,
+                        onPressed: () => Navigator.of(context).pop(),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                        tooltip: AppLocalizations.of(context).cancel,
+                        onPressed: () => Navigator.of(context).pop(),
+                      ))
+                : (MediaQuery.sizeOf(context).width >= 600 && !widget.embedded && Navigator.of(context).canPop()
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back, size: 18),
                     visualDensity: VisualDensity.compact,
@@ -3237,10 +3367,44 @@ class BrowserPageState extends State<BrowserPage> {
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 : null),
-        title: _toolbarContent(segments),
+        title: _pickMode
+            ? (_isSearching
+                ? _buildToolbarTitle(segments)
+                : Text(
+                    _pickMultiple
+                        ? AppLocalizations.of(context).pickFilesTitle
+                        : AppLocalizations.of(context).pickFileTitle,
+                    style: const TextStyle(fontSize: 16),
+                  ))
+            : _toolbarContent(segments),
+        actions: _pickMode
+            ? [
+                if (!_isSearching)
+                  IconButton(
+                    icon: const Icon(Icons.search, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: AppLocalizations.of(context).searchAction,
+                    onPressed: _toggleSearch,
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: AppLocalizations.of(context).close,
+                    onPressed: _toggleSearch,
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.storage, size: 20),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: AppLocalizations.of(context).locationLabel,
+                  onPressed: _showPickRootSheet,
+                ),
+              ]
+            : null,
       ),
-      bottomNavigationBar:
-          PreferencesService.toolbarAtBottom.value ? _buildBottomToolbar(segments) : null,
+      bottomNavigationBar: _pickMode
+          ? _buildPickBar()
+          : (PreferencesService.toolbarAtBottom.value ? _buildBottomToolbar(segments) : null),
       floatingActionButton: _showScrollToTop
           ? FloatingActionButton.small(
               heroTag: 'browser_scroll_to_top',
@@ -3299,7 +3463,7 @@ class BrowserPageState extends State<BrowserPage> {
               if (_refreshing) const LinearProgressIndicator(minHeight: 2),
               _buildCapabilitiesBar(),
               Expanded(child: _buildBody()),
-              if (_isSelecting || _clipboard != null) _buildBottomActionBar(),
+              if (!_pickMode && (_isSelecting || _clipboard != null)) _buildBottomActionBar(),
             ],
           ),
         ),
@@ -3367,7 +3531,7 @@ class BrowserPageState extends State<BrowserPage> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            _filterQuery.trim().length >= 2 ? '${_searchResults.length} found' : '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
+                            _filterQuery.trim().length >= 2 ? AppLocalizations.of(context).searchFoundCount(_searchResults.length) : '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -3508,17 +3672,7 @@ class BrowserPageState extends State<BrowserPage> {
         action(
           _isSearching ? Icons.search_off : Icons.search,
           AppLocalizations.of(context).searchAction,
-          () {
-            setState(() {
-              _isSearching = !_isSearching;
-              if (!_isSearching) {
-                _filterQuery = '';
-                _searchController.clear();
-                _searchResults = [];
-                _searchBusy = false;
-              }
-            });
-          },
+          _toggleSearch,
         ),
         if (!widget.embedded)
           action(Icons.vertical_split, AppLocalizations.of(context).splitView, _toggleSplit),
@@ -3930,12 +4084,12 @@ class BrowserPageState extends State<BrowserPage> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               child: Text(
-                _filterQuery.isNotEmpty
-                    ? '${_filteredAndSortedEntries.length} of ${_entries.where((e) => _showHidden || !e.hidden).length} items'
-                    : '${_filteredAndSortedEntries.length} items'
-                '${_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : ''}'
-                '${!_showHidden && _entries.any((e) => e.hidden) ? '  •  hidden files off' : ''}'
-                '${_hasMore ? ' (more below)' : ''}',
+                (_filterQuery.isNotEmpty
+                        ? AppLocalizations.of(context).itemsOutOfTotal(_filteredAndSortedEntries.length, _entries.where((e) => _showHidden || !e.hidden).length)
+                        : AppLocalizations.of(context).itemsCount(_filteredAndSortedEntries.length)) +
+                    (_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : '') +
+                    (!_showHidden && _entries.any((e) => e.hidden) ? '  •  ${AppLocalizations.of(context).hiddenFilesOff}' : '') +
+                    (_hasMore ? ' (${AppLocalizations.of(context).moreBelow})' : ''),
                 style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
@@ -3957,6 +4111,259 @@ class BrowserPageState extends State<BrowserPage> {
         ),
       ),
     );
+  }
+
+  Widget _buildPickBar() {
+    final l10n = AppLocalizations.of(context);
+    final request = widget.pickRequest!;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_upward, size: 18),
+                  tooltip: l10n.toolbarUpOneLevel,
+                  onPressed: _canNavigateUp ? _navigateUp : null,
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: _showPickRootSheet,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _displayFullPath,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (request.hasTypeFilter)
+                  FilterChip(
+                    label: Text(
+                      _applyMimeFilter ? request.mimeType : l10n.showAllFileTypes,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    selected: _applyMimeFilter,
+                    onSelected: (v) => setState(() => _applyMimeFilter = v),
+                  ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(l10n.cancel),
+                ),
+                if (_pickMultiple) ...[
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.check, size: 18),
+                    label: Text(l10n.selectCount(_selectedPaths.length)),
+                    onPressed: _selectedPaths.isEmpty
+                        ? null
+                        : () => _finishPick(_selectedItems),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPickRootSheet() {
+    final l10n = AppLocalizations.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.75,
+            ),
+            child: FutureBuilder<List<dynamic>>(
+              future: Future.wait([
+                StorageService.instance.getRemotes(),
+                StorageService.instance.getBookmarks(),
+              ]),
+              builder: (context, snap) {
+                final remotes = (snap.data?[0] as List<RemoteConfigDto>?) ?? const <RemoteConfigDto>[];
+                final bookmarks = (snap.data?[1] as List<BookmarkDto>?) ?? const <BookmarkDto>[];
+                final isLoading = snap.connectionState == ConnectionState.waiting;
+
+                return ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.home_outlined),
+                      title: Text(l10n.homeDashboard),
+                      subtitle: Text(l10n.backToPreviousPage),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.storage),
+                      title: Text(l10n.localStorage),
+                      subtitle: Text(
+                        PlatformPaths.defaultRoot(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        navigateTo(PlatformPaths.defaultRoot(), '');
+                      },
+                    ),
+                    if (bookmarks.isNotEmpty) ...[
+                      const Divider(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Text(
+                          l10n.bookmarks,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ),
+                      for (final b in bookmarks)
+                        ListTile(
+                          leading: const Icon(Icons.bookmark_outline),
+                          title: Text(b.name),
+                          subtitle: Text(
+                            b.path.isEmpty ? b.root : '${b.root}/${b.path}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            navigateTo(b.root, b.path);
+                          },
+                        ),
+                    ],
+                    if (isLoading)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (remotes.isNotEmpty) ...[
+                      const Divider(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Text(
+                          l10n.cloudRemoteStorage,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ),
+                      for (final r in remotes)
+                        ListTile(
+                          leading: const Icon(Icons.cloud_outlined),
+                          title: Text(r.name),
+                          subtitle: Text(r.kind.toUpperCase()),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            navigateTo('remote://${r.id}', '');
+                          },
+                        ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _finishPick(List<EntryItem> items) async {
+    await _finishPickWith(items.map((e) => (e, _fullEntryPath(e))).toList());
+  }
+
+  Future<void> _finishPickWith(List<(EntryItem, String)> picks) async {
+    final paths = <String>[];
+    for (final (item, rel) in picks) {
+      if (isNativeRoot(_root)) {
+        paths.add(joinNative(_root, rel));
+        continue;
+      }
+      final local = await _copyToPickCache(item, rel);
+      if (local == null) return;
+      paths.add(local);
+    }
+    if (mounted) Navigator.of(context).pop(paths);
+  }
+
+  /// Remote and archive entries have no local path the calling app could
+  /// read, so pick mode materializes them into a cache folder first.
+  Future<String?> _copyToPickCache(EntryItem item, String rel) async {
+    final cacheRoot = (await getTemporaryDirectory()).path;
+    const dir = 'fp_pick';
+    try {
+      await _ensureDir(cacheRoot, dir);
+      final name = await _uniqueName(cacheRoot, dir, item.name);
+      Future<String> startTask() => TaskService.instance.copy(
+            srcRoot: _root,
+            srcPaths: [rel],
+            dstRoot: cacheRoot,
+            dstDir: dir,
+            dstName: name,
+          );
+      final taskId = await startTask();
+      if (!mounted) return null;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        AppLocalizations.of(context).downloadingItem(item.name),
+        onRetry: startTask,
+      );
+      if (completed != true || !mounted) return null;
+      return joinNative(cacheRoot, '$dir/$name');
+    } catch (e) {
+      if (mounted) {
+        _showError(AppLocalizations.of(context).downloadFailed(e.toString()));
+      }
+      return null;
+    }
+  }
+
+  void _clearPickCache() {
+    getTemporaryDirectory().then((d) {
+      final dir = Directory('${d.path}/fp_pick');
+      if (!dir.existsSync()) return;
+      final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+      for (final f in dir.listSync()) {
+        try {
+          if (f.statSync().modified.isBefore(cutoff)) f.deleteSync();
+        } catch (_) {}
+      }
+    }).catchError((_) {});
   }
 
   Widget _buildBottomActionBar() {

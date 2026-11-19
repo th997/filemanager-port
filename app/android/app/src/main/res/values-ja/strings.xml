@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FPファイルマネージャー</string>
+    <string name="internal_storage">内部ストレージ</string>
+    <string name="app_files">アプリファイル</string>
+    <string name="bookmarks">ブックマーク</string>
+    <string name="bookmarked_folders">よく使うフォルダ</string>
 </resources>

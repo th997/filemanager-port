@@ -19,23 +19,26 @@ import 'remotes_page.dart';
 import 'settings_page.dart';
 import 'tasks_page.dart';
 import 'utilities_page.dart';
+import '../services/external_file_service.dart';
 
 class HomePage extends StatefulWidget {
   final ThemeMode themeMode;
-  final ValueChanged<ThemeMode> onThemeModeChanged;
-  final String localeCode;
-  final ValueChanged<String> onLocaleChanged;
-  final String accentCode;
-  final ValueChanged<String> onAccentChanged;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
+  final String? localeCode;
+  final ValueChanged<String>? onLocaleChanged;
+  final String? accentCode;
+  final ValueChanged<String>? onAccentChanged;
+  final ExternalPickRequest? pickRequest;
 
   const HomePage({
     super.key,
-    required this.themeMode,
-    required this.onThemeModeChanged,
-    required this.localeCode,
-    required this.onLocaleChanged,
-    required this.accentCode,
-    required this.onAccentChanged,
+    this.themeMode = ThemeMode.system,
+    this.onThemeModeChanged,
+    this.localeCode,
+    this.onLocaleChanged,
+    this.accentCode,
+    this.onAccentChanged,
+    this.pickRequest,
   });
 
   @override
@@ -223,22 +226,43 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refreshTaskCount();
   }
 
-  void _openTarget(String root, String relPath) {
-    Navigator.of(context).push(
+  bool get _pickMode => widget.pickRequest != null;
+
+  void _openTarget(String root, String relPath) async {
+    final picked = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => BrowserPage(
           initialRoot: root,
           initialPath: relPath,
+          pickRequest: widget.pickRequest,
         ),
       ),
-    ).then((_) => _loadMetadata());
+    );
+    if (picked != null && picked.isNotEmpty && mounted) {
+      Navigator.of(context).pop(picked);
+      return;
+    }
+    _loadMetadata();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).appTitle),
+        leading: _pickMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: AppLocalizations.of(context).cancel,
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : null,
+        title: Text(
+          _pickMode
+              ? (widget.pickRequest!.allowMultiple
+                  ? AppLocalizations.of(context).pickFilesTitle
+                  : AppLocalizations.of(context).pickFileTitle)
+              : AppLocalizations.of(context).appTitle,
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -420,10 +444,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           iconColor: const Color(0xFFD81B60),
           title: AppLocalizations.of(context).gallery,
           subtitle: AppLocalizations.of(context).allPhotos,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const GalleryPage()),
+          onTap: () async {
+            final picked = await Navigator.of(context).push<List<String>>(
+              MaterialPageRoute(builder: (_) => GalleryPage(pickRequest: widget.pickRequest)),
             );
+            if (picked != null && picked.isNotEmpty && mounted) {
+              Navigator.of(context).pop(picked);
+            }
           },
         ),
         ...targets.map((t) {
@@ -478,42 +505,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           subtitle: _remotes.isEmpty
               ? AppLocalizations.of(context).remoteProtocolsSubtitle
               : '${_remotes.length} connection${_remotes.length > 1 ? "s" : ""}',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RemotesPage()),
-            ).then((_) => _loadMetadata());
+          onTap: () async {
+            final picked = await Navigator.of(context).push<List<String>>(
+              MaterialPageRoute(builder: (_) => RemotesPage(pickRequest: widget.pickRequest)),
+            );
+            if (picked != null && picked.isNotEmpty && mounted) {
+              Navigator.of(context).pop(picked);
+              return;
+            }
+            _loadMetadata();
           },
         ),
 
-        // 2. Utilities (Recycle bin, Web sharing, Cache secondary page)
-        _buildGridCard(
-          icon: Icons.build_outlined,
-          iconColor: const Color(0xFF5E35B1),
-          title: AppLocalizations.of(context).utilities,
-          subtitle: _trashCount > 0 ? AppLocalizations.of(context).utilitiesTrashSubtitle(_trashCount) : AppLocalizations.of(context).utilitiesDefaultSubtitle,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const UtilitiesPage()),
-            ).then((_) => _loadMetadata());
-          },
-        ),
-
-        // 3. Tasks (background transfers & operations)
-        _buildGridCard(
-          icon: Icons.task_alt,
-          iconColor: const Color(0xFF00897B),
-          title: AppLocalizations.of(context).tasks,
-          subtitle: _activeTaskCount > 0
-              ? '$_activeTaskCount running'
-              : AppLocalizations.of(context).tasksDefaultSubtitle,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TasksPage()),
-            ).then((_) => _loadMetadata());
-          },
-        ),
-
-        // 4. Bookmarks (Saved favorite folders secondary page)
+        // 2. Bookmarks (Saved favorite folders secondary page)
         _buildGridCard(
           icon: Icons.bookmark,
           iconColor: const Color(0xFFFB8C00),
@@ -521,14 +525,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           subtitle: _bookmarks.isEmpty
               ? AppLocalizations.of(context).bookmarksDefaultSubtitle
               : '${_bookmarks.length} bookmark${_bookmarks.length > 1 ? "s" : ""}',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BookmarksPage()),
-            ).then((_) => _loadMetadata());
+          onTap: () async {
+            final picked = await Navigator.of(context).push<List<String>>(
+              MaterialPageRoute(builder: (_) => BookmarksPage(pickRequest: widget.pickRequest)),
+            );
+            if (picked != null && picked.isNotEmpty && mounted) {
+              Navigator.of(context).pop(picked);
+              return;
+            }
+            _loadMetadata();
           },
         ),
 
-        // 4. Recent (History secondary page)
+        // 3. Recent (History secondary page)
         _buildGridCard(
           icon: Icons.history,
           iconColor: const Color(0xFF3949AB),
@@ -536,34 +545,69 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           subtitle: _history.isEmpty
               ? AppLocalizations.of(context).recentDefaultSubtitle
               : '${_history.length} location${_history.length > 1 ? "s" : ""}',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RecentPage()),
-            ).then((_) => _loadMetadata());
+          onTap: () async {
+            final picked = await Navigator.of(context).push<List<String>>(
+              MaterialPageRoute(builder: (_) => RecentPage(pickRequest: widget.pickRequest)),
+            );
+            if (picked != null && picked.isNotEmpty && mounted) {
+              Navigator.of(context).pop(picked);
+              return;
+            }
+            _loadMetadata();
           },
         ),
 
-        // 5. Settings (Preferences secondary page)
-        _buildGridCard(
-          icon: Icons.settings,
-          iconColor: const Color(0xFF546E7A),
-          title: AppLocalizations.of(context).settings,
-          subtitle: AppLocalizations.of(context).settingsCardSubtitle,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SettingsPage(
-                  currentThemeMode: widget.themeMode,
-                  onThemeModeChanged: widget.onThemeModeChanged,
-                  localeCode: widget.localeCode,
-                  onLocaleChanged: widget.onLocaleChanged,
-                  accentCode: widget.accentCode,
-                  onAccentChanged: widget.onAccentChanged,
+        if (!_pickMode) ...[
+          // 4. Utilities (Recycle bin, Web sharing, Cache secondary page)
+          _buildGridCard(
+            icon: Icons.build_outlined,
+            iconColor: const Color(0xFF5E35B1),
+            title: AppLocalizations.of(context).utilities,
+            subtitle: _trashCount > 0 ? AppLocalizations.of(context).utilitiesTrashSubtitle(_trashCount) : AppLocalizations.of(context).utilitiesDefaultSubtitle,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const UtilitiesPage()),
+              ).then((_) => _loadMetadata());
+            },
+          ),
+
+          // 5. Tasks (background transfers & operations)
+          _buildGridCard(
+            icon: Icons.task_alt,
+            iconColor: const Color(0xFF00897B),
+            title: AppLocalizations.of(context).tasks,
+            subtitle: _activeTaskCount > 0
+                ? '$_activeTaskCount running'
+                : AppLocalizations.of(context).tasksDefaultSubtitle,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TasksPage()),
+              ).then((_) => _loadMetadata());
+            },
+          ),
+
+          // 6. Settings (Preferences secondary page)
+          _buildGridCard(
+            icon: Icons.settings,
+            iconColor: const Color(0xFF546E7A),
+            title: AppLocalizations.of(context).settings,
+            subtitle: AppLocalizations.of(context).settingsCardSubtitle,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SettingsPage(
+                    currentThemeMode: widget.themeMode,
+                    onThemeModeChanged: widget.onThemeModeChanged ?? (_) {},
+                    localeCode: widget.localeCode ?? 'system',
+                    onLocaleChanged: widget.onLocaleChanged ?? (_) {},
+                    accentCode: widget.accentCode ?? 'dynamic',
+                    onAccentChanged: widget.onAccentChanged ?? (_) {},
+                  ),
                 ),
-              ),
-            ).then((_) => _loadMetadata());
-          },
-        ),
+              ).then((_) => _loadMetadata());
+            },
+          ),
+        ],
       ],
     );
   }

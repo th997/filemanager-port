@@ -710,9 +710,11 @@ let mut var_host = <Option<String>>::sse_decode(deserializer);
 let mut var_port = <Option<u16>>::sse_decode(deserializer);
 let mut var_username = <Option<String>>::sse_decode(deserializer);
 let mut var_password = <Option<String>>::sse_decode(deserializer);
+let mut var_privateKey = <Option<String>>::sse_decode(deserializer);
+let mut var_passphrase = <Option<String>>::sse_decode(deserializer);
 let mut var_rootPath = <Option<String>>::sse_decode(deserializer);
 let mut var_pathStyle = <bool>::sse_decode(deserializer);
-return crate::api::remotes::RemoteConfigDto{id: var_id, name: var_name, kind: var_kind, endpoint: var_endpoint, bucket: var_bucket, region: var_region, access_key_id: var_accessKeyId, secret_access_key: var_secretAccessKey, host: var_host, port: var_port, username: var_username, password: var_password, root_path: var_rootPath, path_style: var_pathStyle};}
+return crate::api::remotes::RemoteConfigDto{id: var_id, name: var_name, kind: var_kind, endpoint: var_endpoint, bucket: var_bucket, region: var_region, access_key_id: var_accessKeyId, secret_access_key: var_secretAccessKey, host: var_host, port: var_port, username: var_username, password: var_password, private_key: var_privateKey, passphrase: var_passphrase, root_path: var_rootPath, path_style: var_pathStyle};}
                 }
                 
                 impl SseDecode for crate::api::servers::ServerStatusDto {
@@ -960,6 +962,8 @@ self.host.into_into_dart().into_dart(),
 self.port.into_into_dart().into_dart(),
 self.username.into_into_dart().into_dart(),
 self.password.into_into_dart().into_dart(),
+self.private_key.into_into_dart().into_dart(),
+self.passphrase.into_into_dart().into_dart(),
 self.root_path.into_into_dart().into_dart(),
 self.path_style.into_into_dart().into_dart()
                 ].into_dart()
@@ -1207,6 +1211,8 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::metadata::TrashItemDto> for c
 <Option<u16>>::sse_encode(self.port, serializer);
 <Option<String>>::sse_encode(self.username, serializer);
 <Option<String>>::sse_encode(self.password, serializer);
+<Option<String>>::sse_encode(self.private_key, serializer);
+<Option<String>>::sse_encode(self.passphrase, serializer);
 <Option<String>>::sse_encode(self.root_path, serializer);
 <bool>::sse_encode(self.path_style, serializer);}
                 }

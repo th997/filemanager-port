@@ -393,8 +393,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           child: Text(() {
             if (_selectedFolder != null) {
               final label = widget.confirmLabel;
-              if (label != null && (label.contains('上传') || label.toLowerCase().contains('upload') || label.contains('アップロード'))) {
-                return '${l10n.upload} "$_selectedFolder"';
+              if (label != null) {
+                return '$label "$_selectedFolder"';
               }
               return '${l10n.selectFolderToUpload} "$_selectedFolder"';
             }

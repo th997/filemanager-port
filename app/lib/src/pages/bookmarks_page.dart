@@ -6,9 +6,12 @@ import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../services/external_file_service.dart';
 
 class BookmarksPage extends StatefulWidget {
-  const BookmarksPage({super.key});
+  final ExternalPickRequest? pickRequest;
+
+  const BookmarksPage({super.key, this.pickRequest});
 
   @override
   State<BookmarksPage> createState() => _BookmarksPageState();
@@ -114,15 +117,21 @@ class _BookmarksPageState extends State<BookmarksPage> {
     );
   }
 
-  void _openBookmark(BookmarkDto bm) {
-    Navigator.of(context).push(
+  void _openBookmark(BookmarkDto bm) async {
+    final picked = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => BrowserPage(
           initialRoot: bm.root,
           initialPath: bm.path,
+          pickRequest: widget.pickRequest,
         ),
       ),
-    ).then((_) => _loadBookmarks());
+    );
+    if (picked != null && picked.isNotEmpty && mounted) {
+      Navigator.of(context).pop(picked);
+      return;
+    }
+    _loadBookmarks();
   }
 
   void _showBookmarkActionSheet(BookmarkDto b) {

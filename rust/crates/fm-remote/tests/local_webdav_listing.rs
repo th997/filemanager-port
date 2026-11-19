@@ -33,6 +33,7 @@ fn config() -> RemoteConfig {
         key_id: None,
         key_secret: None,
         private_key: None,
+        passphrase: None,
         path_style: true,
         host_key_fingerprint: None,
     }

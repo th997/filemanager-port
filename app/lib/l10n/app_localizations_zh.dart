@@ -425,6 +425,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pdfMarginCompact => '紧凑 (16pt)';
 
   @override
+  String get pickFileTitle => '选择文件';
+
+  @override
+  String get pickFilesTitle => '选择文件';
+
+  @override
   String get playbackSpeed => '播放速度';
 
   @override
@@ -522,6 +528,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get selectAll => '全选';
+
+  @override
+  String selectCount(int count) {
+    return '选择 ($count)';
+  }
 
   @override
   String get selectFolderToUpload => '选择要上传的文件夹';
@@ -928,6 +939,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hiddenLabel => '隐藏';
 
   @override
+  String get hiddenFilesOff => '隐藏文件未显示';
+
+  @override
   String get symlinkLabel => '符号链接';
 
   @override
@@ -990,6 +1004,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get hideHiddenFolders => '隐藏隐藏文件夹';
+
+  @override
+  String get showAllFileTypes => '全部文件';
 
   @override
   String get showHiddenFolders => '显示隐藏文件夹';
@@ -1122,6 +1139,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get first200Results => '仅显示前 200 条结果（请缩小搜索范围以查看更多）';
+
+  @override
+  String searchResultsInFolder(int count) {
+    return '此文件夹及子文件夹中的结果：$count';
+  }
+
+  @override
+  String searchFoundCount(int count) {
+    return '找到 $count 个';
+  }
 
   @override
   String get currentFolder => '当前文件夹';
@@ -1365,6 +1392,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get saveChangesTooltip => '保存更改 (Ctrl+S)';
+
+  @override
+  String get saveAs => '另存为...';
+
+  @override
+  String get saveToThisFolder => '保存到此文件夹';
+
+  @override
+  String get savedToCachePrompt => '已保存到应用缓存，建议点击【另存为】存至手机存储';
 
   @override
   String get savedLabel => '已保存';
@@ -1619,6 +1655,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get moreOptions => '更多选项';
+
+  @override
+  String get moreBelow => '下方还有更多';
 
   @override
   String get zoomInShortcut => '放大 (+)';
@@ -2166,6 +2205,44 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get hidePassword => '隐藏密码';
+
+  @override
+  String get authMethod => '认证方式';
+
+  @override
+  String get authPassword => '密码';
+
+  @override
+  String get authPrivateKey => '私钥';
+
+  @override
+  String get privateKeyLabel => '私钥';
+
+  @override
+  String get privateKeyHint => '在此粘贴 OpenSSH / PEM 格式私钥内容';
+
+  @override
+  String get privateKeyRequired => '私钥内容不能为空';
+
+  @override
+  String get selectKeyFile => '选择密钥文件';
+
+  @override
+  String get passphraseLabel => '私钥密码（可选）';
+
+  @override
+  String get passphraseHint => '若私钥未加密请留空';
+
+  @override
+  String get showPassphrase => '显示私钥密码';
+
+  @override
+  String get hidePassphrase => '隐藏私钥密码';
+
+  @override
+  String failedToReadKeyFile(String error) {
+    return '读取密钥文件失败: $error';
+  }
 
   @override
   String get hostIp => '主机 / IP';

@@ -31,4 +31,42 @@ void main() {
       );
     });
   });
+
+  group('ExternalPickRequest MIME Filtering', () {
+    test('Wildcard MIME type has no filter and matches everything', () {
+      final req = ExternalPickRequest.fromMap({
+        'allowMultiple': false,
+        'mimeType': '*/*',
+        'extraMimeTypes': <String>[],
+      });
+      expect(req.allowMultiple, isFalse);
+      expect(req.hasTypeFilter, isFalse);
+      expect(req.matchesFileName('photo.jpg'), isTrue);
+      expect(req.matchesFileName('archive.bin'), isTrue);
+    });
+
+    test('image/* filters to image files only', () {
+      final req = ExternalPickRequest.fromMap({
+        'allowMultiple': true,
+        'mimeType': 'image/*',
+      });
+      expect(req.allowMultiple, isTrue);
+      expect(req.hasTypeFilter, isTrue);
+      expect(req.matchesFileName('sample.png'), isTrue);
+      expect(req.matchesFileName('vector.svg'), isTrue);
+      expect(req.matchesFileName('document.pdf'), isFalse);
+    });
+
+    test('extraMimeTypes overrides primary mimeType', () {
+      final req = ExternalPickRequest.fromMap({
+        'allowMultiple': false,
+        'mimeType': '*/*',
+        'extraMimeTypes': ['application/pdf', 'audio/*'],
+      });
+      expect(req.hasTypeFilter, isTrue);
+      expect(req.matchesFileName('report.pdf'), isTrue);
+      expect(req.matchesFileName('song.mp3'), isTrue);
+      expect(req.matchesFileName('movie.mp4'), isFalse);
+    });
+  });
 }

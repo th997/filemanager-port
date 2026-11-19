@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
@@ -33,10 +34,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   late final TextEditingController _portController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
+  late final TextEditingController _privateKeyController;
+  late final TextEditingController _passphraseController;
   late final TextEditingController _rootPathController;
+  String _sftpAuthType = 'password';
   bool _pathStyle = false;
   bool _obscurePassword = true;
   bool _obscureSecretKey = true;
+  bool _obscurePassphrase = true;
 
   bool _testing = false;
   String? _testResult;
@@ -47,6 +52,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     super.initState();
     final c = widget.initialConfig;
     _kind = c?.kind ?? 's3';
+    final hasKey = c?.privateKey != null && c!.privateKey!.trim().isNotEmpty;
+    _sftpAuthType = hasKey ? 'key' : 'password';
     _nameController = TextEditingController(text: c?.name ?? '');
     _idController = TextEditingController(text: c?.id ?? '');
     _idManuallyEdited = c != null;
@@ -61,6 +68,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _portController = TextEditingController(text: c?.port?.toString() ?? '');
     _usernameController = TextEditingController(text: c?.username ?? '');
     _passwordController = TextEditingController(text: c?.password ?? '');
+    _privateKeyController = TextEditingController(text: c?.privateKey ?? '');
+    _passphraseController = TextEditingController(text: c?.passphrase ?? '');
     _rootPathController = TextEditingController(text: c?.rootPath ?? '/');
     _pathStyle = c?.pathStyle ?? false;
   }
@@ -132,8 +141,36 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _portController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _privateKeyController.dispose();
+    _passphraseController.dispose();
     _rootPathController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPrivateKeyFile() async {
+    try {
+      final XFile? file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'SSH Keys',
+            extensions: ['pem', 'key', 'pub', 'id_rsa', 'id_ed25519', 'id_ecdsa'],
+          ),
+          XTypeGroup(label: 'All files'),
+        ],
+      );
+      if (file != null) {
+        final content = await file.readAsString();
+        setState(() {
+          _privateKeyController.text = content;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).failedToReadKeyFile('$e'))),
+        );
+      }
+    }
   }
 
   RemoteConfigDto _buildConfig() {
@@ -152,6 +189,21 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       }
     }
 
+    String? password;
+    String? privateKey;
+    String? passphrase;
+    if (_kind == 'sftp') {
+      if (_sftpAuthType == 'key') {
+        privateKey = _privateKeyController.text.trim().isEmpty ? null : _privateKeyController.text.trim();
+        passphrase = _passphraseController.text.isEmpty ? null : _passphraseController.text;
+        password = passphrase;
+      } else {
+        password = _passwordController.text.isEmpty ? null : _passwordController.text;
+      }
+    } else {
+      password = _passwordController.text.isEmpty ? null : _passwordController.text;
+    }
+
     return RemoteConfigDto(
       id: id,
       name: _nameController.text.trim().isEmpty ? '$_kind Remote' : _nameController.text.trim(),
@@ -164,7 +216,9 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       host: _hostController.text.trim().isEmpty ? null : _hostController.text.trim(),
       port: portInt,
       username: _usernameController.text.trim().isEmpty ? null : _usernameController.text.trim(),
-      password: _passwordController.text.isEmpty ? null : _passwordController.text,
+      password: password,
+      privateKey: privateKey,
+      passphrase: passphrase,
       rootPath: _rootPathController.text.trim().isEmpty ? '/' : _rootPathController.text.trim(),
       pathStyle: _pathStyle,
     );
@@ -470,20 +524,108 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                     controller: _usernameController,
                     decoration: InputDecoration(labelText: l10n.username, border: const OutlineInputBorder()),
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: l10n.password,
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                        tooltip: _obscurePassword ? l10n.showPassword : l10n.hidePassword,
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                      ),
+                  if (_kind == 'sftp') ...[
+                    const SizedBox(height: 12),
+                    SegmentedButton<String>(
+                      segments: [
+                        ButtonSegment(
+                          value: 'password',
+                          icon: const Icon(Icons.password, size: 16),
+                          label: Text(l10n.authPassword),
+                        ),
+                        ButtonSegment(
+                          value: 'key',
+                          icon: const Icon(Icons.key, size: 16),
+                          label: Text(l10n.authPrivateKey),
+                        ),
+                      ],
+                      selected: {_sftpAuthType},
+                      onSelectionChanged: (val) {
+                        setState(() => _sftpAuthType = val.first);
+                      },
                     ),
-                    obscureText: _obscurePassword,
-                  ),
+                    const SizedBox(height: 12),
+                    if (_sftpAuthType == 'key') ...[
+                      Row(
+                        children: [
+                          Text(
+                            l10n.privateKeyLabel,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _pickPrivateKeyFile,
+                            icon: const Icon(Icons.folder_open, size: 16),
+                            label: Text(l10n.selectKeyFile),
+                            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: _privateKeyController,
+                        decoration: InputDecoration(
+                          hintText: l10n.privateKeyHint,
+                          border: const OutlineInputBorder(),
+                        ),
+                        minLines: 3,
+                        maxLines: 6,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                        validator: (v) {
+                          if (_kind == 'sftp' && _sftpAuthType == 'key') {
+                            if (v == null || v.trim().isEmpty) {
+                              return l10n.privateKeyRequired;
+                            }
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _passphraseController,
+                        decoration: InputDecoration(
+                          labelText: l10n.passphraseLabel,
+                          hintText: l10n.passphraseHint,
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassphrase ? Icons.visibility_off : Icons.visibility),
+                            tooltip: _obscurePassphrase ? l10n.showPassphrase : l10n.hidePassphrase,
+                            onPressed: () => setState(() => _obscurePassphrase = !_obscurePassphrase),
+                          ),
+                        ),
+                        obscureText: _obscurePassphrase,
+                      ),
+                    ] else ...[
+                      TextFormField(
+                        controller: _passwordController,
+                        decoration: InputDecoration(
+                          labelText: l10n.password,
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                            tooltip: _obscurePassword ? l10n.showPassword : l10n.hidePassword,
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                        ),
+                        obscureText: _obscurePassword,
+                      ),
+                    ],
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: l10n.password,
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                          tooltip: _obscurePassword ? l10n.showPassword : l10n.hidePassword,
+                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        ),
+                      ),
+                      obscureText: _obscurePassword,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _rootPathController,

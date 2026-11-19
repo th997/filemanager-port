@@ -50,4 +50,47 @@ void main() {
     expect(first['secretAccessKey'], 'secret_key_abc');
     expect(first['pathStyle'], true);
   });
+
+  test('RemoteConfigDto SFTP with private key and passphrase round trip', () async {
+    const sftpConfig = RemoteConfigDto(
+      id: 'sftp-key',
+      name: 'SFTP Server',
+      kind: 'sftp',
+      host: '192.168.1.100',
+      port: 22,
+      username: 'deploy',
+      password: null,
+      privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nMIIE...\n-----END OPENSSH PRIVATE KEY-----',
+      passphrase: 'key_passphrase_123',
+      rootPath: '/var/www',
+      pathStyle: false,
+    );
+
+    final rawJson = jsonEncode([
+      {
+        'id': sftpConfig.id,
+        'name': sftpConfig.name,
+        'kind': sftpConfig.kind,
+        'host': sftpConfig.host,
+        'port': sftpConfig.port,
+        'username': sftpConfig.username,
+        'privateKey': sftpConfig.privateKey,
+        'passphrase': sftpConfig.passphrase,
+        'rootPath': sftpConfig.rootPath,
+        'pathStyle': sftpConfig.pathStyle,
+      }
+    ]);
+
+    final decoded = jsonDecode(rawJson) as List;
+    expect(decoded.length, 1);
+    final first = decoded.first as Map<String, dynamic>;
+    expect(first['name'], 'SFTP Server');
+    expect(first['kind'], 'sftp');
+    expect(first['host'], '192.168.1.100');
+    expect(first['port'], 22);
+    expect(first['username'], 'deploy');
+    expect(first['privateKey'], contains('BEGIN OPENSSH PRIVATE KEY'));
+    expect(first['passphrase'], 'key_passphrase_123');
+    expect(first['rootPath'], '/var/www');
+  });
 }

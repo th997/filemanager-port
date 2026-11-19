@@ -602,8 +602,9 @@ private class NowPlayingManager {
     guard url.isFileURL else { return nil }
 
     let hasScoped = url.startAccessingSecurityScopedResource()
+    var retainScopedAccess = false
     defer {
-      if hasScoped {
+      if hasScoped && !retainScopedAccess {
         url.stopAccessingSecurityScopedResource()
       }
     }
@@ -611,6 +612,14 @@ private class NowPlayingManager {
     let fileManager = FileManager.default
     let resolvedUrl = url.resolvingSymlinksInPath()
     let resolvedPath = resolvedUrl.path
+
+    var isDir: ObjCBool = false
+    if fileManager.fileExists(atPath: resolvedPath, isDirectory: &isDir), isDir.boolValue {
+      if hasScoped {
+        retainScopedAccess = true
+      }
+      return resolvedPath
+    }
 
     let docsUrl = URL(fileURLWithPath: NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? "").resolvingSymlinksInPath()
     let tmpUrl = URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath()

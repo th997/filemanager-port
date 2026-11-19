@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/entry_item.dart';
+import '../services/external_file_service.dart';
 import '../services/platform_paths.dart';
 import '../theme/app_ui_tokens.dart';
 import 'image_viewer_page.dart';
@@ -38,7 +39,9 @@ class _Photo {
 /// Browsing a folder still works through `BrowserPage`; this page is a
 /// thumbnail grid for the places photos actually live.
 class GalleryPage extends StatefulWidget {
-  const GalleryPage({super.key});
+  final ExternalPickRequest? pickRequest;
+
+  const GalleryPage({super.key, this.pickRequest});
 
   @override
   State<GalleryPage> createState() => _GalleryPageState();
@@ -237,6 +240,12 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         );
       }
       return;
+    }
+    if (widget.pickRequest != null) {
+      if (widget.pickRequest!.matchesFileName(file.path)) {
+        Navigator.of(context).pop([file.path]);
+        return;
+      }
     }
     // Siblings resolve lazily inside the viewer: each asset.file may copy
     // bytes out of the library, so touching the whole roll up front is slow.
