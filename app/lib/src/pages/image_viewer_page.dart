@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/entry_item.dart';
 import '../services/file_open_service.dart';
+import '../services/global_playback_service.dart';
 import '../services/task_service.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 
@@ -33,6 +34,7 @@ class ImageViewerEntry {
   });
 
   bool get isLocal => localPath != null;
+  bool get canDelete => localPath != null || (root != null && remotePath != null);
 }
 
 class ImageViewerPage extends StatefulWidget {
@@ -124,6 +126,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
   @override
   void dispose() {
+    GlobalPlaybackService.instance.setBottomBarInset(0.0);
     _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
     _pageController.dispose();
@@ -608,6 +611,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     );
 
     if (confirm != true || !mounted) return;
+    if (!entry.canDelete) return;
 
     try {
       if (entry.localPath != null) {
@@ -701,14 +705,15 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                   _showImageDetails();
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: Text(AppLocalizations.of(context).deleteImage, style: const TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _deleteCurrent();
-                },
-              ),
+              if (_current.canDelete)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: Text(AppLocalizations.of(context).deleteImage, style: const TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _deleteCurrent();
+                  },
+                ),
             ],
           ),
         );
@@ -719,6 +724,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   @override
   Widget build(BuildContext context) {
     final multiple = _entries.length > 1;
+    final hasBottomPill = multiple && !_zoomed && _showChrome;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        GlobalPlaybackService.instance.setBottomBarInset(hasBottomPill ? 48.0 : 0.0);
+      }
+    });
 
     return CallbackShortcuts(
       bindings: {
@@ -797,11 +808,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 tooltip: AppLocalizations.of(context).shareImage,
                 onPressed: _shareCurrent,
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: AppLocalizations.of(context).deleteImage,
-                onPressed: _deleteCurrent,
-              ),
+              if (_current.canDelete)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: AppLocalizations.of(context).deleteImage,
+                  onPressed: _deleteCurrent,
+                ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
                 tooltip: AppLocalizations.of(context).moreOptions,
@@ -879,17 +891,19 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                       ],
                     ),
                   ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                        SizedBox(width: 10),
-                        Text(AppLocalizations.of(context).delete, style: const TextStyle(color: Colors.red)),
-                      ],
+                  if (_current.canDelete) ...[
+                    const PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                          SizedBox(width: 10),
+                          Text(AppLocalizations.of(context).delete, style: const TextStyle(color: Colors.red)),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ],
@@ -916,18 +930,26 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     onDoubleTapDown: (details) =>
                         _lastDoubleTapPosition = details.localPosition,
                     onDoubleTap: () => _toggleZoom(_lastDoubleTapPosition),
-                    // Swipe down to close, the usual gallery gesture. Zoomed
-                    // images keep the drag so panning still works.
-                    onVerticalDragUpdate: (details) {
-                      if (!_zoomed && details.delta.dy > 0) _dismissDrag += details.delta.dy;
-                    },
-                    onVerticalDragEnd: (_) {
-                      final dragged = _dismissDrag;
-                      _dismissDrag = 0;
-                      if (!_zoomed && dragged > 120) {
-                        Navigator.of(context).maybePop();
-                      }
-                    },
+                    // Swipe down to close, the usual gallery gesture. Unregister
+                    // the vertical drag recognizer while zoomed so it never competes
+                    // with InteractiveViewer's pan gesture.
+                    onVerticalDragStart: _zoomed ? null : (_) => _dismissDrag = 0,
+                    onVerticalDragUpdate: _zoomed
+                        ? null
+                        : (details) {
+                            _dismissDrag = (_dismissDrag + details.delta.dy)
+                                .clamp(0.0, double.infinity);
+                          },
+                    onVerticalDragEnd: _zoomed
+                        ? null
+                        : (_) {
+                            final dragged = _dismissDrag;
+                            _dismissDrag = 0;
+                            if (dragged > 120) {
+                              Navigator.of(context).maybePop();
+                            }
+                          },
+                    onVerticalDragCancel: _zoomed ? null : () => _dismissDrag = 0,
                     child: InteractiveViewer(
                       transformationController: _transformationController,
                       minScale: 0.2,

@@ -297,6 +297,7 @@ async fn copy_single_file(
     // Resolve a name clash before moving any bytes. Until the policy
     // existed, an existing destination file was silently replaced.
     let mut target = dst_path.clone();
+    let mut existed_before = false;
     if let Ok(existing) = dst_vfs.stat(dst_path).await {
         match policy {
             ConflictPolicy::Skip => {
@@ -318,6 +319,7 @@ async fn copy_single_file(
                         ),
                     });
                 }
+                existed_before = true;
             }
         }
     }
@@ -327,7 +329,11 @@ async fn copy_single_file(
     // stream directly into target. This avoids expensive server-side copies and 100% hangs.
     if dst_vfs.prefers_direct_write() {
         if let Err(e) = stream_into(src_vfs, src_path, dst_vfs, &target, progress, cancel).await {
-            let _ = dst_vfs.remove(&target).await;
+            // Object-storage uploads are atomic until shutdown(), so a failed or cancelled
+            // overwrite leaves the prior object intact — do not delete it.
+            if !existed_before {
+                let _ = dst_vfs.remove(&target).await;
+            }
             return Err(e);
         }
         return Ok(());

@@ -135,13 +135,16 @@ class VideoThumbnailService {
       await player.stop();
       if (bytes == null) return null;
       await out.writeAsBytes(bytes, flush: true);
-      _scheduleIdleDispose();
       return out;
     } catch (_) {
       try {
         await _player?.stop();
       } catch (_) {}
       return null;
+    } finally {
+      if (_player != null) {
+        _scheduleIdleDispose();
+      }
     }
   }
 

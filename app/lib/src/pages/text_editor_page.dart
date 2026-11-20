@@ -822,7 +822,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           ),
         ],
       ),
-    );
+    ).whenComplete(nameController.dispose);
 
     if (confirmedName == null || confirmedName.isEmpty || !mounted) return;
 
@@ -948,8 +948,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
           ],
         ),
       );
+      if (shouldSave == null || !mounted) return;
       if (shouldSave == true) {
         await _save();
+        if (_isDirty || !mounted) return;
       }
     }
     try {
@@ -1271,7 +1273,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     onPressed: null,
                   )
                 else ...[
-                  if (_mode == TextFileMode.edit)
+                  if (_mode == TextFileMode.edit || _isDirty)
                     IconButton(
                       icon: _saving
                           ? const SizedBox(
@@ -1804,7 +1806,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       OutlinedButton.icon(
                         icon: const Icon(Icons.edit, size: 16),
                         label: Text(AppLocalizations.of(context).editInSourceMode),
-                        onPressed: () => _setMode(TextFileMode.code),
+                        onPressed: () => _setMode(TextFileMode.edit),
                       ),
                     ],
                   ],

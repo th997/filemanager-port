@@ -443,11 +443,12 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                           border: Border.all(color: successColor.withValues(alpha: 0.3)),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            SelectableText(
-                              url,
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: successColor),
+                            Expanded(
+                              child: SelectableText(
+                                url,
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: successColor),
+                              ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.copy, size: 16),
@@ -466,45 +467,51 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                         ),
                       );
                     }),
-                    if (_pwdCtrl.text.trim().isNotEmpty) ...[
+                    if ((SharingService.instance.password ?? _pwdCtrl.text.trim()).isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.key, size: 14),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: SelectableText(
-                                '${l10n.sharePasswordLabel}: ${_pwdCtrl.text}',
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
-                              ),
+                      Builder(
+                        builder: (context) {
+                          final activePwd =
+                              SharingService.instance.password ?? _pwdCtrl.text.trim();
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.copy, size: 14),
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.all(6),
-                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                              tooltip: l10n.copyPassword,
-                              onPressed: () {
-                                Clipboard.setData(ClipboardData(text: _pwdCtrl.text));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(l10n.passwordCopied)),
-                                );
-                              },
+                            child: Row(
+                              children: [
+                                const Icon(Icons.key, size: 14),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: SelectableText(
+                                    '${l10n.sharePasswordLabel}: $activePwd',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.copy, size: 14),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  tooltip: l10n.copyPassword,
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: activePwd));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(l10n.passwordCopied)),
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ] else ...[
                     const SizedBox(height: 8),
                     Text(
-                      l10n.welcomeBody,
+                      l10n.lanSharingDesc,
                       style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 8),

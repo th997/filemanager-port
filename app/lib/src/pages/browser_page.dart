@@ -16,9 +16,11 @@ import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
+import '../services/app_route_observer.dart';
 import '../services/error_text.dart';
 import '../services/external_file_service.dart';
 import '../services/file_open_service.dart';
+import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/permission_service.dart';
 import '../services/platform_paths.dart';
@@ -93,7 +95,7 @@ class BrowserPage extends StatefulWidget {
   State<BrowserPage> createState() => BrowserPageState();
 }
 
-class BrowserPageState extends State<BrowserPage> {
+class BrowserPageState extends State<BrowserPage> with RouteAware {
   late String _root;
   late String _relPath;
   List<EntryItem> _entries = [];
@@ -288,16 +290,68 @@ class BrowserPageState extends State<BrowserPage> {
     _loadViewPreferences();
     _scrollController.addListener(_onScroll);
     PreferencesService.toolbarAtBottom.addListener(_onToolbarPositionChanged);
+    GlobalPlaybackService.instance.addListener(_onPlaybackChanged);
     _loadRemotesMetadata();
     _load();
   }
 
   void _onToolbarPositionChanged() {
+    if (mounted) {
+      _syncBottomBarInset();
+      setState(() {});
+    }
+  }
+
+  void _onPlaybackChanged() {
     if (mounted) setState(() {});
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final modalRoute = ModalRoute.of(context);
+    if (modalRoute != null) {
+      appRouteObserver.subscribe(this, modalRoute);
+    }
+    _syncBottomBarInset();
+  }
+
+  @override
+  void didPushNext() {
+    GlobalPlaybackService.instance.setBottomBarInset(0.0);
+  }
+
+  @override
+  void didPopNext() {
+    _syncBottomBarInset();
+  }
+
+  void _syncBottomBarInset() {
+    if (!mounted) return;
+    final hasActionBar = !_pickMode && (_isSelecting || _clipboard != null);
+    final hasPick = _pickMode && widget.pickRequest != null;
+    final toolbarAtBottom = PreferencesService.toolbarAtBottom.value;
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final toolbarHeight = toolbarAtBottom ? (compact ? 40.0 : 46.0) : 0.0;
+    final actionBarHeight = hasActionBar ? 46.0 : 0.0;
+    final pickHeight = hasPick ? 80.0 : 0.0;
+    final totalBottom = hasPick ? pickHeight : (toolbarHeight + actionBarHeight);
+    GlobalPlaybackService.instance.setBottomBarInset(totalBottom);
+  }
+
+  double get _scrollBottomPadding {
+    final service = GlobalPlaybackService.instance;
+    final hasMiniPlayer = service.hasActiveSession &&
+        !service.isFullScreen &&
+        !service.isMiniPlayerCollapsed;
+    return hasMiniPlayer ? 76.0 : 16.0;
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
+    GlobalPlaybackService.instance.removeListener(_onPlaybackChanged);
+    GlobalPlaybackService.instance.setBottomBarInset(0.0);
     PreferencesService.toolbarAtBottom.removeListener(_onToolbarPositionChanged);
     _scrollController.dispose();
     _searchDebounce?.cancel();
@@ -565,6 +619,7 @@ class BrowserPageState extends State<BrowserPage> {
   /// [refresh] keeps the scroll offset so a pull-to-refresh or a post-action
   /// reload does not throw the user back to the top of a long folder.
   Future<void> _load({bool refresh = false}) async {
+    if (!mounted) return;
     widget.onLocationChanged?.call(_root, _relPath);
     final loadingFor = '$_root\u0000$_relPath';
     _loadingFor = loadingFor;
@@ -819,7 +874,9 @@ class BrowserPageState extends State<BrowserPage> {
             readOnly: !_canWrite,
           ),
         ),
-      ).then((_) => _load(refresh: true));
+      ).then((_) {
+        if (mounted) _load(refresh: true);
+      });
       return;
     }
 
@@ -1234,10 +1291,11 @@ class BrowserPageState extends State<BrowserPage> {
   }
 
   Widget _buildSearchResults() {
-    if (_searchBusy && _searchResults.isEmpty) {
+    final visible = _visibleSearchResults;
+    if (_searchBusy && visible.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_searchResults.isEmpty) {
+    if (visible.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1281,15 +1339,16 @@ class BrowserPageState extends State<BrowserPage> {
           child: Text(
             _searchResults.length >= 200
                 ? AppLocalizations.of(context).first200Results
-                : AppLocalizations.of(context).searchResultsInFolder(_visibleSearchResults.length),
+                : AppLocalizations.of(context).searchResultsInFolder(visible.length),
             style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: _visibleSearchResults.length,
+            padding: EdgeInsets.only(bottom: _scrollBottomPadding),
+            itemCount: visible.length,
             itemBuilder: (ctx, i) {
-              final item = _visibleSearchResults[i];
+              final item = visible[i];
               return ListTile(
                 leading: Icon(item.icon),
                 title: Text(
@@ -1664,6 +1723,7 @@ class BrowserPageState extends State<BrowserPage> {
       for (var i = lo; i <= hi && i < list.length; i++) {
         _selectedPaths.add(_fullEntryPath(list[i]));
       }
+      _syncBottomBarInset();
     });
   }
 
@@ -1676,6 +1736,7 @@ class BrowserPageState extends State<BrowserPage> {
       } else {
         _selectedPaths.add(path);
       }
+      _syncBottomBarInset();
     });
   }
 
@@ -1716,7 +1777,10 @@ class BrowserPageState extends State<BrowserPage> {
             _totalCount = paged.total;
           });
         } catch (e) {
-          _showError(AppLocalizations.of(context).couldNotLoadAllItems(_friendlyError(e)));
+          if (mounted) {
+            _showError(AppLocalizations.of(context).couldNotLoadAllItems(_friendlyError(e)));
+          }
+          return;
         }
       }
     }
@@ -1726,6 +1790,7 @@ class BrowserPageState extends State<BrowserPage> {
       for (final e in _filteredAndSortedEntries) {
         _selectedPaths.add(_fullEntryPath(e));
       }
+      _syncBottomBarInset();
     });
   }
 
@@ -1744,6 +1809,7 @@ class BrowserPageState extends State<BrowserPage> {
       } else {
         _isSelecting = true;
       }
+      _syncBottomBarInset();
     });
   }
 
@@ -1794,6 +1860,7 @@ class BrowserPageState extends State<BrowserPage> {
     setState(() {
       _selectedPaths.clear();
       _isSelecting = false;
+      _syncBottomBarInset();
     });
   }
 
@@ -2135,8 +2202,8 @@ class BrowserPageState extends State<BrowserPage> {
       final target = _relPath.isEmpty ? name : '$_relPath/$name';
       try {
         await writeTextFile(root: _root, path: target, content: '');
-        _load(refresh: true);
         if (!mounted) return;
+        _load(refresh: true);
         // A file that was just created is almost always meant to be written
         // in, so open it rather than making the user find it in the list.
         final createdName = name;
@@ -2148,7 +2215,9 @@ class BrowserPageState extends State<BrowserPage> {
               fileName: createdName,
             ),
           ),
-        ).then((_) => _load(refresh: true));
+        ).then((_) {
+          if (mounted) _load(refresh: true);
+        });
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2182,7 +2251,12 @@ class BrowserPageState extends State<BrowserPage> {
       isCut: cb.isCut,
       destRel: _relPath,
       onCutCompleted: () {
-        if (mounted) setState(() => _clipboard = null);
+        if (mounted) {
+          setState(() {
+            _clipboard = null;
+            _syncBottomBarInset();
+          });
+        }
       },
     );
   }
@@ -2310,11 +2384,9 @@ class BrowserPageState extends State<BrowserPage> {
     }
     final byParent = <String, List<String>>{};
     for (final f in files) {
-      final full = f.path.replaceAll('\\', '/');
-      final idx = full.lastIndexOf('/');
-      if (idx < 0) continue;
-      final parent = idx == 0 ? '/' : full.substring(0, idx);
-      byParent.putIfAbsent(parent, () => []).add(full.substring(idx + 1));
+      final split = splitNativeFile(f.path);
+      if (split.name.isEmpty) continue;
+      byParent.putIfAbsent(split.srcRoot, () => []).add(split.name);
     }
     for (final entry in byParent.entries) {
       await _transfer(
@@ -2343,6 +2415,10 @@ class BrowserPageState extends State<BrowserPage> {
     ({String root, List<String> paths}) data,
     String destRel,
   ) async {
+    if (!_canWrite) {
+      _showError(AppLocalizations.of(context).readOnlyCannotDrop);
+      return;
+    }
     final isCut = data.root == _root;
     // Dropping a folder onto itself or into its own subtree can only fail.
     final safe = data.paths.where((p) {
@@ -2397,7 +2473,7 @@ class BrowserPageState extends State<BrowserPage> {
               const SizedBox(width: 6),
               Text(
                 data.paths.length > 1
-                    ? '${data.paths.length} items'
+                    ? AppLocalizations.of(context).itemsCount(data.paths.length)
                     : item.name,
                 style: const TextStyle(fontSize: 12),
               ),
@@ -2408,7 +2484,7 @@ class BrowserPageState extends State<BrowserPage> {
       childWhenDragging: Opacity(opacity: 0.4, child: child),
       child: child,
     );
-    if (item.isDir || item.isArchive) {
+    if (item.isDir && _canWrite) {
       // The builder closure must wrap the Draggable, not `draggable` itself:
       // capturing the variable after reassignment would nest the DragTarget
       // inside its own builder and recurse until the stack overflows.
@@ -2983,7 +3059,7 @@ class BrowserPageState extends State<BrowserPage> {
               );
             },
           ),
-          if (item.isArchive && _canArchive)
+          if (item.isArchive && _canWrite && _canArchive)
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
@@ -3086,6 +3162,9 @@ class BrowserPageState extends State<BrowserPage> {
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncBottomBarInset();
+    });
     if (_splitActive) {
       return Scaffold(
         appBar: AppBar(
@@ -3402,9 +3481,7 @@ class BrowserPageState extends State<BrowserPage> {
               ]
             : null,
       ),
-      bottomNavigationBar: _pickMode
-          ? _buildPickBar()
-          : (PreferencesService.toolbarAtBottom.value ? _buildBottomToolbar(segments) : null),
+      bottomNavigationBar: _buildScaffoldBottomBar(segments),
       floatingActionButton: _showScrollToTop
           ? FloatingActionButton.small(
               heroTag: 'browser_scroll_to_top',
@@ -3463,7 +3540,6 @@ class BrowserPageState extends State<BrowserPage> {
               if (_refreshing) const LinearProgressIndicator(minHeight: 2),
               _buildCapabilitiesBar(),
               Expanded(child: _buildBody()),
-              if (!_pickMode && (_isSelecting || _clipboard != null)) _buildBottomActionBar(),
             ],
           ),
         ),
@@ -3713,7 +3789,7 @@ class BrowserPageState extends State<BrowserPage> {
                 value: field,
                 checked: _sortField == field,
                 child: Text(
-                  '${field.label}'
+                  '${field.localizedLabel(AppLocalizations.of(ctx))}'
                   '${_sortField == field ? (_sortAsc ? '  ↑' : '  ↓') : ''}',
                 ),
               ),
@@ -3877,6 +3953,20 @@ class BrowserPageState extends State<BrowserPage> {
     ];
   }
 
+  Widget? _buildScaffoldBottomBar(List<String> segments) {
+    if (_pickMode) return _buildPickBar();
+    final hasActionBar = _isSelecting || _clipboard != null;
+    final toolbarAtBottom = PreferencesService.toolbarAtBottom.value;
+    if (!hasActionBar && !toolbarAtBottom) return null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hasActionBar) _buildBottomActionBar(),
+        if (toolbarAtBottom) _buildBottomToolbar(segments),
+      ],
+    );
+  }
+
   /// Same bar under the list when the user pins the toolbar to the bottom.
   ///
   /// A plain [AppBar] misbehaves down here: it reserves top-only padding and
@@ -3983,7 +4073,9 @@ class BrowserPageState extends State<BrowserPage> {
         }
       },
       onCopyPath: (path) {
-        final full = isNativeRoot(_root) ? joinNative(_root, path) : '$_root/$path';
+        final full = isNativeRoot(_root)
+            ? joinNative(_root, path)
+            : (path.isEmpty ? _root : '$_root/$path');
         Clipboard.setData(ClipboardData(text: full));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context).copiedPathValue(full))),
@@ -4384,7 +4476,12 @@ class BrowserPageState extends State<BrowserPage> {
       onInfo: _showSelectedInfo,
       onCompress: _compressSelected,
       onPaste: _paste,
-      onClearClipboard: () => setState(() => _clipboard = null),
+      onClearClipboard: () {
+        setState(() {
+          _clipboard = null;
+          _syncBottomBarInset();
+        });
+      },
     );
   }
 
@@ -4608,7 +4705,7 @@ class BrowserPageState extends State<BrowserPage> {
                   GridView.builder(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.fromLTRB(8, 8, 8, _scrollBottomPadding),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 88,
             mainAxisSpacing: 6,
@@ -4763,6 +4860,7 @@ class BrowserPageState extends State<BrowserPage> {
         child: ListView.builder(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(bottom: _scrollBottomPadding),
           itemCount: list.length + (_hasMore ? 1 : 0),
         itemBuilder: (ctx, i) {
           if (i == list.length) {

@@ -188,8 +188,7 @@ pub async fn list_s3_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsEr
     parse_bucket_names(&xml)
 }
 
-/// Create a new bucket in S3.
-pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(), VfsError> {
+fn validate_s3_bucket_name(bucket: &str) -> Result<(), VfsError> {
     if bucket.len() < 3 || bucket.len() > 63 {
         return Err(VfsError::Connection {
             message: format!("S3 存储桶名称长度必须在 3 到 63 个字符之间 (S3 bucket name must be 3-63 characters): '{bucket}'"),
@@ -205,10 +204,31 @@ pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(),
             message: format!("S3 存储桶名称仅支持小写字母、数字、连字符和点 (S3 bucket name only allows lowercase, digits, hyphens, dots): '{bucket}'"),
         });
     }
+    Ok(())
+}
+
+/// Create a new bucket in S3.
+pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(), VfsError> {
+    validate_s3_bucket_name(bucket)?;
 
     let (base_url, host_header) = get_s3_base_and_host(config)?;
-    let region = config.region.as_deref().unwrap_or("us-east-1");
-    let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let region = config
+        .region
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .unwrap_or("us-east-1");
+    let body_xml = if region != "us-east-1" {
+        Some(format!(
+            "<CreateBucketConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LocationConstraint>{region}</LocationConstraint></CreateBucketConfiguration>"
+        ))
+    } else {
+        None
+    };
+    let payload_hash = match &body_xml {
+        Some(xml) => hex::encode(Sha256::digest(xml.as_bytes())),
+        None => "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+    };
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -219,6 +239,9 @@ pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(),
 
     let uri_path = format!("/{bucket}");
     let mut req = client.put(format!("{base_url}/{bucket}"));
+    if let Some(xml) = body_xml {
+        req = req.header("content-type", "application/xml").body(xml);
+    }
 
     if let (Some(key_id), Some(key_secret)) = (&config.key_id, &config.key_secret) {
         if !key_id.is_empty() && !key_secret.is_empty() {
@@ -229,12 +252,12 @@ pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(),
                 region,
                 key_id,
                 key_secret,
-                payload_hash,
+                &payload_hash,
             )?;
             req = req
                 .header("host", host)
                 .header("x-amz-date", amz_date)
-                .header("x-amz-content-sha256", payload_hash)
+                .header("x-amz-content-sha256", &payload_hash)
                 .header("authorization", auth);
         }
     }
@@ -256,6 +279,7 @@ pub async fn create_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(),
 
 /// Delete an empty bucket in S3.
 pub async fn delete_s3_bucket(config: &RemoteConfig, bucket: &str) -> Result<(), VfsError> {
+    validate_s3_bucket_name(bucket)?;
     let (base_url, host_header) = get_s3_base_and_host(config)?;
     let region = config.region.as_deref().unwrap_or("us-east-1");
     let payload_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -310,8 +334,13 @@ pub async fn list_oss_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsE
         .endpoint
         .as_deref()
         .unwrap_or("https://oss-cn-hangzhou.aliyuncs.com");
-    let ep = endpoint.trim_end_matches('/');
-    let parsed = reqwest::Url::parse(ep).map_err(|e| VfsError::Connection {
+    let ep_trimmed = endpoint.trim().trim_end_matches('/');
+    let ep_normalized = if ep_trimmed.starts_with("http://") || ep_trimmed.starts_with("https://") {
+        ep_trimmed.to_string()
+    } else {
+        format!("https://{ep_trimmed}")
+    };
+    let parsed = reqwest::Url::parse(&ep_normalized).map_err(|e| VfsError::Connection {
         message: format!("invalid OSS endpoint URL: {e}"),
     })?;
     let host = parsed
@@ -334,7 +363,7 @@ pub async fn list_oss_buckets(config: &RemoteConfig) -> Result<Vec<String>, VfsE
             message: format!("failed to build HTTP client: {e}"),
         })?;
 
-    let mut req = client.get(format!("{ep}/"));
+    let mut req = client.get(format!("{ep_normalized}/"));
 
     if let (Some(key_id), Some(key_secret)) = (&config.key_id, &config.key_secret) {
         if !key_id.is_empty() && !key_secret.is_empty() {
@@ -560,7 +589,7 @@ impl Vfs for MultiBucketFs {
             let page_size = page_size.max(1);
             let skip = ((page - 1) as usize).saturating_mul(page_size as usize);
             let total = all.len();
-            let has_more = skip + (page_size as usize) < total;
+            let has_more = skip.saturating_add(page_size as usize) < total;
             let entries = all.into_iter().skip(skip).take(page_size as usize).collect();
             Ok((entries, has_more))
         } else {
@@ -710,12 +739,17 @@ impl Vfs for MultiBucketFs {
         let (bucket, subpath) = self.split_path(path).ok_or_else(|| VfsError::NotFound {
             path: path.clone(),
         })?;
-        if subpath.is_root()
-            && self.kind == LocationKind::S3 {
+        if subpath.is_root() {
+            if self.kind == LocationKind::S3 {
                 delete_s3_bucket(&self.config, bucket).await?;
                 *self.bucket_list_cache.write() = None;
+                self.operators.write().remove(bucket);
                 return Ok(());
             }
+            return Err(VfsError::Unsupported {
+                operation: "deleting an OSS bucket from the app",
+            });
+        }
         let bucket_fs = self.get_or_create_bucket_fs(bucket)?;
         bucket_fs.remove(&subpath).await
     }

@@ -60,7 +60,7 @@ impl russh::client::Handler for SshHandler {
 /// request channel as `UnexpectedBehavior("session closed")` or `SendError`.
 fn is_closed_error(error: &VfsError) -> bool {
     match error {
-        VfsError::Connection { .. } => true,
+        VfsError::Connection { message } => !message.to_lowercase().contains("timed out"),
         VfsError::Backend { source, .. } => {
             let text = source.to_string().to_lowercase();
             text.contains("session closed")
@@ -305,8 +305,8 @@ impl SftpFs {
         }
     }
 
-    /// Run one SFTP operation, reconnecting once if the transport died
-    /// between the liveness check and the request.
+    /// Run one idempotent SFTP read operation, reconnecting once if the
+    /// transport died between the liveness check and the request.
     async fn run<T, F, Fut>(&self, op: F) -> VfsResult<T>
     where
         F: Fn(Arc<SftpConnection>) -> Fut,
@@ -321,6 +321,23 @@ impl SftpFs {
             }
             result => result,
         }
+    }
+
+    /// Run one non-idempotent SFTP mutation without automatically replaying it
+    /// after an ambiguous transport drop.
+    async fn run_once<T, F, Fut>(&self, op: F) -> VfsResult<T>
+    where
+        F: Fn(Arc<SftpConnection>) -> Fut,
+        Fut: std::future::Future<Output = VfsResult<T>>,
+    {
+        let session = self.session_timed().await?;
+        let result = self.op_timed(&op, session).await;
+        if let Err(ref error) = result {
+            if is_closed_error(error) {
+                self.drop_session().await;
+            }
+        }
+        result
     }
 
     fn resolve_path(&self, path: &VfsPath) -> String {
@@ -396,9 +413,8 @@ impl Vfs for SftpFs {
             raw_items.push(raw);
         }
 
-        // name -> target is a directory (false on any error: broken
-        // links stay files and surface the server error when opened).
-        let mut link_target_is_dir: std::collections::HashMap<String, bool> =
+        // path -> (target is a directory, resolved target file size)
+        let mut link_targets: std::collections::HashMap<String, (bool, Option<u64>)> =
             std::collections::HashMap::new();
         if !link_paths.is_empty() {
             let paths = link_paths.clone();
@@ -406,37 +422,46 @@ impl Vfs for SftpFs {
                 .run(|session| {
                     let paths = paths.clone();
                     async move {
-                        let mut out = Vec::new();
-                        for path in paths {
-                            let is_dir = session
-                                .sftp
-                                .metadata(&path)
-                                .await
-                                .map(|m| m.is_dir())
-                                .unwrap_or(false);
-                            out.push((path, is_dir));
-                        }
+                        use futures_util::stream::{self, StreamExt};
+                        let out: Vec<(String, (bool, Option<u64>))> = stream::iter(paths)
+                            .map(|path| {
+                                let session = Arc::clone(&session);
+                                async move {
+                                    let info = session
+                                        .sftp
+                                        .metadata(&path)
+                                        .await
+                                        .map(|m| (m.is_dir(), Some(m.len())))
+                                        .unwrap_or((false, None));
+                                    (path, info)
+                                }
+                            })
+                            .buffer_unordered(32)
+                            .collect()
+                            .await;
                         Ok(out)
                     }
                 })
                 .await?;
-            link_target_is_dir = resolved.into_iter().collect();
+            link_targets = resolved.into_iter().collect();
         }
 
         let mut entries = Vec::new();
         for raw in raw_items {
             let child_path = dir.join(&raw.name);
-            let target_is_dir = raw.is_symlink
-                && link_target_is_dir
-                    .get(&self.resolve_path(&child_path))
-                    .copied()
-                    .unwrap_or(false);
+            let target_info = if raw.is_symlink {
+                link_targets.get(&self.resolve_path(&child_path)).copied()
+            } else {
+                None
+            };
+            let target_is_dir = target_info.map(|(d, _)| d).unwrap_or(false);
             let is_dir = raw.is_dir || target_is_dir;
+            let file_size = target_info.and_then(|(_, sz)| sz).unwrap_or(raw.size);
             entries.push(Entry {
                 name: raw.name.clone(),
                 path: child_path,
                 kind: if is_dir { EntryKind::Dir } else { EntryKind::File },
-                size: if is_dir { None } else { Some(raw.size) },
+                size: if is_dir { None } else { Some(file_size) },
                 modified: raw.modified,
                 mode: None,
                 hidden: raw.name.starts_with('.'),
@@ -578,7 +603,7 @@ impl Vfs for SftpFs {
         };
 
         let file = self
-            .run(|session| {
+            .run_once(|session| {
                 let sftp_path = sftp_path.clone();
                 async move {
                 session
@@ -598,7 +623,7 @@ impl Vfs for SftpFs {
 
     async fn mkdir(&self, path: &VfsPath) -> VfsResult<()> {
         let sftp_path = self.resolve_path(path);
-        self.run(|session| {
+        self.run_once(|session| {
             let sftp_path = sftp_path.clone();
             async move {
             session
@@ -616,7 +641,7 @@ impl Vfs for SftpFs {
 
     async fn remove(&self, path: &VfsPath) -> VfsResult<()> {
         let sftp_path = self.resolve_path(path);
-        self.run(|session| {
+        self.run_once(|session| {
             let sftp_path = sftp_path.clone();
             async move {
             // LSTAT, not STAT: removing a symlink-to-dir must unlink
@@ -647,7 +672,7 @@ impl Vfs for SftpFs {
     async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
         let from_p = self.resolve_path(from);
         let to_p = self.resolve_path(to);
-        self.run(|session| {
+        self.run_once(|session| {
             let from_p = from_p.clone();
             let to_p = to_p.clone();
             async move {

@@ -162,21 +162,25 @@ class _RecentPageState extends State<RecentPage> {
         action: SnackBarAction(
           label: AppLocalizations.of(context).undo,
           onPressed: () async {
-            // Re-record the visit, then put it back where it was in the list.
-            // The restored row is found by root+path: the database orders by
-            // visit time, so assuming it lands last picks the wrong entry.
-            await StorageService.instance.recordHistory(root: h.root, path: h.path);
-            await _loadHistory();
-            if (!mounted) return;
-            setState(() {
-              final found = _history.indexWhere(
-                (e) => e.root == h.root && e.path == h.path,
-              );
-              if (found >= 0 && index >= 0) {
-                final restored = _history.removeAt(found);
-                _history.insert(index.clamp(0, _history.length), restored);
-              }
-            });
+            try {
+              // Re-record the visit, then put it back where it was in the list.
+              // The restored row is found by root+path: the database orders by
+              // visit time, so assuming it lands last picks the wrong entry.
+              await StorageService.instance.recordHistory(root: h.root, path: h.path);
+              await _loadHistory();
+              if (!mounted) return;
+              setState(() {
+                final found = _history.indexWhere(
+                  (e) => e.root == h.root && e.path == h.path,
+                );
+                if (found >= 0 && index >= 0) {
+                  final reordered = List<HistoryDto>.of(_history);
+                  final restored = reordered.removeAt(found);
+                  reordered.insert(index.clamp(0, reordered.length), restored);
+                  _history = reordered;
+                }
+              });
+            } catch (_) {}
           },
         ),
       ),
@@ -222,10 +226,12 @@ class _RecentPageState extends State<RecentPage> {
         action: SnackBarAction(
           label: AppLocalizations.of(context).undo,
           onPressed: () async {
-            for (final h in cleared.reversed) {
-              await StorageService.instance.recordHistory(root: h.root, path: h.path);
-            }
-            await _loadHistory();
+            try {
+              for (final h in cleared.reversed) {
+                await StorageService.instance.recordHistory(root: h.root, path: h.path);
+              }
+              await _loadHistory();
+            } catch (_) {}
           },
         ),
       ),
@@ -333,7 +339,7 @@ class _RecentPageState extends State<RecentPage> {
   }
 
   String _displayTitle(HistoryDto h) {
-    if (h.path.isEmpty) return h.root;
+    if (h.path.isEmpty) return _rootLabel(h.root);
     final segments = h.path.split('/').where((s) => s.isNotEmpty).toList();
     return segments.isNotEmpty ? segments.last : h.path;
   }

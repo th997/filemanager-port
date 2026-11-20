@@ -227,6 +227,7 @@ impl OpendalFs {
         // supported through an explicit, opt-in certificate pin instead.
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
+            .read_timeout(std::time::Duration::from_secs(60))
             .build()
             .map_err(|e| VfsError::Connection {
                 message: format!("failed to initialize WebDAV HTTP client: {e}"),
@@ -685,6 +686,11 @@ impl OpendalFs {
             }
         }
         if self.kind == LocationKind::WebDav {
+            if mode == WriteMode::Append {
+                return Err(VfsError::Unsupported {
+                    operation: "append on WebDAV",
+                });
+            }
             if let Some(info) = &self.webdav_info {
                 let url = info.build_url(path).map_err(|e| VfsError::Backend {
                     path: path.clone(),
@@ -767,20 +773,41 @@ impl OpendalFs {
     async fn rename_impl(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()> {
         let op_from = Self::to_opendal_path(from);
         let op_to = Self::to_opendal_path(to);
+        if op_from == op_to {
+            return Ok(());
+        }
         match self.operator.rename(&op_from, &op_to).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == opendal::ErrorKind::Unsupported => {
                 // S3 and OSS lack native rename; fallback to server-side copy + delete
-                // Check if this is a directory rename
+                // Check if this is a directory rename (including virtual directories without marker objects)
                 let from_dir = Self::to_opendal_dir_path(from);
                 let to_dir = Self::to_opendal_dir_path(to);
                 let is_dir = if let Ok(meta) = self.operator.stat(&from_dir).await {
                     meta.mode() == opendal::EntryMode::DIR
+                } else if let Ok(mut lister) = self.operator.lister(&from_dir).await {
+                    let mut has_child = false;
+                    while let Some(Ok(item)) = lister.next().await {
+                        if item.path() != from_dir {
+                            has_child = true;
+                            break;
+                        }
+                    }
+                    has_child
                 } else {
                     false
                 };
 
                 if is_dir {
+                    if to_dir.starts_with(&from_dir) {
+                        return Err(VfsError::Backend {
+                            path: from.clone(),
+                            source: std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "cannot move a folder into itself",
+                            ),
+                        });
+                    }
                     // Copy all objects under from_dir to to_dir
                     let mut lister = self
                         .operator

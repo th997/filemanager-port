@@ -2410,4 +2410,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String errorCannotReachServer(String raw) {
     return 'Cannot reach the server. Check the address, port and your network.\n($raw)';
   }
+
+  @override
+  String get playLabel => 'Play';
+
+  @override
+  String get pauseLabel => 'Pause';
+
+  @override
+  String get webdavCleartextWarning =>
+      'This URL uses http:// — the password and files travel unencrypted. Use https:// if the server supports it.';
+
+  @override
+  String get selectThisFolder => 'Select this folder';
+
+  @override
+  String get selectFolderAction => 'Select';
+
+  @override
+  String get lanSharingDesc =>
+      'Share a local folder over Wi-Fi so any browser on the same network can browse or download files.';
 }

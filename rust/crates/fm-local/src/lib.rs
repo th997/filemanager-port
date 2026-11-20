@@ -274,14 +274,16 @@ impl Vfs for LocalFs {
 
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         let native = self.resolve_parent(path)?;
-        let metadata = tokio::fs::metadata(&native)
+        let sym_meta = tokio::fs::symlink_metadata(&native)
             .await
             .map_err(|error| self.io_error(path, error))?;
+        let is_symlink = sym_meta.file_type().is_symlink();
+        let metadata = if is_symlink {
+            tokio::fs::metadata(&native).await.unwrap_or(sym_meta)
+        } else {
+            sym_meta
+        };
         let name = path.name().unwrap_or("").to_owned();
-        let is_symlink = tokio::fs::symlink_metadata(&native)
-            .await
-            .map(|meta| meta.file_type().is_symlink())
-            .unwrap_or(false);
         Ok(entry_from_metadata(path.clone(), name, &metadata, is_symlink))
     }
 
@@ -373,7 +375,8 @@ impl Vfs for LocalFs {
         let result = if metadata.file_type().is_symlink() {
             #[cfg(windows)]
             {
-                if metadata.is_dir() {
+                use std::os::windows::fs::FileTypeExt;
+                if metadata.file_type().is_symlink_dir() {
                     tokio::fs::remove_dir(&native).await
                 } else {
                     tokio::fs::remove_file(&native).await

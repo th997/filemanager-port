@@ -447,76 +447,89 @@ class _RemotesPageState extends State<RemotesPage> {
     }
     bool? imported;
     try {
+      var importing = false;
       imported = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(AppLocalizations.of(context).restoreConnections),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppLocalizations.of(context).pasteJsonBackupHint,
-                  style: TextStyle(fontSize: 12),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: controller,
-                  maxLines: 8,
-                  decoration: const InputDecoration(
-                    hintText: '[{"id": "...", "name": "...", "kind": "s3", ...}]',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text(AppLocalizations.of(context).restoreConnections),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    AppLocalizations.of(context).pasteJsonBackupHint,
+                    style: const TextStyle(fontSize: 12),
                   ),
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      hintText: '[{"id": "...", "name": "...", "kind": "s3", ...}]',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                  ),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: importing ? null : () => Navigator.of(ctx).pop(false),
+                child: Text(AppLocalizations.of(context).cancel),
+              ),
+              FilledButton(
+                onPressed: importing
+                    ? null
+                    : () async {
+                        final text = controller.text.trim();
+                        if (text.isEmpty) return;
+                        setDialogState(() => importing = true);
+                        try {
+                          final count = await StorageService.instance.importRemotesJson(text);
+                          final failures = StorageService.instance.lastImportFailures;
+                          if (ctx.mounted) {
+                            Navigator.of(ctx).pop(true);
+                          }
+                          if (mounted) {
+                            final detail = failures.isEmpty
+                                ? ''
+                                : '; ${failures.length} failed: ${failures.join(', ')}';
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(AppLocalizations.of(context).importedConnections(count, detail)),
+                                backgroundColor: failures.isEmpty
+                                    ? Theme.of(context).colorScheme.success
+                                    : Theme.of(context).colorScheme.error,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            setDialogState(() => importing = false);
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(
+                                content: Text(AppLocalizations.of(ctx).importFailed('$e')),
+                                backgroundColor: Theme.of(ctx).colorScheme.error,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: importing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(AppLocalizations.of(context).importAction),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(AppLocalizations.of(context).cancel),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final text = controller.text.trim();
-                if (text.isEmpty) return;
-                try {
-                  final count = await StorageService.instance.importRemotesJson(text);
-                  final failures = StorageService.instance.lastImportFailures;
-                  if (ctx.mounted) {
-                    Navigator.of(ctx).pop(true);
-                  }
-                  if (mounted) {
-                    final detail = failures.isEmpty
-                        ? ''
-                        : '; ${failures.length} failed: ${failures.join(', ')}';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(AppLocalizations.of(context).importedConnections(count, detail)),
-                        backgroundColor: failures.isEmpty
-                            ? Theme.of(context).colorScheme.success
-                            : Theme.of(context).colorScheme.error,
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(
-                        content: Text(AppLocalizations.of(ctx).importFailed('$e')),
-                        backgroundColor: Theme.of(ctx).colorScheme.error,
-                      ),
-                    );
-                  }
-                }
-              },
-              child: Text(AppLocalizations.of(context).importAction),
-            ),
-          ],
         ),
       );
     } finally {

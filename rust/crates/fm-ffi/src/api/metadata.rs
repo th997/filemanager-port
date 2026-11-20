@@ -165,6 +165,7 @@ pub async fn move_to_trash(db_path: String, source_path: String) -> Result<(), S
         let _ = db.remove_trash_item(id);
         return Err(e.to_string());
     }
+    super::file_manager::invalidate_local_dir_caches();
     let _ = is_dir;
     Ok(())
 }
@@ -196,7 +197,7 @@ pub async fn restore_trash_item(db_path: String, id: String) -> Result<(), Strin
         let stored = PathBuf::from(&item.stored_path);
         let original = PathBuf::from(&item.original_path);
 
-        if original.exists() {
+        if std::fs::symlink_metadata(&original).is_ok() {
             return Err(format!(
                 "destination already exists: {}",
                 original.display()
@@ -216,6 +217,7 @@ pub async fn restore_trash_item(db_path: String, id: String) -> Result<(), Strin
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
         db.remove_trash_item(numeric_id).map_err(|e| e.to_string())?;
+        super::file_manager::invalidate_local_dir_caches();
     }
     Ok(())
 }
@@ -234,8 +236,9 @@ fn move_path(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
         #[cfg(windows)]
         {
+            use std::os::windows::fs::FileTypeExt;
             let target = std::fs::read_link(src)?;
-            if meta.is_dir() {
+            if meta.file_type().is_symlink_dir() {
                 std::os::windows::fs::symlink_dir(target, dst)?;
                 std::fs::remove_dir(src)?;
             } else {
@@ -244,10 +247,16 @@ fn move_path(src: &Path, dst: &Path) -> std::io::Result<()> {
             }
         }
     } else if meta.is_dir() {
-        copy_dir_recursive(src, dst)?;
+        if let Err(e) = copy_dir_recursive(src, dst) {
+            let _ = std::fs::remove_dir_all(dst);
+            return Err(e);
+        }
         std::fs::remove_dir_all(src)?;
     } else {
-        std::fs::copy(src, dst)?;
+        if let Err(e) = std::fs::copy(src, dst) {
+            let _ = std::fs::remove_file(dst);
+            return Err(e);
+        }
         std::fs::remove_file(src)?;
     }
     Ok(())
@@ -268,8 +277,9 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
             }
             #[cfg(windows)]
             {
+                use std::os::windows::fs::FileTypeExt;
                 let target = std::fs::read_link(&src_child)?;
-                if meta.is_dir() {
+                if meta.file_type().is_symlink_dir() {
                     let _ = std::os::windows::fs::symlink_dir(target, &dst_child);
                 } else {
                     let _ = std::os::windows::fs::symlink_file(target, &dst_child);
@@ -277,7 +287,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
             }
         } else if meta.is_dir() {
             copy_dir_recursive(&src_child, &dst_child)?;
-        } else {
+        } else if meta.is_file() {
             std::fs::copy(&src_child, &dst_child)?;
         }
     }

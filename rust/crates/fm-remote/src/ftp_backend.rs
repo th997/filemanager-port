@@ -273,16 +273,32 @@ async fn start_download<T>(
 where
     T: TokioTlsStream + Send,
 {
-    ftp.transfer_type(FileType::Binary)
+    tokio::time::timeout(FTP_TIMEOUT, ftp.transfer_type(FileType::Binary))
         .await
+        .map_err(|_| VfsError::Connection {
+            message: format!("FTP TYPE command timed out after {}s", FTP_TIMEOUT.as_secs()),
+        })?
         .map_err(|e| FtpFs::ftp_error(path, e))?;
     if offset > 0 {
-        ftp.resume_transfer(offset as usize)
+        let rest_offset = usize::try_from(offset).map_err(|_| VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "FTP resume offset exceeds platform pointer size",
+            ),
+        })?;
+        tokio::time::timeout(FTP_TIMEOUT, ftp.resume_transfer(rest_offset))
             .await
+            .map_err(|_| VfsError::Connection {
+                message: format!("FTP REST command timed out after {}s", FTP_TIMEOUT.as_secs()),
+            })?
             .map_err(|e| FtpFs::ftp_error(path, e))?;
     }
-    ftp.retr_as_stream(ftp_path)
+    tokio::time::timeout(FTP_TIMEOUT, ftp.retr_as_stream(ftp_path))
         .await
+        .map_err(|_| VfsError::Connection {
+            message: format!("FTP RETR command timed out after {}s", FTP_TIMEOUT.as_secs()),
+        })?
         .map_err(|e| FtpFs::ftp_error(path, e))
 }
 
@@ -305,10 +321,14 @@ where
     let mut left = length.unwrap_or(u64::MAX);
     let mut buf = vec![0u8; 64 * 1024];
     let mut failure: Option<String> = None;
+    let mut reached_eof = false;
     while left > 0 {
         let want = left.min(buf.len() as u64) as usize;
         match stream.read(&mut buf[..want]).await {
-            Ok(0) => break,
+            Ok(0) => {
+                reached_eof = true;
+                break;
+            }
             Ok(n) => {
                 if writer.write_all(&buf[..n]).await.is_err() {
                     // Reader went away (seek, close); stop downloading.
@@ -322,7 +342,11 @@ where
             }
         }
     }
-    let _ = stream.finish().await;
+    // Only wait for the server's 226 reply when EOF was actually reached;
+    // on early stop (Range end or dropped reader) waiting blocks indefinitely.
+    if reached_eof && failure.is_none() {
+        let _ = tokio::time::timeout(Duration::from_secs(5), stream.finish()).await;
+    }
     let _ = writer.shutdown().await;
     match failure {
         Some(msg) => Err(msg),
@@ -342,17 +366,25 @@ async fn upload(
 
     macro_rules! send {
         ($ftp:expr) => {{
-            $ftp.transfer_type(FileType::Binary)
+            tokio::time::timeout(FTP_TIMEOUT, $ftp.transfer_type(FileType::Binary))
                 .await
+                .map_err(|_| format!("FTP TYPE timed out after {}s", FTP_TIMEOUT.as_secs()))?
                 .map_err(|e| e.to_string())?;
             let mut stream = if mode == WriteMode::Append {
-                $ftp.append_with_stream(&ftp_path).await
+                tokio::time::timeout(FTP_TIMEOUT, $ftp.append_with_stream(&ftp_path))
+                    .await
+                    .map_err(|_| format!("FTP APPE timed out after {}s", FTP_TIMEOUT.as_secs()))?
             } else {
-                $ftp.put_with_stream(&ftp_path).await
+                tokio::time::timeout(FTP_TIMEOUT, $ftp.put_with_stream(&ftp_path))
+                    .await
+                    .map_err(|_| format!("FTP STOR timed out after {}s", FTP_TIMEOUT.as_secs()))?
             }
             .map_err(|e| e.to_string())?;
             drain_pipe(&mut rx, &mut stream).await?;
-            stream.finish().await.map_err(|e| e.to_string())?;
+            tokio::time::timeout(FTP_TIMEOUT, stream.finish())
+                .await
+                .map_err(|_| format!("FTP transfer finalize timed out after {}s", FTP_TIMEOUT.as_secs()))?
+                .map_err(|e| e.to_string())?;
         }};
     }
 
@@ -483,6 +515,15 @@ impl Vfs for FtpFs {
     ) -> VfsResult<Box<dyn AsyncWrite + Send + Unpin>> {
         if !self.capabilities.write {
             return Err(VfsError::Unsupported { operation: "write" });
+        }
+        if mode == WriteMode::Create && self.stat(path).await.is_ok() {
+            return Err(VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "file already exists",
+                ),
+            });
         }
         let ftp_path = self.resolve_path(path);
         let config = self.config.clone();

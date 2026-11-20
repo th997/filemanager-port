@@ -174,7 +174,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
                     builder: (ctx, candidate, rejected) => InkWell(
                       borderRadius: BorderRadius.circular(4),
                       onTap: () => onSegmentTap?.call(''),
-                      onLongPress: () => onCopyPath?.call(root),
+                      onLongPress: () => onCopyPath?.call(''),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         child: Text(

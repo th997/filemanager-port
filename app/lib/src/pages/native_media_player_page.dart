@@ -65,6 +65,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
   late int _index;
   bool _switching = false;
+  int _openGeneration = 0;
   double _playbackSpeed = 1.0;
   double _volume = 1.0;
   double _lastNonZeroVolume = 1.0;
@@ -200,6 +201,9 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   }
 
   Future<void> _openCurrentTrack() async {
+    final gen = ++_openGeneration;
+    final track = _track;
+    final index = _index;
     _controlsTimer?.cancel();
     final oldController = _controller;
     _controller = null;
@@ -211,19 +215,19 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       await oldController.dispose();
     }
 
-    if (mounted) {
-      setState(() {
-        _initialized = false;
-        _error = null;
-      });
-    }
+    if (!mounted || gen != _openGeneration) return;
+    setState(() {
+      _initialized = false;
+      _error = null;
+    });
 
+    VideoPlayerController? controller;
     try {
       final String uri;
-      final native = joinNative(widget.root, _track.path);
+      final native = joinNative(widget.root, track.path);
       if (isNativeRoot(widget.root) && File(native).existsSync()) {
         uri = Uri.file(native).toString();
-        _controller = VideoPlayerController.file(
+        controller = VideoPlayerController.file(
           File(native),
           videoPlayerOptions: VideoPlayerOptions(
             mixWithOthers: false,
@@ -233,15 +237,21 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       } else {
         final base = (await startMediaStream(root: widget.root))
             .replaceFirst(RegExp(r'/$'), '');
+        if (!mounted || gen != _openGeneration) {
+          if (!GlobalPlaybackService.instance.hasActiveSession) {
+            stopMediaStreams();
+          }
+          return;
+        }
         _startedStream = true;
-        final encoded = _track.path
+        final encoded = track.path
             .split('/')
             .where((segment) => segment.isNotEmpty)
             .map(Uri.encodeComponent)
             .join('/');
         final bufferMb = PreferencesService.instance.bufferSizeMb;
         uri = '$base/$encoded?buffer_mb=$bufferMb';
-        _controller = VideoPlayerController.networkUrl(
+        controller = VideoPlayerController.networkUrl(
           Uri.parse(uri),
           videoPlayerOptions: VideoPlayerOptions(
             mixWithOthers: false,
@@ -250,18 +260,22 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         );
       }
 
-      await _controller!.initialize();
-      if (!mounted || _controller == null) return;
-      _controller!.addListener(_onControllerUpdate);
+      await controller.initialize();
+      if (!mounted || gen != _openGeneration) {
+        await controller.dispose();
+        return;
+      }
+      _controller = controller;
+      controller.addListener(_onControllerUpdate);
 
       GlobalPlaybackService.instance.setIosSession(
         root: widget.root,
-        path: _track.path,
-        fileName: _track.fileName,
-        isAudio: _track.isAudio,
+        path: track.path,
+        fileName: track.fileName,
+        isAudio: track.isAudio,
         playlist: widget.playlist,
-        currentIndex: _index,
-        controller: _controller!,
+        currentIndex: index,
+        controller: controller,
         startedStream: _startedStream,
         playbackSpeed: _playbackSpeed,
       );
@@ -272,16 +286,18 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         }).catchError((_) {});
       }
 
-      await _controller!.setLooping(_isLooping);
-      await _controller!.setPlaybackSpeed(_playbackSpeed);
-      await _controller!.setVolume(_volume);
+      await controller.setLooping(_isLooping);
+      await controller.setPlaybackSpeed(_playbackSpeed);
+      await controller.setVolume(_volume);
+      if (!mounted || gen != _openGeneration) return;
 
       await _applyResume();
+      if (!mounted || gen != _openGeneration) return;
 
-      await _controller!.play();
+      await controller.play();
       WakelockPlus.enable().catchError((_) {});
 
-      if (mounted) {
+      if (mounted && gen == _openGeneration) {
         setState(() {
           _initialized = true;
         });
@@ -289,7 +305,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         _updateNowPlaying(force: true);
       }
     } catch (e) {
-      if (mounted) {
+      if (controller != null && !identical(_controller, controller)) {
+        try {
+          await controller.dispose();
+        } catch (_) {}
+      }
+      if (mounted && gen == _openGeneration) {
         setState(() {
           _error = e.toString();
         });
@@ -407,7 +428,9 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     try {
       await _openCurrentTrack();
     } finally {
-      _switching = false;
+      if (index == _index) {
+        _switching = false;
+      }
     }
   }
 
@@ -559,9 +582,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
         ]);
       } else {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-        ]);
+        SystemChrome.setPreferredOrientations(const []);
       }
     });
   }
@@ -773,8 +794,29 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
   void _closeAndExit() {
     _isExplicitlyClosed = true;
+    _openGeneration++;
     _saveResumePosition();
+    final c = _controller;
+    final ownedByService =
+        c != null && identical(GlobalPlaybackService.instance.videoPlayerController, c);
+    final streamOwnedByService = GlobalPlaybackService.instance.startedStream;
     GlobalPlaybackService.instance.stop();
+    if (c != null && !ownedByService) {
+      _controller = null;
+      try {
+        c.removeListener(_onControllerUpdate);
+      } catch (_) {}
+      try {
+        c.pause().catchError((_) {});
+      } catch (_) {}
+      try {
+        c.dispose().catchError((_) {});
+      } catch (_) {}
+    }
+    if (_startedStream && !streamOwnedByService) {
+      _startedStream = false;
+      stopMediaStreams();
+    }
     if (mounted) {
       Navigator.of(context).maybePop();
     }

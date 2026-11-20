@@ -200,7 +200,7 @@ pub async fn start_copy_task(
             let mut failures: Vec<String> = Vec::new();
             for src in src_paths {
                 if cancel.is_cancelled() {
-                    break;
+                    return Err("operation cancelled".to_string());
                 }
                 let src_p = VfsPath::from_slash_path(&src);
                 let file_name = if is_batch {
@@ -303,11 +303,13 @@ pub async fn start_move_task(
             let mut failures: Vec<String> = Vec::new();
             for src in &src_paths {
                 if cancel.is_cancelled() {
-                    break;
+                    return Err("operation cancelled".to_string());
                 }
                 let src_p = VfsPath::from_slash_path(src);
                 let file_name = src_p.name().unwrap_or("file");
                 let dst_p = dst_base.join(file_name);
+                let mut fallback_dst = dst_p.clone();
+                let mut overwrite_backup: Option<VfsPath> = None;
                 if is_same_fs {
                     if dst_p == src_p {
                         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
@@ -349,8 +351,19 @@ pub async fn start_move_task(
                                     continue;
                                 }
                                 if !dst_is_dir && src_is_dir {
-                                    // rename() cannot replace a file with a tree.
-                                    let _ = dst_vfs.remove(&dst_p).await;
+                                    // rename() cannot replace a file with a tree; park the
+                                    // existing file aside so it can be restored if rename/copy fails.
+                                    let bak_name = format!(
+                                        "{file_name}.{}.fm-old",
+                                        Uuid::new_v4().simple()
+                                    );
+                                    let bak_p = dst_base.join(bak_name);
+                                    if dst_vfs.rename(&dst_p, &bak_p).await.is_ok() {
+                                        overwrite_backup = Some(bak_p);
+                                    } else {
+                                        failures.push(format!("{file_name}: could not replace existing file with folder"));
+                                        continue;
+                                    }
                                 }
                             }
                             dst_p.clone()
@@ -370,44 +383,56 @@ pub async fn start_move_task(
                             }
                         }
                     };
+                    fallback_dst = target_p.clone();
 
                     if src_vfs.rename(&src_p, &target_p).await.is_ok() {
+                        if let Some(bak) = overwrite_backup.take() {
+                            let _ = dst_vfs.remove(&bak).await;
+                        }
                         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
                         p.completed += 1;
                         continue;
                     }
                 }
-                let created = dst_vfs.stat(&dst_p).await.is_err();
+                let created = dst_vfs.stat(&fallback_dst).await.is_err();
                 let skipped_before = progress
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .policy_skips;
+                    .skipped;
                 if let Err(e) = copy_recursive(
                     src_vfs.as_ref(),
                     &src_p,
                     dst_vfs.as_ref(),
-                    &dst_p,
+                    &fallback_dst,
                     &progress,
                     &cancel,
                     policy,
                 )
                 .await
                 {
-                    let is_dir = dst_vfs.stat(&dst_p).await.map(|s| s.kind == EntryKind::Dir).unwrap_or(false);
+                    let is_dir = dst_vfs.stat(&fallback_dst).await.map(|s| s.kind == EntryKind::Dir).unwrap_or(false);
                     if created && !is_dir {
-                        discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
+                        discard_partial_copy(dst_vfs.as_ref(), &fallback_dst).await;
+                    }
+                    if let Some(bak) = overwrite_backup.take() {
+                        if dst_vfs.stat(&dst_p).await.is_err() {
+                            let _ = dst_vfs.rename(&bak, &dst_p).await;
+                        }
                     }
                     failures.push(format!("{file_name}: {e}"));
                     continue;
                 }
+                if let Some(bak) = overwrite_backup.take() {
+                    let _ = dst_vfs.remove(&bak).await;
+                }
 
-                // Under the Skip policy a skipped file was never copied, so
-                // its source must stay exactly where it is — deleting it
-                // here would destroy the only copy.
+                // If anything inside the source tree was skipped (Skip policy,
+                // symlinks, or special files), leave the source intact so
+                // uncopied items are never destroyed.
                 let skipped_now = progress
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .policy_skips;
+                    .skipped;
                 if skipped_now > skipped_before {
                     continue;
                 }
@@ -415,10 +440,8 @@ pub async fn start_move_task(
                 if let Err(e) =
                     delete_recursive(src_vfs.as_ref(), &src_p, &progress, &cancel).await
                 {
-                    let is_dir = dst_vfs.stat(&dst_p).await.map(|s| s.kind == EntryKind::Dir).unwrap_or(false);
-                    if created && !is_dir {
-                        discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
-                    }
+                    // Keep the completed destination copy intact; removing it
+                    // would contradict the error message and risk data loss.
                     failures.push(format!("{file_name}: copied but source not removed: {e}"));
                 }
             }
@@ -450,7 +473,7 @@ pub async fn start_delete_task(root: String, paths: Vec<String>) -> Result<Strin
             let mut failures: Vec<String> = Vec::new();
             for p in paths {
                 if cancel.is_cancelled() {
-                    break;
+                    return Err("operation cancelled".to_string());
                 }
                 let vfs_p = VfsPath::from_slash_path(&p);
                 if let Err(e) =

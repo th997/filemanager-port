@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/services/app_route_observer.dart';
 import 'src/services/external_file_service.dart';
 import 'src/services/global_playback_service.dart';
 import 'src/services/platform_paths.dart';
@@ -289,6 +290,7 @@ class _FileManagerAppState extends State<FileManagerApp>
             : ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark);
         return MaterialApp(
           navigatorKey: appNavigatorKey,
+          navigatorObservers: [appRouteObserver, appModalObserver],
           title: 'FP File Manager',
           debugShowCheckedModeBanner: false,
           locale: _locale,

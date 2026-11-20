@@ -2375,4 +2375,24 @@ class AppLocalizationsJa extends AppLocalizations {
   String errorCannotReachServer(String raw) {
     return 'サーバーに到達できません。アドレス、ポート、ネットワークを確認してください。\n($raw)';
   }
+
+  @override
+  String get playLabel => '再生';
+
+  @override
+  String get pauseLabel => '一時停止';
+
+  @override
+  String get webdavCleartextWarning =>
+      'このURLは http:// を使用しているため、パスワードとファイルが暗号化されずに送信されます。サーバーが対応している場合は https:// を使用してください。';
+
+  @override
+  String get selectThisFolder => 'このフォルダを選択';
+
+  @override
+  String get selectFolderAction => '選択';
+
+  @override
+  String get lanSharingDesc =>
+      'Wi-Fi 経由でローカルフォルダを共有し、同じネットワーク内の任意のブラウザから閲覧・ダウンロードできます。';
 }

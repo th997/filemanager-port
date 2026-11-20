@@ -191,7 +191,7 @@ class StorageService {
   List<String> lastImportFailures = [];
 
   Future<int> importRemotesJson(String jsonStr) async {
-    final list = _parseRemotesJson(jsonStr);
+    final list = _parseRemotesJson(jsonStr, strict: true);
     lastImportFailures = [];
     if (list.isEmpty) return 0;
     var count = 0;
@@ -397,7 +397,10 @@ class StorageService {
     }
   }
 
-  static List<rem_api.RemoteConfigDto> _parseRemotesJson(String jsonStr) {
+  static List<rem_api.RemoteConfigDto> _parseRemotesJson(
+    String jsonStr, {
+    bool strict = false,
+  }) {
     try {
       final decoded = jsonDecode(jsonStr);
       if (decoded is List) {
@@ -406,7 +409,15 @@ class StorageService {
             .map((m) => _remoteConfigFromMap(m.cast<String, dynamic>()))
             .toList();
       }
-    } catch (_) {}
+      if (decoded is Map) {
+        return [_remoteConfigFromMap(decoded.cast<String, dynamic>())];
+      }
+      if (strict) {
+        throw const FormatException('Expected a JSON array or object of remote connections');
+      }
+    } catch (_) {
+      if (strict) rethrow;
+    }
     return [];
   }
 

@@ -117,7 +117,6 @@ class _EntryThumbnailState extends State<EntryThumbnail> {
         height: widget.size,
         fit: BoxFit.cover,
         cacheWidth: (widget.size * 2).round(),
-        cacheHeight: (widget.size * 2).round(),
         errorBuilder: (_, _, _) => fallback,
       ),
     );

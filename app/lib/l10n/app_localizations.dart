@@ -4215,6 +4215,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cannot reach the server. Check the address, port and your network.\n({raw})'**
   String errorCannotReachServer(String raw);
+
+  /// No description provided for @playLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Play'**
+  String get playLabel;
+
+  /// No description provided for @pauseLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get pauseLabel;
+
+  /// No description provided for @webdavCleartextWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'This URL uses http:// — the password and files travel unencrypted. Use https:// if the server supports it.'**
+  String get webdavCleartextWarning;
+
+  /// No description provided for @selectThisFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Select this folder'**
+  String get selectThisFolder;
+
+  /// No description provided for @selectFolderAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Select'**
+  String get selectFolderAction;
+
+  /// No description provided for @lanSharingDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Share a local folder over Wi-Fi so any browser on the same network can browse or download files.'**
+  String get lanSharingDesc;
 }
 
 class _AppLocalizationsDelegate

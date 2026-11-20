@@ -28,6 +28,11 @@ pub(crate) fn invalidate_dir_cache(root: &str) {
     cache.retain(|(r, _, _, _), _| r != root);
 }
 
+pub(crate) fn invalidate_local_dir_caches() {
+    let mut cache = dir_cache().lock();
+    cache.retain(|(r, _, _, _), _| r.starts_with("remote://") || r.starts_with("archive://"));
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CapabilitiesDto {
     pub read: bool,
@@ -263,14 +268,14 @@ pub async fn list_dir_paged(
 ) -> Result<PagedEntriesDto, String> {
     let cache_key = (root.clone(), path.clone(), sort_by.clone(), sort_ascending);
     let ttl = Duration::from_secs(5);
-    let now = Instant::now();
 
     let cached_dtos = {
         let mut cache = dir_cache().lock();
-        cache.retain(|_, entry| now.duration_since(entry.created_at) < ttl);
+        let now = Instant::now();
+        cache.retain(|_, entry| now.saturating_duration_since(entry.created_at) < ttl);
         if page > 1 {
             cache.get(&cache_key).and_then(|entry| {
-                if now.duration_since(entry.created_at) < ttl {
+                if now.saturating_duration_since(entry.created_at) < ttl {
                     Some(entry.dtos.clone())
                 } else {
                     None
@@ -297,7 +302,7 @@ pub async fn list_dir_paged(
             cache.insert(
                 cache_key,
                 DirCacheEntry {
-                    created_at: now,
+                    created_at: Instant::now(),
                     dtos: dtos.clone(),
                 },
             );
@@ -500,6 +505,59 @@ pub fn clear_archive_cache() {
 pub async fn write_text_file(root: String, path: String, content: String) -> Result<(), String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
+
+    if !backend.prefers_direct_write() && backend.capabilities().rename {
+        let name = vfs_path.name().unwrap_or("file");
+        let parent = vfs_path.parent().unwrap_or_else(VfsPath::root);
+        let tmp_path = parent.join(format!("{name}.{}.fm-part", uuid::Uuid::new_v4().simple()));
+
+        let write_res: Result<(), String> = async {
+            let mut writer = backend
+                .open_write(&tmp_path, WriteMode::Truncate)
+                .await
+                .map_err(|e| e.to_string())?;
+            writer
+                .write_all(content.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+            writer.flush().await.map_err(|e| e.to_string())?;
+            writer.shutdown().await.map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = write_res {
+            let _ = backend.remove(&tmp_path).await;
+            return Err(e);
+        }
+
+        if let Err(rename_err) = backend.rename(&tmp_path, &vfs_path).await {
+            if backend.stat(&vfs_path).await.is_ok() {
+                let bak_path = parent.join(format!("{name}.{}.fm-old", uuid::Uuid::new_v4().simple()));
+                if backend.rename(&vfs_path, &bak_path).await.is_ok() {
+                    match backend.rename(&tmp_path, &vfs_path).await {
+                        Ok(()) => {
+                            let _ = backend.remove(&bak_path).await;
+                        }
+                        Err(e) => {
+                            let _ = backend.rename(&bak_path, &vfs_path).await;
+                            let _ = backend.remove(&tmp_path).await;
+                            return Err(e.to_string());
+                        }
+                    }
+                } else {
+                    let _ = backend.remove(&tmp_path).await;
+                    return Err(rename_err.to_string());
+                }
+            } else {
+                let _ = backend.remove(&tmp_path).await;
+                return Err(rename_err.to_string());
+            }
+        }
+        invalidate_dir_cache(&root);
+        return Ok(());
+    }
+
     let mut writer = backend
         .open_write(&vfs_path, WriteMode::Truncate)
         .await

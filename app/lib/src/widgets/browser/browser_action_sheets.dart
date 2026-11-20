@@ -67,7 +67,7 @@ Future<String?> showBrowserEntryModalBottomSheet({
               title: Text(l10n.selectItems),
               onTap: () => Navigator.of(ctx).pop('select'),
             ),
-            if (item.isArchive && canArchive)
+            if (item.isArchive && canWrite && canArchive)
               ListTile(
                 leading: const Icon(Icons.unarchive),
                 title: Text(l10n.extractHere),
@@ -242,7 +242,7 @@ Future<String?> showBrowserContextMenu({
           ],
         ),
       ),
-      if (item.isArchive && canArchive)
+      if (item.isArchive && canWrite && canArchive)
         PopupMenuItem(
           value: 'extract',
           child: Row(

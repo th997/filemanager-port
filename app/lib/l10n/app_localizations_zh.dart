@@ -2364,4 +2364,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String errorCannotReachServer(String raw) {
     return '无法连接到服务器，请检查地址、端口与网络连接。\n($raw)';
   }
+
+  @override
+  String get playLabel => '播放';
+
+  @override
+  String get pauseLabel => '暂停';
+
+  @override
+  String get webdavCleartextWarning =>
+      '此地址使用 http://，密码与文件将以明文传输。如服务器支持，请改用 https://。';
+
+  @override
+  String get selectThisFolder => '选择此文件夹';
+
+  @override
+  String get selectFolderAction => '选择';
+
+  @override
+  String get lanSharingDesc => '通过 Wi-Fi 共享本地文件夹，同一局域网内的任意浏览器均可访问或下载文件。';
 }

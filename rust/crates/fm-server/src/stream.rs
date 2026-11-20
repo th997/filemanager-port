@@ -190,13 +190,14 @@ async fn handle_stream(
         .unwrap_or(PREFETCH_CAPACITY);
 
     let prefetch_cap = match length.or(total) {
-        Some(size) => ((size as usize).min(target_cap)).max(64 * 1024),
+        Some(size) => (size.min(target_cap as u64) as usize).max(64 * 1024),
         None => target_cap,
     };
     let read_buf_size = prefetch_cap.min(64 * 1024);
     let stream_buf = prefetch_cap.min(STREAM_BUFFER);
 
     let (reader_end, mut writer_end) = tokio::io::simplex(prefetch_cap);
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     let state_clone = Arc::clone(&state);
     let path_clone = path.clone();
     tokio::spawn(async move {
@@ -206,10 +207,24 @@ async fn handle_stream(
         let mut current_offset = offset;
         let mut remaining = length;
         loop {
-            match reader.read(&mut buf).await {
+            let max_read = remaining
+                .map(|r| r.min(buf.len() as u64) as usize)
+                .unwrap_or(buf.len());
+            if max_read == 0 {
+                break;
+            }
+            let read_res = tokio::select! {
+                _ = &mut cancel_rx => break,
+                res = reader.read(&mut buf[..max_read]) => res,
+            };
+            match read_res {
                 Ok(0) => break,
                 Ok(n) => {
-                    if writer_end.write_all(&buf[..n]).await.is_err() {
+                    let write_res = tokio::select! {
+                        _ = &mut cancel_rx => break,
+                        res = writer_end.write_all(&buf[..n]) => res,
+                    };
+                    if write_res.is_err() {
                         break;
                     }
                     current_offset += n as u64;
@@ -226,12 +241,15 @@ async fn handle_stream(
                     }
                     let mut reconnected = false;
                     for attempt in 1..=3 {
-                        tokio::time::sleep(std::time::Duration::from_millis(300 * attempt)).await;
-                        if let Ok(new_reader) = state_clone
-                            .vfs
-                            .open_read_range(&path_clone, current_offset, remaining)
-                            .await
-                        {
+                        tokio::select! {
+                            _ = &mut cancel_rx => return,
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(300 * attempt)) => {}
+                        }
+                        let open_res = tokio::select! {
+                            _ = &mut cancel_rx => return,
+                            res = state_clone.vfs.open_read_range(&path_clone, current_offset, remaining) => res,
+                        };
+                        if let Ok(new_reader) = open_res {
                             reader = new_reader;
                             reconnected = true;
                             break;
@@ -245,10 +263,37 @@ async fn handle_stream(
         }
     });
 
-    let body = Body::from_stream(ReaderStream::with_capacity(reader_end, stream_buf));
+    let cancel_reader = CancelOnDropReader {
+        inner: reader_end,
+        cancel_tx: Some(cancel_tx),
+    };
+    let body = Body::from_stream(ReaderStream::with_capacity(cancel_reader, stream_buf));
     builder.body(body).unwrap_or_else(|_| {
         StatusCode::INTERNAL_SERVER_ERROR.into_response()
     })
+}
+
+struct CancelOnDropReader<R> {
+    inner: R,
+    cancel_tx: Option<oneshot::Sender<()>>,
+}
+
+impl<R> Drop for CancelOnDropReader<R> {
+    fn drop(&mut self) {
+        if let Some(tx) = self.cancel_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for CancelOnDropReader<R> {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().inner).poll_read(cx, buf)
+    }
 }
 
 pub(crate) enum RangeSpec {

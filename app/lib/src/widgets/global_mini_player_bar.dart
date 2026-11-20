@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,6 +21,7 @@ class GlobalMiniPlayerBar extends StatefulWidget {
 class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
   // Vertical displacement above default baseline for the expanded bar
   double _barDragOffsetY = 0.0;
+  bool _isDragging = false;
 
   // Custom position for the collapsed floating pill (null = default bottom-right)
   double? _pillRight;
@@ -34,21 +38,19 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
     return AnimatedBuilder(
       animation: Listenable.merge([
         GlobalPlaybackService.instance,
+        GlobalPlaybackService.instance.bottomBarInset,
         PreferencesService.toolbarAtBottom,
       ]),
       builder: (context, _) {
         final service = GlobalPlaybackService.instance;
-        if (!service.hasActiveSession || service.isFullScreen) {
+        if (!service.hasActiveSession || service.isFullScreen || service.isModalActive) {
           return const SizedBox.shrink();
         }
 
-        final compact = MediaQuery.sizeOf(context).width < 600;
-        final bottomToolbarHeight = PreferencesService.toolbarAtBottom.value
-            ? (compact ? 40.0 : 46.0)
-            : 0.0;
+        final extraInset = service.bottomBarInset.value;
         final safeBottom = MediaQuery.paddingOf(context).bottom;
-        final baseBottomOffset = bottomToolbarHeight +
-            (PreferencesService.toolbarAtBottom.value ? 6.0 : 8.0) +
+        final baseBottomOffset = extraInset +
+            (extraInset > 0 ? 6.0 : 8.0) +
             safeBottom;
 
         if (service.isMiniPlayerCollapsed) {
@@ -69,26 +71,39 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
     final size = MediaQuery.sizeOf(context);
     final safeTop = MediaQuery.paddingOf(context).top;
 
-    final currentRight = _pillRight ?? 16.0;
-    final currentBottom = _pillBottom ?? baseBottomOffset;
+    final maxRight = math.max(8.0, size.width - 160.0);
+    final maxBottom = math.max(baseBottomOffset, size.height - safeTop - 60.0);
+    final currentRight = (_pillRight ?? 16.0).clamp(8.0, maxRight);
+    final currentBottom = (_pillBottom ?? baseBottomOffset).clamp(baseBottomOffset, maxBottom);
 
-    return Positioned(
+    return AnimatedPositioned(
+      duration: _isDragging ? Duration.zero : const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       key: const ValueKey('mini_player_collapsed_positioned'),
       right: currentRight,
       bottom: currentBottom,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onPanStart: (_) {
+          setState(() => _isDragging = true);
+        },
         onPanUpdate: (details) {
           setState(() {
             _pillRight = (currentRight - details.delta.dx).clamp(
               8.0,
-              size.width - 160.0,
+              maxRight,
             );
             _pillBottom = (currentBottom - details.delta.dy).clamp(
               baseBottomOffset,
-              size.height - safeTop - 60.0,
+              maxBottom,
             );
           });
+        },
+        onPanEnd: (_) {
+          setState(() => _isDragging = false);
+        },
+        onPanCancel: () {
+          setState(() => _isDragging = false);
         },
         onTap: () {
           HapticFeedback.lightImpact();
@@ -166,10 +181,14 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
     final colorScheme = Theme.of(context).colorScheme;
     final screenHeight = MediaQuery.sizeOf(context).height;
     final safeTop = MediaQuery.paddingOf(context).top;
-    final maxOffsetY = (screenHeight - baseBottomOffset - safeTop - 90.0).clamp(0.0, double.infinity);
-    final effectiveBottom = baseBottomOffset + _barDragOffsetY;
+    final l10n = AppLocalizations.of(context);
+    final maxOffsetY = math.max(0.0, screenHeight - baseBottomOffset - safeTop - 90.0);
+    final clampedOffsetY = _barDragOffsetY.clamp(0.0, maxOffsetY);
+    final effectiveBottom = baseBottomOffset + clampedOffsetY;
 
-    return Positioned(
+    return AnimatedPositioned(
+      duration: _isDragging ? Duration.zero : const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       key: const ValueKey('mini_player_expanded_positioned'),
       left: 10,
       right: 10,
@@ -192,6 +211,9 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
             // Dedicated drag handle at the top of the bar for relocation
             GestureDetector(
               behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: (_) {
+                setState(() => _isDragging = true);
+              },
               onVerticalDragUpdate: (details) {
                 setState(() {
                   _barDragOffsetY = (_barDragOffsetY - details.delta.dy).clamp(0.0, maxOffsetY);
@@ -202,8 +224,16 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
                 if (velocity > 350 && _barDragOffsetY < 20) {
                   HapticFeedback.lightImpact();
                   service.collapseMiniPlayer();
-                  setState(() => _barDragOffsetY = 0.0);
+                  setState(() {
+                    _barDragOffsetY = 0.0;
+                    _isDragging = false;
+                  });
+                } else {
+                  setState(() => _isDragging = false);
                 }
+              },
+              onVerticalDragCancel: () {
+                setState(() => _isDragging = false);
               },
               onDoubleTap: () {
                 HapticFeedback.lightImpact();

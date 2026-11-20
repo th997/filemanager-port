@@ -53,13 +53,20 @@ type SharedBudget = std::rc::Rc<std::cell::RefCell<Budget>>;
 /// Reader that charges every byte pulled through it to the budget. For
 /// tar this bounds the whole stream (headers included — the caller
 /// adds slack); for 7z it wraps each entry's reader.
-struct CountingReader<R: std::io::Read> {
+struct CountingReader<'a, R: std::io::Read> {
     inner: R,
     budget: SharedBudget,
+    cancel: &'a CancellationToken,
 }
 
-impl<R: std::io::Read> std::io::Read for CountingReader<R> {
+impl<R: std::io::Read> std::io::Read for CountingReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "operation cancelled",
+            ));
+        }
         let n = self.inner.read(buf)?;
         self.budget.borrow_mut().charge(n as u64)?;
         Ok(n)
@@ -67,13 +74,20 @@ impl<R: std::io::Read> std::io::Read for CountingReader<R> {
 }
 
 /// Writer counterpart for the zip path.
-struct CountingWriter<W: std::io::Write> {
+struct CountingWriter<'a, W: std::io::Write> {
     inner: W,
     budget: SharedBudget,
+    cancel: &'a CancellationToken,
 }
 
-impl<W: std::io::Write> std::io::Write for CountingWriter<W> {
+impl<W: std::io::Write> std::io::Write for CountingWriter<'_, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "operation cancelled",
+            ));
+        }
         let n = self.inner.write(buf)?;
         self.budget.borrow_mut().charge(n as u64)?;
         Ok(n)
@@ -332,6 +346,7 @@ fn extract_inner(
                     let mut writer = CountingWriter {
                         inner: &mut out,
                         budget: budget.clone(),
+                        cancel,
                     };
                     std::io::copy(&mut entry, &mut writer).map_err(backend_err)?;
                     writer.flush().map_err(backend_err)?;
@@ -355,6 +370,7 @@ fn extract_inner(
             let reader = CountingReader {
                 inner: std::io::BufReader::with_capacity(128 * 1024, file),
                 budget: tar_stream_budget(budget),
+                cancel,
             };
             let mut archive = tar::Archive::new(reader);
             extract_tar(&mut archive, destination_dir, created, cancel)
@@ -365,6 +381,7 @@ fn extract_inner(
             let reader = CountingReader {
                 inner: gz,
                 budget: tar_stream_budget(budget),
+                cancel,
             };
             let mut archive = tar::Archive::new(reader);
             extract_tar(&mut archive, destination_dir, created, cancel)
@@ -414,6 +431,7 @@ fn extract_inner(
                         let mut limited = CountingReader {
                             inner: reader,
                             budget: budget.clone(),
+                            cancel,
                         };
                         std::io::copy(&mut limited, &mut file).map_err(sevenz_rust::Error::io)?;
                         file.flush().map_err(sevenz_rust::Error::io)?;
@@ -465,26 +483,35 @@ fn extract_tar<R: std::io::Read>(
                 format!("archive has too many entries ({entries_seen})"),
             )));
         }
-        if let Ok(entry_path) = entry.path() {
-            let entry_str = entry_path.to_string_lossy().replace('\\', "/");
-            if let Some(target) = safe_join(destination_dir, &entry_str) {
-                assert_contained(destination_dir, &target).map_err(backend_err)?;
-                created.track_parent_dirs(&target, destination_dir);
-                // Regular files go through a sibling temp so an existing
-                // file is only replaced once the entry fully unpacked.
-                if entry.header().entry_type().is_file() {
-                    if let Some(parent) = target.parent() {
-                        std::fs::create_dir_all(parent).map_err(backend_err)?;
-                    }
-                    let tmp = sibling_tmp_path(&target);
-                    created.track_temp(&tmp);
-                    entry.unpack(&tmp).map_err(backend_err)?;
-                    created.track_file(&target);
-                    install_temp(&tmp, &target).map_err(backend_err)?;
-                    continue;
-                }
-                created.track_file(&target);
+        let entry_path = entry.path().map_err(backend_err)?;
+        let entry_str = entry_path.to_string_lossy().replace('\\', "/");
+        let target = safe_join(destination_dir, &entry_str).ok_or_else(|| {
+            backend_err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unsafe archive entry path: {entry_str}"),
+            ))
+        })?;
+        assert_contained(destination_dir, &target).map_err(backend_err)?;
+        created.track_parent_dirs(&target, destination_dir);
+        // Regular files go through a sibling temp so an existing
+        // file is only replaced once the entry fully unpacked.
+        if entry.header().entry_type().is_file() {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(backend_err)?;
             }
+            let tmp = sibling_tmp_path(&target);
+            created.track_temp(&tmp);
+            entry.unpack(&tmp).map_err(backend_err)?;
+            created.track_file(&target);
+            install_temp(&tmp, &target).map_err(backend_err)?;
+            continue;
+        }
+        if entry.header().entry_type().is_dir() {
+            if !target.exists() && !created.dirs.iter().any(|d| d == &target) {
+                created.dirs.push(target.clone());
+            }
+        } else {
+            created.track_file(&target);
         }
         entry.unpack_in(destination_dir).map_err(backend_err)?;
     }
@@ -526,7 +553,7 @@ pub fn create_zip_with_cancel(
     let result = create_zip_inner(sources, &tmp_path, destination_zip, cancel);
     match result {
         Ok(()) => {
-            if let Err(e) = std::fs::rename(&tmp_path, destination_zip) {
+            if let Err(e) = install_temp(&tmp_path, destination_zip) {
                 let _ = std::fs::remove_file(&tmp_path);
                 return Err(VfsError::Backend {
                     path: fm_core::VfsPath::root(),
@@ -540,6 +567,25 @@ pub fn create_zip_with_cancel(
             Err(e)
         }
     }
+}
+
+fn copy_with_cancel<R: std::io::Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
+    let mut buf = [0u8; 128 * 1024];
+    loop {
+        if cancel.is_cancelled() {
+            return Err(cancelled_err());
+        }
+        let n = reader.read(&mut buf).map_err(backend_err)?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n]).map_err(backend_err)?;
+    }
+    Ok(())
 }
 
 fn temp_zip_path(destination_zip: &Path) -> std::path::PathBuf {
@@ -611,10 +657,7 @@ fn create_zip_inner(
                 source: e,
             })?;
             let mut f = std::io::BufReader::with_capacity(128 * 1024, f);
-            std::io::copy(&mut f, &mut zip).map_err(|e| VfsError::Backend {
-                path: fm_core::VfsPath::root(),
-                source: e,
-            })?;
+            copy_with_cancel(&mut f, &mut zip, cancel)?;
         } else if source.is_dir() {
             let base_dir = source.parent().unwrap_or_else(|| Path::new(""));
             let dir_name = source
@@ -705,10 +748,7 @@ fn add_dir_to_zip<W: Write + std::io::Seek>(
                 source: e,
             })?;
             let mut f = std::io::BufReader::with_capacity(128 * 1024, f);
-            std::io::copy(&mut f, zip).map_err(|e| VfsError::Backend {
-                path: fm_core::VfsPath::root(),
-                source: e,
-            })?;
+            copy_with_cancel(&mut f, zip, cancel)?;
         }
     }
 

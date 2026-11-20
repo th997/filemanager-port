@@ -685,5 +685,11 @@
   "errorCannotReachServer": "サーバーに到達できません。アドレス、ポート、ネットワークを確認してください。\n({raw})",
   "saveAs": "名前を付けて保存...",
   "saveToThisFolder": "このフォルダに保存",
-  "savedToCachePrompt": "アプリキャッシュに保存されました。「名前を付けて保存」で端末に保存できます"
+  "savedToCachePrompt": "アプリキャッシュに保存されました。「名前を付けて保存」で端末に保存できます",
+  "playLabel": "再生",
+  "pauseLabel": "一時停止",
+  "webdavCleartextWarning": "このURLは http:// を使用しているため、パスワードとファイルが暗号化されずに送信されます。サーバーが対応している場合は https:// を使用してください。",
+  "selectThisFolder": "このフォルダを選択",
+  "selectFolderAction": "選択",
+  "lanSharingDesc": "Wi-Fi 経由でローカルフォルダを共有し、同じネットワーク内の任意のブラウザから閲覧・ダウンロードできます。"
 }

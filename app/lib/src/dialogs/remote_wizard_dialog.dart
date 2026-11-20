@@ -59,6 +59,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _idManuallyEdited = c != null;
     _nameController.addListener(_onNameChanged);
     _endpointController = TextEditingController(text: c?.endpoint ?? '');
+    _endpointInsecure =
+        _endpointController.text.trim().toLowerCase().startsWith('http://');
     _endpointController.addListener(_onEndpointChanged);
     _bucketController = TextEditingController(text: c?.bucket ?? '');
     _regionController = TextEditingController(text: c?.region ?? 'us-east-1');
@@ -75,6 +77,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   }
 
   bool _endpointInsecure = false;
+  bool _saving = false;
 
   void _onEndpointChanged() {
     final insecure =
@@ -160,6 +163,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       );
       if (file != null) {
         final content = await file.readAsString();
+        if (!mounted) return;
         setState(() {
           _privateKeyController.text = content;
         });
@@ -277,9 +281,11 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
     final config = _buildConfig();
     final oldId = widget.initialConfig?.id;
+    String? oldDeleteWarning;
     try {
       // Upsert on an existing id would silently replace another connection.
       final existing = await StorageService.instance.getRemotes();
@@ -288,6 +294,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
         if (mounted) {
           final l10n = AppLocalizations.of(context);
           setState(() {
+            _saving = false;
             _testSuccess = false;
             _testResult = l10n.idAlreadyUsed(config.id, clash.first.name);
           });
@@ -304,21 +311,27 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
           invalidateRoot(root: 'remote://$oldId');
         } catch (e) {
           if (mounted) {
-            setState(() {
-              _testSuccess = true;
-            _testResult = AppLocalizations.of(context).savedOldEntryRemoveFailed(oldId, '$e');
-            });
+            oldDeleteWarning =
+                AppLocalizations.of(context).savedOldEntryRemoveFailed(oldId, '$e');
           }
         }
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _testResult = AppLocalizations.of(context).couldNotSave('$e'));
-        _testSuccess = false;
+        setState(() {
+          _saving = false;
+          _testResult = AppLocalizations.of(context).couldNotSave('$e');
+          _testSuccess = false;
+        });
       }
       return;
     }
     if (mounted) {
+      if (oldDeleteWarning != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(oldDeleteWarning)),
+        );
+      }
       Navigator.of(context).pop(config);
     }
   }
@@ -480,10 +493,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   ),
                   if (_endpointInsecure) ...[
                     const SizedBox(height: 12),
-                    _insecureWarning(
-                      'This URL uses http:// — the password and files travel '
-                      'unencrypted. Use https:// if the server supports it.',
-                    ),
+                    _insecureWarning(l10n.webdavCleartextWarning),
                   ],
                 ] else ...[
                   Row(
@@ -709,8 +719,14 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
           label: Text(l10n.testConnection),
         ),
         FilledButton(
-          onPressed: _save,
-          child: Text(l10n.save),
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(l10n.save),
         ),
       ],
     );

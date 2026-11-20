@@ -37,6 +37,7 @@ class _TrashPageState extends State<TrashPage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     // Only the first load blanks the page; a refresh keeps the list visible
     // so a restore does not flash a full-screen spinner.
     if (_items.isEmpty) setState(() => _loading = true);
@@ -421,15 +422,17 @@ class _TrashPageState extends State<TrashPage> {
 
   List<TrashItemDto>? _displayedItemsCache;
   List<TrashItemDto>? _lastItems;
+  List<TrashItemDto>? _lastTotalSizeItems;
   String? _lastSearchQuery;
   BigInt? _cachedTotalSize;
 
   /// Bytes held by everything in the bin, so the header answers "how much
   /// space can I get back?" before deleting anything.
   BigInt get _totalSize {
-    if (_cachedTotalSize != null && identical(_lastItems, _items)) {
+    if (_cachedTotalSize != null && identical(_lastTotalSizeItems, _items)) {
       return _cachedTotalSize!;
     }
+    _lastTotalSizeItems = _items;
     _cachedTotalSize = _items.fold<BigInt>(BigInt.zero, (sum, item) => sum + item.size);
     return _cachedTotalSize!;
   }

@@ -18,6 +18,22 @@ struct ArchiveFileInfo {
     index: usize,
 }
 
+fn normalize_archive_path(raw: &str) -> Option<VfsPath> {
+    let normalized = raw.replace('\\', "/");
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in normalized.split('/') {
+        match seg {
+            "" | "." => continue,
+            ".." => return None,
+            other => parts.push(other),
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(VfsPath::from_slash_path(&parts.join("/")))
+}
+
 pub struct ArchiveFs {
     archive_path: PathBuf,
     format: ArchiveFormat,
@@ -77,11 +93,10 @@ impl ArchiveFs {
                 Ok(n) => n.to_string(),
                 Err(_) => continue,
             };
-            let is_dir = zip_file.is_dir() || raw_name.ends_with('/');
-            let vfs_path = VfsPath::from_slash_path(&raw_name);
-            if vfs_path.is_root() {
+            let is_dir = zip_file.is_dir() || raw_name.ends_with('/') || raw_name.ends_with('\\');
+            let Some(vfs_path) = normalize_archive_path(&raw_name) else {
                 continue;
-            }
+            };
 
             let entry_name = vfs_path.name().unwrap_or("").to_string();
             let parent_path = vfs_path.parent().unwrap_or_else(VfsPath::root);
@@ -174,10 +189,9 @@ impl ArchiveFs {
         };
 
         for (idx, raw_name, is_dir, size) in entries_found {
-            let vfs_path = VfsPath::from_slash_path(&raw_name);
-            if vfs_path.is_root() {
+            let Some(vfs_path) = normalize_archive_path(&raw_name) else {
                 continue;
-            }
+            };
             let entry_name = vfs_path.name().unwrap_or("").to_string();
             let parent_path = vfs_path.parent().unwrap_or_else(VfsPath::root);
 
@@ -227,10 +241,9 @@ impl ArchiveFs {
         for (idx, zip_entry) in archive.files.iter().enumerate() {
             let raw_name = zip_entry.name().replace('\\', "/");
             let is_dir = zip_entry.is_directory() || raw_name.ends_with('/');
-            let vfs_path = VfsPath::from_slash_path(&raw_name);
-            if vfs_path.is_root() {
+            let Some(vfs_path) = normalize_archive_path(&raw_name) else {
                 continue;
-            }
+            };
 
             let entry_name = vfs_path.name().unwrap_or("").to_string();
             let parent_path = vfs_path.parent().unwrap_or_else(VfsPath::root);
@@ -463,7 +476,9 @@ impl ArchiveFs {
                         // was built; raw names here may still use '\\'
                         // (Windows-created archives) and would never match,
                         // silently returning empty content.
-                        if entry.name().replace('\\', "/") == target_name {
+                        let normalized_entry = normalize_archive_path(entry.name())
+                            .map(|p| p.to_slash_string().trim_start_matches('/').to_string());
+                        if normalized_entry.as_deref() == Some(target_name.as_str()) {
                             let mut limited = reader.take(limit);
                             match limited.read_to_end(&mut found_bytes) {
                                 Ok(n) if (n as u64) >= limit => Err(sevenz_rust::Error::io(
@@ -595,14 +610,18 @@ fn pump_entry(
                 let gz = flate2::read::GzDecoder::new(file);
                 let mut archive = tar::Archive::new(gz);
                 let mut entries = archive.entries().map_err(open_err)?;
-                if let Some(Ok(mut entry)) = entries.nth(index) {
-                    copy_from(&mut entry, sink).map_err(open_err)?;
+                match entries.nth(index) {
+                    Some(Ok(mut entry)) => copy_from(&mut entry, sink).map_err(open_err)?,
+                    Some(Err(e)) => return Err(open_err(e)),
+                    None => return Err(VfsError::NotFound { path: VfsPath::root() }),
                 }
             } else {
                 let mut archive = tar::Archive::new(file);
                 let mut entries = archive.entries().map_err(open_err)?;
-                if let Some(Ok(mut entry)) = entries.nth(index) {
-                    copy_from(&mut entry, sink).map_err(open_err)?;
+                match entries.nth(index) {
+                    Some(Ok(mut entry)) => copy_from(&mut entry, sink).map_err(open_err)?,
+                    Some(Err(e)) => return Err(open_err(e)),
+                    None => return Err(VfsError::NotFound { path: VfsPath::root() }),
                 }
             }
         }
@@ -613,7 +632,9 @@ fn pump_entry(
                 archive_path,
                 "",
                 |entry, reader, _dest| {
-                    if entry.name().replace('\\', "/") != target_name {
+                    let normalized_entry = normalize_archive_path(entry.name())
+                        .map(|p| p.to_slash_string().trim_start_matches('/').to_string());
+                    if normalized_entry.as_deref() != Some(target_name) {
                         return Ok(true);
                     }
                     let result = copy_from(reader, sink);

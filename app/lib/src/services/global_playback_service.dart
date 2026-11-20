@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 
 import '../pages/media_player_page.dart';
 import '../rust/api/servers.dart';
+import 'path_utils.dart';
 import 'preferences_service.dart';
 
 /// Global manager for active media playback across route navigation.
@@ -38,7 +39,32 @@ class GlobalPlaybackService extends ChangeNotifier {
 
   bool isFullScreen = false;
   bool isMiniPlayerCollapsed = false;
+  bool isModalActive = false;
   bool startedStream = false;
+
+  void setModalActive(bool active) {
+    if (isModalActive != active) {
+      isModalActive = active;
+      _notifySafely();
+    }
+  }
+
+  /// Additional bottom inset (e.g. from BrowserBottomActionBar or bottom toolbars)
+  /// that the floating mini player should stay above.
+  final ValueNotifier<double> bottomBarInset = ValueNotifier<double>(0.0);
+
+  void setBottomBarInset(double inset) {
+    if (bottomBarInset.value != inset) {
+      final binding = WidgetsBinding.instance;
+      if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+        binding.addPostFrameCallback((_) {
+          bottomBarInset.value = inset;
+        });
+        return;
+      }
+      bottomBarInset.value = inset;
+    }
+  }
 
   void collapseMiniPlayer() {
     if (!isMiniPlayerCollapsed) {
@@ -281,8 +307,8 @@ class GlobalPlaybackService extends ChangeNotifier {
       }
       _updateNowPlaying(force: true);
     } else if (desktopPlayer != null) {
+      isPlaying = !isPlaying;
       desktopPlayer!.playOrPause();
-      isPlaying = desktopPlayer!.state.playing;
     }
     notifyListeners();
   }
@@ -336,6 +362,21 @@ class GlobalPlaybackService extends ChangeNotifier {
     final track = tracks[index];
     final speed = playbackSpeed;
 
+    // When minimized on desktop/Android, swap the track directly on the live
+    // Player instead of pushing fullscreen over whatever the user is doing.
+    if (!isFullScreen && desktopPlayer != null) {
+      _persistResumePosition();
+      currentPath = track.path;
+      currentFileName = track.fileName;
+      isAudio = track.isAudio;
+      currentIndex = index;
+      position = Duration.zero;
+      duration = Duration.zero;
+      notifyListeners();
+      unawaited(_openDesktopTrackInBackground(root, track, speed));
+      return;
+    }
+
     stop();
 
     currentRoot = root;
@@ -346,6 +387,43 @@ class GlobalPlaybackService extends ChangeNotifier {
     currentIndex = index;
     playbackSpeed = speed;
     restoreFullScreen();
+  }
+
+  Future<void> _openDesktopTrackInBackground(
+    String root,
+    MediaTrack track,
+    double speed,
+  ) async {
+    final player = desktopPlayer;
+    if (player == null) return;
+    try {
+      final String uri;
+      final native = joinNative(root, track.path);
+      if (isNativeRoot(root) && File(native).existsSync()) {
+        uri = Uri.file(native).toString();
+      } else {
+        final base = (await startMediaStream(root: root))
+            .replaceFirst(RegExp(r'/$'), '');
+        startedStream = true;
+        final encoded = track.path
+            .split('/')
+            .where((segment) => segment.isNotEmpty)
+            .map(Uri.encodeComponent)
+            .join('/');
+        final bufferMb = PreferencesService.instance.bufferSizeMb;
+        uri = '$base/$encoded?buffer_mb=$bufferMb';
+      }
+      if (!identical(desktopPlayer, player)) return;
+      await player.open(Media(uri), play: true);
+      if (speed != 1.0) {
+        await player.setRate(speed);
+      }
+      notifyListeners();
+    } catch (_) {
+      if (identical(desktopPlayer, player)) {
+        stop();
+      }
+    }
   }
 
   void stop() {

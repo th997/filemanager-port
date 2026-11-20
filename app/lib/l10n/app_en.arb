@@ -1782,5 +1782,11 @@
         "type": "String"
       }
     }
-  }
+  },
+  "playLabel": "Play",
+  "pauseLabel": "Pause",
+  "webdavCleartextWarning": "This URL uses http:// — the password and files travel unencrypted. Use https:// if the server supports it.",
+  "selectThisFolder": "Select this folder",
+  "selectFolderAction": "Select",
+  "lanSharingDesc": "Share a local folder over Wi-Fi so any browser on the same network can browse or download files."
 }

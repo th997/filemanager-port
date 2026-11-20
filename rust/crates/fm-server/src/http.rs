@@ -801,12 +801,15 @@ async fn handle_index() -> Html<&'static str> {
             renderItems(e.target.value);
         });
 
+        let isReadOnly = false;
+
         async function checkConfig() {
             try {
                 const res = await fetch(withToken('/api/config'));
                 if (res.ok) {
                     const cfg = await res.json();
-                    if (cfg.read_only) {
+                    isReadOnly = Boolean(cfg.read_only);
+                    if (isReadOnly) {
                         const btns = document.getElementById('upload-buttons');
                         if (btns) btns.style.display = 'none';
                     }
@@ -879,19 +882,23 @@ async fn handle_index() -> Html<&'static str> {
         }
 
         let dragCounter = 0;
-        const dropOverlay = document.getElementById('drop-overlay');
+        const getDropOverlay = () => document.getElementById('drop-overlay');
 
         window.addEventListener('dragenter', (e) => {
             e.preventDefault();
+            if (isReadOnly) return;
             dragCounter++;
+            const dropOverlay = getDropOverlay();
             if (dropOverlay) dropOverlay.classList.add('active');
         });
 
         window.addEventListener('dragleave', (e) => {
             e.preventDefault();
+            if (isReadOnly) return;
             dragCounter--;
             if (dragCounter <= 0) {
                 dragCounter = 0;
+                const dropOverlay = getDropOverlay();
                 if (dropOverlay) dropOverlay.classList.remove('active');
             }
         });
@@ -903,7 +910,9 @@ async fn handle_index() -> Html<&'static str> {
         window.addEventListener('drop', async (e) => {
             e.preventDefault();
             dragCounter = 0;
+            const dropOverlay = getDropOverlay();
             if (dropOverlay) dropOverlay.classList.remove('active');
+            if (isReadOnly) return;
 
             const items = e.dataTransfer && e.dataTransfer.items;
             let filesToUpload = [];
@@ -929,7 +938,7 @@ async fn handle_index() -> Html<&'static str> {
         });
 
         function uploadFiles(fileList) {
-            if (!fileList || fileList.length === 0) return;
+            if (isReadOnly || !fileList || fileList.length === 0) return;
 
             const statusEl = document.getElementById('upload-status');
             const textEl = document.getElementById('upload-status-text');

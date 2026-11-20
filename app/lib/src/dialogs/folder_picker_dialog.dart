@@ -49,7 +49,7 @@ class FolderPickerDialog extends StatefulWidget {
   }) {
     String root;
     String path;
-    if (initialRoot != null && initialRoot != PlatformPaths.defaultRoot()) {
+    if (initialRoot != null) {
       root = initialRoot;
       path = initialPath;
     } else {
@@ -236,7 +236,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     try {
       final selectedPath = await getDirectoryPath(
         initialDirectory: initialDir,
-        confirmButtonText: l10n.uploadThisFolder,
+        confirmButtonText: widget.confirmLabel ?? l10n.selectThisFolder,
       );
       if (selectedPath == null || selectedPath.isEmpty || !mounted) return;
 
@@ -392,13 +392,10 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                 },
           child: Text(() {
             if (_selectedFolder != null) {
-              final label = widget.confirmLabel;
-              if (label != null) {
-                return '$label "$_selectedFolder"';
-              }
-              return '${l10n.selectFolderToUpload} "$_selectedFolder"';
+              final label = widget.confirmLabel ?? l10n.selectFolderAction;
+              return '$label "$_selectedFolder"';
             }
-            return widget.confirmLabel ?? l10n.uploadThisFolder;
+            return widget.confirmLabel ?? l10n.selectThisFolder;
           }()),
         ),
       ],

@@ -574,8 +574,18 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   void _closeAndExit() {
     _isExplicitlyClosed = true;
     _saveResumePosition();
+    final ownedByService =
+        identical(GlobalPlaybackService.instance.desktopPlayer, _player);
+    final streamOwnedByService = GlobalPlaybackService.instance.startedStream;
     _player.stop();
     GlobalPlaybackService.instance.stop();
+    if (!ownedByService) {
+      _player.dispose();
+    }
+    if (_startedStream && !streamOwnedByService) {
+      _startedStream = false;
+      stopMediaStreams();
+    }
     if (mounted) {
       Navigator.of(context).maybePop();
     }

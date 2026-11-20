@@ -114,7 +114,36 @@ impl VfsRegistry {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("archive.zip");
-                let safe_name = format!("{}_{}_{}", remote_id, hex::encode(rel_path.as_bytes()), file_name);
+                let lower_name = file_name.to_ascii_lowercase();
+                let ext = if lower_name.ends_with(".tar.gz") {
+                    ".tar.gz"
+                } else if lower_name.ends_with(".tgz") {
+                    ".tgz"
+                } else if lower_name.ends_with(".tar") {
+                    ".tar"
+                } else if lower_name.ends_with(".7z") {
+                    ".7z"
+                } else if lower_name.ends_with(".epub") {
+                    ".epub"
+                } else {
+                    ".zip"
+                };
+                // Use a fixed-length 128-bit FNV-1a digest so deep remote paths never hit
+                // OS filename limits (ENAMETOOLONG) and untrusted remote_id cannot inject paths.
+                let mut h1: u64 = 0xcbf29ce484222325;
+                let mut h2: u64 = 0x84222325cbf29ce4;
+                for &b in remote_id
+                    .as_bytes()
+                    .iter()
+                    .chain(std::iter::once(&0u8))
+                    .chain(rel_path.as_bytes().iter())
+                {
+                    h1 ^= b as u64;
+                    h1 = h1.wrapping_mul(0x100000001b3);
+                    h2 = h2.wrapping_mul(0x100000001b3);
+                    h2 ^= b as u64;
+                }
+                let safe_name = format!("{h1:016x}{h2:016x}{ext}");
                 let cached_file = cache_dir.join(safe_name);
 
                 let stat = remote_vfs.stat(&vfs_path).await;
@@ -134,13 +163,38 @@ impl VfsRegistry {
                 };
 
                 if need_download {
-                    let mut reader = remote_vfs.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
                     let temp_download = cache_dir.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-                    let mut out_file = tokio::fs::File::create(&temp_download).await.map_err(|e| e.to_string())?;
-                    tokio::io::copy(&mut reader, &mut out_file).await.map_err(|e| e.to_string())?;
-                    out_file.flush().await.map_err(|e| e.to_string())?;
-                    drop(out_file);
-                    tokio::fs::rename(&temp_download, &cached_file).await.map_err(|e| e.to_string())?;
+                    let download_res: Result<(), String> = async {
+                        let mut reader = remote_vfs
+                            .open_read(&vfs_path)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let mut out_file = tokio::fs::File::create(&temp_download)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        tokio::io::copy(&mut reader, &mut out_file)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        out_file.flush().await.map_err(|e| e.to_string())?;
+                        drop(out_file);
+                        if let Err(err) = tokio::fs::rename(&temp_download, &cached_file).await {
+                            // Windows refuses to overwrite an existing file on rename().
+                            if cached_file.exists() {
+                                let _ = tokio::fs::remove_file(&cached_file).await;
+                                tokio::fs::rename(&temp_download, &cached_file)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                            } else {
+                                return Err(err.to_string());
+                            }
+                        }
+                        Ok(())
+                    }
+                    .await;
+                    if let Err(e) = download_res {
+                        let _ = tokio::fs::remove_file(&temp_download).await;
+                        return Err(e);
+                    }
                 }
 
                 cached_file
