@@ -1283,6 +1283,26 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
             label: Text(AppLocalizations.of(context).retry),
             onPressed: _openCurrentTrack,
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.play_circle_outline),
+            label: Text(AppLocalizations.of(context).playWithMediaKit),
+            onPressed: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => MediaPlayerPage(
+                    root: widget.root,
+                    path: _track.path,
+                    fileName: _track.fileName,
+                    isAudio: _track.isAudio,
+                    playlist: widget.playlist,
+                    startIndex: _index,
+                    forceMediaKit: true,
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );

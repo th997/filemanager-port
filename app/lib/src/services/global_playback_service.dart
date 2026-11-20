@@ -245,17 +245,26 @@ class GlobalPlaybackService extends ChangeNotifier {
 
     _desktopPlaySub = player.stream.playing.listen((playing) {
       isPlaying = playing;
+      if (Platform.isIOS) {
+        _updateNowPlaying(force: true);
+      }
       notifyListeners();
     });
     _desktopPosSub = player.stream.position.listen((pos) {
       final prevSec = position.inSeconds;
       position = pos;
       if (pos.inSeconds != prevSec) {
+        if (Platform.isIOS) {
+          _updateNowPlaying();
+        }
         notifyListeners();
       }
     });
     _desktopDurSub = player.stream.duration.listen((dur) {
       duration = dur;
+      if (Platform.isIOS) {
+        _updateNowPlaying(force: true);
+      }
       notifyListeners();
     });
     _desktopCompSub = player.stream.completed.listen((completed) {
@@ -541,10 +550,16 @@ class GlobalPlaybackService extends ChangeNotifier {
           if (videoPlayerController != null && !videoPlayerController!.value.isPlaying) {
             videoPlayerController!.play();
             _updateNowPlaying(force: true);
+          } else if (desktopPlayer != null && !desktopPlayer!.state.playing) {
+            desktopPlayer!.play();
+            _updateNowPlaying(force: true);
           }
         } else if (arg == 'pause') {
           if (videoPlayerController != null && videoPlayerController!.value.isPlaying) {
             videoPlayerController!.pause();
+            _updateNowPlaying(force: true);
+          } else if (desktopPlayer != null && desktopPlayer!.state.playing) {
+            desktopPlayer!.pause();
             _updateNowPlaying(force: true);
           }
         } else if (arg == 'togglePlayPause') {
@@ -566,12 +581,15 @@ class GlobalPlaybackService extends ChangeNotifier {
   }
 
   void _updateNowPlaying({bool force = false}) {
-    if (!Platform.isIOS || videoPlayerController == null || !videoPlayerController!.value.isInitialized) return;
-    final val = videoPlayerController!.value;
-    final playing = val.isPlaying;
-    final posSec = val.position.inSeconds;
-    final durationSec = val.duration.inMilliseconds / 1000.0;
-    final currentRate = playing ? playbackSpeed : 0.0;
+    if (!Platform.isIOS) return;
+    final bool hasVp = videoPlayerController != null && videoPlayerController!.value.isInitialized;
+    final bool hasDp = desktopPlayer != null;
+    if (!hasVp && !hasDp) return;
+
+    final bool playing = hasVp ? videoPlayerController!.value.isPlaying : desktopPlayer!.state.playing;
+    final int posSec = position.inSeconds;
+    final double durationSec = duration.inMilliseconds / 1000.0;
+    final double currentRate = playing ? playbackSpeed : 0.0;
 
     if (!force &&
         _lastNowPlayingIsPlaying == playing &&
@@ -588,7 +606,7 @@ class GlobalPlaybackService extends ChangeNotifier {
     _nowPlayingChannel.invokeMethod('update', {
       'title': currentFileName ?? '',
       'duration': durationSec,
-      'position': val.position.inMilliseconds / 1000.0,
+      'position': position.inMilliseconds / 1000.0,
       'rate': currentRate,
       'isAudio': isAudio,
       'hasNext': hasNext,

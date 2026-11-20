@@ -268,6 +268,12 @@ abstract class AppLocalizations {
   /// **'Cancelled'**
   String get cancelled;
 
+  /// No description provided for @playWithMediaKit.
+  ///
+  /// In en, this message translates to:
+  /// **'Play with MediaKit Engine'**
+  String get playWithMediaKit;
+
   /// No description provided for @cancelling.
   ///
   /// In en, this message translates to:
@@ -1461,6 +1467,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open with'**
   String get openWith;
+
+  /// No description provided for @openAsText.
+  ///
+  /// In en, this message translates to:
+  /// **'Open as Text'**
+  String get openAsText;
+
+  /// No description provided for @openAsTextSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Open with built-in text editor'**
+  String get openAsTextSubtitle;
+
+  /// No description provided for @openWithOtherApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Open with Another App'**
+  String get openWithOtherApp;
+
+  /// No description provided for @openWithOtherAppSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use system default or third-party apps'**
+  String get openWithOtherAppSubtitle;
+
+  /// No description provided for @openAsMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Open as Media'**
+  String get openAsMedia;
+
+  /// No description provided for @openAsMediaSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Play with built-in media player'**
+  String get openAsMediaSubtitle;
+
+  /// No description provided for @openAsImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open as Image'**
+  String get openAsImage;
+
+  /// No description provided for @openAsImageSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'View with built-in image viewer'**
+  String get openAsImageSubtitle;
 
   /// No description provided for @download.
   ///
@@ -4251,6 +4305,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Share a local folder over Wi-Fi so any browser on the same network can browse or download files.'**
   String get lanSharingDesc;
+
+  /// No description provided for @receivedShareTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Received Shared Files'**
+  String get receivedShareTitle;
+
+  /// No description provided for @receivedShareSingle.
+  ///
+  /// In en, this message translates to:
+  /// **'Received 1 file'**
+  String get receivedShareSingle;
+
+  /// No description provided for @receivedShareCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Received {count} files'**
+  String receivedShareCount(int count);
+
+  /// No description provided for @saveToLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to Local'**
+  String get saveToLocal;
+
+  /// No description provided for @saveToLocalSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a local folder to save'**
+  String get saveToLocalSubtitle;
+
+  /// No description provided for @saveToRemote.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to Remote'**
+  String get saveToRemote;
+
+  /// No description provided for @saveToRemoteSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload to cloud storage, WebDAV or SFTP'**
+  String get saveToRemoteSubtitle;
+
+  /// No description provided for @openDirectly.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Directly'**
+  String get openDirectly;
+
+  /// No description provided for @openDirectlySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'View or play directly in app'**
+  String get openDirectlySubtitle;
+
+  /// No description provided for @selectRemoteStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Remote Storage'**
+  String get selectRemoteStorage;
+
+  /// No description provided for @noRemotesConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'No Remote Storage'**
+  String get noRemotesConfigured;
+
+  /// No description provided for @noRemotesPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'No remote storage configured yet. Would you like to add one?'**
+  String get noRemotesPrompt;
+
+  /// No description provided for @savingSharedFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving shared files...'**
+  String get savingSharedFiles;
+
+  /// No description provided for @savedSharedFilesSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared files saved successfully'**
+  String get savedSharedFilesSuccess;
+
+  /// No description provided for @view.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get view;
 }
 
 class _AppLocalizationsDelegate

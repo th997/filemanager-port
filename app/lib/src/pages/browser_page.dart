@@ -852,61 +852,12 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
 
     if (item.isText || item.isMarkdown || item.isHtml) {
-      if (_needsDownloadPrompt(item)) {
-        _downloadThenOpen(item);
-        return;
-      }
-      // The editor loads the whole file into memory (and the find index
-      // roughly doubles it); multi-hundred-MB logs would OOM the app.
-      const maxTextBytes = 20 * 1024 * 1024;
-      if (item.size != null && item.size! > BigInt.from(maxTextBytes)) {
-        _showError(
-          '"${item.name}" is too large to edit (${item.formattedSize}). Open it with an external app instead.',
-        );
-        return;
-      }
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => TextEditorPage(
-            root: _root,
-            path: _fullEntryPath(item),
-            fileName: item.name,
-            readOnly: !_canWrite,
-          ),
-        ),
-      ).then((_) {
-        if (mounted) _load(refresh: true);
-      });
+      _openAsText(item);
       return;
     }
 
     if (item.isMedia) {
-      // The playlist is the folder's media files in the order currently
-      // on screen (same filter + sort), so Next matches what the user
-      // sees. Only loaded entries are included.
-      final mediaEntries =
-          _filteredAndSortedEntries.where((e) => e.isMedia).toList();
-      final tracks = mediaEntries
-          .map((e) => MediaTrack(
-                path: _fullEntryPath(e),
-                fileName: e.name,
-                isAudio: e.isAudio,
-              ))
-          .toList();
-      final startIndex =
-          mediaEntries.indexWhere((e) => e.name == item.name);
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => MediaPlayerPage(
-            root: _root,
-            path: _fullEntryPath(item),
-            fileName: item.name,
-            isAudio: item.isAudio,
-            playlist: tracks,
-            startIndex: startIndex < 0 ? 0 : startIndex,
-          ),
-        ),
-      );
+      _openAsMedia(item);
       return;
     }
 
@@ -919,12 +870,105 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       return;
     }
 
-    // PDF, Office, APK and anything else: hand it to the system.
+    // Unrecognized or unknown file types: show "Open with" chooser featuring "Open as text"
+    if (item.category == EntryCategory.other) {
+      _showOpenWithDialog(item);
+      return;
+    }
+
+    // PDF, Office, APK and known system types: hand it to the system.
     if (_needsDownloadPrompt(item)) {
       _downloadThenOpen(item);
       return;
     }
     _openWithSystem(item);
+  }
+
+  void _openAsText(EntryItem item) {
+    if (_needsDownloadPrompt(item)) {
+      _downloadThenOpen(item);
+      return;
+    }
+    // The editor loads the whole file into memory (and the find index
+    // roughly doubles it); multi-hundred-MB logs would OOM the app.
+    const maxTextBytes = 20 * 1024 * 1024;
+    if (item.size != null && item.size! > BigInt.from(maxTextBytes)) {
+      _showError(
+        '"${item.name}" is too large to edit (${item.formattedSize}). Open it with an external app instead.',
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TextEditorPage(
+          root: _root,
+          path: _fullEntryPath(item),
+          fileName: item.name,
+          readOnly: !_canWrite,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _load(refresh: true);
+    });
+  }
+
+  void _openAsMedia(EntryItem item) {
+    final mediaEntries =
+        _filteredAndSortedEntries.where((e) => e.isMedia).toList();
+    final tracks = mediaEntries.isNotEmpty
+        ? mediaEntries
+            .map((e) => MediaTrack(
+                  path: _fullEntryPath(e),
+                  fileName: e.name,
+                  isAudio: e.isAudio,
+                ))
+            .toList()
+        : [
+            MediaTrack(
+              path: _fullEntryPath(item),
+              fileName: item.name,
+              isAudio: item.isAudio,
+            ),
+          ];
+    final startIndex = mediaEntries.indexWhere((e) => e.name == item.name);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MediaPlayerPage(
+          root: _root,
+          path: _fullEntryPath(item),
+          fileName: item.name,
+          isAudio: item.isAudio,
+          playlist: tracks,
+          startIndex: startIndex < 0 ? 0 : startIndex,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showOpenWithDialog(EntryItem item) async {
+    final choice = await showBrowserOpenWithDialog(
+      context: context,
+      item: item,
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'text':
+        _openAsText(item);
+        break;
+      case 'system':
+        _openWithSystem(item);
+        break;
+      case 'media':
+        _openAsMedia(item);
+        break;
+      case 'image':
+        if (_needsDownloadPrompt(item)) {
+          _downloadThenOpen(item);
+        } else {
+          _openImage(item);
+        }
+        break;
+    }
   }
 
   /// Files above this size that have no streaming preview are downloaded
@@ -1479,7 +1523,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _openEntry(item);
         break;
       case 'open_with':
-        _openWithSystem(item);
+        _showOpenWithDialog(item);
+        break;
+      case 'open_as_text':
+        _openAsText(item);
         break;
       case 'download':
         _downloadSingle(item);

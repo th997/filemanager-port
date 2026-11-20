@@ -34,12 +34,18 @@ Future<String?> showBrowserEntryModalBottomSheet({
               subtitle: Text(item.isDir ? l10n.folderLabel : item.formattedSize),
             ),
             const Divider(height: 1),
-            if (!item.isDir)
+            if (!item.isDir) ...[
               ListTile(
                 leading: const Icon(Icons.open_in_new),
                 title: Text(l10n.openWith),
                 onTap: () => Navigator.of(ctx).pop('open_with'),
               ),
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: Text(l10n.openAsText),
+                onTap: () => Navigator.of(ctx).pop('open_as_text'),
+              ),
+            ],
             if (isRemoteOrArchive)
               ListTile(
                 leading: const Icon(Icons.download_outlined, color: Colors.blue),
@@ -154,7 +160,7 @@ Future<String?> showBrowserContextMenu({
           ],
         ),
       ),
-      if (!item.isDir)
+      if (!item.isDir) ...[
         PopupMenuItem(
           value: 'open_with',
           child: Row(
@@ -165,6 +171,17 @@ Future<String?> showBrowserContextMenu({
             ],
           ),
         ),
+        PopupMenuItem(
+          value: 'open_as_text',
+          child: Row(
+            children: [
+              const Icon(Icons.description_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.openAsText),
+            ],
+          ),
+        ),
+      ],
       if (isRemoteOrArchive)
         PopupMenuItem(
           value: 'download',
@@ -439,5 +456,133 @@ Future<String?> showBrowserBackgroundContextMenu({
         ),
       ),
     ],
+  );
+}
+
+/// Shows an "Open with" chooser bottom sheet or dialog for unrecognized or arbitrary files.
+/// Returns the chosen action: 'text', 'system', 'media', 'image', or null if dismissed.
+Future<String?> showBrowserOpenWithDialog({
+  required BuildContext context,
+  required EntryItem item,
+}) {
+  final l10n = AppLocalizations.of(context);
+  final isMobile = MediaQuery.sizeOf(context).width < 600;
+
+  Widget buildContent(BuildContext ctx) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+        ListTile(
+          leading: Icon(item.icon, color: item.iconColor(ctx), size: 36),
+          title: Text(
+            item.name,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            item.formattedSize.isNotEmpty
+                ? '${item.formattedSize} • ${l10n.openWith}'
+                : l10n.openWith,
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.description_outlined, color: Colors.blue),
+          ),
+          title: Text(
+            l10n.openAsText,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(l10n.openAsTextSubtitle),
+          onTap: () => Navigator.of(ctx).pop('text'),
+        ),
+        ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.teal.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.open_in_new, color: Colors.teal),
+          ),
+          title: Text(
+            l10n.openWithOtherApp,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(l10n.openWithOtherAppSubtitle),
+          onTap: () => Navigator.of(ctx).pop('system'),
+        ),
+        ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.purple.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.play_circle_outline, color: Colors.purple),
+          ),
+          title: Text(l10n.openAsMedia),
+          subtitle: Text(l10n.openAsMediaSubtitle),
+          onTap: () => Navigator.of(ctx).pop('media'),
+        ),
+        ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.image_outlined, color: Colors.orange),
+          ),
+          title: Text(l10n.openAsImage),
+          subtitle: Text(l10n.openAsImageSubtitle),
+          onTap: () => Navigator.of(ctx).pop('image'),
+        ),
+      ],
+    ),
+  );
+  }
+
+  if (isMobile) {
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: buildContent(ctx),
+        ),
+      ),
+    );
+  }
+
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.openWith),
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      content: SizedBox(
+        width: 420,
+        child: buildContent(ctx),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text(l10n.cancel),
+        ),
+      ],
+    ),
   );
 }

@@ -98,6 +98,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelled => 'Cancelled';
 
   @override
+  String get playWithMediaKit => 'Play with MediaKit Engine';
+
+  @override
   String get cancelling => 'Cancelling…';
 
   @override
@@ -772,6 +775,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openWith => 'Open with';
+
+  @override
+  String get openAsText => 'Open as Text';
+
+  @override
+  String get openAsTextSubtitle => 'Open with built-in text editor';
+
+  @override
+  String get openWithOtherApp => 'Open with Another App';
+
+  @override
+  String get openWithOtherAppSubtitle =>
+      'Use system default or third-party apps';
+
+  @override
+  String get openAsMedia => 'Open as Media';
+
+  @override
+  String get openAsMediaSubtitle => 'Play with built-in media player';
+
+  @override
+  String get openAsImage => 'Open as Image';
+
+  @override
+  String get openAsImageSubtitle => 'View with built-in image viewer';
 
   @override
   String get download => 'Download';
@@ -2430,4 +2458,52 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get lanSharingDesc =>
       'Share a local folder over Wi-Fi so any browser on the same network can browse or download files.';
+
+  @override
+  String get receivedShareTitle => 'Received Shared Files';
+
+  @override
+  String get receivedShareSingle => 'Received 1 file';
+
+  @override
+  String receivedShareCount(int count) {
+    return 'Received $count files';
+  }
+
+  @override
+  String get saveToLocal => 'Save to Local';
+
+  @override
+  String get saveToLocalSubtitle => 'Choose a local folder to save';
+
+  @override
+  String get saveToRemote => 'Save to Remote';
+
+  @override
+  String get saveToRemoteSubtitle => 'Upload to cloud storage, WebDAV or SFTP';
+
+  @override
+  String get openDirectly => 'Open Directly';
+
+  @override
+  String get openDirectlySubtitle => 'View or play directly in app';
+
+  @override
+  String get selectRemoteStorage => 'Select Remote Storage';
+
+  @override
+  String get noRemotesConfigured => 'No Remote Storage';
+
+  @override
+  String get noRemotesPrompt =>
+      'No remote storage configured yet. Would you like to add one?';
+
+  @override
+  String get savingSharedFiles => 'Saving shared files...';
+
+  @override
+  String get savedSharedFilesSuccess => 'Shared files saved successfully';
+
+  @override
+  String get view => 'View';
 }

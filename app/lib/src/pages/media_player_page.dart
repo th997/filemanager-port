@@ -46,6 +46,7 @@ class MediaPlayerPage extends StatelessWidget {
   /// order. Empty means single-file playback (the fields above).
   final List<MediaTrack> playlist;
   final int startIndex;
+  final bool forceMediaKit;
 
   const MediaPlayerPage({
     super.key,
@@ -55,19 +56,36 @@ class MediaPlayerPage extends StatelessWidget {
     required this.isAudio,
     this.playlist = const [],
     this.startIndex = 0,
+    this.forceMediaKit = false,
   });
+
+  /// Check whether the file extension is natively supported by Apple AVPlayer.
+  static bool isAppleNativeFormat(String fileNameOrPath) {
+    final dot = fileNameOrPath.lastIndexOf('.');
+    if (dot < 0) return false;
+    final ext = fileNameOrPath.substring(dot + 1).toLowerCase();
+    return const {
+      'mp4', 'm4v', 'mov', 'qt', 'm3u8', 'mp3', 'm4a', 'aac', 'wav',
+    }.contains(ext);
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (Platform.isIOS) {
-      return NativeMediaPlayerPage(
-        root: root,
-        path: path,
-        fileName: fileName,
-        isAudio: isAudio,
-        playlist: playlist,
-        startIndex: startIndex,
-      );
+    if (Platform.isIOS && !forceMediaKit) {
+      // On iOS, use NativeMediaPlayerPage (AVPlayer) for Apple native formats.
+      // For all non-native formats (MKV, AVI, WebM, FLV, WMV, RMVB, TS, etc.),
+      // route to _MediaKitPlayerPage (libmpv), keeping iOS format support 100%
+      // consistent with all other platforms.
+      if (isAppleNativeFormat(path)) {
+        return NativeMediaPlayerPage(
+          root: root,
+          path: path,
+          fileName: fileName,
+          isAudio: isAudio,
+          playlist: playlist,
+          startIndex: startIndex,
+        );
+      }
     }
     return _MediaKitPlayerPage(
       root: root,

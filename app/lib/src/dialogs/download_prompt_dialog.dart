@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/entry_item.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import 'folder_picker_dialog.dart';
@@ -97,16 +98,18 @@ class _DownloadPromptDialogState extends State<DownloadPromptDialog> {
 
   IconData get _fileIcon {
     final lower = widget.fileName.toLowerCase();
+    final dot = lower.lastIndexOf('.');
+    final ext = (dot >= 0 && dot < lower.length - 1) ? lower.substring(dot + 1) : '';
     if (lower.endsWith('.zip') || lower.endsWith('.tar') || lower.endsWith('.gz') || lower.endsWith('.7z')) {
       return Icons.archive;
     }
-    if (lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi') || lower.endsWith('.mov')) {
+    if (EntryItem.isVideoExtension(ext)) {
       return Icons.play_circle_fill;
     }
-    if (lower.endsWith('.mp3') || lower.endsWith('.flac') || lower.endsWith('.wav') || lower.endsWith('.m4a')) {
+    if (EntryItem.isAudioExtension(ext)) {
       return Icons.music_note;
     }
-    if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) {
+    if (EntryItem.isImageExtension(ext)) {
       return Icons.image;
     }
     if (lower.endsWith('.pdf')) {

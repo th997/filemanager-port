@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
     private var pendingFilePath: String? = null
     private var pendingPickRequest: Map<String, Any?>? = null
     private var pendingPickAction: String? = null
+    private var pendingSharePaths: List<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,6 +52,11 @@ class MainActivity : FlutterActivity() {
                     val req = pendingPickRequest
                     pendingPickRequest = null
                     result.success(req)
+                }
+                "getInitialShareRequest" -> {
+                    val paths = pendingSharePaths
+                    pendingSharePaths = null
+                    result.success(paths)
                 }
                 "completePickRequest" -> {
                     val rawPaths = call.argument<List<String>>("paths") ?: emptyList()
@@ -106,30 +112,78 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        val uri: Uri? = when (action) {
-            Intent.ACTION_VIEW -> {
-                intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
-            }
-            Intent.ACTION_SEND -> {
+        // External share requests (ACTION_SEND / ACTION_SEND_MULTIPLE)
+        if (action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE) {
+            val uris = mutableListOf<Uri>()
+            if (action == Intent.ACTION_SEND) {
                 val streamUri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 } else {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                 }
-                streamUri ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri ?: intent.data
-            }
-            Intent.ACTION_SEND_MULTIPLE -> {
+                if (streamUri != null) uris.add(streamUri)
+            } else {
                 val streamList = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 } else {
                     @Suppress("DEPRECATION")
                     intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
                 }
-                streamList?.firstOrNull() ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+                if (streamList != null) {
+                    uris.addAll(streamList.filterNotNull())
+                }
             }
-            else -> intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+
+            intent.clipData?.let { clipData ->
+                for (i in 0 until clipData.itemCount) {
+                    val itemUri = clipData.getItemAt(i)?.uri
+                    if (itemUri != null && !uris.contains(itemUri)) {
+                        uris.add(itemUri)
+                    }
+                }
+            }
+            if (uris.isEmpty() && intent.data != null) {
+                uris.add(intent.data!!)
+            }
+
+            val resolvedPaths = mutableListOf<String>()
+            for (u in uris) {
+                val path = resolveUri(u)
+                if (path != null && !resolvedPaths.contains(path)) {
+                    resolvedPaths.add(path)
+                }
+            }
+
+            if (resolvedPaths.isEmpty()) {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!text.isNullOrBlank()) {
+                    try {
+                        val inboxDir = File(cacheDir, "inbox")
+                        if (!inboxDir.exists()) inboxDir.mkdirs()
+                        val textFile = File(inboxDir, "shared_text_${System.currentTimeMillis()}.txt")
+                        textFile.writeText(text)
+                        resolvedPaths.add(textFile.absolutePath)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            if (resolvedPaths.isNotEmpty()) {
+                pendingSharePaths = resolvedPaths
+                openFileChannel?.invokeMethod("onShareReceived", mapOf("paths" to resolvedPaths), object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        pendingSharePaths = null
+                    }
+                    override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {}
+                    override fun notImplemented() {}
+                })
+            }
+            return
         }
+
+        val uri: Uri? = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
         if (uri != null) {
             val resolvedPath = resolveUri(uri)
             if (resolvedPath != null) {
@@ -397,7 +451,16 @@ class MainActivity : FlutterActivity() {
             // Sanitize file name to avoid directory traversal
             displayName = File(displayName).name.ifBlank { "shared_${System.currentTimeMillis()}" }
 
-            val destFile = File(inboxDir, displayName)
+            var destFile = File(inboxDir, displayName)
+            if (destFile.exists()) {
+                val nameWithoutExt = displayName.substringBeforeLast('.', displayName)
+                val ext = if (displayName.contains('.')) "." + displayName.substringAfterLast('.') else ""
+                var count = 1
+                while (destFile.exists()) {
+                    destFile = File(inboxDir, "${nameWithoutExt}_$count$ext")
+                    count++
+                }
+            }
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(destFile).use { output ->
                     input.copyTo(output)

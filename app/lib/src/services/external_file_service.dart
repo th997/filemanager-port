@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 
+import '../dialogs/share_receiver_dialog.dart';
 import '../models/entry_item.dart';
 import '../pages/browser_page.dart';
 import '../pages/home_page.dart';
@@ -157,6 +158,7 @@ class ExternalFileService {
 
   static const _channel = MethodChannel('com.github.th997.filemanager/open_file');
   GlobalKey<NavigatorState>? _navKey;
+  BuildContext? get navContext => _navKey?.currentContext;
   bool _initialized = false;
   bool _pickInProgress = false;
   String? _lastOpenedPath;
@@ -178,6 +180,17 @@ class ExternalFileService {
         if (raw is Map) {
           _handlePickRequest(ExternalPickRequest.fromMap(raw));
         }
+      } else if (call.method == 'onShareReceived') {
+        final args = call.arguments;
+        if (args is Map) {
+          final rawPaths = args['paths'];
+          if (rawPaths is List) {
+            final paths = rawPaths.whereType<String>().toList();
+            if (paths.isNotEmpty) {
+              _handleShareReceived(paths);
+            }
+          }
+        }
       }
     });
 
@@ -191,8 +204,21 @@ class ExternalFileService {
         }
       } catch (_) {}
 
-      // 2. Check CLI args (desktop)
+      // 2. Check native channel initial share request (e.g. Android ACTION_SEND / ACTION_SEND_MULTIPLE)
+      try {
+        final initialShares = await _channel.invokeMethod<dynamic>('getInitialShareRequest');
+        if (initialShares is List) {
+          final paths = initialShares.whereType<String>().toList();
+          if (paths.isNotEmpty) {
+            _handleShareReceived(paths);
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // 3. Check CLI args (desktop)
       if (initialArgs != null && initialArgs.isNotEmpty) {
+        final validPaths = <String>[];
         for (final arg in initialArgs) {
           if (arg.startsWith('-')) continue;
           final cleaned = cleanPath(arg);
@@ -200,16 +226,21 @@ class ExternalFileService {
           final f = File(cleaned);
           final d = Directory(cleaned);
           if (f.existsSync()) {
-            _handlePath(f.absolute.path);
-            return;
+            validPaths.add(f.absolute.path);
           } else if (d.existsSync()) {
-            _handlePath(d.absolute.path);
-            return;
+            validPaths.add(d.absolute.path);
           }
+        }
+        if (validPaths.length > 1) {
+          _handleShareReceived(validPaths);
+          return;
+        } else if (validPaths.length == 1) {
+          _handlePath(validPaths.first);
+          return;
         }
       }
 
-      // 3. Check native channel initial file
+      // 4. Check native channel initial file
       try {
         final initial = await _channel.invokeMethod<String>('getInitialFile');
         if (initial != null && initial.isNotEmpty) {
@@ -221,6 +252,101 @@ class ExternalFileService {
 
   void openFile(String filePath) {
     _handlePath(filePath);
+  }
+
+  void openFiles(List<String> filePaths) {
+    final valid = filePaths.map(cleanPath).where((p) => p.isNotEmpty).toList();
+    if (valid.isEmpty) return;
+    if (valid.length == 1) {
+      _handlePath(valid.first);
+      return;
+    }
+
+    // Check if all are images
+    final allImages = valid.every((f) =>
+        EntryItem.isImageExtension(p.extension(f).replaceFirst('.', '').toLowerCase()));
+    if (allImages) {
+      final nav = _navKey?.currentState;
+      if (nav != null) {
+        final siblings = valid.map((f) => ImageViewerEntry(
+          name: p.basename(f),
+          localPath: f,
+        )).toList();
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => ImageViewerPage(
+              filePath: valid.first,
+              fileName: p.basename(valid.first),
+              siblings: siblings,
+              initialIndex: 0,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    // Check if all are media (audio or video)
+    final allMedia = valid.every((f) {
+      final ext = p.extension(f).replaceFirst('.', '').toLowerCase();
+      return EntryItem.isVideoExtension(ext) || EntryItem.isAudioExtension(ext);
+    });
+    if (allMedia) {
+      final nav = _navKey?.currentState;
+      if (nav != null) {
+        final firstItem = EntryItem(EntryDto(
+          name: p.basename(valid.first),
+          path: valid.first,
+          isDir: false,
+          isSymlink: false,
+          hidden: false,
+        ));
+        final playlist = valid.map((f) => MediaTrack(
+          path: p.basename(f),
+          fileName: p.basename(f),
+          isAudio: EntryItem.isAudioExtension(p.extension(f).replaceFirst('.', '').toLowerCase()),
+        )).toList();
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => MediaPlayerPage(
+              root: p.dirname(valid.first),
+              path: p.basename(valid.first),
+              fileName: p.basename(valid.first),
+              isAudio: firstItem.isAudio,
+              playlist: playlist,
+              startIndex: 0,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    _handlePath(valid.first);
+  }
+
+  void handleShareReceived(List<String> paths) {
+    _handleShareReceived(paths);
+  }
+
+  void _handleShareReceived(List<String> paths) {
+    final valid = paths.map(cleanPath).where((p) => p.isNotEmpty).toList();
+    if (valid.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showShareDialog(valid);
+    });
+  }
+
+  void _showShareDialog(List<String> paths) {
+    final nav = _navKey?.currentState;
+    final ctx = nav?.context;
+    if (ctx == null) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _showShareDialog(paths);
+      });
+      return;
+    }
+    showShareReceiverDialog(context: ctx, filePaths: paths);
   }
 
   Future<void> completePickRequest(List<String> paths) async {

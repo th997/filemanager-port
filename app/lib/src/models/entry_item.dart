@@ -50,8 +50,17 @@ class EntryItem {
     'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif', 'ico', 'avif', 'tiff', 'tif',
   };
   static const Set<String> _videoExtensions = {
-    'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', '3gp', 'm4v', 'ts', 'wmv',
-    'rmvb', 'rm', 'vob', 'ogv', 'm2ts', 'mts', 'f4v', 'asf', 'divx', 'mpg', 'mpeg',
+    // Universal & common containers
+    'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', '3gp', '3gpp', '3g2', '3gpp2',
+    'm4v', 'ts', 'wmv', 'rmvb', 'rm', 'vob', 'ogv', 'm2ts', 'mts', 'f4v', 'f4p',
+    'asf', 'divx', 'xvid', 'mpg', 'mpeg', 'qt',
+    // Broadcast, transport streams & TV recordings
+    'tp', 'trp', 'm2t', 'm2v', 'm1v', 'mpv', 'mpe', 'evo', 'mxf', 'wtv', 'dvr-ms',
+    // Camcorder, raw elementary video streams & surveillance
+    'dv', 'dif', 'h264', '264', 'avc', 'h265', '265', 'hevc', 'h266', 'vvc',
+    'vc1', 'dav', 'ivf', 'y4m',
+    // Streaming playlists / manifests & multimedia containers
+    'm3u8', 'mpd', 'nut', 'roq', 'bik', 'bk2',
   };
   static const Set<String> _audioExtensions = {
     'mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'opus', 'wma', 'amr', 'ape',
@@ -62,6 +71,8 @@ class EntryItem {
   static bool isVideoExtension(String ext) => _videoExtensions.contains(ext.toLowerCase());
   static bool isAudioExtension(String ext) => _audioExtensions.contains(ext.toLowerCase());
   static bool isMediaExtension(String ext) => isVideoExtension(ext) || isAudioExtension(ext);
+  static bool isArchiveExtension(String ext) => _archiveExtensions.contains(ext.toLowerCase());
+  static bool isTextExtension(String ext) => _textExtensions.contains(ext.toLowerCase());
 
   late final String extension = () {
     final dot = name.lastIndexOf('.');
@@ -111,21 +122,58 @@ class EntryItem {
     'webm': 'video/webm',
     'avi': 'video/x-msvideo',
     'mov': 'video/quicktime',
+    'qt': 'video/quicktime',
     'flv': 'video/x-flv',
     '3gp': 'video/3gpp',
+    '3gpp': 'video/3gpp',
+    '3g2': 'video/3gpp2',
+    '3gpp2': 'video/3gpp2',
     'wmv': 'video/x-ms-wmv',
     'ts': 'video/mp2t',
+    'tp': 'video/mp2t',
+    'trp': 'video/mp2t',
+    'm2t': 'video/mp2t',
     'rmvb': 'video/vnd.rn-realvideo',
     'rm': 'application/vnd.rn-realmedia',
     'vob': 'video/dvd',
+    'evo': 'video/dvd',
     'ogv': 'video/ogg',
     'm2ts': 'video/mp2t',
     'mts': 'video/mp2t',
     'f4v': 'video/x-f4v',
+    'f4p': 'video/x-f4v',
     'asf': 'video/x-ms-asf',
     'divx': 'video/x-msvideo',
+    'xvid': 'video/x-msvideo',
     'mpg': 'video/mpeg',
     'mpeg': 'video/mpeg',
+    'm1v': 'video/mpeg',
+    'm2v': 'video/mpeg',
+    'mpv': 'video/x-matroska',
+    'mpe': 'video/mpeg',
+    'mxf': 'application/mxf',
+    'wtv': 'video/wtv',
+    'dvr-ms': 'video/x-ms-dvr',
+    'dv': 'video/x-dv',
+    'dif': 'video/x-dv',
+    'h264': 'video/h264',
+    '264': 'video/h264',
+    'avc': 'video/h264',
+    'h265': 'video/h265',
+    '265': 'video/h265',
+    'hevc': 'video/h265',
+    'h266': 'video/h266',
+    'vvc': 'video/h266',
+    'vc1': 'video/vc1',
+    'dav': 'video/x-dav',
+    'ivf': 'video/x-ivf',
+    'y4m': 'video/x-raw-yuv',
+    'm3u8': 'application/x-mpegurl',
+    'mpd': 'application/dash+xml',
+    'nut': 'video/x-nut',
+    'roq': 'video/x-roq',
+    'bik': 'video/vnd.radgametools.bink',
+    'bk2': 'video/vnd.radgametools.bink',
     'mp3': 'audio/mpeg',
     'flac': 'audio/flac',
     'wav': 'audio/wav',

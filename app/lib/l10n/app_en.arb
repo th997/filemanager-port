@@ -62,6 +62,7 @@
   "cancel": "Cancel",
   "cancelTask": "Cancel task",
   "cancelled": "Cancelled",
+  "playWithMediaKit": "Play with MediaKit Engine",
   "cancelling": "Cancelling…",
   "cannotCancelTask": "This task cannot be cancelled",
   "cannotClearFinishedTasks": "{count} finished task(s) could not be cleared",
@@ -456,6 +457,14 @@
   "openSourceLicensesSubtitle": "Licenses and notices of third-party open-source software",
   "open": "Open",
   "openWith": "Open with",
+  "openAsText": "Open as Text",
+  "openAsTextSubtitle": "Open with built-in text editor",
+  "openWithOtherApp": "Open with Another App",
+  "openWithOtherAppSubtitle": "Use system default or third-party apps",
+  "openAsMedia": "Open as Media",
+  "openAsMediaSubtitle": "Play with built-in media player",
+  "openAsImage": "Open as Image",
+  "openAsImageSubtitle": "View with built-in image viewer",
   "download": "Download",
   "downloadToLocal": "Download to local",
   "copy": "Copy",
@@ -1788,5 +1797,28 @@
   "webdavCleartextWarning": "This URL uses http:// — the password and files travel unencrypted. Use https:// if the server supports it.",
   "selectThisFolder": "Select this folder",
   "selectFolderAction": "Select",
-  "lanSharingDesc": "Share a local folder over Wi-Fi so any browser on the same network can browse or download files."
+  "lanSharingDesc": "Share a local folder over Wi-Fi so any browser on the same network can browse or download files.",
+  "receivedShareTitle": "Received Shared Files",
+  "receivedShareSingle": "Received 1 file",
+  "receivedShareCount": "Received {count} files",
+  "@receivedShareCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "saveToLocal": "Save to Local",
+  "saveToLocalSubtitle": "Choose a local folder to save",
+  "saveToRemote": "Save to Remote",
+  "saveToRemoteSubtitle": "Upload to cloud storage, WebDAV or SFTP",
+  "openDirectly": "Open Directly",
+  "openDirectlySubtitle": "View or play directly in app",
+  "selectRemoteStorage": "Select Remote Storage",
+  "noRemotesConfigured": "No Remote Storage",
+  "noRemotesPrompt": "No remote storage configured yet. Would you like to add one?",
+  "addConnection": "Add Connection",
+  "savingSharedFiles": "Saving shared files...",
+  "savedSharedFilesSuccess": "Shared files saved successfully",
+  "view": "View"
 }

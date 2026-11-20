@@ -95,6 +95,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cancelled => '已取消';
 
   @override
+  String get playWithMediaKit => '使用通用解码引擎 (MediaKit) 播放';
+
+  @override
   String get cancelling => '正在取消…';
 
   @override
@@ -755,6 +758,30 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get openWith => '打开方式';
+
+  @override
+  String get openAsText => '作为文本打开';
+
+  @override
+  String get openAsTextSubtitle => '使用内置文本编辑器打开';
+
+  @override
+  String get openWithOtherApp => '使用其他应用打开';
+
+  @override
+  String get openWithOtherAppSubtitle => '调用系统应用或选择第三方程序';
+
+  @override
+  String get openAsMedia => '作为音视频打开';
+
+  @override
+  String get openAsMediaSubtitle => '使用内置播放器播放';
+
+  @override
+  String get openAsImage => '作为图片打开';
+
+  @override
+  String get openAsImageSubtitle => '使用内置图片查看器打开';
 
   @override
   String get download => '下载';
@@ -2383,4 +2410,51 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get lanSharingDesc => '通过 Wi-Fi 共享本地文件夹，同一局域网内的任意浏览器均可访问或下载文件。';
+
+  @override
+  String get receivedShareTitle => '接收到分享文件';
+
+  @override
+  String get receivedShareSingle => '接收到 1 个文件';
+
+  @override
+  String receivedShareCount(int count) {
+    return '接收到 $count 个文件';
+  }
+
+  @override
+  String get saveToLocal => '保存到本地';
+
+  @override
+  String get saveToLocalSubtitle => '选择本地文件夹并保存';
+
+  @override
+  String get saveToRemote => '保存到远程';
+
+  @override
+  String get saveToRemoteSubtitle => '上传至云存储、WebDAV 或 SFTP';
+
+  @override
+  String get openDirectly => '直接打开';
+
+  @override
+  String get openDirectlySubtitle => '在应用内直接查看或播放';
+
+  @override
+  String get selectRemoteStorage => '选择远程存储';
+
+  @override
+  String get noRemotesConfigured => '没有远程存储';
+
+  @override
+  String get noRemotesPrompt => '当前尚未配置任何远程连接，是否前往添加？';
+
+  @override
+  String get savingSharedFiles => '正在保存分享的文件...';
+
+  @override
+  String get savedSharedFilesSuccess => '分享文件保存成功';
+
+  @override
+  String get view => '查看';
 }

@@ -96,6 +96,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get cancelled => 'キャンセル済み';
 
   @override
+  String get playWithMediaKit => 'MediaKitエンジンで再生';
+
+  @override
   String get cancelling => 'キャンセル中…';
 
   @override
@@ -759,6 +762,30 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get openWith => '他のアプリで開く';
+
+  @override
+  String get openAsText => 'テキストとして開く';
+
+  @override
+  String get openAsTextSubtitle => '内蔵テキストエディタで開く';
+
+  @override
+  String get openWithOtherApp => '外部アプリで開く';
+
+  @override
+  String get openWithOtherAppSubtitle => 'システム標準または外部アプリを使用';
+
+  @override
+  String get openAsMedia => 'メディアとして開く';
+
+  @override
+  String get openAsMediaSubtitle => '内蔵メディアプレーヤーで再生';
+
+  @override
+  String get openAsImage => '画像として開く';
+
+  @override
+  String get openAsImageSubtitle => '内蔵画像ビューアで表示';
 
   @override
   String get download => 'ダウンロード';
@@ -2395,4 +2422,51 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get lanSharingDesc =>
       'Wi-Fi 経由でローカルフォルダを共有し、同じネットワーク内の任意のブラウザから閲覧・ダウンロードできます。';
+
+  @override
+  String get receivedShareTitle => '共有ファイルを受信';
+
+  @override
+  String get receivedShareSingle => '1件のファイルを受信';
+
+  @override
+  String receivedShareCount(int count) {
+    return '$count件のファイルを受信';
+  }
+
+  @override
+  String get saveToLocal => 'ローカルに保存';
+
+  @override
+  String get saveToLocalSubtitle => 'ローカルフォルダを選択して保存';
+
+  @override
+  String get saveToRemote => 'リモートに保存';
+
+  @override
+  String get saveToRemoteSubtitle => 'クラウドストレージ、WebDAV、SFTPにアップロード';
+
+  @override
+  String get openDirectly => '直接開く';
+
+  @override
+  String get openDirectlySubtitle => 'アプリ内で直接表示または再生';
+
+  @override
+  String get selectRemoteStorage => 'リモートストレージを選択';
+
+  @override
+  String get noRemotesConfigured => 'リモートストレージがありません';
+
+  @override
+  String get noRemotesPrompt => 'リモートストレージが設定されていません。新しく追加しますか？';
+
+  @override
+  String get savingSharedFiles => '共有ファイルを保存中...';
+
+  @override
+  String get savedSharedFilesSuccess => '共有ファイルを保存しました';
+
+  @override
+  String get view => '表示';
 }

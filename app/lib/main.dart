@@ -30,9 +30,7 @@ Future<void> main(List<String> args) async {
 - All 460 Rust crates licensed under permissive MIT / Apache-2.0 / BSD licenses.''',
     );
   });
-  if (!Platform.isIOS) {
-    MediaKit.ensureInitialized();
-  }
+  MediaKit.ensureInitialized();
   await RustLib.init();
   await PlatformPaths.init();
   StorageService.instance.ensureInitialized();
