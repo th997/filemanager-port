@@ -163,6 +163,19 @@ class ExternalFileService {
   bool _pickInProgress = false;
   String? _lastOpenedPath;
   DateTime? _lastOpenedTime;
+  List<String>? _lastSharedPaths;
+  DateTime? _lastSharedTime;
+
+  @visibleForTesting
+  void resetForTesting() {
+    _initialized = false;
+    _navKey = null;
+    _pickInProgress = false;
+    _lastOpenedPath = null;
+    _lastOpenedTime = null;
+    _lastSharedPaths = null;
+    _lastSharedTime = null;
+  }
 
   void init(GlobalKey<NavigatorState> navKey, {List<String>? initialArgs}) {
     if (_initialized) return;
@@ -204,7 +217,7 @@ class ExternalFileService {
         }
       } catch (_) {}
 
-      // 2. Check native channel initial share request (e.g. Android ACTION_SEND / ACTION_SEND_MULTIPLE)
+      // 2. Check native channel initial share request (e.g. Android ACTION_SEND / ACTION_SEND_MULTIPLE, iOS incoming files)
       try {
         final initialShares = await _channel.invokeMethod<dynamic>('getInitialShareRequest');
         if (initialShares is List) {
@@ -332,9 +345,31 @@ class ExternalFileService {
   void _handleShareReceived(List<String> paths) {
     final valid = paths.map(cleanPath).where((p) => p.isNotEmpty).toList();
     if (valid.isEmpty) return;
+
+    // Debounce duplicate share payloads within 1 second (e.g. cold-start race
+    // between onShareReceived and getInitialShareRequest).
+    final now = DateTime.now();
+    if (_lastSharedPaths != null &&
+        _lastSharedTime != null &&
+        _pathsEqual(_lastSharedPaths!, valid) &&
+        now.difference(_lastSharedTime!) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastSharedPaths = List<String>.from(valid);
+    _lastSharedTime = now;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showShareDialog(valid);
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  static bool _pathsEqual(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   void _showShareDialog(List<String> paths) {

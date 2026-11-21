@@ -124,7 +124,7 @@ class BrowserBottomActionBar extends StatelessWidget {
                       label: l10n.copy,
                       onTap: onCopy,
                     ),
-                    if (selectedCount == 1)
+                    if (selectedCount >= 1)
                       _actionButton(
                         icon: Icons.info_outline,
                         label: l10n.actionInfo,
@@ -142,10 +142,10 @@ class BrowserBottomActionBar extends StatelessWidget {
                         onTap: onDelete,
                         color: Colors.red,
                       ),
-                      if (selectedCount == 1)
+                      if (selectedCount >= 1)
                         _actionButton(
-                          icon: Icons.edit,
-                          label: l10n.rename,
+                          icon: selectedCount > 1 ? Icons.drive_file_rename_outline : Icons.edit,
+                          label: selectedCount > 1 ? l10n.batchRename : l10n.rename,
                           onTap: onRename,
                         ),
                       if (canArchive)

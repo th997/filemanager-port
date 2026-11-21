@@ -95,3 +95,12 @@ String shortDirectoryName(String fullPath) {
   if (segs.length == 1) return segs.first;
   return '${segs[segs.length - 2]}/${segs.last}';
 }
+
+/// Validates a user-provided single file or folder name (no separators or dot traversal).
+bool isValidFileName(String name) {
+  return name.isNotEmpty &&
+      name != '.' &&
+      name != '..' &&
+      !name.contains('/') &&
+      !name.contains('\\');
+}

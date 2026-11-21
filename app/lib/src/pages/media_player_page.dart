@@ -168,6 +168,189 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   double _preBoostSpeed = 1.0;
   double _boostRate = 2.0;
 
+  BoxFit _videoFit = BoxFit.contain;
+
+  void _cycleVideoFit() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _videoFit = nextPlayerVideoFit(_videoFit);
+    });
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l10n.videoFitChanged(playerVideoFitLabel(l10n, _videoFit))),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _showAudioTrackDialog() {
+    final l10n = AppLocalizations.of(context);
+    final realTracks = _player.state.tracks.audio
+        .where((t) => t.id != 'auto' && t.id != 'no')
+        .toList();
+    final current = _player.state.track.audio;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Text(
+                l10n.audioTracksTitle(realTracks.length),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            const Divider(),
+            if (realTracks.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(l10n.noAudioTracks, style: const TextStyle(color: Colors.grey)),
+              )
+            else ...[
+              ListTile(
+                leading: Icon(
+                  current == AudioTrack.auto() ? Icons.radio_button_checked : Icons.radio_button_off,
+                  color: current == AudioTrack.auto() ? Colors.blueAccent : null,
+                ),
+                title: Text(l10n.audioTrackDefault),
+                onTap: () {
+                  _player.setAudioTrack(AudioTrack.auto());
+                  Navigator.of(ctx).pop();
+                  HapticFeedback.lightImpact();
+                },
+              ),
+              for (final t in realTracks) ...[
+                Builder(
+                  builder: (_) {
+                    final rawTitle = t.title?.trim();
+                    final rawLang = t.language?.trim();
+                    final displayTitle = (rawTitle != null && rawTitle.isNotEmpty)
+                        ? rawTitle
+                        : ((rawLang != null && rawLang.isNotEmpty)
+                            ? rawLang
+                            : l10n.audioTrackItem(t.id));
+                    final showSubtitle = rawTitle != null &&
+                        rawTitle.isNotEmpty &&
+                        rawLang != null &&
+                        rawLang.isNotEmpty &&
+                        rawLang != rawTitle;
+                    return ListTile(
+                      leading: Icon(
+                        t == current ? Icons.radio_button_checked : Icons.radio_button_off,
+                        color: t == current ? Colors.blueAccent : null,
+                      ),
+                      title: Text(displayTitle),
+                      subtitle: showSubtitle ? Text(rawLang) : null,
+                      onTap: () {
+                        _player.setAudioTrack(t);
+                        Navigator.of(ctx).pop();
+                        HapticFeedback.lightImpact();
+                      },
+                    );
+                  },
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSubtitleTrackDialog() {
+    final l10n = AppLocalizations.of(context);
+    final realTracks = _player.state.tracks.subtitle
+        .where((t) => t.id != 'auto' && t.id != 'no')
+        .toList();
+    final current = _player.state.track.subtitle;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Text(
+                l10n.subtitleTracksTitle(realTracks.length),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(
+                current == SubtitleTrack.no() ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: current == SubtitleTrack.no() ? Colors.blueAccent : null,
+              ),
+              title: Text(l10n.subtitlesOff),
+              onTap: () {
+                _player.setSubtitleTrack(SubtitleTrack.no());
+                Navigator.of(ctx).pop();
+                HapticFeedback.lightImpact();
+              },
+            ),
+            for (final t in realTracks)
+              Builder(
+                builder: (_) {
+                  final rawTitle = t.title?.trim();
+                  final rawLang = t.language?.trim();
+                  final displayTitle = (rawTitle != null && rawTitle.isNotEmpty)
+                      ? rawTitle
+                      : ((rawLang != null && rawLang.isNotEmpty)
+                          ? rawLang
+                          : l10n.subtitleTrackItem(t.id));
+                  final showSubtitle = rawTitle != null &&
+                      rawTitle.isNotEmpty &&
+                      rawLang != null &&
+                      rawLang.isNotEmpty &&
+                      rawLang != rawTitle;
+                  return ListTile(
+                    leading: Icon(
+                      t == current ? Icons.radio_button_checked : Icons.radio_button_off,
+                      color: t == current ? Colors.blueAccent : null,
+                    ),
+                    title: Text(displayTitle),
+                    subtitle: showSubtitle ? Text(rawLang) : null,
+                    onTap: () {
+                      _player.setSubtitleTrack(t);
+                      Navigator.of(ctx).pop();
+                      HapticFeedback.lightImpact();
+                    },
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSleepTimerDialog() {
+    showPlayerSleepTimerSheet(
+      context,
+      onEndOfTrackSelected: () {
+        if (_isLooping) {
+          _isLooping = false;
+          _player.setPlaylistMode(PlaylistMode.none);
+          PreferencesService.instance.setBool(_prefLoop, false);
+        }
+      },
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   void _onLongPressStart(LongPressStartDetails details) {
     if (!_player.state.playing) return;
     HapticFeedback.mediumImpact();
@@ -327,6 +510,16 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
           return;
         }
         _eofRetries = 0;
+        if (GlobalPlaybackService.instance.consumeEndOfTrackSleepTimer()) {
+          if (_isLooping) {
+            _isLooping = false;
+            _player.setPlaylistMode(PlaylistMode.none);
+            PreferencesService.instance.setBool(_prefLoop, false);
+            if (mounted) setState(() {});
+          }
+          _player.pause();
+          return;
+        }
         // Auto-advance only on a natural finish: not while looping a
         // single track and not while a manual track switch is mid-open.
         if (_autoNext && completed && !_isLooping && !_switching && _hasNext) {
@@ -672,6 +865,8 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
       seekGesture: true,
       volumeGesture: true,
       brightnessGesture: true,
+      seekOnDoubleTap: true,
+      seekOnDoubleTapEnabledWhileControlsVisible: true,
       bottomButtonBarMargin: const EdgeInsets.only(
         left: 16.0,
         right: 8.0,
@@ -693,6 +888,8 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
       seekGesture: true,
       volumeGesture: true,
       brightnessGesture: true,
+      seekOnDoubleTap: true,
+      seekOnDoubleTapEnabledWhileControlsVisible: true,
       bottomButtonBarMargin: const EdgeInsets.only(
         left: 16.0,
         right: 8.0,
@@ -850,6 +1047,12 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                   currentRate: _playbackSpeed,
                   onSelected: _setSpeed,
                 ),
+                if (!_track.isAudio)
+                  IconButton(
+                    icon: const Icon(Icons.aspect_ratio),
+                    tooltip: AppLocalizations.of(context).videoFitLabel,
+                    onPressed: _cycleVideoFit,
+                  ),
                 IconButton(
                   icon: const Icon(Icons.fullscreen),
                   tooltip: AppLocalizations.of(context).fullscreenShortcut,
@@ -882,6 +1085,18 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                         break;
                       case 'mute':
                         _toggleMute();
+                        break;
+                      case 'aspect_ratio':
+                        _cycleVideoFit();
+                        break;
+                      case 'subtitles':
+                        _showSubtitleTrackDialog();
+                        break;
+                      case 'audio_track':
+                        _showAudioTrackDialog();
+                        break;
+                      case 'sleep_timer':
+                        _showSleepTimerDialog();
                         break;
                     }
                   },
@@ -918,6 +1133,49 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                           Icon(Icons.forward_10, size: 20),
                           SizedBox(width: 10),
                           Text(AppLocalizations.of(context).forward10s),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    if (!_track.isAudio) ...[
+                      PopupMenuItem(
+                        value: 'aspect_ratio',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.aspect_ratio, size: 20),
+                            const SizedBox(width: 10),
+                            Text('${AppLocalizations.of(context).videoFitLabel} (${playerVideoFitLabel(AppLocalizations.of(context), _videoFit)})'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'subtitles',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.subtitles_outlined, size: 20),
+                            const SizedBox(width: 10),
+                            Text(AppLocalizations.of(context).subtitleTrackMenu),
+                          ],
+                        ),
+                      ),
+                    ],
+                    PopupMenuItem(
+                      value: 'audio_track',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.audiotrack_outlined, size: 20),
+                          const SizedBox(width: 10),
+                          Text(AppLocalizations.of(context).audioTrackMenu),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'sleep_timer',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.timer_outlined, size: 20),
+                          const SizedBox(width: 10),
+                          Text(sleepTimerMenuLabel(AppLocalizations.of(context))),
                         ],
                       ),
                     ),
@@ -1018,6 +1276,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                         Video(
                           key: _videoKey,
                           controller: _controller,
+                          fit: _videoFit,
                           fill: Colors.black,
                           controls: AdaptiveVideoControls,
                           pauseUponEnteringBackgroundMode: false,

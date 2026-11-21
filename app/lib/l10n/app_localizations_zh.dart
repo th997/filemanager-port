@@ -544,6 +544,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get selectItems => '多选模式';
 
   @override
+  String pickerItemCounts(int folders, int files) {
+    return '$folders 个文件夹，$files 个文件';
+  }
+
+  @override
   String selectedCountLabel(int count) {
     return '已选 $count 项';
   }
@@ -2457,4 +2462,208 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get view => '查看';
+
+  @override
+  String get invalidFileNameError => '文件名不能包含 \"/\"、\"\\\" 或为 \".\"、\"..\"';
+
+  @override
+  String get batchRename => '批量重命名';
+
+  @override
+  String batchRenameTitle(int count) {
+    return '批量重命名 ($count 项)';
+  }
+
+  @override
+  String get batchRenameSubtitle => '自定义前缀、后缀、替换或序号递增';
+
+  @override
+  String get batchRenameModePrefixSuffix => '前后缀';
+
+  @override
+  String get batchRenameModeFindReplace => '查找替换';
+
+  @override
+  String get batchRenameModeNumbering => '序号递增';
+
+  @override
+  String get batchRenamePrefix => '前缀';
+
+  @override
+  String get batchRenamePrefixHint => '如: [2026] ';
+
+  @override
+  String get batchRenameSuffix => '后缀';
+
+  @override
+  String get batchRenameSuffixHint => '如: _final';
+
+  @override
+  String get batchRenameFindText => '查找文本';
+
+  @override
+  String get batchRenameReplaceWith => '替换为';
+
+  @override
+  String get batchRenameBaseName => '基准名称';
+
+  @override
+  String get batchRenameStartNumber => '起始编号';
+
+  @override
+  String get batchRenamePaddingDigits => '编号位数';
+
+  @override
+  String batchRenameDigitsOption(int digits, String example) {
+    return '$digits 位 ($example)';
+  }
+
+  @override
+  String get batchRenameKeepExtension => '保留文件扩展名';
+
+  @override
+  String get batchRenamePreview => '效果实时预览';
+
+  @override
+  String get batchRenameEmptyName => '(空名称)';
+
+  @override
+  String batchRenameProgress(int done, int total) {
+    return '正在重命名 $done / $total 项...';
+  }
+
+  @override
+  String batchRenameApply(int count) {
+    return '应用重命名 ($count)';
+  }
+
+  @override
+  String get batchRenameComplete => '批量重命名完成';
+
+  @override
+  String get batchRenameNoChanges => '没有需要修改的名称';
+
+  @override
+  String get batchRenameErrorEmpty => '存在空的目标文件名';
+
+  @override
+  String batchRenameErrorDuplicate(String name) {
+    return '目标文件名重复：“$name”';
+  }
+
+  @override
+  String batchRenameErrorExists(String name) {
+    return '目标文件已存在：“$name”';
+  }
+
+  @override
+  String selectedItemsDetailsTitle(int count) {
+    return '已选 $count 项详情';
+  }
+
+  @override
+  String get selectedFilesSizeLabel => '所选文件大小';
+
+  @override
+  String get currentDirectoryLabel => '当前目录';
+
+  @override
+  String get bookmarkSortModeTooltip => '排序方式';
+
+  @override
+  String get bookmarkSortCustom => '自定义拖拽排序';
+
+  @override
+  String get bookmarkSortNameAsc => '名称升序 (A-Z)';
+
+  @override
+  String get bookmarkSortNameDesc => '名称降序 (Z-A)';
+
+  @override
+  String get videoFitLabel => '画面比例';
+
+  @override
+  String get videoFitContain => '适应';
+
+  @override
+  String get videoFitCover => '铺满';
+
+  @override
+  String get videoFitFill => '拉伸';
+
+  @override
+  String videoFitChanged(String mode) {
+    return '画面比例：$mode';
+  }
+
+  @override
+  String audioTracksTitle(int count) {
+    return '音频轨道 ($count)';
+  }
+
+  @override
+  String get audioTrackMenu => '音轨选择';
+
+  @override
+  String get noAudioTracks => '无可选音频轨道';
+
+  @override
+  String get audioTrackDefault => '自动（默认）';
+
+  @override
+  String audioTrackItem(String id) {
+    return '音频流 $id';
+  }
+
+  @override
+  String subtitleTracksTitle(int count) {
+    return '字幕选择 ($count)';
+  }
+
+  @override
+  String get subtitleTrackMenu => '字幕选择';
+
+  @override
+  String get subtitlesOff => '关闭字幕';
+
+  @override
+  String subtitleTrackItem(String id) {
+    return '字幕 $id';
+  }
+
+  @override
+  String get sleepTimerTitle => '睡眠定时';
+
+  @override
+  String get sleepTimerOff => '关闭';
+
+  @override
+  String get sleepTimerOffToast => '已关闭睡眠定时';
+
+  @override
+  String sleepTimerMinutes(int minutes) {
+    return '$minutes 分钟后停止';
+  }
+
+  @override
+  String sleepTimerMinutesToast(int minutes) {
+    return '$minutes 分钟后停止播放';
+  }
+
+  @override
+  String get sleepTimerEndOfTrack => '播完当前后停止';
+
+  @override
+  String get sleepTimerEndOfTrackToast => '播完当前后将停止播放';
+
+  @override
+  String get sleepTimerEndOfTrackShort => '播完当前';
+
+  @override
+  String sleepTimerMenuRemaining(String remaining) {
+    return '睡眠定时 ($remaining)';
+  }
+
+  @override
+  String get readOnlyViewMode => '只读查看模式';
 }

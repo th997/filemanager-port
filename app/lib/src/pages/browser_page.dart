@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/batch_rename_dialog.dart';
 import '../dialogs/download_prompt_dialog.dart';
 import '../dialogs/file_picker_dialog.dart';
 import '../dialogs/folder_picker_dialog.dart';
@@ -1340,36 +1341,44 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       return const Center(child: CircularProgressIndicator());
     }
     if (visible.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
-              const SizedBox(height: 12),
-              Text(
-                AppLocalizations.of(context).noSearchResultsFor(_filterQuery.trim()),
-                style: Theme.of(context).textTheme.titleMedium,
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+                    const SizedBox(height: 12),
+                    Text(
+                      AppLocalizations.of(context).noSearchResultsFor(_filterQuery.trim()),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      AppLocalizations.of(context).searchedThisAndSubfolders,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.clear, size: 16),
+                      label: Text(AppLocalizations.of(context).clearSearch),
+                      onPressed: () {
+                        setState(() {
+                          _filterQuery = '';
+                          _searchController.clear();
+                          _isSearching = false;
+                        });
+                      },
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                AppLocalizations.of(context).searchedThisAndSubfolders,
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.clear, size: 16),
-                label: Text(AppLocalizations.of(context).clearSearch),
-                onPressed: () {
-                  setState(() {
-                    _filterQuery = '';
-                    _searchController.clear();
-                    _isSearching = false;
-                  });
-                },
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -2779,18 +2788,185 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   Future<void> _renameSelected() async {
-    if (_selectedPaths.length != 1) return;
-    await _renamePath(_selectedPaths.first);
+    if (_selectedPaths.isEmpty) return;
+    if (_selectedPaths.length == 1) {
+      await _renamePath(_selectedPaths.first);
+    } else {
+      final orderedPaths = <String>[];
+      final seen = <String>{};
+      for (final e in _filteredAndSortedEntries) {
+        final full = _fullEntryPath(e);
+        if (_selectedPaths.contains(full) && seen.add(full)) {
+          orderedPaths.add(full);
+        }
+      }
+      for (final p in _selectedPaths) {
+        if (seen.add(p)) {
+          orderedPaths.add(p);
+        }
+      }
+
+      final dirPaths = <String>{
+        for (final e in _entries)
+          if (e.isDir) _fullEntryPath(e),
+      };
+      final existingSiblingNames = <String>{
+        for (final e in _entries) e.name,
+      };
+
+      final outcome = await BatchRenameDialog.show(
+        context,
+        root: _root,
+        paths: orderedPaths,
+        dirPaths: dirPaths,
+        existingSiblingNames: existingSiblingNames,
+      );
+      if (!mounted) return;
+      if (outcome == BatchRenameOutcome.completed) {
+        _clearSelection();
+        _load(refresh: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).batchRenameComplete)),
+        );
+      } else if (outcome == BatchRenameOutcome.partial) {
+        _clearSelection();
+        _load(refresh: true);
+      }
+    }
   }
 
-  /// Properties for the single selected entry, so the action bar exposes the
-  /// same dialog as the context menu.
+  /// Properties for the single selected entry, or a summary bottom sheet for multiple entries.
   void _showSelectedInfo() {
-    if (_selectedPaths.length != 1) return;
-    final path = _selectedPaths.first;
-    final item = _entries.where((e) => _fullEntryPath(e) == path).firstOrNull;
-    if (item == null) return;
-    _showFileInfo(item);
+    if (_selectedPaths.isEmpty) return;
+    if (_selectedPaths.length == 1) {
+      final path = _selectedPaths.first;
+      final item = _entries.where((e) => _fullEntryPath(e) == path).firstOrNull;
+      if (item == null) return;
+      _showFileInfo(item);
+    } else {
+      _showBatchFileInfo();
+    }
+  }
+
+  void _showBatchFileInfo() {
+    final l10n = AppLocalizations.of(context);
+    final selectedEntries = _entries.where((e) => _selectedPaths.contains(_fullEntryPath(e))).toList();
+    final fileCount = selectedEntries.where((e) => !e.isDir).length;
+    final folderCount = selectedEntries.where((e) => e.isDir).length;
+    final totalBytes = _selectedBytes;
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.primaryContainer.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.info_outline, color: Theme.of(ctx).colorScheme.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.selectedItemsDetailsTitle(_selectedPaths.length),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          l10n.pickerItemCounts(folderCount, fileCount),
+                          style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Card(
+                elevation: 0,
+                color: Theme.of(ctx).colorScheme.surfaceContainerLow,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(l10n.selectedFilesSizeLabel, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                          const SizedBox(width: 12),
+                          Text(_formatBytes(totalBytes), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(l10n.currentDirectoryLabel, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _relPath.isEmpty ? '/' : _relPath,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 180),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: selectedEntries.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final item = selectedEntries[i];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        item.isDir ? Icons.folder : Icons.insert_drive_file_outlined,
+                        size: 20,
+                        color: item.isDir ? Colors.amber : Colors.grey,
+                      ),
+                      title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                      trailing: Text(
+                        item.isDir
+                            ? l10n.folderLabel
+                            : (item.size != null ? _formatBytes(item.size!) : ''),
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _renameSingle(EntryItem item) =>
@@ -4593,32 +4769,43 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     if (_loading) return const Center(child: CircularProgressIndicator());
 
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 12),
-              Text(AppLocalizations.of(context).failedToLoadDir, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: Text(AppLocalizations.of(context).retry)),
-                  if (_canNavigateUp)
-                    OutlinedButton.icon(
-                      onPressed: _navigateUp,
-                      icon: const Icon(Icons.arrow_upward),
-                      label: Text(AppLocalizations.of(context).goUp),
-                    ),
-                ],
+      return RefreshIndicator(
+        onRefresh: () async => _load(refresh: true),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 12),
+                      Text(AppLocalizations.of(context).failedToLoadDir, style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text(_error!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: Text(AppLocalizations.of(context).retry)),
+                          if (_canNavigateUp)
+                            OutlinedButton.icon(
+                              onPressed: _navigateUp,
+                              icon: const Icon(Icons.arrow_upward),
+                              label: Text(AppLocalizations.of(context).goUp),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
+            ),
           ),
         ),
       );

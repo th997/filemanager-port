@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../rust/api/file_manager.dart' show clearArchiveCache, archiveCacheSize;
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
 import '../theme/app_ui_tokens.dart';
@@ -103,19 +104,46 @@ class _SettingsPageState extends State<SettingsPage> {
     return '${Platform.operatingSystem} (${Platform.operatingSystemVersion})';
   }
 
+  int _archiveCacheBytes = 0;
+  int _inboxCacheBytes = 0;
+
   Future<void> _updateCacheSize() async {
+    int tempTotal = 0;
+    int inboxTotal = 0;
     try {
       final tempDir = await getTemporaryDirectory();
-      int total = 0;
       if (tempDir.existsSync()) {
         for (final file in tempDir.listSync(recursive: true, followLinks: false)) {
           if (file is File) {
-            total += file.lengthSync();
+            try {
+              final pth = file.path.replaceAll('\\', '/');
+              // Rust's archiveCacheSize() counts temp_dir/fm_archive_cache;
+              // skip it here so desktop/iOS platforms never double-count it.
+              if (pth.contains('/fm_archive_cache/')) continue;
+              final len = file.lengthSync();
+              tempTotal += len;
+              if (pth.contains('/inbox/') || pth.contains('/Inbox/')) {
+                inboxTotal += len;
+              }
+            } catch (_) {}
           }
         }
       }
-      if (mounted) setState(() => _cacheSizeBytes = total);
     } catch (_) {}
+
+    int archiveTotal = 0;
+    try {
+      archiveTotal = archiveCacheSize().toInt();
+    } catch (_) {}
+
+    final total = tempTotal + archiveTotal;
+    if (mounted) {
+      setState(() {
+        _cacheSizeBytes = total;
+        _archiveCacheBytes = archiveTotal;
+        _inboxCacheBytes = inboxTotal;
+      });
+    }
   }
 
   String _formatBytes(int bytes) {
@@ -151,6 +179,10 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _clearingCache = true);
 
     try {
+      try {
+        clearArchiveCache();
+      } catch (_) {}
+
       final tempDir = await getTemporaryDirectory();
       if (tempDir.existsSync()) {
         for (final f in tempDir.listSync()) {
@@ -497,8 +529,10 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               title: Text(l10n.temporaryCache),
               subtitle: Text(
-                '${_formatBytes(_cacheSizeBytes)} • thumbnails, media chunks & previews',
-                style: const TextStyle(fontSize: 10),
+                '${_formatBytes(_cacheSizeBytes)}'
+                '${_archiveCacheBytes > 0 ? " • ${l10n.archiveLabel}: ${_formatBytes(_archiveCacheBytes)}" : ""}'
+                '${_inboxCacheBytes > 0 ? " • ${l10n.receivedShareTitle}: ${_formatBytes(_inboxCacheBytes)}" : ""}',
+                style: const TextStyle(fontSize: 11),
               ),
               trailing: _clearingCache
                   ? const SizedBox(

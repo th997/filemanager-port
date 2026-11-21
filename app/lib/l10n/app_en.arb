@@ -17,6 +17,16 @@
       }
     }
   },
+  "@pickerItemCounts": {
+    "placeholders": {
+      "folders": {
+        "type": "int"
+      },
+      "files": {
+        "type": "int"
+      }
+    }
+  },
   "@selectedCountLabel": {
     "placeholders": {
       "count": {
@@ -355,6 +365,7 @@
   },
   "selectFolderToUpload": "Select Folder to Upload",
   "selectItems": "Select items",
+  "pickerItemCounts": "{folders, plural, =1{1 folder} other{{folders} folders}}, {files, plural, =1{1 file} other{{files} files}}",
   "selectedCountLabel": "{count} selected",
   "selectedCountBytesLabel": "{count} selected ({size})",
   "settings": "Settings",
@@ -1817,8 +1828,176 @@
   "selectRemoteStorage": "Select Remote Storage",
   "noRemotesConfigured": "No Remote Storage",
   "noRemotesPrompt": "No remote storage configured yet. Would you like to add one?",
-  "addConnection": "Add Connection",
   "savingSharedFiles": "Saving shared files...",
   "savedSharedFilesSuccess": "Shared files saved successfully",
-  "view": "View"
+  "view": "View",
+  "invalidFileNameError": "Name cannot contain \"/\", \"\\\", or be \".\" or \"..\"",
+  "batchRename": "Batch Rename",
+  "batchRenameTitle": "Batch Rename ({count} items)",
+  "@batchRenameTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchRenameSubtitle": "Add prefix/suffix, find & replace, or sequential numbering",
+  "batchRenameModePrefixSuffix": "Prefix / Suffix",
+  "batchRenameModeFindReplace": "Find & Replace",
+  "batchRenameModeNumbering": "Numbering",
+  "batchRenamePrefix": "Prefix",
+  "batchRenamePrefixHint": "e.g. [2026] ",
+  "batchRenameSuffix": "Suffix",
+  "batchRenameSuffixHint": "e.g. _final",
+  "batchRenameFindText": "Find text",
+  "batchRenameReplaceWith": "Replace with",
+  "batchRenameBaseName": "Base name",
+  "batchRenameStartNumber": "Start number",
+  "batchRenamePaddingDigits": "Digits",
+  "batchRenameDigitsOption": "{digits} digits ({example})",
+  "@batchRenameDigitsOption": {
+    "placeholders": {
+      "digits": {
+        "type": "int"
+      },
+      "example": {
+        "type": "String"
+      }
+    }
+  },
+  "batchRenameKeepExtension": "Keep file extension",
+  "batchRenamePreview": "Live Preview",
+  "batchRenameEmptyName": "(empty name)",
+  "batchRenameProgress": "Renaming {done} / {total}...",
+  "@batchRenameProgress": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "batchRenameApply": "Apply Rename ({count})",
+  "@batchRenameApply": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchRenameComplete": "Batch rename complete",
+  "batchRenameNoChanges": "No filenames will change",
+  "batchRenameErrorEmpty": "One or more target names are empty",
+  "batchRenameErrorDuplicate": "Duplicate target name: \"{name}\"",
+  "@batchRenameErrorDuplicate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "batchRenameErrorExists": "Target already exists: \"{name}\"",
+  "@batchRenameErrorExists": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "selectedItemsDetailsTitle": "{count} selected items",
+  "@selectedItemsDetailsTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectedFilesSizeLabel": "Selected files size",
+  "currentDirectoryLabel": "Current directory",
+  "bookmarkSortModeTooltip": "Sort order",
+  "bookmarkSortCustom": "Custom (drag to reorder)",
+  "bookmarkSortNameAsc": "Name ascending (A–Z)",
+  "bookmarkSortNameDesc": "Name descending (Z–A)",
+  "videoFitLabel": "Aspect ratio",
+  "videoFitContain": "Fit",
+  "videoFitCover": "Crop",
+  "videoFitFill": "Stretch",
+  "videoFitChanged": "Aspect ratio: {mode}",
+  "@videoFitChanged": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "audioTracksTitle": "Audio Tracks ({count})",
+  "@audioTracksTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "audioTrackMenu": "Audio track",
+  "noAudioTracks": "No selectable audio tracks",
+  "audioTrackDefault": "Auto (Default)",
+  "audioTrackItem": "Audio track {id}",
+  "@audioTrackItem": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "subtitleTracksTitle": "Subtitles ({count})",
+  "@subtitleTracksTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "subtitleTrackMenu": "Subtitles",
+  "subtitlesOff": "Off",
+  "subtitleTrackItem": "Subtitle {id}",
+  "@subtitleTrackItem": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "sleepTimerTitle": "Sleep Timer",
+  "sleepTimerOff": "Off",
+  "sleepTimerOffToast": "Sleep timer turned off",
+  "sleepTimerMinutes": "Stop in {minutes} min",
+  "@sleepTimerMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerMinutesToast": "Playback will stop in {minutes} min",
+  "@sleepTimerMinutesToast": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerEndOfTrack": "Stop at end of current track",
+  "sleepTimerEndOfTrackToast": "Playback will stop after current track",
+  "sleepTimerEndOfTrackShort": "End of track",
+  "sleepTimerMenuRemaining": "Sleep timer ({remaining})",
+  "@sleepTimerMenuRemaining": {
+    "placeholders": {
+      "remaining": {
+        "type": "String"
+      }
+    }
+  },
+  "readOnlyViewMode": "Read-only view"
 }

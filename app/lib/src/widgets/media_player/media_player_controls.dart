@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../../services/global_playback_service.dart';
 
 /// Standard list of playback speeds supported across players.
 const List<double> kPlayerSpeedRates = [
@@ -230,4 +231,124 @@ class _MediaPlayerTimelineState extends State<MediaPlayerTimeline> {
       ),
     );
   }
+}
+
+/// Cycles between Contain (Fit) -> Cover (Crop) -> Fill (Stretch).
+BoxFit nextPlayerVideoFit(BoxFit current) {
+  switch (current) {
+    case BoxFit.contain:
+      return BoxFit.cover;
+    case BoxFit.cover:
+      return BoxFit.fill;
+    default:
+      return BoxFit.contain;
+  }
+}
+
+/// Localized label for the active [BoxFit] video scaling mode.
+String playerVideoFitLabel(AppLocalizations l10n, BoxFit fit) {
+  switch (fit) {
+    case BoxFit.contain:
+      return l10n.videoFitContain;
+    case BoxFit.cover:
+      return l10n.videoFitCover;
+    default:
+      return l10n.videoFitFill;
+  }
+}
+
+/// Localized label for the sleep timer menu entry, including active countdown.
+String sleepTimerMenuLabel(AppLocalizations l10n) {
+  final service = GlobalPlaybackService.instance;
+  if (service.sleepTimerAtEndOfTrack) {
+    return l10n.sleepTimerMenuRemaining(l10n.sleepTimerEndOfTrackShort);
+  }
+  final rem = service.sleepTimerRemaining;
+  if (rem != null) {
+    final mins = (rem.inSeconds / 60).ceil().clamp(1, 999);
+    return l10n.sleepTimerMenuRemaining('${mins}m');
+  }
+  return l10n.sleepTimerTitle;
+}
+
+/// Shows the shared Sleep Timer bottom sheet used by both MediaKit and iOS native players.
+Future<void> showPlayerSleepTimerSheet(
+  BuildContext context, {
+  VoidCallback? onEndOfTrackSelected,
+  VoidCallback? onChanged,
+}) {
+  final l10n = AppLocalizations.of(context);
+  final service = GlobalPlaybackService.instance;
+  final isOff =
+      !service.sleepTimerAtEndOfTrack && service.sleepTimerRemaining == null;
+  return showModalBottomSheet<void>(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              l10n.sleepTimerTitle,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: Icon(
+              Icons.timer_off_outlined,
+              color: isOff ? Colors.blueAccent : null,
+            ),
+            title: Text(l10n.sleepTimerOff),
+            trailing:
+                isOff ? const Icon(Icons.check, color: Colors.blueAccent) : null,
+            onTap: () {
+              service.cancelSleepTimer();
+              Navigator.of(ctx).pop();
+              onChanged?.call();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.sleepTimerOffToast)),
+              );
+            },
+          ),
+          for (final mins in [15, 30, 45, 60])
+            ListTile(
+              leading: const Icon(Icons.timer_outlined),
+              title: Text(l10n.sleepTimerMinutes(mins)),
+              onTap: () {
+                service.setSleepTimer(Duration(minutes: mins));
+                Navigator.of(ctx).pop();
+                onChanged?.call();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(l10n.sleepTimerMinutesToast(mins))),
+                );
+              },
+            ),
+          ListTile(
+            leading: Icon(
+              Icons.skip_next_outlined,
+              color: service.sleepTimerAtEndOfTrack ? Colors.blueAccent : null,
+            ),
+            title: Text(l10n.sleepTimerEndOfTrack),
+            trailing: service.sleepTimerAtEndOfTrack
+                ? const Icon(Icons.check, color: Colors.blueAccent)
+                : null,
+            onTap: () {
+              onEndOfTrackSelected?.call();
+              service.setSleepTimer(null, atEndOfTrack: true);
+              Navigator.of(ctx).pop();
+              onChanged?.call();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.sleepTimerEndOfTrackToast)),
+              );
+            },
+          ),
+        ],
+      ),
+    ),
+  );
 }

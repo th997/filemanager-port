@@ -1066,6 +1066,12 @@ abstract class AppLocalizations {
   /// **'Select items'**
   String get selectItems;
 
+  /// No description provided for @pickerItemCounts.
+  ///
+  /// In en, this message translates to:
+  /// **'{folders, plural, =1{1 folder} other{{folders} folders}}, {files, plural, =1{1 file} other{{files} files}}'**
+  String pickerItemCounts(int folders, int files);
+
   /// No description provided for @selectedCountLabel.
   ///
   /// In en, this message translates to:
@@ -4395,6 +4401,354 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'View'**
   String get view;
+
+  /// No description provided for @invalidFileNameError.
+  ///
+  /// In en, this message translates to:
+  /// **'Name cannot contain \"/\", \"\\\", or be \".\" or \"..\"'**
+  String get invalidFileNameError;
+
+  /// No description provided for @batchRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Rename'**
+  String get batchRename;
+
+  /// No description provided for @batchRenameTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Rename ({count} items)'**
+  String batchRenameTitle(int count);
+
+  /// No description provided for @batchRenameSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add prefix/suffix, find & replace, or sequential numbering'**
+  String get batchRenameSubtitle;
+
+  /// No description provided for @batchRenameModePrefixSuffix.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefix / Suffix'**
+  String get batchRenameModePrefixSuffix;
+
+  /// No description provided for @batchRenameModeFindReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Find & Replace'**
+  String get batchRenameModeFindReplace;
+
+  /// No description provided for @batchRenameModeNumbering.
+  ///
+  /// In en, this message translates to:
+  /// **'Numbering'**
+  String get batchRenameModeNumbering;
+
+  /// No description provided for @batchRenamePrefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefix'**
+  String get batchRenamePrefix;
+
+  /// No description provided for @batchRenamePrefixHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. [2026] '**
+  String get batchRenamePrefixHint;
+
+  /// No description provided for @batchRenameSuffix.
+  ///
+  /// In en, this message translates to:
+  /// **'Suffix'**
+  String get batchRenameSuffix;
+
+  /// No description provided for @batchRenameSuffixHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. _final'**
+  String get batchRenameSuffixHint;
+
+  /// No description provided for @batchRenameFindText.
+  ///
+  /// In en, this message translates to:
+  /// **'Find text'**
+  String get batchRenameFindText;
+
+  /// No description provided for @batchRenameReplaceWith.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace with'**
+  String get batchRenameReplaceWith;
+
+  /// No description provided for @batchRenameBaseName.
+  ///
+  /// In en, this message translates to:
+  /// **'Base name'**
+  String get batchRenameBaseName;
+
+  /// No description provided for @batchRenameStartNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Start number'**
+  String get batchRenameStartNumber;
+
+  /// No description provided for @batchRenamePaddingDigits.
+  ///
+  /// In en, this message translates to:
+  /// **'Digits'**
+  String get batchRenamePaddingDigits;
+
+  /// No description provided for @batchRenameDigitsOption.
+  ///
+  /// In en, this message translates to:
+  /// **'{digits} digits ({example})'**
+  String batchRenameDigitsOption(int digits, String example);
+
+  /// No description provided for @batchRenameKeepExtension.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep file extension'**
+  String get batchRenameKeepExtension;
+
+  /// No description provided for @batchRenamePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Live Preview'**
+  String get batchRenamePreview;
+
+  /// No description provided for @batchRenameEmptyName.
+  ///
+  /// In en, this message translates to:
+  /// **'(empty name)'**
+  String get batchRenameEmptyName;
+
+  /// No description provided for @batchRenameProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Renaming {done} / {total}...'**
+  String batchRenameProgress(int done, int total);
+
+  /// No description provided for @batchRenameApply.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply Rename ({count})'**
+  String batchRenameApply(int count);
+
+  /// No description provided for @batchRenameComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch rename complete'**
+  String get batchRenameComplete;
+
+  /// No description provided for @batchRenameNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'No filenames will change'**
+  String get batchRenameNoChanges;
+
+  /// No description provided for @batchRenameErrorEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'One or more target names are empty'**
+  String get batchRenameErrorEmpty;
+
+  /// No description provided for @batchRenameErrorDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate target name: \"{name}\"'**
+  String batchRenameErrorDuplicate(String name);
+
+  /// No description provided for @batchRenameErrorExists.
+  ///
+  /// In en, this message translates to:
+  /// **'Target already exists: \"{name}\"'**
+  String batchRenameErrorExists(String name);
+
+  /// No description provided for @selectedItemsDetailsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} selected items'**
+  String selectedItemsDetailsTitle(int count);
+
+  /// No description provided for @selectedFilesSizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected files size'**
+  String get selectedFilesSizeLabel;
+
+  /// No description provided for @currentDirectoryLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Current directory'**
+  String get currentDirectoryLabel;
+
+  /// No description provided for @bookmarkSortModeTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort order'**
+  String get bookmarkSortModeTooltip;
+
+  /// No description provided for @bookmarkSortCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom (drag to reorder)'**
+  String get bookmarkSortCustom;
+
+  /// No description provided for @bookmarkSortNameAsc.
+  ///
+  /// In en, this message translates to:
+  /// **'Name ascending (A–Z)'**
+  String get bookmarkSortNameAsc;
+
+  /// No description provided for @bookmarkSortNameDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Name descending (Z–A)'**
+  String get bookmarkSortNameDesc;
+
+  /// No description provided for @videoFitLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Aspect ratio'**
+  String get videoFitLabel;
+
+  /// No description provided for @videoFitContain.
+  ///
+  /// In en, this message translates to:
+  /// **'Fit'**
+  String get videoFitContain;
+
+  /// No description provided for @videoFitCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Crop'**
+  String get videoFitCover;
+
+  /// No description provided for @videoFitFill.
+  ///
+  /// In en, this message translates to:
+  /// **'Stretch'**
+  String get videoFitFill;
+
+  /// No description provided for @videoFitChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Aspect ratio: {mode}'**
+  String videoFitChanged(String mode);
+
+  /// No description provided for @audioTracksTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio Tracks ({count})'**
+  String audioTracksTitle(int count);
+
+  /// No description provided for @audioTrackMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio track'**
+  String get audioTrackMenu;
+
+  /// No description provided for @noAudioTracks.
+  ///
+  /// In en, this message translates to:
+  /// **'No selectable audio tracks'**
+  String get noAudioTracks;
+
+  /// No description provided for @audioTrackDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto (Default)'**
+  String get audioTrackDefault;
+
+  /// No description provided for @audioTrackItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio track {id}'**
+  String audioTrackItem(String id);
+
+  /// No description provided for @subtitleTracksTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Subtitles ({count})'**
+  String subtitleTracksTitle(int count);
+
+  /// No description provided for @subtitleTrackMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Subtitles'**
+  String get subtitleTrackMenu;
+
+  /// No description provided for @subtitlesOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get subtitlesOff;
+
+  /// No description provided for @subtitleTrackItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Subtitle {id}'**
+  String subtitleTrackItem(String id);
+
+  /// No description provided for @sleepTimerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep Timer'**
+  String get sleepTimerTitle;
+
+  /// No description provided for @sleepTimerOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get sleepTimerOff;
+
+  /// No description provided for @sleepTimerOffToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer turned off'**
+  String get sleepTimerOffToast;
+
+  /// No description provided for @sleepTimerMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop in {minutes} min'**
+  String sleepTimerMinutes(int minutes);
+
+  /// No description provided for @sleepTimerMinutesToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback will stop in {minutes} min'**
+  String sleepTimerMinutesToast(int minutes);
+
+  /// No description provided for @sleepTimerEndOfTrack.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop at end of current track'**
+  String get sleepTimerEndOfTrack;
+
+  /// No description provided for @sleepTimerEndOfTrackToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback will stop after current track'**
+  String get sleepTimerEndOfTrackToast;
+
+  /// No description provided for @sleepTimerEndOfTrackShort.
+  ///
+  /// In en, this message translates to:
+  /// **'End of track'**
+  String get sleepTimerEndOfTrackShort;
+
+  /// No description provided for @sleepTimerMenuRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer ({remaining})'**
+  String sleepTimerMenuRemaining(String remaining);
+
+  /// No description provided for @readOnlyViewMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-only view'**
+  String get readOnlyViewMode;
 }
 
 class _AppLocalizationsDelegate

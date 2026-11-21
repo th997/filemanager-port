@@ -558,6 +558,7 @@ private class NowPlayingManager {
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   static var pendingFilePath: String?
+  static var pendingSharePaths: [String]?
   static var openFileChannel: FlutterMethodChannel?
   private static var channelsConfigured = false
 
@@ -582,20 +583,100 @@ private class NowPlayingManager {
         let file = pendingFilePath
         pendingFilePath = nil
         result(file)
+      case "getInitialShareRequest":
+        let paths = pendingSharePaths
+        pendingSharePaths = nil
+        result(paths)
       default:
         result(FlutterMethodNotImplemented)
       }
     }
   }
 
-  static func handleIncomingFile(url: URL) {
-    guard let path = resolveIncomingUrl(url) else { return }
+  private static func isChannelDeliverySuccess(_ response: Any?) -> Bool {
+    if response is FlutterError {
+      return false
+    }
+    if let res = response, (res as AnyObject) === (FlutterMethodNotImplemented as AnyObject) {
+      return false
+    }
+    return true
+  }
+
+  private static func deliverOpenedFile(_ path: String) {
     pendingFilePath = path
-    if let channel = openFileChannel {
-      DispatchQueue.main.async {
-        channel.invokeMethod("onFileOpened", arguments: path)
+    guard let channel = openFileChannel else { return }
+    DispatchQueue.main.async {
+      guard let fileToDeliver = pendingFilePath, !fileToDeliver.isEmpty else { return }
+      channel.invokeMethod("onFileOpened", arguments: fileToDeliver) { response in
+        if isChannelDeliverySuccess(response) && pendingFilePath == fileToDeliver {
+          pendingFilePath = nil
+        }
       }
     }
+  }
+
+  private static func deliverSharedFiles(_ paths: [String]) {
+    guard !paths.isEmpty else { return }
+    var merged = pendingSharePaths ?? []
+    for path in paths {
+      if !merged.contains(path) {
+        merged.append(path)
+      }
+    }
+    pendingSharePaths = merged
+
+    guard let channel = openFileChannel else { return }
+    DispatchQueue.main.async {
+      guard let pathsToDeliver = pendingSharePaths, !pathsToDeliver.isEmpty else { return }
+      channel.invokeMethod("onShareReceived", arguments: ["paths": pathsToDeliver]) { response in
+        guard isChannelDeliverySuccess(response) else { return }
+        if pendingSharePaths == pathsToDeliver {
+          pendingSharePaths = nil
+        } else if let current = pendingSharePaths {
+          let remaining = current.filter { !pathsToDeliver.contains($0) }
+          pendingSharePaths = remaining.isEmpty ? nil : remaining
+        }
+      }
+    }
+  }
+
+  static func handleIncomingFile(url: URL) {
+    handleIncomingFiles(urls: [url])
+  }
+
+  static func handleIncomingURLContexts(_ urlContexts: Set<UIOpenURLContext>) {
+    let urls = urlContexts
+      .map { $0.url }
+      .sorted { $0.absoluteString < $1.absoluteString }
+    handleIncomingFiles(urls: urls)
+  }
+
+  static func handleIncomingFiles(urls: [URL]) {
+    var resolvedPaths: [String] = []
+    for url in urls {
+      if let path = resolveIncomingUrl(url), !resolvedPaths.contains(path) {
+        resolvedPaths.append(path)
+      }
+    }
+    guard !resolvedPaths.isEmpty else { return }
+
+    if resolvedPaths.count == 1 {
+      var isDir: ObjCBool = false
+      if FileManager.default.fileExists(atPath: resolvedPaths[0], isDirectory: &isDir), isDir.boolValue {
+        deliverOpenedFile(resolvedPaths[0])
+        return
+      }
+    }
+
+    deliverSharedFiles(resolvedPaths)
+  }
+
+  private static func isPathInside(_ path: String, dir: String) -> Bool {
+    guard !dir.isEmpty else { return false }
+    if path == dir { return true }
+    let prefix = dir.hasSuffix("/") ? dir : dir + "/"
+    return path.hasPrefix(prefix)
   }
 
   static func resolveIncomingUrl(_ url: URL) -> String? {
@@ -621,17 +702,20 @@ private class NowPlayingManager {
       return resolvedPath
     }
 
-    let docsUrl = URL(fileURLWithPath: NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? "").resolvingSymlinksInPath()
-    let tmpUrl = URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath()
-    let cachesUrl = URL(fileURLWithPath: NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? "").resolvingSymlinksInPath()
+    let rawDocs = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
+    let rawTmp = NSTemporaryDirectory()
+    let rawCaches = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? ""
 
-    let docsPath = docsUrl.path
-    let tmpPath = tmpUrl.path
-    let cachesPath = cachesUrl.path
+    let docsUrl = (rawDocs.isEmpty
+      ? (fileManager.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: rawTmp))
+      : URL(fileURLWithPath: rawDocs)).resolvingSymlinksInPath()
+    let docsPath = rawDocs.isEmpty ? "" : docsUrl.path
+    let tmpPath = rawTmp.isEmpty ? "" : URL(fileURLWithPath: rawTmp).resolvingSymlinksInPath().path
+    let cachesPath = rawCaches.isEmpty ? "" : URL(fileURLWithPath: rawCaches).resolvingSymlinksInPath().path
 
-    if (!docsPath.isEmpty && resolvedPath.hasPrefix(docsPath)) ||
-       (!tmpPath.isEmpty && resolvedPath.hasPrefix(tmpPath)) ||
-       (!cachesPath.isEmpty && resolvedPath.hasPrefix(cachesPath)) {
+    if isPathInside(resolvedPath, dir: docsPath) ||
+       isPathInside(resolvedPath, dir: tmpPath) ||
+       isPathInside(resolvedPath, dir: cachesPath) {
       if fileManager.fileExists(atPath: resolvedPath) {
         return resolvedPath
       }
@@ -640,7 +724,10 @@ private class NowPlayingManager {
     let inboxDir = docsUrl.appendingPathComponent("Inbox", isDirectory: true)
     try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true, attributes: nil)
 
-    let fileName = url.lastPathComponent
+    let rawName = url.lastPathComponent
+    let fileName = (rawName.isEmpty || rawName == "/")
+      ? "shared_\(Int(Date().timeIntervalSince1970))"
+      : rawName
     var destUrl = inboxDir.appendingPathComponent(fileName)
 
     if destUrl.resolvingSymlinksInPath().path == resolvedPath {
@@ -648,12 +735,14 @@ private class NowPlayingManager {
     }
 
     if fileManager.fileExists(atPath: destUrl.path) {
-      try? fileManager.removeItem(at: destUrl)
-    }
-    if fileManager.fileExists(atPath: destUrl.path) {
-      let ext = url.pathExtension
-      let base = url.deletingPathExtension().lastPathComponent
-      destUrl = inboxDir.appendingPathComponent("\(base)_\(Int(Date().timeIntervalSince1970)).\(ext)")
+      let ext = (fileName as NSString).pathExtension
+      let base = (fileName as NSString).deletingPathExtension
+      var count = 1
+      repeat {
+        let candidateName = ext.isEmpty ? "\(base)_\(count)" : "\(base)_\(count).\(ext)"
+        destUrl = inboxDir.appendingPathComponent(candidateName)
+        count += 1
+      } while fileManager.fileExists(atPath: destUrl.path)
     }
 
     var coordinatedSuccess = false

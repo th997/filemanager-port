@@ -1293,12 +1293,16 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             }
                           : null,
                     ),
-                  if (_mode != TextFileMode.edit)
-                    IconButton(
-                      icon: const Icon(Icons.edit),
-                      tooltip: AppLocalizations.of(context).editLabel,
-                      onPressed: () => _setMode(TextFileMode.edit),
-                    ),
+                  IconButton(
+                    icon: Icon(_mode == TextFileMode.edit ? Icons.edit_off_outlined : Icons.edit_outlined),
+                    tooltip: _mode == TextFileMode.edit
+                        ? AppLocalizations.of(context).readOnlyViewMode
+                        : AppLocalizations.of(context).editLabel,
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _setMode(_mode == TextFileMode.edit ? TextFileMode.code : TextFileMode.edit);
+                    },
+                  ),
                 ],
                 PopupMenuButton<String>(
                   tooltip: AppLocalizations.of(context).textOptions,

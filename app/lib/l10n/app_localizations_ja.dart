@@ -547,6 +547,11 @@ class AppLocalizationsJa extends AppLocalizations {
   String get selectItems => '複数選択';
 
   @override
+  String pickerItemCounts(int folders, int files) {
+    return '$folders 件のフォルダ、$files 件のファイル';
+  }
+
+  @override
   String selectedCountLabel(int count) {
     return '$count 件選択';
   }
@@ -2469,4 +2474,208 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get view => '表示';
+
+  @override
+  String get invalidFileNameError => '名前に \"/\"、\"\\\"、\".\"、\"..\" は使用できません';
+
+  @override
+  String get batchRename => '一括名前変更';
+
+  @override
+  String batchRenameTitle(int count) {
+    return '一括名前変更 ($count 件)';
+  }
+
+  @override
+  String get batchRenameSubtitle => '接頭辞・接尾辞、検索置換、連番を指定';
+
+  @override
+  String get batchRenameModePrefixSuffix => '接頭・接尾辞';
+
+  @override
+  String get batchRenameModeFindReplace => '検索と置換';
+
+  @override
+  String get batchRenameModeNumbering => '連番';
+
+  @override
+  String get batchRenamePrefix => '接頭辞';
+
+  @override
+  String get batchRenamePrefixHint => '例: [2026] ';
+
+  @override
+  String get batchRenameSuffix => '接尾辞';
+
+  @override
+  String get batchRenameSuffixHint => '例: _final';
+
+  @override
+  String get batchRenameFindText => '検索文字列';
+
+  @override
+  String get batchRenameReplaceWith => '置換後';
+
+  @override
+  String get batchRenameBaseName => 'ベース名';
+
+  @override
+  String get batchRenameStartNumber => '開始番号';
+
+  @override
+  String get batchRenamePaddingDigits => '桁数';
+
+  @override
+  String batchRenameDigitsOption(int digits, String example) {
+    return '$digits 桁 ($example)';
+  }
+
+  @override
+  String get batchRenameKeepExtension => '拡張子を保持';
+
+  @override
+  String get batchRenamePreview => 'リアルタイムプレビュー';
+
+  @override
+  String get batchRenameEmptyName => '(空の名前)';
+
+  @override
+  String batchRenameProgress(int done, int total) {
+    return '名前を変更中 $done / $total...';
+  }
+
+  @override
+  String batchRenameApply(int count) {
+    return '名前変更を適用 ($count)';
+  }
+
+  @override
+  String get batchRenameComplete => '一括名前変更が完了しました';
+
+  @override
+  String get batchRenameNoChanges => '変更されるファイル名はありません';
+
+  @override
+  String get batchRenameErrorEmpty => '空のファイル名が含まれています';
+
+  @override
+  String batchRenameErrorDuplicate(String name) {
+    return '重複するファイル名があります: \"$name\"';
+  }
+
+  @override
+  String batchRenameErrorExists(String name) {
+    return '同名の項目が既に存在します: \"$name\"';
+  }
+
+  @override
+  String selectedItemsDetailsTitle(int count) {
+    return '選択中の $count 件の詳細';
+  }
+
+  @override
+  String get selectedFilesSizeLabel => '選択ファイルサイズ';
+
+  @override
+  String get currentDirectoryLabel => '現在のディレクトリ';
+
+  @override
+  String get bookmarkSortModeTooltip => '並び替え';
+
+  @override
+  String get bookmarkSortCustom => 'カスタム（ドラッグで並び替え）';
+
+  @override
+  String get bookmarkSortNameAsc => '名前昇順 (A-Z)';
+
+  @override
+  String get bookmarkSortNameDesc => '名前降順 (Z-A)';
+
+  @override
+  String get videoFitLabel => '画面比率';
+
+  @override
+  String get videoFitContain => '画面に合わせる';
+
+  @override
+  String get videoFitCover => '切り抜き';
+
+  @override
+  String get videoFitFill => '引き伸ばし';
+
+  @override
+  String videoFitChanged(String mode) {
+    return '画面比率: $mode';
+  }
+
+  @override
+  String audioTracksTitle(int count) {
+    return '音声トラック ($count)';
+  }
+
+  @override
+  String get audioTrackMenu => '音声トラック';
+
+  @override
+  String get noAudioTracks => '選択可能な音声トラックがありません';
+
+  @override
+  String get audioTrackDefault => '自動（デフォルト）';
+
+  @override
+  String audioTrackItem(String id) {
+    return '音声トラック $id';
+  }
+
+  @override
+  String subtitleTracksTitle(int count) {
+    return '字幕 ($count)';
+  }
+
+  @override
+  String get subtitleTrackMenu => '字幕';
+
+  @override
+  String get subtitlesOff => '字幕オフ';
+
+  @override
+  String subtitleTrackItem(String id) {
+    return '字幕 $id';
+  }
+
+  @override
+  String get sleepTimerTitle => 'スリープタイマー';
+
+  @override
+  String get sleepTimerOff => 'オフ';
+
+  @override
+  String get sleepTimerOffToast => 'スリープタイマーをオフにしました';
+
+  @override
+  String sleepTimerMinutes(int minutes) {
+    return '$minutes 分後に停止';
+  }
+
+  @override
+  String sleepTimerMinutesToast(int minutes) {
+    return '$minutes 分後に再生を停止します';
+  }
+
+  @override
+  String get sleepTimerEndOfTrack => '現在のトラック終了後に停止';
+
+  @override
+  String get sleepTimerEndOfTrackToast => '現在のトラック終了後に停止します';
+
+  @override
+  String get sleepTimerEndOfTrackShort => 'トラック終了時';
+
+  @override
+  String sleepTimerMenuRemaining(String remaining) {
+    return 'スリープタイマー ($remaining)';
+  }
+
+  @override
+  String get readOnlyViewMode => '読み取り専用表示';
 }

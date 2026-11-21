@@ -96,6 +96,48 @@ class GlobalPlaybackService extends ChangeNotifier {
   StreamSubscription? _desktopPlaySub;
   StreamSubscription? _desktopCompSub;
 
+  Timer? _sleepTimer;
+  DateTime? _sleepTimerEndTime;
+  Duration? get sleepTimerRemaining {
+    final end = _sleepTimerEndTime;
+    if (end == null) return null;
+    final diff = end.difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+  bool sleepTimerAtEndOfTrack = false;
+
+  void setSleepTimer(Duration? duration, {bool atEndOfTrack = false}) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerEndTime = null;
+    sleepTimerAtEndOfTrack = atEndOfTrack;
+    if (duration != null) {
+      _sleepTimerEndTime = DateTime.now().add(duration);
+      _sleepTimer = Timer(duration, () {
+        _sleepTimer = null;
+        _sleepTimerEndTime = null;
+        sleepTimerAtEndOfTrack = false;
+        pause();
+      });
+    }
+    notifyListeners();
+  }
+
+  bool consumeEndOfTrackSleepTimer() {
+    if (!sleepTimerAtEndOfTrack) return false;
+    sleepTimerAtEndOfTrack = false;
+    _notifySafely();
+    return true;
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerEndTime = null;
+    sleepTimerAtEndOfTrack = false;
+    notifyListeners();
+  }
+
   // Cached playback metrics for mini player
   bool isPlaying = false;
   Duration position = Duration.zero;
@@ -208,6 +250,16 @@ class GlobalPlaybackService extends ChangeNotifier {
       _updateNowPlaying();
     }
 
+    if (!isFullScreen &&
+        val.duration > Duration.zero &&
+        val.position >= val.duration - const Duration(milliseconds: 300) &&
+        !val.isPlaying) {
+      if (consumeEndOfTrackSleepTimer()) {
+        pause();
+        return;
+      }
+    }
+
     if (changed) {
       notifyListeners();
     }
@@ -269,6 +321,10 @@ class GlobalPlaybackService extends ChangeNotifier {
     });
     _desktopCompSub = player.stream.completed.listen((completed) {
       if (completed && !isFullScreen) {
+        if (consumeEndOfTrackSleepTimer()) {
+          pause();
+          return;
+        }
         if (hasNext) {
           playNext();
         } else {
@@ -300,6 +356,17 @@ class GlobalPlaybackService extends ChangeNotifier {
     _desktopDurSub = null;
     _desktopCompSub?.cancel();
     _desktopCompSub = null;
+  }
+
+  void pause() {
+    isPlaying = false;
+    if (videoPlayerController != null) {
+      videoPlayerController!.pause();
+      _updateNowPlaying(force: true);
+    } else if (desktopPlayer != null) {
+      desktopPlayer!.pause();
+    }
+    _notifySafely();
   }
 
   void togglePlayPause() {
@@ -459,6 +526,11 @@ class GlobalPlaybackService extends ChangeNotifier {
     duration = Duration.zero;
     isBuffering = false;
     playbackSpeed = 1.0;
+
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerEndTime = null;
+    sleepTimerAtEndOfTrack = false;
 
     _lastNowPlayingIsPlaying = null;
     _lastNowPlayingSec = -1;

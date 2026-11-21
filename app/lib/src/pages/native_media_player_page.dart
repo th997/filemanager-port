@@ -98,6 +98,39 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   Timer? _speedHudTimer;
   double? _hudSpeed;
 
+  BoxFit _videoFit = BoxFit.contain;
+
+  void _cycleVideoFit() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _videoFit = nextPlayerVideoFit(_videoFit);
+    });
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l10n.videoFitChanged(playerVideoFitLabel(l10n, _videoFit))),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _showSleepTimerDialog() {
+    showPlayerSleepTimerSheet(
+      context,
+      onEndOfTrackSelected: () {
+        if (_isLooping) {
+          _isLooping = false;
+          _controller?.setLooping(false);
+          PreferencesService.instance.setBool(_prefLoop, false);
+        }
+      },
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   static const _nowPlayingChannel =
       MethodChannel('com.github.th997.filemanager/now_playing');
   bool? _lastNowPlayingIsPlaying;
@@ -356,13 +389,18 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       return;
     }
 
-    // Auto-advance to next track on natural finish
+    // Auto-advance or sleep timer on natural finish
     if (_initialized &&
         !_switching &&
         !_isLooping &&
         val.duration > Duration.zero &&
         val.position >= val.duration - const Duration(milliseconds: 300) &&
         !val.isPlaying) {
+      if (GlobalPlaybackService.instance.consumeEndOfTrackSleepTimer()) {
+        _controller?.pause();
+        setState(() {});
+        return;
+      }
       if (_autoNext && _hasNext) {
         _switching = true;
         _saveResumePosition();
@@ -974,6 +1012,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           });
                         },
                       ),
+                      if (!_track.isAudio)
+                        IconButton(
+                          icon: const Icon(Icons.aspect_ratio, color: Colors.white),
+                          tooltip: AppLocalizations.of(context).videoFitLabel,
+                          onPressed: _cycleVideoFit,
+                        ),
                       IconButton(
                         icon: Icon(
                           _isFullscreen
@@ -1012,6 +1056,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                               break;
                             case 'mute':
                               _toggleMute();
+                              break;
+                            case 'aspect_ratio':
+                              _cycleVideoFit();
+                              break;
+                            case 'sleep_timer':
+                              _showSleepTimerDialog();
                               break;
                           }
                         },
@@ -1052,6 +1102,28 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                                 Icon(Icons.forward_10, size: 20),
                                 SizedBox(width: 10),
                                 Text(AppLocalizations.of(context).forward10s),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          if (!_track.isAudio)
+                            PopupMenuItem(
+                              value: 'aspect_ratio',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.aspect_ratio, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text('${AppLocalizations.of(context).videoFitLabel} (${playerVideoFitLabel(AppLocalizations.of(context), _videoFit)})'),
+                                ],
+                              ),
+                            ),
+                          PopupMenuItem(
+                            value: 'sleep_timer',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.timer_outlined, size: 20),
+                                const SizedBox(width: 10),
+                                Text(sleepTimerMenuLabel(AppLocalizations.of(context))),
                               ],
                             ),
                           ),
@@ -1163,13 +1235,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                               )
                             : (_track.isAudio
                                 ? _buildAudioPlaceholder()
-                                : AspectRatio(
-                                    aspectRatio:
-                                        _controller!.value.aspectRatio > 0
-                                            ? _controller!.value.aspectRatio
-                                            : 16 / 9,
-                                    child: VideoPlayer(_controller!),
-                                  ))),
+                                : _buildVideoSurface())),
                   ),
 
                   // Buffering indicator
@@ -1235,6 +1301,37 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildVideoSurface() {
+    if (_videoFit == BoxFit.fill) {
+      return SizedBox.expand(child: VideoPlayer(_controller!));
+    }
+    if (_videoFit == BoxFit.cover) {
+      final size = _controller!.value.size;
+      final ar = _controller!.value.aspectRatio > 0
+          ? _controller!.value.aspectRatio
+          : 16 / 9;
+      final videoWidth = size.width > 0 ? size.width : ar * 1080.0;
+      final videoHeight = size.height > 0 ? size.height : 1080.0;
+      return SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: videoWidth,
+            height: videoHeight,
+            child: VideoPlayer(_controller!),
+          ),
+        ),
+      );
+    }
+    return AspectRatio(
+      aspectRatio: _controller!.value.aspectRatio > 0
+          ? _controller!.value.aspectRatio
+          : 16 / 9,
+      child: VideoPlayer(_controller!),
     );
   }
 

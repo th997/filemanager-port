@@ -417,8 +417,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
       footer: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Text(
-          '${_folders.length} folder${_folders.length == 1 ? "" : "s"}, ${_files.length} file${_files.length == 1 ? "" : "s"}'
-          '${_selectedPaths.isNotEmpty ? " • ${_selectedPaths.length} selected" : ""}',
+          '${l10n.pickerItemCounts(_folders.length, _files.length)}'
+          '${_selectedPaths.isNotEmpty ? " • ${l10n.selectedCountLabel(_selectedPaths.length)}" : ""}',
           style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       ),

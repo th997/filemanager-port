@@ -16,8 +16,8 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     setupChannels(from: scene)
-    if let urlContext = connectionOptions.urlContexts.first {
-      AppDelegate.handleIncomingFile(url: urlContext.url)
+    if !connectionOptions.urlContexts.isEmpty {
+      AppDelegate.handleIncomingURLContexts(connectionOptions.urlContexts)
     }
   }
 
@@ -31,8 +31,9 @@ class SceneDelegate: FlutterSceneDelegate {
     openURLContexts URLContexts: Set<UIOpenURLContext>
   ) {
     super.scene(scene, openURLContexts: URLContexts)
-    if let urlContext = URLContexts.first {
-      AppDelegate.handleIncomingFile(url: urlContext.url)
+    setupChannels(from: scene)
+    if !URLContexts.isEmpty {
+      AppDelegate.handleIncomingURLContexts(URLContexts)
     }
   }
 }

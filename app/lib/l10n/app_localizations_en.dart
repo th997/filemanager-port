@@ -553,6 +553,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get selectItems => 'Select items';
 
   @override
+  String pickerItemCounts(int folders, int files) {
+    String _temp0 = intl.Intl.pluralLogic(
+      folders,
+      locale: localeName,
+      other: '$folders folders',
+      one: '1 folder',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      files,
+      locale: localeName,
+      other: '$files files',
+      one: '1 file',
+    );
+    return '$_temp0, $_temp1';
+  }
+
+  @override
   String selectedCountLabel(int count) {
     return '$count selected';
   }
@@ -2506,4 +2523,211 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get view => 'View';
+
+  @override
+  String get invalidFileNameError =>
+      'Name cannot contain \"/\", \"\\\", or be \".\" or \"..\"';
+
+  @override
+  String get batchRename => 'Batch Rename';
+
+  @override
+  String batchRenameTitle(int count) {
+    return 'Batch Rename ($count items)';
+  }
+
+  @override
+  String get batchRenameSubtitle =>
+      'Add prefix/suffix, find & replace, or sequential numbering';
+
+  @override
+  String get batchRenameModePrefixSuffix => 'Prefix / Suffix';
+
+  @override
+  String get batchRenameModeFindReplace => 'Find & Replace';
+
+  @override
+  String get batchRenameModeNumbering => 'Numbering';
+
+  @override
+  String get batchRenamePrefix => 'Prefix';
+
+  @override
+  String get batchRenamePrefixHint => 'e.g. [2026] ';
+
+  @override
+  String get batchRenameSuffix => 'Suffix';
+
+  @override
+  String get batchRenameSuffixHint => 'e.g. _final';
+
+  @override
+  String get batchRenameFindText => 'Find text';
+
+  @override
+  String get batchRenameReplaceWith => 'Replace with';
+
+  @override
+  String get batchRenameBaseName => 'Base name';
+
+  @override
+  String get batchRenameStartNumber => 'Start number';
+
+  @override
+  String get batchRenamePaddingDigits => 'Digits';
+
+  @override
+  String batchRenameDigitsOption(int digits, String example) {
+    return '$digits digits ($example)';
+  }
+
+  @override
+  String get batchRenameKeepExtension => 'Keep file extension';
+
+  @override
+  String get batchRenamePreview => 'Live Preview';
+
+  @override
+  String get batchRenameEmptyName => '(empty name)';
+
+  @override
+  String batchRenameProgress(int done, int total) {
+    return 'Renaming $done / $total...';
+  }
+
+  @override
+  String batchRenameApply(int count) {
+    return 'Apply Rename ($count)';
+  }
+
+  @override
+  String get batchRenameComplete => 'Batch rename complete';
+
+  @override
+  String get batchRenameNoChanges => 'No filenames will change';
+
+  @override
+  String get batchRenameErrorEmpty => 'One or more target names are empty';
+
+  @override
+  String batchRenameErrorDuplicate(String name) {
+    return 'Duplicate target name: \"$name\"';
+  }
+
+  @override
+  String batchRenameErrorExists(String name) {
+    return 'Target already exists: \"$name\"';
+  }
+
+  @override
+  String selectedItemsDetailsTitle(int count) {
+    return '$count selected items';
+  }
+
+  @override
+  String get selectedFilesSizeLabel => 'Selected files size';
+
+  @override
+  String get currentDirectoryLabel => 'Current directory';
+
+  @override
+  String get bookmarkSortModeTooltip => 'Sort order';
+
+  @override
+  String get bookmarkSortCustom => 'Custom (drag to reorder)';
+
+  @override
+  String get bookmarkSortNameAsc => 'Name ascending (A–Z)';
+
+  @override
+  String get bookmarkSortNameDesc => 'Name descending (Z–A)';
+
+  @override
+  String get videoFitLabel => 'Aspect ratio';
+
+  @override
+  String get videoFitContain => 'Fit';
+
+  @override
+  String get videoFitCover => 'Crop';
+
+  @override
+  String get videoFitFill => 'Stretch';
+
+  @override
+  String videoFitChanged(String mode) {
+    return 'Aspect ratio: $mode';
+  }
+
+  @override
+  String audioTracksTitle(int count) {
+    return 'Audio Tracks ($count)';
+  }
+
+  @override
+  String get audioTrackMenu => 'Audio track';
+
+  @override
+  String get noAudioTracks => 'No selectable audio tracks';
+
+  @override
+  String get audioTrackDefault => 'Auto (Default)';
+
+  @override
+  String audioTrackItem(String id) {
+    return 'Audio track $id';
+  }
+
+  @override
+  String subtitleTracksTitle(int count) {
+    return 'Subtitles ($count)';
+  }
+
+  @override
+  String get subtitleTrackMenu => 'Subtitles';
+
+  @override
+  String get subtitlesOff => 'Off';
+
+  @override
+  String subtitleTrackItem(String id) {
+    return 'Subtitle $id';
+  }
+
+  @override
+  String get sleepTimerTitle => 'Sleep Timer';
+
+  @override
+  String get sleepTimerOff => 'Off';
+
+  @override
+  String get sleepTimerOffToast => 'Sleep timer turned off';
+
+  @override
+  String sleepTimerMinutes(int minutes) {
+    return 'Stop in $minutes min';
+  }
+
+  @override
+  String sleepTimerMinutesToast(int minutes) {
+    return 'Playback will stop in $minutes min';
+  }
+
+  @override
+  String get sleepTimerEndOfTrack => 'Stop at end of current track';
+
+  @override
+  String get sleepTimerEndOfTrackToast =>
+      'Playback will stop after current track';
+
+  @override
+  String get sleepTimerEndOfTrackShort => 'End of track';
+
+  @override
+  String sleepTimerMenuRemaining(String remaining) {
+    return 'Sleep timer ($remaining)';
+  }
+
+  @override
+  String get readOnlyViewMode => 'Read-only view';
 }

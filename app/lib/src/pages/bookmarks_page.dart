@@ -1,12 +1,16 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
+import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/external_file_service.dart';
+
+enum BookmarkSortMode { custom, nameAsc, nameDesc }
 
 class BookmarksPage extends StatefulWidget {
   final ExternalPickRequest? pickRequest;
@@ -18,16 +22,23 @@ class BookmarksPage extends StatefulWidget {
 }
 
 class _BookmarksPageState extends State<BookmarksPage> {
+  static const _prefOrderKey = 'bookmarks.custom_order';
+  static const _prefSortKey = 'bookmarks.sort_mode';
+
   List<BookmarkDto> _bookmarks = [];
   List<RemoteConfigDto> _remotes = [];
   bool _loading = true;
   bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  BookmarkSortMode _sortMode = BookmarkSortMode.custom;
 
   @override
   void initState() {
     super.initState();
+    final savedSort = PreferencesService.instance.getString(_prefSortKey);
+    if (savedSort == 'nameAsc') _sortMode = BookmarkSortMode.nameAsc;
+    if (savedSort == 'nameDesc') _sortMode = BookmarkSortMode.nameDesc;
     _loadBookmarks();
   }
 
@@ -35,6 +46,30 @@ class _BookmarksPageState extends State<BookmarksPage> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _applyCustomOrder() {
+    final raw = PreferencesService.instance.getString(_prefOrderKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final List<dynamic> decoded = jsonDecode(raw);
+        final orderList = decoded.map((e) => e.toString()).toList();
+        final map = {for (final b in _bookmarks) b.id: b};
+        final sorted = <BookmarkDto>[];
+        for (final id in orderList) {
+          if (map.containsKey(id)) {
+            sorted.add(map.remove(id)!);
+          }
+        }
+        sorted.addAll(map.values);
+        _bookmarks = sorted;
+      } catch (_) {}
+    }
+  }
+
+  void _saveCustomOrder() {
+    final ids = _bookmarks.map((b) => b.id).toList();
+    PreferencesService.instance.setString(_prefOrderKey, jsonEncode(ids));
   }
 
   Future<void> _loadBookmarks() async {
@@ -47,6 +82,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
       setState(() {
         _bookmarks = results[0] as List<BookmarkDto>;
         _remotes = results[1] as List<RemoteConfigDto>;
+        _applyCustomOrder();
         _loading = false;
       });
     } catch (e) {
@@ -66,14 +102,14 @@ class _BookmarksPageState extends State<BookmarksPage> {
   List<BookmarkDto>? _lastBookmarks;
   List<RemoteConfigDto>? _lastRemotes;
   String? _lastSearchQuery;
+  BookmarkSortMode? _lastSortMode;
 
-  /// Sorted by name so the list is predictable between visits; the backend
-  /// returns them in creation order.
   List<BookmarkDto> get _visibleBookmarks {
     if (_visibleBookmarksCache != null &&
         identical(_lastBookmarks, _bookmarks) &&
         identical(_lastRemotes, _remotes) &&
-        _lastSearchQuery == _searchQuery) {
+        _lastSearchQuery == _searchQuery &&
+        _lastSortMode == _sortMode) {
       return _visibleBookmarksCache!;
     }
     final query = _searchQuery.trim().toLowerCase();
@@ -85,12 +121,17 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 b.path.toLowerCase().contains(query) ||
                 _rootLabel(b.root).toLowerCase().contains(query))
             .toList();
-    list.sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+
+    if (_sortMode == BookmarkSortMode.nameAsc) {
+      list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    } else if (_sortMode == BookmarkSortMode.nameDesc) {
+      list.sort((a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()));
+    }
+
     _lastBookmarks = _bookmarks;
     _lastRemotes = _remotes;
     _lastSearchQuery = _searchQuery;
+    _lastSortMode = _sortMode;
     _visibleBookmarksCache = list;
     return list;
   }
@@ -324,16 +365,77 @@ class _BookmarksPageState extends State<BookmarksPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final visibleBookmarks = _visibleBookmarks;
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).bookmarks),
+        title: Text(l10n.bookmarks),
         actions: [
-          if (_bookmarks.isNotEmpty)
+          if (_bookmarks.isNotEmpty) ...[
+            PopupMenuButton<BookmarkSortMode>(
+              icon: const Icon(Icons.sort),
+              tooltip: l10n.bookmarkSortModeTooltip,
+              onSelected: (mode) {
+                setState(() {
+                  _sortMode = mode;
+                  PreferencesService.instance.setString(_prefSortKey, mode.name);
+                });
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: BookmarkSortMode.custom,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.drag_handle,
+                        size: 18,
+                        color: _sortMode == BookmarkSortMode.custom
+                            ? Theme.of(ctx).colorScheme.primary
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(l10n.bookmarkSortCustom),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: BookmarkSortMode.nameAsc,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.sort_by_alpha,
+                        size: 18,
+                        color: _sortMode == BookmarkSortMode.nameAsc
+                            ? Theme.of(ctx).colorScheme.primary
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(l10n.bookmarkSortNameAsc),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: BookmarkSortMode.nameDesc,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.sort_by_alpha,
+                        size: 18,
+                        color: _sortMode == BookmarkSortMode.nameDesc
+                            ? Theme.of(ctx).colorScheme.primary
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(l10n.bookmarkSortNameDesc),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: _showSearch ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchBookmarks,
+              tooltip: _showSearch ? l10n.closeSearch : l10n.searchBookmarks,
               onPressed: () {
                 setState(() {
                   _showSearch = !_showSearch;
@@ -344,6 +446,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 });
               },
             ),
+          ],
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: AppLocalizations.of(context).refresh,
@@ -400,94 +503,143 @@ class _BookmarksPageState extends State<BookmarksPage> {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: AppUiTokens.pagePadding,
-                      itemCount: visibleBookmarks.length,
-                      itemBuilder: (ctx, i) {
-                        final b = visibleBookmarks[i];
-                        return Card(
-                          child: ListTile(
-                            leading: const AppCircleBadge(
-                              icon: Icons.bookmark,
-                              color: Colors.amber,
-                            ),
-                            title: Text(b.name),
-                            subtitle: Text(
-                              b.path.isEmpty
-                                  ? _rootLabel(b.root)
-                                  : '${_rootLabel(b.root)}/${b.path}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert, size: 20),
-                              tooltip: AppLocalizations.of(context).bookmarkActions,
-                              onSelected: (action) {
-                                switch (action) {
-                                  case 'copy':
-                                    _copyBookmarkPath(b);
-                                    break;
-                                  case 'rename':
-                                    _renameBookmark(b);
-                                    break;
-                                  case 'remove':
-                                    _deleteBookmark(b);
-                                    break;
-                                }
-                              },
-                              itemBuilder: (ctx) => [
-                                PopupMenuItem(
-                                  value: 'rename',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text(AppLocalizations.of(context).rename),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'copy',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.copy_outlined, size: 18),
-                                      SizedBox(width: 8),
-                                      Text(AppLocalizations.of(context).copyPath),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'remove',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.delete_outline,
-                                        size: 18,
-                                        color: Theme.of(context).colorScheme.error,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        AppLocalizations.of(context).remove,
-                                        style: TextStyle(
-                                          color: Theme.of(context).colorScheme.error,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            onTap: () => _openBookmark(b),
-                            onLongPress: () => _showBookmarkActionSheet(b),
+                  : _searchQuery.isEmpty && _sortMode == BookmarkSortMode.custom
+                      ? ReorderableListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: AppUiTokens.pagePadding,
+                          buildDefaultDragHandles: false,
+                          itemCount: visibleBookmarks.length,
+                          onReorderItem: (oldIndex, newIndex) {
+                            HapticFeedback.lightImpact();
+                            setState(() {
+                              final updated = List<BookmarkDto>.of(_bookmarks);
+                              final item = updated.removeAt(oldIndex);
+                              updated.insert(newIndex, item);
+                              _bookmarks = updated;
+                              _visibleBookmarksCache = null;
+                              _saveCustomOrder();
+                            });
+                          },
+                          itemBuilder: (ctx, i) => _buildBookmarkCard(
+                            ctx,
+                            visibleBookmarks[i],
+                            dragIndex: i,
                           ),
-                        );
-                      },
-                    ),
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: AppUiTokens.pagePadding,
+                          itemCount: visibleBookmarks.length,
+                          itemBuilder: (ctx, i) => _buildBookmarkCard(
+                            ctx,
+                            visibleBookmarks[i],
+                          ),
+                        ),
                   ),
                 ),
               ],
             ),
+      ),
+    );
+  }
+
+  Widget _buildBookmarkCard(
+    BuildContext context,
+    BookmarkDto b, {
+    int? dragIndex,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    final menu = PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, size: 20),
+      tooltip: l10n.bookmarkActions,
+      onSelected: (action) {
+        switch (action) {
+          case 'copy':
+            _copyBookmarkPath(b);
+            break;
+          case 'rename':
+            _renameBookmark(b);
+            break;
+          case 'remove':
+            _deleteBookmark(b);
+            break;
+        }
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem(
+          value: 'rename',
+          child: Row(
+            children: [
+              const Icon(Icons.edit_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.rename),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'copy',
+          child: Row(
+            children: [
+              const Icon(Icons.copy_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.copyPath),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'remove',
+          child: Row(
+            children: [
+              Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: Theme.of(ctx).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                l10n.remove,
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    return Card(
+      key: ValueKey(b.id),
+      child: ListTile(
+        leading: const AppCircleBadge(
+          icon: Icons.bookmark,
+          color: Colors.amber,
+        ),
+        title: Text(b.name),
+        subtitle: Text(
+          b.path.isEmpty
+              ? _rootLabel(b.root)
+              : '${_rootLabel(b.root)}/${b.path}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: dragIndex != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  menu,
+                  ReorderableDragStartListener(
+                    index: dragIndex,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                      child: Icon(Icons.drag_handle, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              )
+            : menu,
+        onTap: () => _openBookmark(b),
+        onLongPress: () => _showBookmarkActionSheet(b),
       ),
     );
   }
