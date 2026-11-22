@@ -1,7 +1,6 @@
 use fm_core::LocationKind;
-use fm_index::{Database, RemoteRecord};
+use fm_index::RemoteRecord;
 use fm_remote::RemoteConfig;
-use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct RemoteConfigDto {
@@ -106,8 +105,7 @@ pub async fn test_remote_connection(config: RemoteConfigDto) -> Result<bool, Str
 }
 
 pub async fn list_remotes(db_path: String) -> Result<Vec<RemoteConfigDto>, String> {
-    let db = Database::open(Path::new(&db_path), Path::new(&db_path).parent().unwrap_or(Path::new(".")))
-        .map_err(|e| e.to_string())?;
+    let db = crate::registry::VfsRegistry::global().open_database(&db_path)?;
     let records = db.list_remotes().map_err(|e| e.to_string())?;
 
     let mut list = Vec::new();
@@ -142,8 +140,7 @@ pub async fn list_remotes(db_path: String) -> Result<Vec<RemoteConfigDto>, Strin
 }
 
 pub async fn save_remote(db_path: String, config: RemoteConfigDto) -> Result<(), String> {
-    let db = Database::open(Path::new(&db_path), Path::new(&db_path).parent().unwrap_or(Path::new(".")))
-        .map_err(|e| e.to_string())?;
+    let db = crate::registry::VfsRegistry::global().open_database(&db_path)?;
     let mut cfg: RemoteConfig = config.into();
     // The host key pin is managed by the connection layer and never shown
     // in the UI; re-attach the stored one so editing a remote does not
@@ -176,7 +173,6 @@ pub async fn save_remote(db_path: String, config: RemoteConfigDto) -> Result<(),
 }
 
 pub async fn delete_remote(db_path: String, id: String) -> Result<(), String> {
-    let db = Database::open(Path::new(&db_path), Path::new(&db_path).parent().unwrap_or(Path::new(".")))
-        .map_err(|e| e.to_string())?;
+    let db = crate::registry::VfsRegistry::global().open_database(&db_path)?;
     db.delete_remote(&id).map_err(|e| e.to_string())
 }

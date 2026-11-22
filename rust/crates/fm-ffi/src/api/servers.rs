@@ -1,5 +1,7 @@
 use crate::registry::VfsRegistry;
-use fm_server::{get_lan_ip_addresses, start_http_share, start_stream_server, RunningServer};
+use fm_server::{
+    get_lan_ip_addresses, start_http_share, start_stream_server_with_options, RunningServer,
+};
 use fm_server::StreamServer;
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -89,7 +91,8 @@ pub async fn start_media_stream(root: String) -> Result<String, String> {
         }
     }
 
-    let server = start_stream_server(vfs).await?;
+    let no_cache = root.starts_with("vault://") || root.starts_with("archive://vault://");
+    let server = start_stream_server_with_options(vfs, no_cache).await?;
     let url = format!(
         "http://127.0.0.1:{}/stream/{}/",
         server.port, server.token
@@ -110,5 +113,32 @@ pub fn stop_media_streams() {
         for (_, server) in map {
             server.shutdown();
         }
+    }
+}
+
+pub(crate) fn stop_media_streams_for_vault(vault_id: &str) {
+    let vault_root = format!("vault://{vault_id}");
+    let archive_exact = format!("archive://{vault_root}");
+    let archive_prefix = format!("{archive_exact}/");
+    let mut removed = Vec::new();
+    {
+        let mut guard = STREAMS.lock();
+        if let Some(map) = guard.as_mut() {
+            let keys: Vec<String> = map
+                .keys()
+                .filter(|k| {
+                    *k == &vault_root || *k == &archive_exact || k.starts_with(&archive_prefix)
+                })
+                .cloned()
+                .collect();
+            for k in keys {
+                if let Some(server) = map.remove(&k) {
+                    removed.push(server);
+                }
+            }
+        }
+    }
+    for server in removed {
+        server.shutdown();
     }
 }

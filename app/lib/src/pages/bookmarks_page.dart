@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/preferences_service.dart';
+import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
@@ -112,10 +113,15 @@ class _BookmarksPageState extends State<BookmarksPage> {
         _lastSortMode == _sortMode) {
       return _visibleBookmarksCache!;
     }
+    final source = widget.pickRequest != null
+        ? _bookmarks
+            .where((b) => !PlatformPaths.isInsidePrivateInbox(b.root))
+            .toList()
+        : _bookmarks;
     final query = _searchQuery.trim().toLowerCase();
     final list = query.isEmpty
-        ? [..._bookmarks]
-        : _bookmarks
+        ? [...source]
+        : source
             .where((b) =>
                 b.name.toLowerCase().contains(query) ||
                 b.path.toLowerCase().contains(query) ||
@@ -139,6 +145,9 @@ class _BookmarksPageState extends State<BookmarksPage> {
   /// Root shown in the subtitle: remote ids mean nothing to a user, so show
   /// the connection name when it is known.
   String _rootLabel(String root) {
+    if (PlatformPaths.isPrivateInboxRoot(root)) {
+      return AppLocalizations.of(context).quickInbox;
+    }
     if (root.startsWith('remote://')) {
       final id = root.substring('remote://'.length);
       for (final r in _remotes) {

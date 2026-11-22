@@ -468,6 +468,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quickHome => 'Home';
 
   @override
+  String get quickInbox => 'My Space';
+
+  @override
+  String get privateInboxSubtitle => 'App-private · Hidden from other apps';
+
+  @override
   String quickDrive(String letter) {
     return 'Drive ($letter:)';
   }
@@ -2730,4 +2736,368 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readOnlyViewMode => 'Read-only view';
+
+  @override
+  String get privacyFolder => 'Privacy Folder';
+
+  @override
+  String get privacyFolders => 'Privacy Folders';
+
+  @override
+  String get privacyFoldersDesc =>
+      'Create, unlock, back up, or import isolated privacy folders';
+
+  @override
+  String get createPrivacyFolder => 'Create Privacy Folder';
+
+  @override
+  String get openPrivacyFolder => 'Open Privacy Folder';
+
+  @override
+  String get backupPrivacyFolder => 'Back Up Privacy Folder';
+
+  @override
+  String get importPrivacyFolder => 'Import Privacy Folder';
+
+  @override
+  String get privacyFolderName => 'Folder Name';
+
+  @override
+  String get privacyFolderNameHint => 'Enter exact folder name';
+
+  @override
+  String get privacyFolderNotFound => 'Privacy folder does not exist';
+
+  @override
+  String get privacyFolderAlreadyExists =>
+      'A privacy folder with this name already exists';
+
+  @override
+  String get credentialMethod => 'Unlock Credential';
+
+  @override
+  String get credentialPassword => 'Standalone Password (8–128 chars)';
+
+  @override
+  String get credentialSystem => 'System Unlock (Passcode / Biometrics)';
+
+  @override
+  String get credentialSystemUnavailable =>
+      'System unlock is not supported on this device';
+
+  @override
+  String get encryptionAlgorithm => 'Encryption Method';
+
+  @override
+  String get cipherNone => 'No Encryption';
+
+  @override
+  String get cipherAes128Gcm => 'AES-128-GCM (Default, hardware accelerated)';
+
+  @override
+  String get cipherAes256Gcm => 'AES-256-GCM (Hardware accelerated)';
+
+  @override
+  String get storageLocation => 'Storage Location';
+
+  @override
+  String get useDefaultLocation => 'Default';
+
+  @override
+  String get changeLocation => 'Change';
+
+  @override
+  String get privacyPasswordLabel => 'Password (8–128 chars, symbols allowed)';
+
+  @override
+  String get privacyConfirmPasswordLabel => 'Confirm Password';
+
+  @override
+  String get passwordLengthError => 'Password must be 8 to 128 characters';
+
+  @override
+  String get passwordMismatchError => 'Passwords do not match';
+
+  @override
+  String get privacyUnlockedLabel =>
+      'Unlocked privacy folder • Auto-hides on exit or 10m background';
+
+  @override
+  String get lockAndHide => 'Lock & Hide';
+
+  @override
+  String lockAllPrivacyFolders(int count) {
+    return 'Lock & Hide All ($count)';
+  }
+
+  @override
+  String vaultLockedNotice(String name) {
+    return 'Privacy folder \"$name\" locked and hidden';
+  }
+
+  @override
+  String get nextStep => 'Next';
+
+  @override
+  String get unlockAction => 'Unlock';
+
+  @override
+  String unlockWithSystemPrompt(String name) {
+    return 'Authenticate to unlock privacy folder \"$name\"';
+  }
+
+  @override
+  String get setupSystemAuthPrompt =>
+      'Authenticate to set up system unlock for privacy folder';
+
+  @override
+  String get wrongCredentialError => 'Incorrect password or credential';
+
+  @override
+  String cooldownRetryError(int seconds) {
+    return 'Too many failed attempts, retry in ${seconds}s';
+  }
+
+  @override
+  String get selectBackupSourceVault => 'Select unlocked folder or enter name';
+
+  @override
+  String get backupPasswordRequiredNotice =>
+      'This folder uses system unlock. Set an 8–128 char backup password so the archive can be imported on any device.';
+
+  @override
+  String get backupPasswordLabel => 'Backup Password (8–128 chars)';
+
+  @override
+  String get selectBackupDestFile => 'Choose Backup Output Folder';
+
+  @override
+  String backupExportSuccess(String path) {
+    return 'Backup exported to: $path';
+  }
+
+  @override
+  String get selectBackupArchive => 'Select .fpmvault Backup File';
+
+  @override
+  String backupArchiveSummary(String cipher, int count) {
+    return 'Cipher: $cipher • Objects: $count';
+  }
+
+  @override
+  String get backupPasswordToVerify => 'Backup / Vault Password';
+
+  @override
+  String get localUnlockAfterImport => 'Unlock Method After Import';
+
+  @override
+  String get newLocalPasswordOptional =>
+      'New Local Password (blank to reuse backup password)';
+
+  @override
+  String importSuccessNotice(String name) {
+    return 'Privacy folder \"$name\" imported and unlocked';
+  }
+
+  @override
+  String get saveToPrivacyFolder => 'Save to Privacy Folder';
+
+  @override
+  String get saveToPrivacyFolderSubtitle =>
+      'Encrypt and save into an unlocked privacy folder';
+
+  @override
+  String get selectPrivacyFolder => 'Select Privacy Folder';
+
+  @override
+  String get privacyFolderNoHistoryBookmark =>
+      'History and public bookmarks are disabled inside privacy folders';
+
+  @override
+  String get unlockedBadge => 'Unlocked';
+
+  @override
+  String importKeepOriginalName(String name) {
+    return 'Original folder name will be kept: \"$name\"';
+  }
+
+  @override
+  String get importWillKeepOriginalName =>
+      'Original folder name will be preserved automatically. If it already exists, you will be prompted to enter a new name.';
+
+  @override
+  String importNameExistsEnterNew(String name) {
+    return 'Privacy folder \"$name\" already exists. Please enter a new folder name.';
+  }
+
+  @override
+  String get importNewFolderNameLabel => 'New Privacy Folder Name';
+
+  @override
+  String get importEnterFolderNamePrompt =>
+      'This backup does not contain the original folder name. Please enter a folder name.';
+
+  @override
+  String get renamePrivacyFolder => 'Rename Privacy Folder';
+
+  @override
+  String privacyFolderRenamedNotice(String name) {
+    return 'Privacy folder renamed to \"$name\"';
+  }
+
+  @override
+  String largeFilePagedNotice(String start, String end, String total) {
+    return 'Large file read-only mode ($start – $end / $total)';
+  }
+
+  @override
+  String get previousPage => 'Previous Page';
+
+  @override
+  String get nextPage => 'Next Page';
+
+  @override
+  String get jumpToPosition => 'Jump to Position';
+
+  @override
+  String get deletePrivacyFolder => 'Delete Privacy Folder';
+
+  @override
+  String deletePrivacyFolderWarning(String name) {
+    return 'This will permanently delete privacy folder \"$name\" and all encrypted files inside it, along with its stored key on this device. This action cannot be undone.';
+  }
+
+  @override
+  String deletePrivacyFolderConfirmLabel(String name) {
+    return 'Type \"$name\" to confirm deletion';
+  }
+
+  @override
+  String privacyFolderDeletedNotice(String name) {
+    return 'Privacy folder \"$name\" has been permanently deleted';
+  }
+
+  @override
+  String get privacyMediaAudio => 'Private Audio';
+
+  @override
+  String get privacyMediaVideo => 'Private Video';
+
+  @override
+  String get vaultAutoLockTitle => 'Auto-lock in background';
+
+  @override
+  String get vaultAutoLockImmediate => 'Immediately';
+
+  @override
+  String vaultAutoLockMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get vaultAutoLockNever => 'Never';
+
+  @override
+  String get vaultConfirmExternalOpenTitle =>
+      'Confirm before external open & share';
+
+  @override
+  String get vaultConfirmExternalOpenDesc =>
+      'Warn before exporting a decrypted temporary copy to other apps';
+
+  @override
+  String get vaultExternalOpenWarningTitle => 'Open with external app?';
+
+  @override
+  String get vaultExternalOpenWarningBody =>
+      'This file will be temporarily decrypted and passed to another app outside the privacy folder. Remove any saved copy in that app afterward if needed.';
+
+  @override
+  String get dontAskAgain => 'Don\'t ask again';
+
+  @override
+  String get continueAction => 'Continue';
+
+  @override
+  String get vaultVideoThumbnailsTitle => 'Privacy folder video thumbnails';
+
+  @override
+  String get vaultVideoThumbnailsDesc =>
+      'Decode and cache encrypted video preview frames on demand (off by default to save battery)';
+
+  @override
+  String get vaultSecuritySettings => 'Password & Unlock Method';
+
+  @override
+  String get vaultChangePasswordOption => 'Change password';
+
+  @override
+  String get vaultSwitchToSystemOption => 'Switch to system unlock';
+
+  @override
+  String get vaultSwitchToPasswordOption => 'Switch to separate password';
+
+  @override
+  String get vaultCurrentPasswordLabel => 'Current password';
+
+  @override
+  String get vaultNewPasswordLabel => 'New password (8–128 chars)';
+
+  @override
+  String get vaultOldBackupsPasswordNotice =>
+      'Existing .fpmvault backup archives exported earlier still require the password used when they were created.';
+
+  @override
+  String get vaultSwitchToSystemBackupNotice =>
+      'Keep a .fpmvault backup in a safe place. If you move to another device, Keychain/Keystore keys will not migrate encrypted folders.';
+
+  @override
+  String get vaultSecurityUpdatedNotice =>
+      'Privacy folder security settings updated';
+
+  @override
+  String get vaultFolderInfo => 'Folder Info & Storage';
+
+  @override
+  String get vaultStatsFiles => 'Files';
+
+  @override
+  String get vaultStatsFolders => 'Subfolders';
+
+  @override
+  String get vaultStatsPlainSize => 'Content Size';
+
+  @override
+  String get vaultStatsDiskUsage => 'Disk Usage';
+
+  @override
+  String get vaultStatsOrphaned => 'Reclaimable Orphaned Data';
+
+  @override
+  String vaultStatsOrphanDetail(int count, String size) {
+    return '$count items ($size)';
+  }
+
+  @override
+  String get vaultCleanupOrphansAction => 'Clean Up Orphaned Space';
+
+  @override
+  String vaultCleanupResultNotice(int count, String size) {
+    return 'Removed $count orphaned files and freed $size';
+  }
+
+  @override
+  String backupProgressLabel(String done, String total, int percent) {
+    return '$done / $total ($percent%)';
+  }
+
+  @override
+  String get backupCancelling => 'Cancelling…';
+
+  @override
+  String get backupCancelledNotice => 'Backup operation cancelled';
+
+  @override
+  String get deleteVaultPermanentWarning =>
+      'This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin.';
 }

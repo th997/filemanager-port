@@ -8,6 +8,7 @@ import 'api/metadata.dart';
 import 'api/remotes.dart';
 import 'api/servers.dart';
 import 'api/tasks.dart';
+import 'api/vault.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -53,6 +54,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
+  VaultBackupTaskProgressDto
+  dco_decode_box_autoadd_vault_backup_task_progress_dto(dynamic raw);
+
+  @protected
+  VaultImportResultDto dco_decode_box_autoadd_vault_import_result_dto(
+    dynamic raw,
+  );
+
+  @protected
   CapabilitiesDto dco_decode_capabilities_dto(dynamic raw);
 
   @protected
@@ -80,6 +90,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HistoryDto> dco_decode_list_history_dto(dynamic raw);
 
   @protected
+  List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -90,6 +103,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<TrashItemDto> dco_decode_list_trash_item_dto(dynamic raw);
+
+  @protected
+  List<UnlockedVaultDto> dco_decode_list_unlocked_vault_dto(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -110,6 +126,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  VaultBackupTaskProgressDto?
+  dco_decode_opt_box_autoadd_vault_backup_task_progress_dto(dynamic raw);
+
+  @protected
+  VaultImportResultDto? dco_decode_opt_box_autoadd_vault_import_result_dto(
+    dynamic raw,
+  );
+
+  @protected
+  Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
   PagedEntriesDto dco_decode_paged_entries_dto(dynamic raw);
 
   @protected
@@ -120,6 +148,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TaskProgressDto dco_decode_task_progress_dto(dynamic raw);
+
+  @protected
+  TextChunkDto dco_decode_text_chunk_dto(dynamic raw);
 
   @protected
   TrashItemDto dco_decode_trash_item_dto(dynamic raw);
@@ -138,6 +169,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void dco_decode_unit(dynamic raw);
+
+  @protected
+  UnlockedVaultDto dco_decode_unlocked_vault_dto(dynamic raw);
+
+  @protected
+  VaultBackupInfoDto dco_decode_vault_backup_info_dto(dynamic raw);
+
+  @protected
+  VaultBackupTaskProgressDto dco_decode_vault_backup_task_progress_dto(
+    dynamic raw,
+  );
+
+  @protected
+  VaultCreateResultDto dco_decode_vault_create_result_dto(dynamic raw);
+
+  @protected
+  VaultGcResultDto dco_decode_vault_gc_result_dto(dynamic raw);
+
+  @protected
+  VaultImportResultDto dco_decode_vault_import_result_dto(dynamic raw);
+
+  @protected
+  VaultLookupDto dco_decode_vault_lookup_dto(dynamic raw);
+
+  @protected
+  VaultStatsDto dco_decode_vault_stats_dto(dynamic raw);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -171,6 +228,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  VaultBackupTaskProgressDto
+  sse_decode_box_autoadd_vault_backup_task_progress_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VaultImportResultDto sse_decode_box_autoadd_vault_import_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   CapabilitiesDto sse_decode_capabilities_dto(SseDeserializer deserializer);
 
   @protected
@@ -198,6 +266,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HistoryDto> sse_decode_list_history_dto(SseDeserializer deserializer);
 
   @protected
+  List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -212,6 +283,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<TrashItemDto> sse_decode_list_trash_item_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UnlockedVaultDto> sse_decode_list_unlocked_vault_dto(
     SseDeserializer deserializer,
   );
 
@@ -236,6 +312,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  VaultBackupTaskProgressDto?
+  sse_decode_opt_box_autoadd_vault_backup_task_progress_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VaultImportResultDto? sse_decode_opt_box_autoadd_vault_import_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
   PagedEntriesDto sse_decode_paged_entries_dto(SseDeserializer deserializer);
 
   @protected
@@ -246,6 +336,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TaskProgressDto sse_decode_task_progress_dto(SseDeserializer deserializer);
+
+  @protected
+  TextChunkDto sse_decode_text_chunk_dto(SseDeserializer deserializer);
 
   @protected
   TrashItemDto sse_decode_trash_item_dto(SseDeserializer deserializer);
@@ -264,6 +357,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  UnlockedVaultDto sse_decode_unlocked_vault_dto(SseDeserializer deserializer);
+
+  @protected
+  VaultBackupInfoDto sse_decode_vault_backup_info_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VaultBackupTaskProgressDto sse_decode_vault_backup_task_progress_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VaultCreateResultDto sse_decode_vault_create_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VaultGcResultDto sse_decode_vault_gc_result_dto(SseDeserializer deserializer);
+
+  @protected
+  VaultImportResultDto sse_decode_vault_import_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VaultLookupDto sse_decode_vault_lookup_dto(SseDeserializer deserializer);
+
+  @protected
+  VaultStatsDto sse_decode_vault_stats_dto(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -305,6 +430,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_vault_backup_task_progress_dto(
+    VaultBackupTaskProgressDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_vault_import_result_dto(
+    VaultImportResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_capabilities_dto(
     CapabilitiesDto self,
     SseSerializer serializer,
@@ -341,6 +478,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -361,6 +501,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_trash_item_dto(
     List<TrashItemDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_unlocked_vault_dto(
+    List<UnlockedVaultDto> self,
     SseSerializer serializer,
   );
 
@@ -389,6 +535,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_vault_backup_task_progress_dto(
+    VaultBackupTaskProgressDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_vault_import_result_dto(
+    VaultImportResultDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_list_prim_u_8_strict(
+    Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_paged_entries_dto(
     PagedEntriesDto self,
     SseSerializer serializer,
@@ -413,6 +577,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_text_chunk_dto(TextChunkDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_trash_item_dto(TrashItemDto self, SseSerializer serializer);
 
   @protected
@@ -429,6 +596,51 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_unlocked_vault_dto(
+    UnlockedVaultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_backup_info_dto(
+    VaultBackupInfoDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_backup_task_progress_dto(
+    VaultBackupTaskProgressDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_create_result_dto(
+    VaultCreateResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_gc_result_dto(
+    VaultGcResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_import_result_dto(
+    VaultImportResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_lookup_dto(
+    VaultLookupDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vault_stats_dto(VaultStatsDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);

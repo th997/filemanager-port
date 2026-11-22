@@ -8,16 +8,27 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import android.view.WindowManager
 import androidx.core.content.FileProvider
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     companion object {
         private const val ACTION_OI_PICK_FILE = "org.openintents.action.PICK_FILE"
+        private const val VAULT_KEYSTORE_ALIAS = "fp_filemanager_vault_dek_key"
+        private const val VAULT_KEYSTORE_PREFS = "fm_vault_keystore"
     }
 
     private var openFileChannel: MethodChannel? = null
@@ -72,6 +83,114 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        val vaultChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.github.th997.filemanager/vault_native"
+        )
+        vaultChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setSecureScreen" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    runOnUiThread {
+                        if (enabled) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(true)
+                    }
+                }
+                "keystoreSave" -> {
+                    val key = call.argument<String>("key")
+                    val value = call.argument<String>("value")
+                    if (key.isNullOrEmpty() || value == null) {
+                        result.success(false)
+                    } else {
+                        result.success(vaultKeystoreSave(key, value))
+                    }
+                }
+                "keystoreRead" -> {
+                    val key = call.argument<String>("key")
+                    if (key.isNullOrEmpty()) {
+                        result.success(null)
+                    } else {
+                        result.success(vaultKeystoreRead(key))
+                    }
+                }
+                "keystoreDelete" -> {
+                    val key = call.argument<String>("key")
+                    if (key.isNullOrEmpty()) {
+                        result.success(false)
+                    } else {
+                        getSharedPreferences(VAULT_KEYSTORE_PREFS, MODE_PRIVATE)
+                            .edit()
+                            .remove(key)
+                            .apply()
+                        result.success(true)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun getOrCreateVaultSecretKey(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey(VAULT_KEYSTORE_ALIAS, null) as? SecretKey)?.let { return it }
+        val kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        val spec = KeyGenParameterSpec.Builder(
+            VAULT_KEYSTORE_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .build()
+        kg.init(spec)
+        return kg.generateKey()
+    }
+
+    private fun vaultKeystoreSave(key: String, value: String): Boolean {
+        return try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateVaultSecretKey())
+            val iv = cipher.iv
+            val ct = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+            val packed = ByteArray(1 + iv.size + ct.size)
+            packed[0] = iv.size.toByte()
+            System.arraycopy(iv, 0, packed, 1, iv.size)
+            System.arraycopy(ct, 0, packed, 1 + iv.size, ct.size)
+            val encoded = Base64.encodeToString(packed, Base64.NO_WRAP)
+            getSharedPreferences(VAULT_KEYSTORE_PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(key, encoded)
+                .commit()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun vaultKeystoreRead(key: String): String? {
+        return try {
+            val encoded = getSharedPreferences(VAULT_KEYSTORE_PREFS, MODE_PRIVATE)
+                .getString(key, null) ?: return null
+            val packed = Base64.decode(encoded, Base64.DEFAULT)
+            if (packed.isEmpty()) return null
+            val ivLen = packed[0].toInt() and 0xFF
+            if (packed.size <= 1 + ivLen) return null
+            val iv = packed.copyOfRange(1, 1 + ivLen)
+            val ct = packed.copyOfRange(1 + ivLen, packed.size)
+            val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            val secretKey = ks.getKey(VAULT_KEYSTORE_ALIAS, null) as? SecretKey ?: return null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
+            String(cipher.doFinal(ct), Charsets.UTF_8)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 

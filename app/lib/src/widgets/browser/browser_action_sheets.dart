@@ -10,6 +10,7 @@ Future<String?> showBrowserEntryModalBottomSheet({
   required bool isRemoteOrArchive,
   required bool canWrite,
   required bool canArchive,
+  bool canBookmark = true,
 }) {
   final l10n = AppLocalizations.of(context);
   return showModalBottomSheet<String>(
@@ -85,7 +86,7 @@ Future<String?> showBrowserEntryModalBottomSheet({
                 title: Text(l10n.compressToZip),
                 onTap: () => Navigator.of(ctx).pop('compress'),
               ),
-            if (item.isDir)
+            if (item.isDir && canBookmark)
               ListTile(
                 leading: const Icon(Icons.bookmark_add_outlined),
                 title: Text(l10n.bookmarkThisFolder),
@@ -135,6 +136,7 @@ Future<String?> showBrowserContextMenu({
   required bool isRemoteOrArchive,
   required bool canWrite,
   required bool canArchive,
+  bool canBookmark = true,
 }) {
   final l10n = AppLocalizations.of(context);
   return showMenu<String>(
@@ -281,7 +283,7 @@ Future<String?> showBrowserContextMenu({
             ],
           ),
         ),
-      if (item.isDir)
+      if (item.isDir && canBookmark)
         PopupMenuItem(
           value: 'bookmark',
           child: Row(
@@ -315,6 +317,7 @@ Future<String?> showBrowserBackgroundContextMenu({
   required bool hasClipboard,
   required int? clipboardCount,
   bool isZh = false,
+  bool canBookmark = true,
 }) {
   final l10n = AppLocalizations.of(context);
   return showMenu<String>(
@@ -435,16 +438,17 @@ Future<String?> showBrowserBackgroundContextMenu({
           ],
         ),
       ),
-      PopupMenuItem(
-        value: 'bookmark',
-        child: Row(
-          children: [
-            const Icon(Icons.bookmark_add_outlined, size: 18),
-            const SizedBox(width: 8),
-            Text(l10n.bookmarkThisFolder),
-          ],
+      if (canBookmark)
+        PopupMenuItem(
+          value: 'bookmark',
+          child: Row(
+            children: [
+              const Icon(Icons.bookmark_add_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.bookmarkThisFolder),
+            ],
+          ),
         ),
-      ),
       PopupMenuItem(
         value: 'copy_path',
         child: Row(

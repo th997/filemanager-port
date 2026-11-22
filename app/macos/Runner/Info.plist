@@ -327,6 +327,59 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Documents</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>pdf</string>
+				<string>rtf</string>
+				<string>rtfd</string>
+				<string>doc</string>
+				<string>docx</string>
+				<string>xls</string>
+				<string>xlsx</string>
+				<string>ppt</string>
+				<string>pptx</string>
+				<string>pages</string>
+				<string>numbers</string>
+				<string>key</string>
+				<string>odt</string>
+				<string>ods</string>
+				<string>odp</string>
+				<string>db</string>
+				<string>sqlite</string>
+				<string>sqlite3</string>
+				<string>fpmvault</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+				<string>public.composite-content</string>
+				<string>public.rtf</string>
+				<string>com.apple.rtfd</string>
+				<string>com.microsoft.word.doc</string>
+				<string>org.openxmlformats.wordprocessingml.document</string>
+				<string>com.microsoft.excel.xls</string>
+				<string>org.openxmlformats.spreadsheetml.sheet</string>
+				<string>com.microsoft.powerpoint.ppt</string>
+				<string>org.openxmlformats.presentationml.presentation</string>
+				<string>com.apple.iwork.pages.pages</string>
+				<string>com.apple.iwork.pages.sffpages</string>
+				<string>com.apple.iwork.numbers.numbers</string>
+				<string>com.apple.iwork.numbers.sffnumbers</string>
+				<string>com.apple.iwork.keynote.key</string>
+				<string>com.apple.iwork.keynote.sffkey</string>
+				<string>org.oasis-open.opendocument.text</string>
+				<string>org.oasis-open.opendocument.spreadsheet</string>
+				<string>org.oasis-open.opendocument.presentation</string>
+				<string>public.database</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>All Files</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -337,6 +390,7 @@
 				<string>public.item</string>
 				<string>public.data</string>
 				<string>public.content</string>
+				<string>public.composite-content</string>
 			</array>
 		</dict>
 	</array>

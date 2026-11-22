@@ -319,6 +319,8 @@
   "quickRoot": "Root /",
   "quickPictures": "Pictures",
   "quickHome": "Home",
+  "quickInbox": "My Space",
+  "privateInboxSubtitle": "App-private · Hidden from other apps",
   "quickDrive": "Drive ({letter}:)",
   "quickDownloads": "Downloads",
   "quickDownload": "Download",
@@ -1999,5 +2001,255 @@
       }
     }
   },
-  "readOnlyViewMode": "Read-only view"
+  "readOnlyViewMode": "Read-only view",
+  "privacyFolder": "Privacy Folder",
+  "privacyFolders": "Privacy Folders",
+  "privacyFoldersDesc": "Create, unlock, back up, or import isolated privacy folders",
+  "createPrivacyFolder": "Create Privacy Folder",
+  "openPrivacyFolder": "Open Privacy Folder",
+  "backupPrivacyFolder": "Back Up Privacy Folder",
+  "importPrivacyFolder": "Import Privacy Folder",
+  "privacyFolderName": "Folder Name",
+  "privacyFolderNameHint": "Enter exact folder name",
+  "privacyFolderNotFound": "Privacy folder does not exist",
+  "privacyFolderAlreadyExists": "A privacy folder with this name already exists",
+  "credentialMethod": "Unlock Credential",
+  "credentialPassword": "Standalone Password (8–128 chars)",
+  "credentialSystem": "System Unlock (Passcode / Biometrics)",
+  "credentialSystemUnavailable": "System unlock is not supported on this device",
+  "encryptionAlgorithm": "Encryption Method",
+  "cipherNone": "No Encryption",
+  "cipherAes128Gcm": "AES-128-GCM (Default, hardware accelerated)",
+  "cipherAes256Gcm": "AES-256-GCM (Hardware accelerated)",
+  "storageLocation": "Storage Location",
+  "useDefaultLocation": "Default",
+  "changeLocation": "Change",
+  "privacyPasswordLabel": "Password (8–128 chars, symbols allowed)",
+  "privacyConfirmPasswordLabel": "Confirm Password",
+  "passwordLengthError": "Password must be 8 to 128 characters",
+  "passwordMismatchError": "Passwords do not match",
+  "privacyUnlockedLabel": "Unlocked privacy folder • Auto-hides on exit or 10m background",
+  "lockAndHide": "Lock & Hide",
+  "lockAllPrivacyFolders": "Lock & Hide All ({count})",
+  "@lockAllPrivacyFolders": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "vaultLockedNotice": "Privacy folder \"{name}\" locked and hidden",
+  "@vaultLockedNotice": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "nextStep": "Next",
+  "unlockAction": "Unlock",
+  "unlockWithSystemPrompt": "Authenticate to unlock privacy folder \"{name}\"",
+  "@unlockWithSystemPrompt": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "setupSystemAuthPrompt": "Authenticate to set up system unlock for privacy folder",
+  "wrongCredentialError": "Incorrect password or credential",
+  "cooldownRetryError": "Too many failed attempts, retry in {seconds}s",
+  "@cooldownRetryError": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "selectBackupSourceVault": "Select unlocked folder or enter name",
+  "backupPasswordRequiredNotice": "This folder uses system unlock. Set an 8–128 char backup password so the archive can be imported on any device.",
+  "backupPasswordLabel": "Backup Password (8–128 chars)",
+  "selectBackupDestFile": "Choose Backup Output Folder",
+  "backupExportSuccess": "Backup exported to: {path}",
+  "@backupExportSuccess": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "selectBackupArchive": "Select .fpmvault Backup File",
+  "backupArchiveSummary": "Cipher: {cipher} • Objects: {count}",
+  "@backupArchiveSummary": {
+    "placeholders": {
+      "cipher": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "backupPasswordToVerify": "Backup / Vault Password",
+  "localUnlockAfterImport": "Unlock Method After Import",
+  "newLocalPasswordOptional": "New Local Password (blank to reuse backup password)",
+  "importSuccessNotice": "Privacy folder \"{name}\" imported and unlocked",
+  "@importSuccessNotice": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "saveToPrivacyFolder": "Save to Privacy Folder",
+  "saveToPrivacyFolderSubtitle": "Encrypt and save into an unlocked privacy folder",
+  "selectPrivacyFolder": "Select Privacy Folder",
+  "privacyFolderNoHistoryBookmark": "History and public bookmarks are disabled inside privacy folders",
+  "unlockedBadge": "Unlocked",
+  "importKeepOriginalName": "Original folder name will be kept: \"{name}\"",
+  "@importKeepOriginalName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "importWillKeepOriginalName": "Original folder name will be preserved automatically. If it already exists, you will be prompted to enter a new name.",
+  "importNameExistsEnterNew": "Privacy folder \"{name}\" already exists. Please enter a new folder name.",
+  "@importNameExistsEnterNew": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "importNewFolderNameLabel": "New Privacy Folder Name",
+  "importEnterFolderNamePrompt": "This backup does not contain the original folder name. Please enter a folder name.",
+  "renamePrivacyFolder": "Rename Privacy Folder",
+  "privacyFolderRenamedNotice": "Privacy folder renamed to \"{name}\"",
+  "@privacyFolderRenamedNotice": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "largeFilePagedNotice": "Large file read-only mode ({start} – {end} / {total})",
+  "@largeFilePagedNotice": {
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "previousPage": "Previous Page",
+  "nextPage": "Next Page",
+  "jumpToPosition": "Jump to Position",
+  "deletePrivacyFolder": "Delete Privacy Folder",
+  "deletePrivacyFolderWarning": "This will permanently delete privacy folder \"{name}\" and all encrypted files inside it, along with its stored key on this device. This action cannot be undone.",
+  "@deletePrivacyFolderWarning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deletePrivacyFolderConfirmLabel": "Type \"{name}\" to confirm deletion",
+  "@deletePrivacyFolderConfirmLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "privacyFolderDeletedNotice": "Privacy folder \"{name}\" has been permanently deleted",
+  "@privacyFolderDeletedNotice": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "privacyMediaAudio": "Private Audio",
+  "privacyMediaVideo": "Private Video",
+  "vaultAutoLockTitle": "Auto-lock in background",
+  "vaultAutoLockImmediate": "Immediately",
+  "vaultAutoLockMinutes": "{minutes} min",
+  "@vaultAutoLockMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "vaultAutoLockNever": "Never",
+  "vaultConfirmExternalOpenTitle": "Confirm before external open & share",
+  "vaultConfirmExternalOpenDesc": "Warn before exporting a decrypted temporary copy to other apps",
+  "vaultExternalOpenWarningTitle": "Open with external app?",
+  "vaultExternalOpenWarningBody": "This file will be temporarily decrypted and passed to another app outside the privacy folder. Remove any saved copy in that app afterward if needed.",
+  "dontAskAgain": "Don't ask again",
+  "continueAction": "Continue",
+  "vaultVideoThumbnailsTitle": "Privacy folder video thumbnails",
+  "vaultVideoThumbnailsDesc": "Decode and cache encrypted video preview frames on demand (off by default to save battery)",
+  "vaultSecuritySettings": "Password & Unlock Method",
+  "vaultChangePasswordOption": "Change password",
+  "vaultSwitchToSystemOption": "Switch to system unlock",
+  "vaultSwitchToPasswordOption": "Switch to separate password",
+  "vaultCurrentPasswordLabel": "Current password",
+  "vaultNewPasswordLabel": "New password (8–128 chars)",
+  "vaultOldBackupsPasswordNotice": "Existing .fpmvault backup archives exported earlier still require the password used when they were created.",
+  "vaultSwitchToSystemBackupNotice": "Keep a .fpmvault backup in a safe place. If you move to another device, Keychain/Keystore keys will not migrate encrypted folders.",
+  "vaultSecurityUpdatedNotice": "Privacy folder security settings updated",
+  "vaultFolderInfo": "Folder Info & Storage",
+  "vaultStatsFiles": "Files",
+  "vaultStatsFolders": "Subfolders",
+  "vaultStatsPlainSize": "Content Size",
+  "vaultStatsDiskUsage": "Disk Usage",
+  "vaultStatsOrphaned": "Reclaimable Orphaned Data",
+  "vaultStatsOrphanDetail": "{count} items ({size})",
+  "@vaultStatsOrphanDetail": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "vaultCleanupOrphansAction": "Clean Up Orphaned Space",
+  "vaultCleanupResultNotice": "Removed {count} orphaned files and freed {size}",
+  "@vaultCleanupResultNotice": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "backupProgressLabel": "{done} / {total} ({percent}%)",
+  "@backupProgressLabel": {
+    "placeholders": {
+      "done": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "backupCancelling": "Cancelling…",
+  "backupCancelledNotice": "Backup operation cancelled",
+  "deleteVaultPermanentWarning": "This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin."
 }

@@ -13,8 +13,10 @@ import '../rust/api/file_manager.dart';
 import '../services/file_open_service.dart';
 import '../services/highlight_service.dart';
 import '../services/markdown_pdf_service.dart';
+import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
+import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../theme/markdown_themes.dart';
 import '../widgets/html_preview_widget.dart';
@@ -36,6 +38,7 @@ class TextEditorPage extends StatefulWidget {
   /// contents, read-only servers): the editor opens view-only instead of
   /// letting the user type and only failing at save time.
   final bool readOnly;
+  final int? fileSizeBytes;
 
   const TextEditorPage({
     super.key,
@@ -43,6 +46,7 @@ class TextEditorPage extends StatefulWidget {
     required this.path,
     required this.fileName,
     this.readOnly = false,
+    this.fileSizeBytes,
   });
 
   @override
@@ -60,6 +64,18 @@ class _TextEditorPageState extends State<TextEditorPage> {
   bool _isDirty = false;
   String? _error;
   late TextFileMode _mode;
+  static const int _largeTextThresholdBytes = 20 * 1024 * 1024;
+  static const int _chunkPageBytes = 256 * 1024;
+  bool _largeFileMode = false;
+  int _chunkStart = 0;
+  int _chunkEnd = 0;
+  int _chunkTotal = 0;
+  bool _chunkHasPrev = false;
+  bool _chunkHasNext = false;
+  String _chunkEncoding = 'utf-8';
+  bool _loadingChunk = false;
+  final List<int> _prevChunkOffsets = [];
+
   static const _prefFontSize = 'editor.font_size';
   static const _prefWordWrap = 'editor.word_wrap';
   static const _prefMarkdownTheme = 'markdown.theme';
@@ -194,22 +210,44 @@ class _TextEditorPageState extends State<TextEditorPage> {
   int? _cachedWords = 0;
 
   bool get _isTemporaryInbox =>
-      _root.contains('/cache/inbox') ||
-      _root.contains('\\cache\\inbox') ||
-      _root.endsWith('/inbox') ||
-      _root.endsWith('\\inbox');
+      !PlatformPaths.isInsidePrivateInbox(_root) &&
+      (_root.contains('/cache/inbox') ||
+          _root.contains('\\cache\\inbox') ||
+          _root.endsWith('/inbox') ||
+          _root.endsWith('\\inbox'));
 
   String get _lowerName => _fileName.toLowerCase();
   bool get _isMarkdown => _lowerName.endsWith('.md') || _lowerName.endsWith('.markdown');
   bool get _isHtml => _lowerName.endsWith('.html') || _lowerName.endsWith('.htm') || _lowerName.endsWith('.xhtml');
 
+  bool _vaultAutoClosing = false;
+
+  void _onVaultChanged() {
+    final vid = vaultIdFromRoot(_root);
+    if (vid != null && !VaultService.instance.isUnlocked(vid)) {
+      _controller.clear();
+      _clearLineCache();
+      if (!_vaultAutoClosing && mounted) {
+        _vaultAutoClosing = true;
+        final route = ModalRoute.of(context);
+        if (route != null && route.isActive && !route.isFirst) {
+          Navigator.of(context).removeRoute(route);
+        } else if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    VaultService.instance.addListener(_onVaultChanged);
     _root = widget.root;
     _path = widget.path;
     _fileName = widget.fileName;
-    _readOnly = widget.readOnly;
+    _largeFileMode = (widget.fileSizeBytes ?? 0) > _largeTextThresholdBytes;
+    _readOnly = widget.readOnly || _largeFileMode;
     _controller = SyntaxHighlightingEditingController(
       fileName: _fileName,
       brightnessProvider: () => Theme.of(context).brightness,
@@ -221,12 +259,15 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _wordWrap = prefs.getBool(_prefWordWrap) ?? _wordWrap;
     _markdownTheme = MarkdownThemeType.fromId(prefs.getString(_prefMarkdownTheme));
     _pdfMargin = PdfMarginMode.fromId(prefs.getString(_prefPdfMargin));
-    _mode = (_isMarkdown || _isHtml) ? TextFileMode.preview : TextFileMode.code;
+    _mode = (!_largeFileMode && (_isMarkdown || _isHtml))
+        ? TextFileMode.preview
+        : TextFileMode.code;
     _loadFile();
   }
 
   @override
   void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
     _findDebounce?.cancel();
     _controller.removeListener(_updateCursorPosition);
     _controller.dispose();
@@ -670,7 +711,184 @@ class _TextEditorPageState extends State<TextEditorPage> {
     });
   }
 
+  String _formatByteOffset(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Future<void> _loadChunkAt(
+    int offset, {
+    bool resetHistory = false,
+    bool pushCurrentToHistory = false,
+  }) async {
+    final vid = vaultIdFromRoot(_root);
+    if (vid != null && !VaultService.instance.isUnlocked(vid)) return;
+
+    final clampedOffset = offset < 0
+        ? 0
+        : (_chunkTotal > 0 ? offset.clamp(0, _chunkTotal) : offset);
+    final initialLoad = _controller.text.isEmpty && _chunkTotal == 0;
+    final prevStart = _chunkStart;
+    setState(() {
+      _loadingChunk = true;
+      if (initialLoad) _loading = true;
+      _error = null;
+    });
+
+    try {
+      final chunk = await readTextChunk(
+        root: _root,
+        path: _path,
+        offset: BigInt.from(clampedOffset),
+        maxBytes: BigInt.from(_chunkPageBytes),
+      );
+      if (!mounted) return;
+      if (resetHistory) {
+        _prevChunkOffsets.clear();
+      } else if (pushCurrentToHistory && prevStart != chunk.startOffset.toInt()) {
+        _prevChunkOffsets.add(prevStart);
+      }
+      _clearLineCache();
+      setState(() {
+        _chunkStart = chunk.startOffset.toInt();
+        _chunkEnd = chunk.endOffset.toInt();
+        _chunkTotal = chunk.totalSize.toInt();
+        _chunkHasPrev = chunk.hasPrev;
+        _chunkHasNext = chunk.hasNext;
+        _chunkEncoding = chunk.encoding;
+        _controller.text = chunk.text;
+        _loading = false;
+        _loadingChunk = false;
+        _isDirty = false;
+      });
+      if (_codeScrollController.hasClients) {
+        _codeScrollController.jumpTo(0);
+      }
+      if (_showFind && _findController.text.isNotEmpty) {
+        _updateMatches(jumpToMatch: false);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadingChunk = false;
+        if (initialLoad || _controller.text.isEmpty) {
+          _error = e.toString();
+        }
+      });
+      if (!initialLoad && _controller.text.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _nextTextPage() async {
+    if (_loadingChunk || !_chunkHasNext) return;
+    await _loadChunkAt(_chunkEnd, pushCurrentToHistory: true);
+  }
+
+  Future<void> _prevTextPage() async {
+    if (_loadingChunk || !_chunkHasPrev) return;
+    if (_prevChunkOffsets.isNotEmpty) {
+      final target = _prevChunkOffsets.removeLast();
+      await _loadChunkAt(target);
+      return;
+    }
+    final fallback = (_chunkStart - _chunkPageBytes).clamp(0, _chunkStart);
+    await _loadChunkAt(fallback);
+  }
+
+  Future<void> _showJumpPositionDialog() async {
+    if (_chunkTotal <= 0) return;
+    final l10n = AppLocalizations.of(context);
+    final maxStart =
+        _chunkTotal > _chunkPageBytes ? _chunkTotal - _chunkPageBytes : 0;
+    double fraction =
+        maxStart > 0 ? (_chunkStart / maxStart).clamp(0.0, 1.0) : 0.0;
+    final ctrl = TextEditingController(
+      text: (fraction * 100).toStringAsFixed(1),
+    );
+    double? pickedFraction;
+    try {
+      pickedFraction = await showDialog<double>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text(l10n.jumpToPosition),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_formatByteOffset((fraction * maxStart).round())} / ${_formatByteOffset(_chunkTotal)}',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                Slider(
+                  value: fraction,
+                  onChanged: (v) {
+                    setDialogState(() {
+                      fraction = v;
+                      ctrl.text = (v * 100).toStringAsFixed(1);
+                    });
+                  },
+                ),
+                TextField(
+                  controller: ctrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: '% (0 - 100)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (s) {
+                    final parsed = double.tryParse(s.trim());
+                    if (parsed != null) {
+                      setDialogState(() {
+                        fraction = (parsed / 100.0).clamp(0.0, 1.0);
+                      });
+                    }
+                  },
+                  onSubmitted: (_) => Navigator.of(ctx).pop(fraction),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(fraction),
+                child: Text(l10n.go),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      ctrl.dispose();
+    }
+    if (pickedFraction == null || !mounted) return;
+    final targetOffset = (pickedFraction.clamp(0.0, 1.0) * maxStart).round();
+    await _loadChunkAt(targetOffset, resetHistory: true);
+  }
+
   Future<void> _loadFile() async {
+    if (_largeFileMode) {
+      await _loadChunkAt(0, resetHistory: true);
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -692,17 +910,29 @@ class _TextEditorPageState extends State<TextEditorPage> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (!mounted) return;
+      if (e.toString().toLowerCase().contains('too large')) {
         setState(() {
-          _error = e.toString();
-          _loading = false;
+          _largeFileMode = true;
+          _readOnly = true;
+          _mode = TextFileMode.code;
         });
+        await _loadChunkAt(0, resetHistory: true);
+        return;
       }
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
   /// Re-reads the file, confirming first if there are edits to lose.
   Future<void> _reload() async {
+    if (_largeFileMode) {
+      await _loadChunkAt(_chunkStart);
+      return;
+    }
     if (_isDirty) {
       final discard = await showDialog<bool>(
         context: context,
@@ -730,6 +960,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Future<void> _save() async {
+    final vid = vaultIdFromRoot(_root);
+    if (vid != null && !VaultService.instance.isUnlocked(vid)) return;
     if (_loading || _error != null || _saving) return;
     setState(() => _saving = true);
     final savedText = _controller.text;
@@ -976,7 +1208,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canPreview = _isMarkdown || _isHtml;
+    final canPreview = !_largeFileMode && (_isMarkdown || _isHtml);
 
     return AppSwipeBack(
       child: CallbackShortcuts(
@@ -988,10 +1220,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
           if (_isDirty && _error == null) _save();
         },
         const SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true): () {
-          if (_error == null) _saveAs();
+          if (_error == null && !_largeFileMode) _saveAs();
         },
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true, shift: true): () {
-          if (_error == null) _saveAs();
+          if (_error == null && !_largeFileMode) _saveAs();
         },
         // The file may have changed on disk (another editor, a sync client);
         // reloading is the only way to see it without leaving the page.
@@ -1143,7 +1375,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       _mode == TextFileMode.preview ? TextFileMode.code : TextFileMode.preview,
                     ),
                   ),
-                if (_isHtml)
+                if (_isHtml && !_largeFileMode)
                   IconButton(
                     icon: const Icon(Icons.open_in_browser),
                     tooltip: AppLocalizations.of(context).openInBrowser,
@@ -1336,7 +1568,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       }
                     },
                     itemBuilder: (ctx) => [
-                      if (_isHtml)
+                      if (_isHtml && !_largeFileMode)
                         PopupMenuItem(
                           value: 'open_in_browser',
                           child: Row(
@@ -1347,16 +1579,17 @@ class _TextEditorPageState extends State<TextEditorPage> {
                             ],
                           ),
                         ),
-                      PopupMenuItem(
-                        value: 'save_as',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.save_as_outlined, size: 20),
-                            const SizedBox(width: 8),
-                            Text(AppLocalizations.of(context).saveAs),
-                          ],
+                      if (!_largeFileMode)
+                        PopupMenuItem(
+                          value: 'save_as',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.save_as_outlined, size: 20),
+                              const SizedBox(width: 8),
+                              Text(AppLocalizations.of(context).saveAs),
+                            ],
+                          ),
                         ),
-                      ),
                       PopupMenuItem(
                         value: 'reload',
                         child: Row(
@@ -1470,7 +1703,9 @@ class _TextEditorPageState extends State<TextEditorPage> {
                       )
                     : Column(
                         children: [
-                          if (_readOnly)
+                          if (_largeFileMode)
+                            _buildLargeFileBar()
+                          else if (_readOnly)
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -1488,6 +1723,64 @@ class _TextEditorPageState extends State<TextEditorPage> {
           ),
         ),
       ),
+      ),
+    );
+  }
+
+  Widget _buildLargeFileBar() {
+    final l10n = AppLocalizations.of(context);
+    final notice = l10n.largeFilePagedNotice(
+      _formatByteOffset(_chunkStart),
+      _formatByteOffset(_chunkEnd),
+      _formatByteOffset(_chunkTotal),
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: Colors.amber.withValues(alpha: 0.15),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              notice,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          if (_loadingChunk) ...[
+            const SizedBox(width: 8),
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ],
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.chevron_left, size: 20),
+            tooltip: l10n.previousPage,
+            visualDensity: VisualDensity.compact,
+            onPressed: (!_loadingChunk && _chunkHasPrev) ? _prevTextPage : null,
+          ),
+          TextButton.icon(
+            onPressed: (!_loadingChunk && _chunkTotal > 0)
+                ? _showJumpPositionDialog
+                : null,
+            icon: const Icon(Icons.my_location, size: 15),
+            label: Text(l10n.jumpToPosition, style: const TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, size: 20),
+            tooltip: l10n.nextPage,
+            visualDensity: VisualDensity.compact,
+            onPressed: (!_loadingChunk && _chunkHasNext) ? _nextTextPage : null,
+          ),
+        ],
       ),
     );
   }
@@ -1761,6 +2054,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
             Text(
               '${AppLocalizations.of(context).editorStatusLine(_cursorLine, _cursorCol, lines)}'
               '${words == null ? '' : AppLocalizations.of(context).editorStatusWords(words)}${AppLocalizations.of(context).editorStatusChars(chars)}'
+              '${_largeFileMode ? '  •  ${_chunkEncoding.toUpperCase()}  •  ' : ''}'
               '${_fontSize.toInt()}pt${_wordWrap ? '  •  ${AppLocalizations.of(context).wrapIndicator}' : ''}',
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),

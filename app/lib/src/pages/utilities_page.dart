@@ -4,15 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../dialogs/folder_picker_dialog.dart';
+import '../dialogs/vault_dialogs.dart';
 import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/metadata.dart' as meta_api;
 import '../rust/api/servers.dart';
+import '../rust/api/vault.dart';
 import '../services/file_open_service.dart';
+import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/semantic_colors.dart';
 import '../services/sharing_service.dart';
 import '../services/storage_service.dart';
+import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
+import 'browser_page.dart';
 import 'trash_page.dart';
 
 class UtilitiesPage extends StatefulWidget {
@@ -48,14 +53,64 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     if (savedPwd != null) _pwdCtrl.text = savedPwd;
     _serverRunning = sharing.isRunning;
     _serverStatus = sharing.currentStatus;
+    VaultService.instance.addListener(_onVaultChanged);
     _loadData();
   }
 
   @override
   void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
     _portCtrl.dispose();
     _pwdCtrl.dispose();
     super.dispose();
+  }
+
+  void _onVaultChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openVaultBrowser(UnlockedVaultDto vault) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BrowserPage(initialRoot: 'vault://${vault.id}'),
+      ),
+    );
+  }
+
+  Future<void> _createPrivacyFolder() async {
+    final created = await CreateVaultDialog.show(context);
+    if (created != null && mounted) {
+      await _openVaultBrowser(created);
+    }
+  }
+
+  Future<void> _openPrivacyFolder() async {
+    final unlocked = await OpenVaultDialog.show(context);
+    if (unlocked != null && mounted) {
+      await _openVaultBrowser(unlocked);
+    }
+  }
+
+  Future<void> _backupPrivacyFolder() async {
+    final l10n = AppLocalizations.of(context);
+    final outPath = await BackupVaultDialog.show(context);
+    if (outPath != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.backupExportSuccess(outPath))),
+      );
+    }
+  }
+
+  Future<void> _importPrivacyFolder() async {
+    final l10n = AppLocalizations.of(context);
+    final imported = await ImportVaultDialog.show(context);
+    if (imported != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.importSuccessNotice(imported.name))),
+      );
+      await _openVaultBrowser(imported);
+    }
   }
 
   Future<void> _loadData() async {
@@ -185,8 +240,45 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     }
   }
 
+  bool _isSameOrSubdir(String candidate, String base) {
+    String normalize(String p) {
+      var s = p.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+      if (Platform.isWindows) s = s.toLowerCase();
+      return s;
+    }
+
+    final c = normalize(candidate);
+    final b = normalize(base);
+    if (b.isEmpty) return false;
+    return c == b || c.startsWith('$b/');
+  }
+
+  bool _isForbiddenShareRoot(String root) {
+    if (isVaultRoot(root)) return true;
+    if (_isSameOrSubdir(root, PlatformPaths.defaultVaultStorageDir())) {
+      return true;
+    }
+    for (final v in VaultService.instance.unlockedVaults) {
+      if (_isSameOrSubdir(root, v.dirPath)) return true;
+    }
+    return false;
+  }
+
   Future<void> _toggleServer(bool start) async {
     if (start) {
+      if (_isForbiddenShareRoot(_shareRoot)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).failedToStartServer(
+                AppLocalizations.of(context).privacyFolder,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return;
+      }
       final portText = _portCtrl.text.trim();
       final port = int.tryParse(portText);
       if (portText.isNotEmpty && (port == null || port < 1 || port > 65535)) {
@@ -290,6 +382,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: AppUiTokens.pagePadding,
         children: [
+          // 0. Privacy Folders Card
+          _buildPrivacyFoldersSection(l10n),
+
+          const SizedBox(height: 12),
+
           // 1. Recycle Bin Card
           _buildSectionHeader(l10n.recycleBin),
           Card(
@@ -684,6 +781,146 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
         ),
       ),
       ),
+    );
+  }
+
+  Widget _buildPrivacyFoldersSection(AppLocalizations l10n) {
+    final List<UnlockedVaultDto> unlocked = VaultService.instance.unlockedVaults;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(l10n.privacyFolders),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const AppCircleBadge(
+                  icon: Icons.enhanced_encryption_outlined,
+                  color: Colors.indigo,
+                ),
+                title: Text(l10n.privacyFolders),
+                subtitle: Text(
+                  l10n.privacyFoldersDesc,
+                  style: const TextStyle(fontSize: 10),
+                ),
+                trailing: unlocked.isNotEmpty
+                    ? TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          foregroundColor: colorScheme.error,
+                        ),
+                        onPressed: () {
+                          VaultService.instance.lockAll();
+                        },
+                        icon: const Icon(Icons.lock_outline, size: 15),
+                        label: Text(
+                          l10n.lockAllPrivacyFolders(unlocked.length),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      )
+                    : null,
+              ),
+              if (unlocked.isNotEmpty) ...[
+                const Divider(height: 1),
+                for (final vault in unlocked)
+                  ListTile(
+                    dense: true,
+                    leading: Icon(
+                      Icons.lock_open_rounded,
+                      size: 18,
+                      color: colorScheme.primary,
+                    ),
+                    title: Text(
+                      vault.name,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      l10n.unlockedBadge,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppIconButton(
+                          icon: Icons.drive_file_rename_outline,
+                          size: 28,
+                          iconSize: 17,
+                          tooltip: l10n.renamePrivacyFolder,
+                          onPressed: () async {
+                            final updated =
+                                await RenameVaultDialog.show(context, vault);
+                            if (updated != null &&
+                                updated.name != vault.name &&
+                                mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    l10n.privacyFolderRenamedNotice(updated.name),
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                        AppIconButton(
+                          icon: Icons.lock_outline,
+                          size: 28,
+                          iconSize: 17,
+                          color: colorScheme.error,
+                          tooltip: l10n.lockAndHide,
+                          onPressed: () {
+                            VaultService.instance.lockVault(vault.id);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(l10n.vaultLockedNotice(vault.name)),
+                              ),
+                            );
+                          },
+                        ),
+                        const Icon(Icons.chevron_right, size: 16),
+                      ],
+                    ),
+                    onTap: () => _openVaultBrowser(vault),
+                  ),
+              ],
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.create_new_folder_outlined, size: 19),
+                title: Text(l10n.createPrivacyFolder, style: const TextStyle(fontSize: 13)),
+                trailing: const Icon(Icons.chevron_right, size: 16),
+                onTap: _createPrivacyFolder,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.folder_open_outlined, size: 19),
+                title: Text(l10n.openPrivacyFolder, style: const TextStyle(fontSize: 13)),
+                trailing: const Icon(Icons.chevron_right, size: 16),
+                onTap: _openPrivacyFolder,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.archive_outlined, size: 19),
+                title: Text(l10n.backupPrivacyFolder, style: const TextStyle(fontSize: 13)),
+                trailing: const Icon(Icons.chevron_right, size: 16),
+                onTap: _backupPrivacyFolder,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.unarchive_outlined, size: 19),
+                title: Text(l10n.importPrivacyFolder, style: const TextStyle(fontSize: 13)),
+                trailing: const Icon(Icons.chevron_right, size: 16),
+                onTap: _importPrivacyFolder,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

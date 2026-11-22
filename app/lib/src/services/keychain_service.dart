@@ -11,12 +11,17 @@ class KeychainService {
 
   static bool get isSupported => Platform.isIOS;
 
-  static Future<bool> save(String key, String value) async {
+  static Future<bool> save(
+    String key,
+    String value, {
+    bool thisDeviceOnly = false,
+  }) async {
     if (!isSupported) return false;
     try {
       final res = await _channel.invokeMethod<bool>('save', {
         'key': key,
         'value': value,
+        'thisDeviceOnly': thisDeviceOnly,
       });
       return res ?? false;
     } catch (_) {

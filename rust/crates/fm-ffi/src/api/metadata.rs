@@ -29,11 +29,7 @@ pub struct TrashItemDto {
 }
 
 fn open_db(db_path: &str) -> Result<Database, String> {
-    let t_dir = Path::new(db_path)
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("trash");
-    Database::open(Path::new(db_path), &t_dir).map_err(|e| e.to_string())
+    crate::registry::VfsRegistry::global().open_database(db_path)
 }
 
 pub async fn add_bookmark(

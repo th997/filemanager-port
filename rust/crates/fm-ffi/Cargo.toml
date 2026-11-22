@@ -18,6 +18,7 @@ fm-archive.workspace = true
 fm-index.workspace = true
 fm-ops.workspace = true
 fm-server.workspace = true
+fm-vault.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

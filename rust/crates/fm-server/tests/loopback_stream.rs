@@ -1,7 +1,7 @@
 //! End-to-end checks for the loopback stream server over a real HTTP socket.
 
 use fm_local::LocalFs;
-use fm_server::start_stream_server;
+use fm_server::{start_stream_server, start_stream_server_with_options};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
@@ -121,4 +121,26 @@ fn rejects_wrong_token() {
     assert_eq!(status, 401);
 
     running.shutdown();
+}
+
+#[test]
+fn no_cache_mode_disables_disk_caching_and_cors() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("clip.mp4"), b"secret-media").unwrap();
+    let vfs = Arc::new(LocalFs::new(temp.path().to_string_lossy().to_string()));
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime
+        .block_on(start_stream_server_with_options(vfs, true))
+        .expect("server");
+
+    let (status, head, body) = request(server.port, &server.token, "clip.mp4", "GET", &[]);
+    assert_eq!(status, 200);
+    assert_eq!(body, b"secret-media");
+    let lower = head.to_ascii_lowercase();
+    assert!(lower.contains("cache-control: no-store, private, max-age=0"), "head: {head}");
+    assert!(lower.contains("pragma: no-cache"), "head: {head}");
+    assert!(!lower.contains("access-control-allow-origin"), "head: {head}");
+
+    server.shutdown();
+    drop(runtime);
 }

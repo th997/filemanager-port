@@ -53,7 +53,8 @@ class FilePickerDialog extends StatefulWidget {
     } else {
       final recentDirs = PreferencesService.instance.getRecentUploadDirs();
       if (recentDirs.isNotEmpty) {
-        final split = splitPathToRootAndRel(recentDirs.first);
+        final split = PlatformPaths.splitPrivateInboxPath(recentDirs.first) ??
+            splitPathToRootAndRel(recentDirs.first);
         root = split.root;
         path = split.relPath;
       } else {
@@ -214,7 +215,8 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
   String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
 
   void _navigateTo(String fullPath) {
-    final split = splitPathToRootAndRel(fullPath);
+    final split = PlatformPaths.splitPrivateInboxPath(fullPath) ??
+        splitPathToRootAndRel(fullPath);
     setState(() {
       _root = split.root;
       _relPath = split.relPath;

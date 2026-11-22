@@ -39,6 +39,19 @@ fn decode_path(stored: &str) -> VfsPath {
     VfsPath::from_slash_path(stored)
 }
 
+fn is_sqlite_busy(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked,
+                ..
+            },
+            _
+        )
+    )
+}
+
 #[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
@@ -50,12 +63,17 @@ pub struct Database {
 
 impl Database {
     pub fn open(db_path: impl AsRef<Path>, trash_dir: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {
-        let conn = Connection::open(db_path.as_ref())?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let db_path = db_path.as_ref();
+        if let Some(parent) = db_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        let conn = Connection::open(db_path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(10))?;
         let trash_path = trash_dir.as_ref().to_path_buf();
         let _ = std::fs::create_dir_all(&trash_path);
         let data_dir = db_path
-            .as_ref()
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
@@ -65,7 +83,7 @@ impl Database {
             trash_dir: trash_path,
             data_dir,
         };
-        db.init_tables()?;
+        db.init_tables(true)?;
         Ok(db)
     }
 
@@ -79,7 +97,7 @@ impl Database {
             data_dir: trash_path.clone(),
             trash_dir: trash_path,
         };
-        db.init_tables()?;
+        db.init_tables(false)?;
         Ok(db)
     }
 
@@ -87,55 +105,87 @@ impl Database {
         &self.trash_dir
     }
 
-    fn init_tables(&self) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        conn.execute_batch(
-            "
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-            PRAGMA cache_size = -2000;
-            PRAGMA temp_store = MEMORY;
+    fn init_tables(&self, enable_wal: bool) -> Result<(), rusqlite::Error> {
+        const MAX_ATTEMPTS: usize = 20;
+        for attempt in 0..MAX_ATTEMPTS {
+            let res = {
+                let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+                let mut inner_res = Ok(());
+                if enable_wal {
+                    let current_mode: Result<String, _> =
+                        conn.query_row("PRAGMA journal_mode;", [], |row| row.get(0));
+                    match current_mode {
+                        Ok(mode) if mode.eq_ignore_ascii_case("wal") => {}
+                        Ok(_) => {
+                            if let Err(e) = conn.execute_batch("PRAGMA journal_mode = WAL;") {
+                                inner_res = Err(e);
+                            }
+                        }
+                        Err(e) => {
+                            inner_res = Err(e);
+                        }
+                    }
+                }
+                if inner_res.is_ok() {
+                    inner_res = conn.execute_batch(
+                        "
+                        PRAGMA synchronous = NORMAL;
+                        PRAGMA cache_size = -2000;
+                        PRAGMA temp_store = MEMORY;
 
-            CREATE TABLE IF NOT EXISTS remotes (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                display_name TEXT NOT NULL,
-                config_json TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            );
+                        CREATE TABLE IF NOT EXISTS remotes (
+                            id TEXT PRIMARY KEY,
+                            kind TEXT NOT NULL,
+                            display_name TEXT NOT NULL,
+                            config_json TEXT NOT NULL,
+                            created_at INTEGER NOT NULL
+                        );
 
-            CREATE TABLE IF NOT EXISTS bookmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                location TEXT NOT NULL,
-                path TEXT NOT NULL,
-                display_name TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                UNIQUE(location, path)
-            );
+                        CREATE TABLE IF NOT EXISTS bookmarks (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            location TEXT NOT NULL,
+                            path TEXT NOT NULL,
+                            display_name TEXT NOT NULL,
+                            created_at INTEGER NOT NULL,
+                            UNIQUE(location, path)
+                        );
 
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                location TEXT NOT NULL,
-                path TEXT NOT NULL,
-                visited_at INTEGER NOT NULL
-            );
+                        CREATE TABLE IF NOT EXISTS history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            location TEXT NOT NULL,
+                            path TEXT NOT NULL,
+                            visited_at INTEGER NOT NULL
+                        );
 
-            CREATE TABLE IF NOT EXISTS recycle_bin (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                location TEXT NOT NULL,
-                original_path TEXT NOT NULL,
-                stored_path TEXT NOT NULL,
-                size INTEGER NOT NULL,
-                deleted_at INTEGER NOT NULL
-            );
+                        CREATE TABLE IF NOT EXISTS recycle_bin (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            location TEXT NOT NULL,
+                            original_path TEXT NOT NULL,
+                            stored_path TEXT NOT NULL,
+                            size INTEGER NOT NULL,
+                            deleted_at INTEGER NOT NULL
+                        );
 
-            CREATE INDEX IF NOT EXISTS idx_history_loc_path ON history(location, path);
-            CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at);
-            CREATE INDEX IF NOT EXISTS idx_bookmarks_loc_path ON bookmarks(location, path);
-            CREATE INDEX IF NOT EXISTS idx_recycle_bin_deleted ON recycle_bin(deleted_at);
-            ",
-        )?;
-        Ok(())
+                        CREATE INDEX IF NOT EXISTS idx_history_loc_path ON history(location, path);
+                        CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at);
+                        CREATE INDEX IF NOT EXISTS idx_bookmarks_loc_path ON bookmarks(location, path);
+                        CREATE INDEX IF NOT EXISTS idx_recycle_bin_deleted ON recycle_bin(deleted_at);
+                        ",
+                    );
+                }
+                inner_res
+            };
+
+            match res {
+                Ok(()) => return Ok(()),
+                Err(e) if is_sqlite_busy(&e) && attempt + 1 < MAX_ATTEMPTS => {
+                    let delay_ms = ((attempt as u64 + 1) * 25).min(100);
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!()
     }
 
     // Remotes CRUD

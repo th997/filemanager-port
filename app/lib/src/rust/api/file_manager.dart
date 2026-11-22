@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `compare_extensions`, `contains_ignore_case`, `dir_cache`, `extension_of`, `invalidate_dir_cache`, `natural_compare`, `sort_dtos`
+// These functions are ignored because they are not marked as `pub`: `compare_extensions`, `contains_ignore_case`, `decode_text_chunk_bytes`, `dir_cache`, `extension_of`, `invalidate_dir_cache_for_vault`, `invalidate_dir_cache`, `invalidate_local_dir_caches`, `natural_compare`, `sort_dtos`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DirCacheEntry`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 void initDatabase({required String dbPath}) =>
     RustLib.instance.api.crateApiFileManagerInitDatabase(dbPath: dbPath);
@@ -73,11 +73,36 @@ Future<void> renameEntry({
   to: to,
 );
 
+/// Reads raw file bytes into memory up to `max_bytes` (default 50 MB).
+/// Used for in-memory previewing/viewing of encrypted privacy folder files
+/// without spilling plaintext to temporary disk files.
+Future<Uint8List> readFileBytes({
+  required String root,
+  required String path,
+  BigInt? maxBytes,
+}) => RustLib.instance.api.crateApiFileManagerReadFileBytes(
+  root: root,
+  path: path,
+  maxBytes: maxBytes,
+);
+
 Future<String> readTextFile({required String root, required String path}) =>
     RustLib.instance.api.crateApiFileManagerReadTextFile(
       root: root,
       path: path,
     );
+
+Future<TextChunkDto> readTextChunk({
+  required String root,
+  required String path,
+  required BigInt offset,
+  required BigInt maxBytes,
+}) => RustLib.instance.api.crateApiFileManagerReadTextChunk(
+  root: root,
+  path: path,
+  offset: offset,
+  maxBytes: maxBytes,
+);
 
 /// Drop a cached backend so the next access rebuilds it from stored config.
 void invalidateRoot({required String root}) =>
@@ -243,4 +268,47 @@ class PagedEntriesDto {
           pageSize == other.pageSize &&
           hasMore == other.hasMore &&
           total == other.total;
+}
+
+class TextChunkDto {
+  final String text;
+  final BigInt startOffset;
+  final BigInt endOffset;
+  final BigInt totalSize;
+  final String encoding;
+  final bool hasPrev;
+  final bool hasNext;
+
+  const TextChunkDto({
+    required this.text,
+    required this.startOffset,
+    required this.endOffset,
+    required this.totalSize,
+    required this.encoding,
+    required this.hasPrev,
+    required this.hasNext,
+  });
+
+  @override
+  int get hashCode =>
+      text.hashCode ^
+      startOffset.hashCode ^
+      endOffset.hashCode ^
+      totalSize.hashCode ^
+      encoding.hashCode ^
+      hasPrev.hashCode ^
+      hasNext.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextChunkDto &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          startOffset == other.startOffset &&
+          endOffset == other.endOffset &&
+          totalSize == other.totalSize &&
+          encoding == other.encoding &&
+          hasPrev == other.hasPrev &&
+          hasNext == other.hasNext;
 }

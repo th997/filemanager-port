@@ -319,7 +319,7 @@ extension AVPlayer {
 private class KeychainHelper {
   static let service = "com.github.th997.filemanager.keychain"
 
-  static func save(key: String, data: String) -> Bool {
+  static func save(key: String, data: String, thisDeviceOnly: Bool = false) -> Bool {
     guard let valueData = data.data(using: .utf8) else { return false }
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
@@ -327,12 +327,15 @@ private class KeychainHelper {
       kSecAttrAccount as String: key,
     ]
     SecItemDelete(query as CFDictionary)
+    let accessibility: CFString = thisDeviceOnly
+      ? kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+      : kSecAttrAccessibleAfterFirstUnlock
     let attributes: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: key,
       kSecValueData as String: valueData,
-      kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+      kSecAttrAccessible as String: accessibility,
     ]
     let status = SecItemAdd(attributes as CFDictionary, nil)
     return status == errSecSuccess
@@ -560,15 +563,33 @@ private class NowPlayingManager {
   static var pendingFilePath: String?
   static var pendingSharePaths: [String]?
   static var openFileChannel: FlutterMethodChannel?
-  private static var channelsConfigured = false
+  private static weak var configuredMessenger: AnyObject?
+  private static var recentIncomingURLs: [String: Date] = [:]
+  private static var privacyMaskEnabled = false
+  private static let privacyBlurTag = 948271
 
   static func setupChannelsIfNeeded(messenger: FlutterBinaryMessenger) {
-    guard !channelsConfigured else { return }
-    channelsConfigured = true
-    setupKeychainChannel(messenger: messenger)
-    setupOpenFileChannel(messenger: messenger)
-    NowPlayingManager.shared.setupChannel(messenger: messenger)
-    NSLog("AppDelegate: all method channels configured")
+    let messengerObj = messenger as AnyObject
+    if configuredMessenger !== messengerObj {
+      configuredMessenger = messengerObj
+      setupKeychainChannel(messenger: messenger)
+      setupVaultNativeChannel(messenger: messenger)
+      setupOpenFileChannel(messenger: messenger)
+      NowPlayingManager.shared.setupChannel(messenger: messenger)
+      NSLog("AppDelegate: all method channels configured")
+    }
+    deliverPendingRequestsIfNeeded()
+  }
+
+  static func deliverPendingRequestsIfNeeded() {
+    DispatchQueue.main.async {
+      if let paths = pendingSharePaths, !paths.isEmpty {
+        deliverSharedFiles([])
+      }
+      if let path = pendingFilePath, !path.isEmpty {
+        deliverOpenedFile(path)
+      }
+    }
   }
 
   static func setupOpenFileChannel(messenger: FlutterBinaryMessenger) {
@@ -594,22 +615,22 @@ private class NowPlayingManager {
   }
 
   private static func isChannelDeliverySuccess(_ response: Any?) -> Bool {
-    if response is FlutterError {
-      return false
-    }
-    if let res = response, (res as AnyObject) === (FlutterMethodNotImplemented as AnyObject) {
-      return false
-    }
-    return true
+    return (response as? Bool) == true
   }
 
   private static func deliverOpenedFile(_ path: String) {
     pendingFilePath = path
-    guard let channel = openFileChannel else { return }
+    guard let channel = openFileChannel else {
+      NSLog("[ShareReceiver] openFileChannel not ready, queued opened file: \(path)")
+      return
+    }
     DispatchQueue.main.async {
       guard let fileToDeliver = pendingFilePath, !fileToDeliver.isEmpty else { return }
+      NSLog("[ShareReceiver] Invoking onFileOpened: \(fileToDeliver)")
       channel.invokeMethod("onFileOpened", arguments: fileToDeliver) { response in
-        if isChannelDeliverySuccess(response) && pendingFilePath == fileToDeliver {
+        let ok = isChannelDeliverySuccess(response)
+        NSLog("[ShareReceiver] onFileOpened ack=\(ok) rawResponse=\(String(describing: response))")
+        if ok && pendingFilePath == fileToDeliver {
           pendingFilePath = nil
         }
       }
@@ -617,20 +638,26 @@ private class NowPlayingManager {
   }
 
   private static func deliverSharedFiles(_ paths: [String]) {
-    guard !paths.isEmpty else { return }
     var merged = pendingSharePaths ?? []
     for path in paths {
       if !merged.contains(path) {
         merged.append(path)
       }
     }
+    guard !merged.isEmpty else { return }
     pendingSharePaths = merged
 
-    guard let channel = openFileChannel else { return }
+    guard let channel = openFileChannel else {
+      NSLog("[ShareReceiver] openFileChannel not ready, queued \(merged.count) shared file(s)")
+      return
+    }
     DispatchQueue.main.async {
       guard let pathsToDeliver = pendingSharePaths, !pathsToDeliver.isEmpty else { return }
+      NSLog("[ShareReceiver] Invoking onShareReceived with \(pathsToDeliver.count) path(s): \(pathsToDeliver)")
       channel.invokeMethod("onShareReceived", arguments: ["paths": pathsToDeliver]) { response in
-        guard isChannelDeliverySuccess(response) else { return }
+        let ok = isChannelDeliverySuccess(response)
+        NSLog("[ShareReceiver] onShareReceived ack=\(ok) rawResponse=\(String(describing: response))")
+        guard ok else { return }
         if pendingSharePaths == pathsToDeliver {
           pendingSharePaths = nil
         } else if let current = pendingSharePaths {
@@ -653,23 +680,51 @@ private class NowPlayingManager {
   }
 
   static func handleIncomingFiles(urls: [URL]) {
-    var resolvedPaths: [String] = []
-    for url in urls {
-      if let path = resolveIncomingUrl(url), !resolvedPaths.contains(path) {
-        resolvedPaths.append(path)
+    let enqueue: () -> Void = {
+      guard !urls.isEmpty else { return }
+      let now = Date()
+      recentIncomingURLs = recentIncomingURLs.filter { now.timeIntervalSince($0.value) < 1.5 }
+      var accepted: [URL] = []
+      for url in urls {
+        let key = url.absoluteString
+        if recentIncomingURLs[key] != nil {
+          continue
+        }
+        recentIncomingURLs[key] = now
+        accepted.append(url)
+      }
+      guard !accepted.isEmpty else { return }
+      NSLog("[ShareReceiver] Accepted \(accepted.count) incoming URL(s): \(accepted.map { $0.absoluteString })")
+
+      DispatchQueue.global(qos: .userInitiated).async {
+        var resolvedPaths: [String] = []
+        for url in accepted {
+          if let path = resolveIncomingUrl(url), !resolvedPaths.contains(path) {
+            resolvedPaths.append(path)
+          }
+        }
+        guard !resolvedPaths.isEmpty else {
+          NSLog("[ShareReceiver] No incoming URLs could be resolved")
+          return
+        }
+        DispatchQueue.main.async {
+          if resolvedPaths.count == 1 {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: resolvedPaths[0], isDirectory: &isDir), isDir.boolValue {
+              deliverOpenedFile(resolvedPaths[0])
+              return
+            }
+          }
+          deliverSharedFiles(resolvedPaths)
+        }
       }
     }
-    guard !resolvedPaths.isEmpty else { return }
 
-    if resolvedPaths.count == 1 {
-      var isDir: ObjCBool = false
-      if FileManager.default.fileExists(atPath: resolvedPaths[0], isDirectory: &isDir), isDir.boolValue {
-        deliverOpenedFile(resolvedPaths[0])
-        return
-      }
+    if Thread.isMainThread {
+      enqueue()
+    } else {
+      DispatchQueue.main.async(execute: enqueue)
     }
-
-    deliverSharedFiles(resolvedPaths)
   }
 
   private static func isPathInside(_ path: String, dir: String) -> Bool {
@@ -709,8 +764,9 @@ private class NowPlayingManager {
     let docsUrl = (rawDocs.isEmpty
       ? (fileManager.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: rawTmp))
       : URL(fileURLWithPath: rawDocs)).resolvingSymlinksInPath()
+    let tmpUrl = URL(fileURLWithPath: rawTmp.isEmpty ? NSTemporaryDirectory() : rawTmp).resolvingSymlinksInPath()
     let docsPath = rawDocs.isEmpty ? "" : docsUrl.path
-    let tmpPath = rawTmp.isEmpty ? "" : URL(fileURLWithPath: rawTmp).resolvingSymlinksInPath().path
+    let tmpPath = tmpUrl.path
     let cachesPath = rawCaches.isEmpty ? "" : URL(fileURLWithPath: rawCaches).resolvingSymlinksInPath().path
 
     if isPathInside(resolvedPath, dir: docsPath) ||
@@ -721,7 +777,7 @@ private class NowPlayingManager {
       }
     }
 
-    let inboxDir = docsUrl.appendingPathComponent("Inbox", isDirectory: true)
+    let inboxDir = tmpUrl.appendingPathComponent("inbox", isDirectory: true)
     try? fileManager.createDirectory(at: inboxDir, withIntermediateDirectories: true, attributes: nil)
 
     let rawName = url.lastPathComponent
@@ -745,39 +801,55 @@ private class NowPlayingManager {
       } while fileManager.fileExists(atPath: destUrl.path)
     }
 
-    var coordinatedSuccess = false
+    func attemptCopy(from source: URL, to dest: URL) -> Bool {
+      try? fileManager.removeItem(at: dest)
+      do {
+        try fileManager.copyItem(at: source, to: dest)
+        return fileManager.fileExists(atPath: dest.path)
+      } catch {
+        try? fileManager.removeItem(at: dest)
+        if let data = try? Data(contentsOf: source) {
+          do {
+            try data.write(to: dest, options: .atomic)
+            return fileManager.fileExists(atPath: dest.path)
+          } catch {
+            try? fileManager.removeItem(at: dest)
+          }
+        }
+        return false
+      }
+    }
+
     let coordinator = NSFileCoordinator()
     var coordError: NSError?
-    coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { readUrl in
-      do {
-        try fileManager.copyItem(at: readUrl, to: destUrl)
-        coordinatedSuccess = true
-      } catch {
-        if let data = try? Data(contentsOf: readUrl) {
-          do {
-            try data.write(to: destUrl, options: .atomic)
-            coordinatedSuccess = true
-          } catch {}
-        }
-      }
+    var copied = false
+    coordinator.coordinate(readingItemAt: url, options: [], error: &coordError) { readUrl in
+      copied = attemptCopy(from: readUrl, to: destUrl)
     }
-
-    if coordinatedSuccess && fileManager.fileExists(atPath: destUrl.path) {
+    if copied {
       return destUrl.resolvingSymlinksInPath().path
     }
 
-    do {
-      try fileManager.copyItem(at: url, to: destUrl)
-      return destUrl.resolvingSymlinksInPath().path
-    } catch {
-      if let data = try? Data(contentsOf: url) {
-        if (try? data.write(to: destUrl, options: .atomic)) != nil {
-          return destUrl.resolvingSymlinksInPath().path
-        }
-      }
-      NSLog("Failed to copy incoming file: \(error)")
-      return fileManager.fileExists(atPath: resolvedPath) ? resolvedPath : nil
+    var uploadError: NSError?
+    coordinator.coordinate(readingItemAt: url, options: .forUploading, error: &uploadError) { readUrl in
+      copied = attemptCopy(from: readUrl, to: destUrl)
     }
+    if copied {
+      return destUrl.resolvingSymlinksInPath().path
+    }
+
+    if attemptCopy(from: url, to: destUrl) {
+      return destUrl.resolvingSymlinksInPath().path
+    }
+
+    NSLog("[ShareReceiver] Failed to copy \(url): coordError=\(String(describing: coordError)) uploadError=\(String(describing: uploadError))")
+    if fileManager.isReadableFile(atPath: resolvedPath) {
+      if hasScoped {
+        retainScopedAccess = true
+      }
+      return resolvedPath
+    }
+    return nil
   }
 
   private static func setupKeychainChannel(messenger: FlutterBinaryMessenger) {
@@ -796,7 +868,8 @@ private class NowPlayingManager {
           result(false)
           return
         }
-        result(KeychainHelper.save(key: key, data: value))
+        let thisDeviceOnly = args["thisDeviceOnly"] as? Bool ?? false
+        result(KeychainHelper.save(key: key, data: value, thisDeviceOnly: thisDeviceOnly))
       case "read":
         guard let key = args["key"] as? String else {
           result(nil)
@@ -809,6 +882,75 @@ private class NowPlayingManager {
           return
         }
         result(KeychainHelper.delete(key: key))
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private static func allAppWindows() -> [UIWindow] {
+    var windows: [UIWindow] = []
+    if let w = (UIApplication.shared.delegate as? AppDelegate)?.window {
+      windows.append(w)
+    }
+    for scene in UIApplication.shared.connectedScenes {
+      if let ws = scene as? UIWindowScene {
+        for w in ws.windows where !windows.contains(w) {
+          windows.append(w)
+        }
+      }
+    }
+    return windows
+  }
+
+  static func showPrivacyBlurOverlay() {
+    for window in allAppWindows() {
+      if window.viewWithTag(privacyBlurTag) != nil { continue }
+      let blur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
+      blur.frame = window.bounds
+      blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      blur.tag = privacyBlurTag
+      window.addSubview(blur)
+    }
+  }
+
+  static func removePrivacyBlurOverlay() {
+    for window in allAppWindows() {
+      window.viewWithTag(privacyBlurTag)?.removeFromSuperview()
+    }
+  }
+
+  private static func setupVaultNativeChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.github.th997.filemanager/vault_native",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "excludeFromBackup":
+        guard let args = call.arguments as? [String: Any], let path = args["path"] as? String else {
+          result(false)
+          return
+        }
+        var url = URL(fileURLWithPath: path)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do {
+          try url.setResourceValues(values)
+          result(true)
+        } catch {
+          NSLog("excludeFromBackup failed: \(error)")
+          result(false)
+        }
+      case "setPrivacyMask":
+        let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
+        AppDelegate.privacyMaskEnabled = enabled
+        if !enabled {
+          DispatchQueue.main.async {
+            AppDelegate.removePrivacyBlurOverlay()
+          }
+        }
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -878,6 +1020,24 @@ private class NowPlayingManager {
           player.fm_resumePlayback()
         }
       }
+    }
+
+    center.addObserver(
+      forName: UIApplication.willResignActiveNotification,
+      object: nil,
+      queue: .main
+    ) { _ in
+      if AppDelegate.privacyMaskEnabled {
+        AppDelegate.showPrivacyBlurOverlay()
+      }
+    }
+
+    center.addObserver(
+      forName: UIApplication.didBecomeActiveNotification,
+      object: nil,
+      queue: .main
+    ) { _ in
+      AppDelegate.removePrivacyBlurOverlay()
     }
 
     AVPlayer.swizzleForLowLatencyStreaming()

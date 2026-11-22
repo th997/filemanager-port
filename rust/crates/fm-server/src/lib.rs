@@ -9,7 +9,7 @@ use fm_core::VfsPath;
 pub mod http;
 pub mod stream;
 pub use http::{get_lan_ip_addresses, start_http_share, RunningServer};
-pub use stream::{start_stream_server, StreamServer};
+pub use stream::{start_stream_server, start_stream_server_with_options, StreamServer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {

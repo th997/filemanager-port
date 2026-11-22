@@ -70,4 +70,43 @@ mod tests {
         db.delete_remote("s3-test").unwrap();
         assert_eq!(db.list_remotes().unwrap().len(), 0);
     }
+
+    #[test]
+    fn concurrent_database_open_and_queries_do_not_lock() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_file = temp_dir.path().join("concurrent.db");
+        let trash_dir = temp_dir.path().join("trash");
+        let threads = 12;
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(threads));
+
+        let mut handles = Vec::with_capacity(threads);
+        for i in 0..threads {
+            let db_p = db_file.clone();
+            let tr_p = trash_dir.clone();
+            let b = barrier.clone();
+            handles.push(std::thread::spawn(move || {
+                b.wait();
+                let db = Database::open(&db_p, &tr_p).unwrap();
+                let _ = db.list_remotes().unwrap();
+                let _ = db.list_bookmarks().unwrap();
+                let _ = db.list_history(50).unwrap();
+                let _ = db.list_trash().unwrap();
+                db.save_remote(&RemoteRecord {
+                    id: format!("r-{i}"),
+                    kind: "s3".into(),
+                    display_name: format!("Remote {i}"),
+                    config_json: "{}".into(),
+                    created_at: i as i64,
+                })
+                .unwrap();
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let db = Database::open(&db_file, &trash_dir).unwrap();
+        assert_eq!(db.list_remotes().unwrap().len(), threads);
+    }
 }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
+import '../rust/api/vault.dart';
+import '../dialogs/vault_dialogs.dart';
 import '../services/permission_service.dart';
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
@@ -20,6 +22,7 @@ import 'settings_page.dart';
 import 'tasks_page.dart';
 import 'utilities_page.dart';
 import '../services/external_file_service.dart';
+import '../services/vault_service.dart';
 
 class HomePage extends StatefulWidget {
   final ThemeMode themeMode;
@@ -63,14 +66,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _welcomeDismissed =
         PreferencesService.instance.getBool(_prefWelcomeDismissed) ?? false;
     WidgetsBinding.instance.addObserver(this);
+    VaultService.instance.addListener(_onVaultChanged);
     _loadMetadata();
     _checkStorageAccess();
   }
 
   @override
   void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _onVaultChanged() {
+    if (mounted) setState(() {});
   }
 
   /// The grant happens in the system Settings app, so the banner only clears
@@ -436,7 +445,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildLocalStorageGrid() {
-    final targets = PlatformPaths.quickTargets();
+    final targets = PlatformPaths.quickTargets()
+        .where((t) => !_pickMode || t.kind != 'inbox')
+        .toList();
     return _buildSectionGrid(
       children: [
         _buildGridCard(
@@ -461,6 +472,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           case 'downloads':
             icon = Icons.download;
             iconColor = Colors.teal;
+          case 'inbox':
+            icon = Icons.inbox_rounded;
+            iconColor = Colors.amber.shade700;
           case 'dcim':
           case 'pictures':
             icon = Icons.photo_library;
@@ -480,7 +494,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           icon: icon,
           iconColor: iconColor,
           title: t.displayName(AppLocalizations.of(context)),
-          subtitle: t.path,
+          subtitle: t.kind == 'inbox'
+              ? AppLocalizations.of(context).privateInboxSubtitle
+              : t.path,
           onTap: () => _openTarget(t.root, t.relPath),
           onLongPress: () {
             Clipboard.setData(ClipboardData(text: t.path));
@@ -490,7 +506,111 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           },
         );
         }),
+        if (!_pickMode)
+          ...VaultService.instance.unlockedVaults.map((vault) {
+            final l10n = AppLocalizations.of(context);
+            return _buildGridCard(
+              icon: Icons.lock_open_rounded,
+              iconColor: Colors.indigo,
+              title: vault.name,
+              subtitle: l10n.unlockedBadge,
+              onTap: () => _openTarget('vault://${vault.id}', ''),
+              onLongPress: () => _showUnlockedVaultActions(vault),
+            );
+          }),
       ],
+    );
+  }
+
+  void _showUnlockedVaultActions(UnlockedVaultDto vault) {
+    final l10n = AppLocalizations.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: Text(l10n.vaultFolderInfo),
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                if (!mounted) return;
+                VaultInfoDialog.show(context, vault);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.security_outlined),
+              title: Text(l10n.vaultSecuritySettings),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                if (!mounted) return;
+                final updated =
+                    await ChangeVaultSecurityDialog.show(context, vault);
+                if (updated != null && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(l10n.vaultSecurityUpdatedNotice)),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: Text(l10n.renamePrivacyFolder),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                if (!mounted) return;
+                final updated = await RenameVaultDialog.show(context, vault);
+                if (updated != null &&
+                    updated.name != vault.name &&
+                    mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(l10n.privacyFolderRenamedNotice(updated.name)),
+                    ),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: Text(l10n.lockAndHide),
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                VaultService.instance.lockVault(vault.id);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(l10n.vaultLockedNotice(vault.name))),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_forever_outlined,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                l10n.deletePrivacyFolder,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                if (!mounted) return;
+                final deleted = await DeleteVaultDialog.show(context, vault);
+                if (deleted && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(l10n.privacyFolderDeletedNotice(vault.name)),
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 

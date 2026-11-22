@@ -28,9 +28,21 @@ pub(crate) fn invalidate_dir_cache(root: &str) {
     cache.retain(|(r, _, _, _), _| r != root);
 }
 
+pub(crate) fn invalidate_dir_cache_for_vault(vault_id: &str) {
+    let vault_root = format!("vault://{vault_id}");
+    let archive_exact = format!("archive://{vault_root}");
+    let archive_prefix = format!("{archive_exact}/");
+    let mut cache = dir_cache().lock();
+    cache.retain(|(r, _, _, _), _| {
+        r != &vault_root && r != &archive_exact && !r.starts_with(&archive_prefix)
+    });
+}
+
 pub(crate) fn invalidate_local_dir_caches() {
     let mut cache = dir_cache().lock();
-    cache.retain(|(r, _, _, _), _| r.starts_with("remote://") || r.starts_with("archive://"));
+    cache.retain(|(r, _, _, _), _| {
+        r.starts_with("remote://") || r.starts_with("archive://") || r.starts_with("vault://")
+    });
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -449,6 +461,30 @@ pub async fn rename_entry(root: String, from: String, to: String) -> Result<(), 
 /// stray tap on a several-hundred-MB log could OOM the whole app.
 const MAX_TEXT_EDIT_BYTES: u64 = 50 * 1024 * 1024;
 
+/// Reads raw file bytes into memory up to `max_bytes` (default 50 MB).
+/// Used for in-memory previewing/viewing of encrypted privacy folder files
+/// without spilling plaintext to temporary disk files.
+pub async fn read_file_bytes(
+    root: String,
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<Vec<u8>, String> {
+    let limit = max_bytes.unwrap_or(MAX_TEXT_EDIT_BYTES).min(256 * 1024 * 1024);
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
+    let vfs_path = VfsPath::from_slash_path(&path);
+    let reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    reader
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > limit {
+        return Err(format!("file exceeds in-memory read limit ({limit} bytes)"));
+    }
+    Ok(bytes)
+}
+
 pub async fn read_text_file(root: String, path: String) -> Result<String, String> {
     let backend = VfsRegistry::global().get_or_create(&root).await?;
     let vfs_path = VfsPath::from_slash_path(&path);
@@ -480,6 +516,121 @@ pub async fn read_text_file(root: String, path: String) -> Result<String, String
             Ok(text.into_owned())
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TextChunkDto {
+    pub text: String,
+    pub start_offset: u64,
+    pub end_offset: u64,
+    pub total_size: u64,
+    pub encoding: String,
+    pub has_prev: bool,
+    pub has_next: bool,
+}
+
+fn decode_text_chunk_bytes(
+    bytes: &[u8],
+    start_offset: u64,
+    has_more_bytes: bool,
+) -> Result<(String, usize, usize, String), String> {
+    if bytes.is_empty() {
+        return Ok((String::new(), 0, 0, "utf-8".to_string()));
+    }
+    let mut lead = 0usize;
+    if start_offset > 0 {
+        while lead < bytes.len() && lead < 3 && (bytes[lead] & 0xC0) == 0x80 {
+            lead += 1;
+        }
+    }
+    let trimmed = &bytes[lead..];
+    match std::str::from_utf8(trimmed) {
+        Ok(s) => {
+            let len = s.len();
+            Ok((s.to_string(), lead, lead + len, "utf-8".to_string()))
+        }
+        Err(err) => {
+            if err.error_len().is_none() && has_more_bytes && err.valid_up_to() > 0 {
+                let valid = &trimmed[..err.valid_up_to()];
+                let s = std::str::from_utf8(valid).map_err(|e| e.to_string())?;
+                let len = s.len();
+                return Ok((s.to_string(), lead, lead + len, "utf-8".to_string()));
+            }
+            let (text, _, had_errors) = encoding_rs::GB18030.decode(bytes);
+            if !had_errors {
+                return Ok((text.into_owned(), 0, bytes.len(), "gb18030".to_string()));
+            }
+            if has_more_bytes && bytes.len() > 1 {
+                let (text2, _, had_errors2) =
+                    encoding_rs::GB18030.decode(&bytes[..bytes.len() - 1]);
+                if !had_errors2 {
+                    return Ok((text2.into_owned(), 0, bytes.len() - 1, "gb18030".to_string()));
+                }
+            }
+            Err("file is not valid UTF-8 or GB18030 text".to_string())
+        }
+    }
+}
+
+pub async fn read_text_chunk(
+    root: String,
+    path: String,
+    offset: u64,
+    max_bytes: u64,
+) -> Result<TextChunkDto, String> {
+    let window = max_bytes.clamp(4 * 1024, 2 * 1024 * 1024);
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
+    let vfs_path = VfsPath::from_slash_path(&path);
+    let total_size = backend.stat(&vfs_path).await.ok().and_then(|e| e.size).unwrap_or(0);
+    if total_size > 0 && offset >= total_size {
+        return Ok(TextChunkDto {
+            text: String::new(),
+            start_offset: total_size,
+            end_offset: total_size,
+            total_size,
+            encoding: "utf-8".to_string(),
+            has_prev: total_size > 0,
+            has_next: false,
+        });
+    }
+
+    let reader = backend
+        .open_read_range(&vfs_path, offset, Some(window + 1))
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut raw = Vec::new();
+    reader
+        .take(window + 1)
+        .read_to_end(&mut raw)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let truncated = (raw.len() as u64) > window;
+    let slice = if truncated {
+        &raw[..window as usize]
+    } else {
+        &raw[..]
+    };
+    let has_more_after_slice =
+        truncated || (total_size > 0 && offset + (slice.len() as u64) < total_size);
+    let (text, trimmed_lead, consumed, encoding) =
+        decode_text_chunk_bytes(slice, offset, has_more_after_slice)?;
+
+    let start_offset = offset + (trimmed_lead as u64);
+    let end_offset = offset + (consumed as u64);
+    let effective_total = if total_size > 0 { total_size } else { end_offset };
+    let has_prev = start_offset > 0;
+    let has_next = truncated || (total_size > 0 && end_offset < total_size);
+
+    Ok(TextChunkDto {
+        text,
+        start_offset,
+        end_offset,
+        total_size: effective_total,
+        encoding,
+        has_prev,
+        has_next,
+    })
 }
 
 /// Drop a cached backend so the next access rebuilds it from stored config.
@@ -686,5 +837,24 @@ mod tests {
         assert!(!super::contains_ignore_case("PHOTO_2026.JPG", "png"));
         assert!(super::contains_ignore_case("中文测试.txt", "中文"));
         assert!(!super::contains_ignore_case("中文测试.txt", "英文"));
+    }
+
+    #[test]
+    fn decode_text_chunk_bytes_aligns_multibyte_utf8_boundaries() {
+        let s = "你好世界测试";
+        let bytes = s.as_bytes();
+        // Split cleanly at byte 4 (inside 2nd 3-byte char '好') at offset 0 -> emits only '你' (0..3).
+        let (t1, lead1, consumed1, enc1) = decode_text_chunk_bytes(&bytes[..4], 0, true).unwrap();
+        assert_eq!(t1, "你");
+        assert_eq!(lead1, 0);
+        assert_eq!(consumed1, 3);
+        assert_eq!(enc1, "utf-8");
+
+        // Jump directly to raw byte offset 4 (mid-char continuation bytes of '好') -> skips 2 bytes to '世'.
+        let (t2, lead2, consumed2, enc2) = decode_text_chunk_bytes(&bytes[4..], 4, false).unwrap();
+        assert_eq!(t2, "世界测试");
+        assert_eq!(lead2, 2);
+        assert_eq!(consumed2, bytes.len() - 4);
+        assert_eq!(enc2, "utf-8");
     }
 }

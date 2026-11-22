@@ -461,6 +461,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get quickHome => '主目录';
 
   @override
+  String get quickInbox => '专属空间';
+
+  @override
+  String get privateInboxSubtitle => '应用私有 · 其他应用不可访问';
+
+  @override
   String quickDrive(String letter) {
     return '磁盘 ($letter:)';
   }
@@ -2666,4 +2672,353 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readOnlyViewMode => '只读查看模式';
+
+  @override
+  String get privacyFolder => '隐私文件夹';
+
+  @override
+  String get privacyFolders => '隐私文件夹';
+
+  @override
+  String get privacyFoldersDesc => '创建、解锁、备份或导入相互独立的隐私文件夹';
+
+  @override
+  String get createPrivacyFolder => '创建隐私文件夹';
+
+  @override
+  String get openPrivacyFolder => '打开隐私文件夹';
+
+  @override
+  String get backupPrivacyFolder => '备份隐私文件夹';
+
+  @override
+  String get importPrivacyFolder => '导入隐私文件夹';
+
+  @override
+  String get privacyFolderName => '文件夹名称';
+
+  @override
+  String get privacyFolderNameHint => '请输入准确的文件夹名称';
+
+  @override
+  String get privacyFolderNotFound => '隐私文件夹不存在';
+
+  @override
+  String get privacyFolderAlreadyExists => '该名称的隐私文件夹已存在';
+
+  @override
+  String get credentialMethod => '加密凭证';
+
+  @override
+  String get credentialPassword => '单独密码（8–128位，支持特殊符号）';
+
+  @override
+  String get credentialSystem => '系统解锁（锁屏密码或刷脸/指纹）';
+
+  @override
+  String get credentialSystemUnavailable => '当前设备不支持系统解锁';
+
+  @override
+  String get encryptionAlgorithm => '加密方式';
+
+  @override
+  String get cipherNone => '不加密';
+
+  @override
+  String get cipherAes128Gcm => 'AES-128-GCM（默认，支持硬件加速）';
+
+  @override
+  String get cipherAes256Gcm => 'AES-256-GCM（支持硬件加速）';
+
+  @override
+  String get storageLocation => '存放位置';
+
+  @override
+  String get useDefaultLocation => '默认位置';
+
+  @override
+  String get changeLocation => '更改';
+
+  @override
+  String get privacyPasswordLabel => '密码（8–128位，支持特殊符号）';
+
+  @override
+  String get privacyConfirmPasswordLabel => '确认密码';
+
+  @override
+  String get passwordLengthError => '密码长度必须为 8 到 128 位';
+
+  @override
+  String get passwordMismatchError => '两次输入的密码不一致';
+
+  @override
+  String get privacyUnlockedLabel => '已解锁隐私文件夹 • 退出或后台10分钟自动隐藏';
+
+  @override
+  String get lockAndHide => '锁定并隐藏';
+
+  @override
+  String lockAllPrivacyFolders(int count) {
+    return '全部锁定并隐藏 ($count)';
+  }
+
+  @override
+  String vaultLockedNotice(String name) {
+    return '隐私文件夹“$name”已锁定并隐藏';
+  }
+
+  @override
+  String get nextStep => '下一步';
+
+  @override
+  String get unlockAction => '解锁';
+
+  @override
+  String unlockWithSystemPrompt(String name) {
+    return '验证身份以解锁隐私文件夹“$name”';
+  }
+
+  @override
+  String get setupSystemAuthPrompt => '验证身份以启用隐私文件夹系统解锁';
+
+  @override
+  String get wrongCredentialError => '密码或凭据错误';
+
+  @override
+  String cooldownRetryError(int seconds) {
+    return '失败次数过多，请在 $seconds 秒后重试';
+  }
+
+  @override
+  String get selectBackupSourceVault => '选择已解锁的文件夹或输入名称';
+
+  @override
+  String get backupPasswordRequiredNotice =>
+      '该文件夹使用系统解锁，请设置 8–128 位备份密码以便导入到其他设备。';
+
+  @override
+  String get backupPasswordLabel => '备份密码（8–128位）';
+
+  @override
+  String get selectBackupDestFile => '选择备份导出文件夹';
+
+  @override
+  String backupExportSuccess(String path) {
+    return '加密备份已导出至：$path';
+  }
+
+  @override
+  String get selectBackupArchive => '选择 .fpmvault 备份文件';
+
+  @override
+  String backupArchiveSummary(String cipher, int count) {
+    return '加密方式：$cipher • 数据对象：$count 个';
+  }
+
+  @override
+  String get backupPasswordToVerify => '备份密码 / 原密码';
+
+  @override
+  String get localUnlockAfterImport => '导入后的解锁方式';
+
+  @override
+  String get newLocalPasswordOptional => '新本地密码（留空则沿用备份密码）';
+
+  @override
+  String importSuccessNotice(String name) {
+    return '隐私文件夹“$name”已导入并解锁';
+  }
+
+  @override
+  String get saveToPrivacyFolder => '保存到隐私文件夹';
+
+  @override
+  String get saveToPrivacyFolderSubtitle => '自动加密并存入已解锁的隐私文件夹';
+
+  @override
+  String get selectPrivacyFolder => '选择隐私文件夹';
+
+  @override
+  String get privacyFolderNoHistoryBookmark => '隐私文件夹内已禁用访问历史与公开书签';
+
+  @override
+  String get unlockedBadge => '已解锁';
+
+  @override
+  String importKeepOriginalName(String name) {
+    return '将保持原文件夹名称：“$name”';
+  }
+
+  @override
+  String get importWillKeepOriginalName => '将自动保持原文件夹名称；若名称已存在，再提示手动输入新名称。';
+
+  @override
+  String importNameExistsEnterNew(String name) {
+    return '隐私文件夹“$name”已存在，请手动输入新的文件夹名称。';
+  }
+
+  @override
+  String get importNewFolderNameLabel => '新隐私文件夹名称';
+
+  @override
+  String get importEnterFolderNamePrompt => '此备份未包含原文件夹名称，请手动输入文件夹名称。';
+
+  @override
+  String get renamePrivacyFolder => '重命名隐私文件夹';
+
+  @override
+  String privacyFolderRenamedNotice(String name) {
+    return '隐私文件夹已重命名为“$name”';
+  }
+
+  @override
+  String largeFilePagedNotice(String start, String end, String total) {
+    return '大文件只读分页模式（$start – $end / $total）';
+  }
+
+  @override
+  String get previousPage => '上一页';
+
+  @override
+  String get nextPage => '下一页';
+
+  @override
+  String get jumpToPosition => '跳转位置';
+
+  @override
+  String get deletePrivacyFolder => '删除隐私文件夹';
+
+  @override
+  String deletePrivacyFolderWarning(String name) {
+    return '将永久删除隐私文件夹“$name”及其中的所有加密文件，并清除本机保存的解锁密钥。此操作无法撤销，如有需要请先导出备份。';
+  }
+
+  @override
+  String deletePrivacyFolderConfirmLabel(String name) {
+    return '请输入“$name”以确认删除';
+  }
+
+  @override
+  String privacyFolderDeletedNotice(String name) {
+    return '隐私文件夹“$name”已永久删除';
+  }
+
+  @override
+  String get privacyMediaAudio => '私密音频';
+
+  @override
+  String get privacyMediaVideo => '私密视频';
+
+  @override
+  String get vaultAutoLockTitle => '后台自动锁定时间';
+
+  @override
+  String get vaultAutoLockImmediate => '切到后台立即锁定';
+
+  @override
+  String vaultAutoLockMinutes(int minutes) {
+    return '$minutes 分钟';
+  }
+
+  @override
+  String get vaultAutoLockNever => '从不自动锁定';
+
+  @override
+  String get vaultConfirmExternalOpenTitle => '外部分享与打开前确认';
+
+  @override
+  String get vaultConfirmExternalOpenDesc => '将隐私文件解密导出给其他应用前弹出提醒';
+
+  @override
+  String get vaultExternalOpenWarningTitle => '以明文形式交给其他应用？';
+
+  @override
+  String get vaultExternalOpenWarningBody =>
+      '该文件将被临时解密并传递给隐私文件夹之外的应用。如需保密，请在使用后留意清理外部应用保留的副本。';
+
+  @override
+  String get dontAskAgain => '不再提示';
+
+  @override
+  String get continueAction => '继续';
+
+  @override
+  String get vaultVideoThumbnailsTitle => '隐私文件夹视频缩略图';
+
+  @override
+  String get vaultVideoThumbnailsDesc => '按需解码并加密缓存视频首帧缩略图（默认关闭以节省电量）';
+
+  @override
+  String get vaultSecuritySettings => '密码与解锁方式';
+
+  @override
+  String get vaultChangePasswordOption => '修改密码';
+
+  @override
+  String get vaultSwitchToSystemOption => '切换为系统解锁';
+
+  @override
+  String get vaultSwitchToPasswordOption => '切换为单独密码';
+
+  @override
+  String get vaultCurrentPasswordLabel => '当前密码';
+
+  @override
+  String get vaultNewPasswordLabel => '新密码（8–128位，支持特殊符号）';
+
+  @override
+  String get vaultOldBackupsPasswordNotice =>
+      '此前已导出的 .fpmvault 备份文件仍需使用导出时的旧密码进行恢复。';
+
+  @override
+  String get vaultSwitchToSystemBackupNotice =>
+      '切换为系统解锁后，请妥善保存 .fpmvault 备份；更换设备时系统密钥不会自动迁移。';
+
+  @override
+  String get vaultSecurityUpdatedNotice => '隐私文件夹安全设置已更新';
+
+  @override
+  String get vaultFolderInfo => '文件夹信息与空间整理';
+
+  @override
+  String get vaultStatsFiles => '文件数';
+
+  @override
+  String get vaultStatsFolders => '子文件夹';
+
+  @override
+  String get vaultStatsPlainSize => '内容大小';
+
+  @override
+  String get vaultStatsDiskUsage => '实际占用磁盘';
+
+  @override
+  String get vaultStatsOrphaned => '可清理孤儿数据';
+
+  @override
+  String vaultStatsOrphanDetail(int count, String size) {
+    return '$count 项（$size）';
+  }
+
+  @override
+  String get vaultCleanupOrphansAction => '清理孤儿数据释放空间';
+
+  @override
+  String vaultCleanupResultNotice(int count, String size) {
+    return '已清理 $count 个孤儿文件，释放 $size';
+  }
+
+  @override
+  String backupProgressLabel(String done, String total, int percent) {
+    return '$done / $total ($percent%)';
+  }
+
+  @override
+  String get backupCancelling => '正在取消…';
+
+  @override
+  String get backupCancelledNotice => '已取消备份操作';
+
+  @override
+  String get deleteVaultPermanentWarning => '将从隐私文件夹中永久删除所选项目，不会进入回收站且无法恢复。';
 }

@@ -12,6 +12,7 @@ import '../rust/api/servers.dart';
 import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
+import '../services/vault_service.dart';
 import '../widgets/app_swipe_back.dart';
 import '../widgets/media_player/media_player_controls.dart';
 import '../widgets/media_player/media_player_hud.dart';
@@ -54,6 +55,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   bool _showControls = true;
   bool _isFullscreen = false;
   bool _isExplicitlyClosed = false;
+  bool _fallbackScheduled = false;
   Timer? _controlsTimer;
 
   static const _prefVolume = 'player.volume';
@@ -156,10 +158,52 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
   String get _resumeKey => '$_prefResumePrefix${widget.root}|${_track.path}';
 
+  bool _vaultAutoClosing = false;
+
+  void _onVaultChanged() {
+    final vid = vaultIdFromRoot(widget.root);
+    if (vid == null || VaultService.instance.isUnlocked(vid)) return;
+    if (!_isExplicitlyClosed) {
+      _isExplicitlyClosed = true;
+      _openGeneration++;
+      final c = _controller;
+      final ownedByService =
+          c != null && identical(GlobalPlaybackService.instance.videoPlayerController, c);
+      final streamOwnedByService = GlobalPlaybackService.instance.startedStream;
+      GlobalPlaybackService.instance.stop();
+      if (c != null && !ownedByService) {
+        _controller = null;
+        try {
+          c.removeListener(_onControllerUpdate);
+        } catch (_) {}
+        try {
+          c.pause().catchError((_) {});
+        } catch (_) {}
+        try {
+          c.dispose().catchError((_) {});
+        } catch (_) {}
+      }
+      if (_startedStream && !streamOwnedByService) {
+        _startedStream = false;
+        stopMediaStreams();
+      }
+    }
+    if (!_vaultAutoClosing && mounted) {
+      _vaultAutoClosing = true;
+      final route = ModalRoute.of(context);
+      if (route != null && route.isActive && !route.isFirst) {
+        Navigator.of(context).removeRoute(route);
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    VaultService.instance.addListener(_onVaultChanged);
     _index = widget.playlist.isEmpty
         ? 0
         : widget.startIndex.clamp(0, widget.playlist.length - 1);
@@ -209,6 +253,16 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     ScreenBrightness.instance.application.then((val) {
       if (mounted) _dragBrightnessLevel = val;
     }).catchError((_) {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final l10n = AppLocalizations.of(context);
+    GlobalPlaybackService.instance.setPrivacyMediaLabels(
+      audio: l10n.privacyMediaAudio,
+      video: l10n.privacyMediaVideo,
+    );
   }
 
   void _resetControlsTimer() {
@@ -343,6 +397,13 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           await controller.dispose();
         } catch (_) {}
       }
+      if (mounted &&
+          gen == _openGeneration &&
+          controller != null &&
+          _shouldAutoFallbackToMediaKit(e)) {
+        _handoffToMediaKit(track, index, instant: true);
+        return;
+      }
       if (mounted && gen == _openGeneration) {
         setState(() {
           _error = e.toString();
@@ -352,6 +413,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   }
 
   Future<void> _applyResume() async {
+    if (vaultIdFromRoot(widget.root) != null) return;
     if (_controller == null) return;
     final saved = int.tryParse(
       PreferencesService.instance.getString(_resumeKey) ?? '',
@@ -364,6 +426,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   }
 
   void _saveResumePosition() {
+    if (vaultIdFromRoot(widget.root) != null) return;
     if (_controller == null || !_controller!.value.isInitialized) return;
     final position = _controller!.value.position;
     final duration = _controller!.value.duration;
@@ -383,6 +446,18 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     final val = _controller!.value;
 
     if (val.hasError) {
+      if (!_isExplicitlyClosed &&
+          !_fallbackScheduled &&
+          (!_initialized || val.position < const Duration(seconds: 3))) {
+        final vid = vaultIdFromRoot(widget.root);
+        if (vid == null || VaultService.instance.isUnlocked(vid)) {
+          _fallbackScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _handoffToMediaKit(_track, _index, instant: true);
+          });
+          return;
+        }
+      }
       setState(() {
         _error = val.errorDescription ?? (mounted ? AppLocalizations.of(context).unknownPlaybackError : 'Unknown playback error');
       });
@@ -454,9 +529,81 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     setState(() {});
   }
 
+  bool _shouldAutoFallbackToMediaKit(Object error) {
+    if (_isExplicitlyClosed || _fallbackScheduled || !mounted) return false;
+    final vid = vaultIdFromRoot(widget.root);
+    if (vid != null && !VaultService.instance.isUnlocked(vid)) return false;
+    if (error is PlatformException) return true;
+    final msg = error.toString();
+    return msg.contains('VideoError') ||
+        msg.contains('OSStatus') ||
+        msg.contains('CoreMediaErrorDomain') ||
+        msg.contains('AVFoundationErrorDomain');
+  }
+
+  void _handoffToMediaKit(
+    MediaTrack targetTrack,
+    int targetIndex, {
+    bool instant = false,
+  }) {
+    if (_isExplicitlyClosed || !mounted) return;
+    final vid = vaultIdFromRoot(widget.root);
+    if (vid != null && !VaultService.instance.isUnlocked(vid)) return;
+
+    _isExplicitlyClosed = true;
+    _fallbackScheduled = true;
+    _openGeneration++;
+    final c = _controller;
+    final ownedByService = c != null &&
+        identical(GlobalPlaybackService.instance.videoPlayerController, c);
+    final streamOwnedByService = GlobalPlaybackService.instance.startedStream;
+    GlobalPlaybackService.instance.stop();
+    _controller = null;
+    if (c != null && !ownedByService) {
+      try {
+        c.removeListener(_onControllerUpdate);
+      } catch (_) {}
+      try {
+        c.pause().catchError((_) {});
+      } catch (_) {}
+      try {
+        c.dispose().catchError((_) {});
+      } catch (_) {}
+    }
+    if (_startedStream && !streamOwnedByService) {
+      _startedStream = false;
+      stopMediaStreams();
+    } else {
+      _startedStream = false;
+    }
+    if (!mounted) return;
+    final targetPage = MediaPlayerPage(
+      root: widget.root,
+      path: targetTrack.path,
+      fileName: targetTrack.fileName,
+      isAudio: targetTrack.isAudio,
+      playlist: widget.playlist,
+      startIndex: targetIndex,
+      forceMediaKit: true,
+    );
+    final route = instant
+        ? PageRouteBuilder<void>(
+            pageBuilder: (_, _, _) => targetPage,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          )
+        : MaterialPageRoute<void>(builder: (_) => targetPage);
+    Navigator.of(context).pushReplacement(route);
+  }
+
   Future<void> _openTrack(int index) async {
     if (index < 0 || index >= widget.playlist.length) return;
     _saveResumePosition();
+    final nextTrack = widget.playlist[index];
+    if (!MediaPlayerPage.isAppleNativeFormat(nextTrack.path)) {
+      _handoffToMediaKit(nextTrack, index);
+      return;
+    }
     _switching = true;
     setState(() {
       _index = index;
@@ -585,7 +732,11 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _lastNowPlayingRate = currentRate;
 
     _nowPlayingChannel.invokeMethod('update', {
-      'title': _track.fileName,
+      'title': GlobalPlaybackService.instance.redactedNowPlayingTitle(
+        root: widget.root,
+        fileName: _track.fileName,
+        isAudio: widget.isAudio,
+      ),
       'duration': durationSec,
       'position': val.position.inMilliseconds / 1000.0,
       'rate': currentRate,
@@ -862,6 +1013,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
   @override
   void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
     WidgetsBinding.instance.removeObserver(this);
     _controlsTimer?.cancel();
     _volumeHudTimer?.cancel();
@@ -1384,21 +1536,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           OutlinedButton.icon(
             icon: const Icon(Icons.play_circle_outline),
             label: Text(AppLocalizations.of(context).playWithMediaKit),
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) => MediaPlayerPage(
-                    root: widget.root,
-                    path: _track.path,
-                    fileName: _track.fileName,
-                    isAudio: _track.isAudio,
-                    playlist: widget.playlist,
-                    startIndex: _index,
-                    forceMediaKit: true,
-                  ),
-                ),
-              );
-            },
+            onPressed: () => _handoffToMediaKit(_track, _index),
           ),
         ],
       ),

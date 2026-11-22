@@ -1337,6 +1337,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "fm-vault"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "async-trait",
+ "base64",
+ "fm-core",
+ "fm-local",
+ "fm-ops",
+ "fm-vfs",
+ "hex",
+ "hkdf",
+ "hmac",
+ "keyring",
+ "parking_lot",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "zeroize",
+ "zip",
+]
+
+[[package]]
 name = "fm-vfs"
 version = "0.1.0"
 dependencies = [
@@ -1360,6 +1390,7 @@ dependencies = [
  "fm-ops",
  "fm-remote",
  "fm-server",
+ "fm-vault",
  "fm-vfs",
  "hex",
  "jni 0.21.1",
@@ -2695,6 +2726,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aab41826031698d6ffcd9cff78ef56ef998e39dc7e5067cdfebe373842d4723b"
 dependencies = [
+ "getrandom 0.4.3",
  "phc",
 ]
 
@@ -2731,6 +2763,7 @@ checksum = "44dc769b75f93afdddd8c7fa12d685292ddeff1e66f7f0f3a234cf1818afe892"
 dependencies = [
  "base64ct",
  "ctutils",
+ "getrandom 0.4.3",
 ]
 
 [[package]]

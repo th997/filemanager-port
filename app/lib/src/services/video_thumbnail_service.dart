@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:media_kit/media_kit.dart';
 
 import '../rust/api/servers.dart';
 import 'path_utils.dart';
+import 'vault_service.dart';
 
 /// Frame-grab thumbnails for video entries.
 ///
@@ -25,6 +27,88 @@ class VideoThumbnailService {
   Player? _player;
   Future<void> _queue = Future<void>.value();
   Timer? _idleTimer;
+  bool _vaultCleanupRegistered = false;
+
+  void _ensureVaultCleanupRegistered() {
+    if (_vaultCleanupRegistered) return;
+    _vaultCleanupRegistered = true;
+    VaultService.instance.registerLockCleanup((_) {
+      _player?.stop().catchError((_) {});
+    });
+  }
+
+  /// Grabs one frame from a vault video in memory without writing plaintext
+  /// JPEGs to temp storage. Serialized on the shared player and disabled on iOS.
+  Future<Uint8List?> grabVaultFrameBytes({
+    required String root,
+    required String path,
+    required bool Function() isCancelled,
+  }) {
+    if (Platform.isIOS || isCancelled()) {
+      return Future.value(null);
+    }
+    _ensureVaultCleanupRegistered();
+    return _enqueue(() => _grabVaultBytes(root, path, isCancelled));
+  }
+
+  Future<Uint8List?> _grabVaultBytes(
+    String root,
+    String path,
+    bool Function() isCancelled,
+  ) async {
+    if (isCancelled()) return null;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    try {
+      final base = (await startMediaStream(root: root))
+          .replaceFirst(RegExp(r'/$'), '');
+      if (isCancelled()) return null;
+      final encoded = path
+          .split('/')
+          .where((s) => s.isNotEmpty)
+          .map(Uri.encodeComponent)
+          .join('/');
+      final uri = '$base/$encoded';
+
+      final player = _player ??= Player();
+      await player.setVolume(0);
+      await player.open(Media(uri));
+      if (isCancelled()) {
+        await player.stop();
+        return null;
+      }
+      await player.stream.videoParams
+          .firstWhere((p) => p.w != null && p.w! > 0)
+          .timeout(const Duration(seconds: 6));
+      final dur = player.state.duration;
+      final target = dur > const Duration(seconds: 4)
+          ? const Duration(seconds: 2)
+          : Duration(milliseconds: (dur.inMilliseconds * 0.25).round());
+      await player.seek(target);
+      await player.stream.position
+          .firstWhere((p) => p >= target)
+          .timeout(const Duration(milliseconds: 250), onTimeout: () => target);
+      if (isCancelled()) {
+        await player.stop();
+        return null;
+      }
+      final bytes = await player
+          .screenshot(format: 'image/jpeg')
+          .timeout(const Duration(seconds: 4));
+      await player.stop();
+      if (bytes == null || bytes.isEmpty || isCancelled()) return null;
+      return bytes;
+    } catch (_) {
+      try {
+        await _player?.stop();
+      } catch (_) {}
+      return null;
+    } finally {
+      if (_player != null) {
+        _scheduleIdleDispose();
+      }
+    }
+  }
 
   static final String _thumbsDirPath = '${Directory.systemTemp.path}/fm_video_thumbs';
 

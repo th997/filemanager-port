@@ -18,6 +18,8 @@ class PreferencesService {
   /// follows the switch without being recreated.
   static final ValueNotifier<bool> toolbarAtBottom = ValueNotifier<bool>(false);
   static const String prefToolbarBottom = 'browser.toolbar_bottom';
+  static final ValueNotifier<bool> vaultVideoThumbnailsNotifier =
+      ValueNotifier<bool>(false);
 
   Map<String, String> _values = {};
   bool _loaded = false;
@@ -39,6 +41,8 @@ class PreferencesService {
     } catch (_) {
       _values = {};
     }
+    vaultVideoThumbnailsNotifier.value =
+        getBool(prefVaultVideoThumbnails) ?? false;
   }
 
   /// Loads [toolbarAtBottom] once preferences are available.
@@ -50,6 +54,36 @@ class PreferencesService {
   static const String prefRecentUploadDirs = 'upload.recent_directories';
   static const String prefBufferDurationSec = 'player.buffer_duration_sec';
   static const String prefBufferSizeMb = 'player.buffer_size_mb';
+  static const String prefVaultAutoLockSec = 'vault.auto_lock_timeout_sec';
+  static const String prefVaultSkipExternalOpenWarning =
+      'vault.skip_external_open_warning';
+  static const String prefVaultVideoThumbnails = 'vault.video_thumbnails';
+
+  int get vaultAutoLockTimeoutSec {
+    final raw = getString(prefVaultAutoLockSec);
+    if (raw != null) {
+      final parsed = int.tryParse(raw);
+      if (parsed != null) return parsed;
+    }
+    return 600;
+  }
+
+  set vaultAutoLockTimeoutSec(int value) =>
+      setString(prefVaultAutoLockSec, value.toString());
+
+  bool get vaultSkipExternalOpenWarning =>
+      getBool(prefVaultSkipExternalOpenWarning) ?? false;
+
+  set vaultSkipExternalOpenWarning(bool value) =>
+      setBool(prefVaultSkipExternalOpenWarning, value);
+
+  bool get vaultVideoThumbnails =>
+      getBool(prefVaultVideoThumbnails) ?? false;
+
+  set vaultVideoThumbnails(bool value) {
+    setBool(prefVaultVideoThumbnails, value);
+    vaultVideoThumbnailsNotifier.value = value;
+  }
 
   int get bufferDurationSec {
     final raw = getString(prefBufferDurationSec);

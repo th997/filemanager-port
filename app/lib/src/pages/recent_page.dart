@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
+import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
@@ -51,10 +52,15 @@ class _RecentPageState extends State<RecentPage> {
         _lastSearchQuery == _searchQuery) {
       return _visibleHistoryCache!;
     }
+    final source = widget.pickRequest != null
+        ? _history
+            .where((h) => !PlatformPaths.isInsidePrivateInbox(h.root))
+            .toList()
+        : _history;
     final query = _searchQuery.trim().toLowerCase();
     final list = query.isEmpty
-        ? _history
-        : _history
+        ? source
+        : source
             .where((h) =>
                 _displayTitle(h).toLowerCase().contains(query) ||
                 h.path.toLowerCase().contains(query) ||
@@ -94,6 +100,9 @@ class _RecentPageState extends State<RecentPage> {
 
   /// Remote ids are opaque; show the connection name when it is known.
   String _rootLabel(String root) {
+    if (PlatformPaths.isPrivateInboxRoot(root)) {
+      return AppLocalizations.of(context).quickInbox;
+    }
     if (root.startsWith('remote://')) {
       final id = root.substring('remote://'.length);
       for (final r in _remotes) {

@@ -5,9 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/entry_item.dart';
+import '../rust/api/file_manager.dart';
+import '../rust/api/servers.dart';
 import '../services/file_open_service.dart';
 import '../services/global_playback_service.dart';
+import '../services/path_utils.dart';
 import '../services/task_service.dart';
+import '../services/vault_service.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 
 /// One image shown by [ImageViewerPage].
@@ -20,6 +24,7 @@ class ImageViewerEntry {
   final String? localPath;
   final String? root;
   final String? remotePath;
+  final int? sizeBytes;
 
   /// Resolves a native path on demand, for entries whose bytes live in a
   /// system library (the photo album) rather than on a browsable path.
@@ -30,6 +35,7 @@ class ImageViewerEntry {
     this.localPath,
     this.root,
     this.remotePath,
+    this.sizeBytes,
     this.resolvePath,
   });
 
@@ -74,6 +80,61 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   /// to write its path into the wrong slot.
   final Map<ImageViewerEntry, String> _localPaths = {};
   final Map<ImageViewerEntry, Future<String>> _inFlightPaths = {};
+  static const int _vaultPrefetchMaxBytes = 12 * 1024 * 1024;
+  static const int _vaultDirectMaxBytes = 128 * 1024 * 1024;
+  static const int _vaultCacheBudgetBytes = 48 * 1024 * 1024;
+
+  final Map<ImageViewerEntry, Uint8List> _vaultBytes = {};
+  final Map<ImageViewerEntry, Future<Uint8List>> _inFlightVaultBytes = {};
+  final Map<ImageViewerEntry, String> _vaultStreamUrls = {};
+  final Map<ImageViewerEntry, Future<String>> _inFlightVaultStreams = {};
+  final Set<ImageViewerEntry> _streamFallbackEntries = {};
+  bool _startedMediaStream = false;
+  int _vaultCacheBytes = 0;
+  bool _vaultAutoClosing = false;
+
+  bool _isVaultEntry(ImageViewerEntry entry) =>
+      entry.root != null && vaultIdFromRoot(entry.root!) != null;
+
+  bool _shouldStreamVaultEntry(ImageViewerEntry entry) =>
+      _streamFallbackEntries.contains(entry) ||
+      (entry.sizeBytes != null && entry.sizeBytes! > _vaultDirectMaxBytes);
+
+  int _decodeCacheWidth(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final maxLogical =
+        mq.size.width > mq.size.height ? mq.size.width : mq.size.height;
+    return (maxLogical * mq.devicePixelRatio * 2).round().clamp(1080, 4096);
+  }
+
+  void _clearVaultViewerCaches() {
+    _vaultBytes.clear();
+    _vaultCacheBytes = 0;
+    _inFlightVaultBytes.clear();
+    _vaultStreamUrls.clear();
+    _inFlightVaultStreams.clear();
+    _streamFallbackEntries.clear();
+  }
+
+  void _onVaultChanged() {
+    for (final e in _entries) {
+      final vid = e.root != null ? vaultIdFromRoot(e.root!) : null;
+      if (vid != null && !VaultService.instance.isUnlocked(vid)) {
+        _clearVaultViewerCaches();
+        PaintingBinding.instance.imageCache.clear();
+        if (!_vaultAutoClosing && mounted) {
+          _vaultAutoClosing = true;
+          final route = ModalRoute.of(context);
+          if (route != null && route.isActive && !route.isFirst) {
+            Navigator.of(context).removeRoute(route);
+          } else if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        }
+        return;
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -121,11 +182,19 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     _pageController = PageController(initialPage: _index);
     _transformationController.addListener(_onTransformChanged);
-    _prefetchNeighbors();
+    VaultService.instance.addListener(_onVaultChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _prefetchNeighbors();
+    });
   }
 
   @override
   void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
+    _clearVaultViewerCaches();
+    if (_startedMediaStream && !GlobalPlaybackService.instance.hasActiveSession) {
+      stopMediaStreams();
+    }
     GlobalPlaybackService.instance.setBottomBarInset(0.0);
     _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
@@ -176,13 +245,41 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   /// for a fresh remote download or image decode.
   void _prefetchNeighbors() {
     if (WidgetsBinding.instance.runtimeType.toString().contains('Test')) return;
-    for (final i in [_index - 1, _index + 1, _index + 2]) {
+    final indices = _isVaultEntry(_current)
+        ? [_index - 1, _index + 1]
+        : [_index - 1, _index + 1, _index + 2];
+    for (final i in indices) {
       if (i < 0 || i >= _entries.length) continue;
+      final neighbor = _entries[i];
+      if (_isVaultEntry(neighbor)) {
+        if (_shouldStreamVaultEntry(neighbor)) continue;
+        if (neighbor.sizeBytes != null &&
+            neighbor.sizeBytes! > _vaultPrefetchMaxBytes) {
+          continue;
+        }
+        if (_vaultCacheBytes + (neighbor.sizeBytes ?? 0) >
+            _vaultCacheBudgetBytes) {
+          continue;
+        }
+        _vaultBytesFor(i).then((bytes) {
+          if (!mounted || bytes.isEmpty) return;
+          final cw = _decodeCacheWidth(context);
+          precacheImage(
+            ResizeImage.resizeIfNeeded(cw, null, MemoryImage(bytes)),
+            context,
+          ).catchError((_) {});
+        }).catchError((_) {});
+        continue;
+      }
       _localPathFor(i).then((path) {
         if (!mounted || path.isEmpty) return;
         final file = File(path);
         if (file.existsSync()) {
-          precacheImage(FileImage(file), context).catchError((_) {});
+          final cw = _decodeCacheWidth(context);
+          precacheImage(
+            ResizeImage.resizeIfNeeded(cw, null, FileImage(file)),
+            context,
+          ).catchError((_) {});
         }
       }).catchError((_) {});
     }
@@ -226,8 +323,142 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
+  Future<({String? dateTaken, String? camera, String? gpsText})>
+      _readExifMetaFromBytes(Uint8List? bytes) async {
+    String? dateTaken;
+    String? camera;
+    String? gpsText;
+    if (bytes != null) {
+      try {
+        final tags = await readExifFromBytes(bytes);
+        final dt = tags['EXIF DateTimeOriginal']?.printable.trim();
+        if (dt != null && dt.length >= 19) {
+          dateTaken =
+              '${dt.substring(0, 4)}-${dt.substring(5, 7)}-${dt.substring(8, 19)}';
+        }
+        final make = tags['Image Make']?.printable.trim();
+        final model = tags['Image Model']?.printable.trim();
+        if (model != null && model.isNotEmpty) {
+          camera = (make != null &&
+                  make.isNotEmpty &&
+                  !model.toLowerCase().startsWith(make.toLowerCase()))
+              ? '$make $model'
+              : model;
+        }
+        final lat = _gpsCoordinate(
+          tags['GPS GPSLatitude'],
+          tags['GPS GPSLatitudeRef']?.printable.trim(),
+        );
+        final lon = _gpsCoordinate(
+          tags['GPS GPSLongitude'],
+          tags['GPS GPSLongitudeRef']?.printable.trim(),
+        );
+        if (lat != null && lon != null) {
+          gpsText = '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
+        }
+      } catch (_) {}
+    }
+    return (dateTaken: dateTaken, camera: camera, gpsText: gpsText);
+  }
+
   Future<void> _showImageDetails() async {
     final entry = _current;
+    if (_isVaultEntry(entry)) {
+      if (_shouldStreamVaultEntry(entry)) {
+        final imagePath = entry.remotePath ?? entry.name;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(AppLocalizations.of(context).imageDetails),
+            actionsOverflowButtonSpacing: 8,
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _detailRow(AppLocalizations.of(context).nameLabel, entry.name),
+                    if (entry.sizeBytes != null)
+                      _detailRow(
+                        AppLocalizations.of(context).sizeLabel,
+                        _formatSize(entry.sizeBytes!),
+                      ),
+                    _detailRow(AppLocalizations.of(context).pathLabel, imagePath),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(AppLocalizations.of(context).close),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      final Uint8List bytes;
+      try {
+        bytes = await _vaultBytesFor(_index);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).cannotReadImageDetails('$e')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return;
+      }
+      Size? dimensions;
+      try {
+        dimensions = _parseImageDimensions(bytes);
+        if (dimensions == null && bytes.length <= 32 * 1024 * 1024) {
+          final image = await decodeImageFromList(bytes);
+          dimensions = Size(image.width.toDouble(), image.height.toDouble());
+          image.dispose();
+        }
+      } catch (_) {}
+      final meta = await _readExifMetaFromBytes(bytes);
+      if (!mounted) return;
+      final imagePath = entry.remotePath ?? entry.name;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(AppLocalizations.of(context).imageDetails),
+          actionsOverflowButtonSpacing: 8,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _detailRow(AppLocalizations.of(context).nameLabel, entry.name),
+                  if (dimensions != null)
+                    _detailRow(AppLocalizations.of(context).dimensionsLabel, '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
+                  if (meta.dateTaken != null) _detailRow(AppLocalizations.of(context).dateTakenLabel, meta.dateTaken!),
+                  if (meta.camera != null) _detailRow(AppLocalizations.of(context).cameraLabel, meta.camera!),
+                  if (meta.gpsText != null) _detailRow(AppLocalizations.of(context).locationLabel, meta.gpsText!),
+                  _detailRow(AppLocalizations.of(context).sizeLabel, _formatSize(bytes.length)),
+                  _detailRow(AppLocalizations.of(context).pathLabel, imagePath),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(AppLocalizations.of(context).close),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final String native;
     try {
       native = await _localPathFor(_index);
@@ -275,39 +506,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     // EXIF: the real capture date and camera, instead of letting the
     // file's Modified time pose as when the photo was taken. The parser
     // simply finds no tags for formats without EXIF (PNG, WebP).
-    String? dateTaken;
-    String? camera;
-    String? gpsText;
-    if (bytes != null) {
-      try {
-        final tags = await readExifFromBytes(bytes);
-        final dt = tags['EXIF DateTimeOriginal']?.printable.trim();
-        if (dt != null && dt.length >= 19) {
-          dateTaken =
-              '${dt.substring(0, 4)}-${dt.substring(5, 7)}-${dt.substring(8, 19)}';
-        }
-        final make = tags['Image Make']?.printable.trim();
-        final model = tags['Image Model']?.printable.trim();
-        if (model != null && model.isNotEmpty) {
-          camera = (make != null &&
-                  make.isNotEmpty &&
-                  !model.toLowerCase().startsWith(make.toLowerCase()))
-              ? '$make $model'
-              : model;
-        }
-        final lat = _gpsCoordinate(
-          tags['GPS GPSLatitude'],
-          tags['GPS GPSLatitudeRef']?.printable.trim(),
-        );
-        final lon = _gpsCoordinate(
-          tags['GPS GPSLongitude'],
-          tags['GPS GPSLongitudeRef']?.printable.trim(),
-        );
-        if (lat != null && lon != null) {
-          gpsText = '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
-        }
-      } catch (_) {}
-    }
+    final meta = await _readExifMetaFromBytes(bytes);
 
     if (!mounted) return;
 
@@ -327,9 +526,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 _detailRow(AppLocalizations.of(context).nameLabel, entry.name),
                 if (dimensions != null)
                   _detailRow(AppLocalizations.of(context).dimensionsLabel, '${dimensions.width.toInt()} × ${dimensions.height.toInt()} px'),
-                if (dateTaken != null) _detailRow(AppLocalizations.of(context).dateTakenLabel, dateTaken),
-                if (camera != null) _detailRow(AppLocalizations.of(context).cameraLabel, camera),
-                if (gpsText != null) _detailRow(AppLocalizations.of(context).locationLabel, gpsText),
+                if (meta.dateTaken != null) _detailRow(AppLocalizations.of(context).dateTakenLabel, meta.dateTaken!),
+                if (meta.camera != null) _detailRow(AppLocalizations.of(context).cameraLabel, meta.camera!),
+                if (meta.gpsText != null) _detailRow(AppLocalizations.of(context).locationLabel, meta.gpsText!),
                 _detailRow(AppLocalizations.of(context).sizeLabel, _formatSize(stat.size)),
                 _detailRow(AppLocalizations.of(context).modifiedLabel, stat.modified.toString().split('.').first),
                 _detailRow(AppLocalizations.of(context).pathLabel, imagePath),
@@ -493,8 +692,232 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     return fut;
   }
 
+  void _storeVaultBytes(ImageViewerEntry entry, Uint8List bytes) {
+    final prev = _vaultBytes.remove(entry);
+    if (prev != null) {
+      _vaultCacheBytes -= prev.length;
+    }
+    while (_vaultBytes.isNotEmpty &&
+        (_vaultCacheBytes + bytes.length > _vaultCacheBudgetBytes ||
+            _vaultBytes.length >= 6)) {
+      ImageViewerEntry? farthest;
+      var maxDist = -1;
+      for (final k in _vaultBytes.keys) {
+        final idx = _entries.indexOf(k);
+        final dist = idx < 0 ? 1 << 30 : (idx - _index).abs();
+        if (dist > maxDist) {
+          maxDist = dist;
+          farthest = k;
+        }
+      }
+      if (farthest == null) break;
+      final removed = _vaultBytes.remove(farthest);
+      if (removed != null) {
+        _vaultCacheBytes -= removed.length;
+      }
+    }
+    _vaultBytes[entry] = bytes;
+    _vaultCacheBytes += bytes.length;
+  }
+
+  Future<Uint8List> _vaultBytesFor(int index) {
+    final entry = _entries[index];
+    final cached = _vaultBytes[entry];
+    if (cached != null) return Future.value(cached);
+    final inFlight = _inFlightVaultBytes[entry];
+    if (inFlight != null) return inFlight;
+
+    final root = entry.root;
+    final remotePath = entry.remotePath;
+    if (root == null || remotePath == null) {
+      return Future.error(StateError('Missing vault path for ${entry.name}'));
+    }
+    final vid = vaultIdFromRoot(root);
+    if (vid == null || !VaultService.instance.isUnlocked(vid)) {
+      return Future.error(StateError('Privacy folder is locked'));
+    }
+
+    final fut = readFileBytes(
+      root: root,
+      path: remotePath,
+      maxBytes: BigInt.from(_vaultDirectMaxBytes),
+    ).then((bytes) {
+      if (!VaultService.instance.isUnlocked(vid)) {
+        throw StateError('Privacy folder is locked');
+      }
+      _storeVaultBytes(entry, bytes);
+      return bytes;
+    });
+
+    _inFlightVaultBytes[entry] = fut;
+    fut.whenComplete(() {
+      _inFlightVaultBytes.remove(entry);
+    });
+    return fut;
+  }
+
+  Future<String> _vaultStreamUrlFor(int index) {
+    final entry = _entries[index];
+    final cached = _vaultStreamUrls[entry];
+    if (cached != null) return Future.value(cached);
+    final inFlight = _inFlightVaultStreams[entry];
+    if (inFlight != null) return inFlight;
+
+    final root = entry.root;
+    final remotePath = entry.remotePath;
+    if (root == null || remotePath == null) {
+      return Future.error(StateError('Missing vault path for ${entry.name}'));
+    }
+    final vid = vaultIdFromRoot(root);
+    if (vid == null || !VaultService.instance.isUnlocked(vid)) {
+      return Future.error(StateError('Privacy folder is locked'));
+    }
+
+    final fut = startMediaStream(root: root).then((base) {
+      if (!VaultService.instance.isUnlocked(vid)) {
+        throw StateError('Privacy folder is locked');
+      }
+      _startedMediaStream = true;
+      final trimmed = base.replaceFirst(RegExp(r'/$'), '');
+      final encoded = remotePath
+          .split('/')
+          .where((s) => s.isNotEmpty)
+          .map(Uri.encodeComponent)
+          .join('/');
+      final url = '$trimmed/$encoded';
+      _vaultStreamUrls[entry] = url;
+      return url;
+    });
+
+    _inFlightVaultStreams[entry] = fut;
+    fut.whenComplete(() {
+      _inFlightVaultStreams.remove(entry);
+    });
+    return fut;
+  }
+
+  Widget _imageFromBytes(Uint8List bytes) {
+    return Image.memory(
+      bytes,
+      fit: BoxFit.contain,
+      cacheWidth: _decodeCacheWidth(context),
+      gaplessPlayback: true,
+      errorBuilder: (ctx, err, stack) => Center(
+        child: Text(AppLocalizations.of(context).failedToLoadImage, style: const TextStyle(color: Colors.white70)),
+      ),
+    );
+  }
+
+  Widget _imageFromStreamUrl(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.contain,
+      cacheWidth: _decodeCacheWidth(context),
+      gaplessPlayback: true,
+      loadingBuilder: (ctx, child, progress) {
+        if (progress == null) return child;
+        final total = progress.expectedTotalBytes;
+        final value = (total != null && total > 0)
+            ? progress.cumulativeBytesLoaded / total
+            : null;
+        return Center(child: CircularProgressIndicator(value: value));
+      },
+      errorBuilder: (ctx, err, stack) => Center(
+        child: Text(AppLocalizations.of(context).failedToLoadImage, style: const TextStyle(color: Colors.white70)),
+      ),
+    );
+  }
+
   Widget _buildImageAt(int index, {required bool interactive}) {
     final entry = _entries[index];
+    if (_isVaultEntry(entry)) {
+      if (_shouldStreamVaultEntry(entry)) {
+        final cachedUrl = _vaultStreamUrls[entry];
+        if (cachedUrl != null) {
+          return _imageFromStreamUrl(cachedUrl);
+        }
+        return FutureBuilder<String>(
+          future: _vaultStreamUrlFor(index),
+          builder: (ctx, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        AppLocalizations.of(context).cannotLoadImage('${snapshot.error}'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => setState(() {}),
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: Text(AppLocalizations.of(context).retry),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return _imageFromStreamUrl(snapshot.data!);
+          },
+        );
+      }
+
+      final cached = _vaultBytes[entry];
+      if (cached != null) {
+        return _imageFromBytes(cached);
+      }
+      return FutureBuilder<Uint8List>(
+        future: _vaultBytesFor(index),
+        builder: (ctx, snapshot) {
+          if (snapshot.hasError) {
+            final errStr = '${snapshot.error}';
+            if (errStr.contains('exceeds in-memory read limit')) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                if (_streamFallbackEntries.add(entry)) {
+                  setState(() {});
+                }
+              });
+              return const Center(child: CircularProgressIndicator());
+            }
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context).cannotLoadImage(errStr),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() {}),
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: Text(AppLocalizations.of(context).retry),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return _imageFromBytes(snapshot.data!);
+        },
+      );
+    }
+
     final native = entry.localPath ?? _localPaths[entry];
 
     if (native != null) {
@@ -546,6 +969,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     return Image.file(
       file,
       fit: BoxFit.contain,
+      cacheWidth: _decodeCacheWidth(context),
       errorBuilder: (ctx, err, stack) => Center(
         child: Text(AppLocalizations.of(context).failedToLoadImage, style: const TextStyle(color: Colors.white70)),
       ),
@@ -555,6 +979,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   /// Copies the resolved path, which is what a user needs to paste into a
   /// terminal or another app — the gallery shows no path anywhere else.
   Future<void> _copyCurrentPath() async {
+    if (_isVaultEntry(_current)) return;
     try {
       final native = await _localPathFor(_index);
       await Clipboard.setData(ClipboardData(text: native));
@@ -574,6 +999,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
   }
 
   Future<void> _shareCurrent() async {
+    if (_isVaultEntry(_current)) return;
     try {
       final native = await _localPathFor(_index);
       await SharePlus.instance.share(ShareParams(files: [XFile(native)]));
@@ -633,6 +1059,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         _entries.removeAt(_index);
         _localPaths.remove(entry);
         _inFlightPaths.remove(entry);
+        _vaultBytes.remove(entry);
+        _inFlightVaultBytes.remove(entry);
       });
 
       if (_entries.isEmpty) {
@@ -673,22 +1101,24 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 ),
               ),
               const Divider(),
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: Text(AppLocalizations.of(context).shareImage),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _shareCurrent();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.copy_all_outlined),
-                title: Text(AppLocalizations.of(context).copyPath),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _copyCurrentPath();
-                },
-              ),
+              if (!_isVaultEntry(_current)) ...[
+                ListTile(
+                  leading: const Icon(Icons.share),
+                  title: Text(AppLocalizations.of(context).shareImage),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _shareCurrent();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.copy_all_outlined),
+                  title: Text(AppLocalizations.of(context).copyPath),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _copyCurrentPath();
+                  },
+                ),
+              ],
               ListTile(
                 leading: const Icon(Icons.rotate_right),
                 title: Text(AppLocalizations.of(context).rotate90),
@@ -803,11 +1233,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 tooltip: AppLocalizations.of(context).rotate90Shortcut,
                 onPressed: () => setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
               ),
-              IconButton(
-                icon: const Icon(Icons.share),
-                tooltip: AppLocalizations.of(context).shareImage,
-                onPressed: _shareCurrent,
-              ),
+              if (!_isVaultEntry(_current))
+                IconButton(
+                  icon: const Icon(Icons.share),
+                  tooltip: AppLocalizations.of(context).shareImage,
+                  onPressed: _shareCurrent,
+                ),
               if (_current.canDelete)
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
@@ -850,16 +1281,17 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                       ],
                     ),
                   ),
-                  PopupMenuItem(
-                    value: 'copy_path',
-                    child: Row(
-                      children: [
-                        Icon(Icons.copy_all_outlined, size: 20),
-                        SizedBox(width: 10),
-                        Text(AppLocalizations.of(context).copyPath),
-                      ],
+                  if (!_isVaultEntry(_current))
+                    PopupMenuItem(
+                      value: 'copy_path',
+                      child: Row(
+                        children: [
+                          Icon(Icons.copy_all_outlined, size: 20),
+                          SizedBox(width: 10),
+                          Text(AppLocalizations.of(context).copyPath),
+                        ],
+                      ),
                     ),
-                  ),
                   const PopupMenuDivider(),
                   PopupMenuItem(
                     value: 'zoom_in',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -161,6 +162,9 @@ class ExternalFileService {
   BuildContext? get navContext => _navKey?.currentContext;
   bool _initialized = false;
   bool _pickInProgress = false;
+  bool _shareDialogOpen = false;
+  List<String>? _queuedSharePaths;
+  Timer? _shareFallbackTimer;
   String? _lastOpenedPath;
   DateTime? _lastOpenedTime;
   List<String>? _lastSharedPaths;
@@ -168,13 +172,50 @@ class ExternalFileService {
 
   @visibleForTesting
   void resetForTesting() {
+    _shareFallbackTimer?.cancel();
+    _shareFallbackTimer = null;
     _initialized = false;
     _navKey = null;
     _pickInProgress = false;
+    _shareDialogOpen = false;
+    _queuedSharePaths = null;
     _lastOpenedPath = null;
     _lastOpenedTime = null;
     _lastSharedPaths = null;
     _lastSharedTime = null;
+  }
+
+  Future<bool> _pullInitialShareRequest() async {
+    try {
+      final initialShares = await _channel.invokeMethod<dynamic>('getInitialShareRequest');
+      if (initialShares is List) {
+        final paths = initialShares.whereType<String>().toList();
+        if (paths.isNotEmpty) {
+          _handleShareReceived(paths);
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> _pullInitialFileRequest() async {
+    try {
+      final initial = await _channel.invokeMethod<String>('getInitialFile');
+      if (initial != null && initial.isNotEmpty) {
+        _handlePath(initial);
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Checks the native channel for any pending share/open request queued
+  /// across app background/resume transitions.
+  Future<void> checkPendingRequests() async {
+    if (!_initialized) return;
+    if (await _pullInitialShareRequest()) return;
+    await _pullInitialFileRequest();
   }
 
   void init(GlobalKey<NavigatorState> navKey, {List<String>? initialArgs}) {
@@ -188,11 +229,13 @@ class ExternalFileService {
         if (path != null && path.isNotEmpty) {
           _handlePath(path);
         }
+        return true;
       } else if (call.method == 'onPickRequest') {
         final raw = call.arguments;
         if (raw is Map) {
           _handlePickRequest(ExternalPickRequest.fromMap(raw));
         }
+        return true;
       } else if (call.method == 'onShareReceived') {
         final args = call.arguments;
         if (args is Map) {
@@ -204,7 +247,9 @@ class ExternalFileService {
             }
           }
         }
+        return true;
       }
+      return null;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -218,16 +263,7 @@ class ExternalFileService {
       } catch (_) {}
 
       // 2. Check native channel initial share request (e.g. Android ACTION_SEND / ACTION_SEND_MULTIPLE, iOS incoming files)
-      try {
-        final initialShares = await _channel.invokeMethod<dynamic>('getInitialShareRequest');
-        if (initialShares is List) {
-          final paths = initialShares.whereType<String>().toList();
-          if (paths.isNotEmpty) {
-            _handleShareReceived(paths);
-            return;
-          }
-        }
-      } catch (_) {}
+      if (await _pullInitialShareRequest()) return;
 
       // 3. Check CLI args (desktop)
       if (initialArgs != null && initialArgs.isNotEmpty) {
@@ -254,12 +290,7 @@ class ExternalFileService {
       }
 
       // 4. Check native channel initial file
-      try {
-        final initial = await _channel.invokeMethod<String>('getInitialFile');
-        if (initial != null && initial.isNotEmpty) {
-          _handlePath(initial);
-        }
-      } catch (_) {}
+      await _pullInitialFileRequest();
     });
   }
 
@@ -358,9 +389,18 @@ class ExternalFileService {
     _lastSharedPaths = List<String>.from(valid);
     _lastSharedTime = now;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    var triggered = false;
+    void trigger() {
+      if (triggered || !_initialized) return;
+      triggered = true;
+      _shareFallbackTimer?.cancel();
+      _shareFallbackTimer = null;
       _showShareDialog(valid);
-    });
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => trigger());
+    _shareFallbackTimer?.cancel();
+    _shareFallbackTimer = Timer(const Duration(milliseconds: 250), trigger);
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
@@ -372,16 +412,38 @@ class ExternalFileService {
     return true;
   }
 
-  void _showShareDialog(List<String> paths) {
+  void _showShareDialog(List<String> paths, {int attempt = 0}) {
+    if (!_initialized) return;
+    if (_shareDialogOpen) {
+      final merged = List<String>.from(_queuedSharePaths ?? const <String>[]);
+      for (final pth in paths) {
+        if (!merged.contains(pth)) merged.add(pth);
+      }
+      _queuedSharePaths = merged;
+      return;
+    }
     final nav = _navKey?.currentState;
     final ctx = nav?.context;
-    if (ctx == null) {
+    if (ctx == null || !ctx.mounted) {
+      if (attempt >= 50) {
+        debugPrint('[ShareReceiver] Navigator context unavailable after $attempt attempts');
+        return;
+      }
       Future.delayed(const Duration(milliseconds: 100), () {
-        _showShareDialog(paths);
+        if (!_initialized) return;
+        _showShareDialog(paths, attempt: attempt + 1);
       });
       return;
     }
-    showShareReceiverDialog(context: ctx, filePaths: paths);
+    _shareDialogOpen = true;
+    showShareReceiverDialog(context: ctx, filePaths: paths).whenComplete(() {
+      _shareDialogOpen = false;
+      final queued = _queuedSharePaths;
+      _queuedSharePaths = null;
+      if (queued != null && queued.isNotEmpty && _initialized) {
+        _showShareDialog(queued);
+      }
+    });
   }
 
   Future<void> completePickRequest(List<String> paths) async {
@@ -613,6 +675,15 @@ class ExternalFileService {
       return;
     }
 
-    OpenFilex.open(filePath);
+    OpenFilex.open(filePath).then((res) {
+      if (res.type != ResultType.done) {
+        final ctx = navContext;
+        if (ctx != null && ctx.mounted) {
+          ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(
+            SnackBar(content: Text(res.message)),
+          );
+        }
+      }
+    });
   }
 }

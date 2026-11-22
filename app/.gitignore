@@ -46,3 +46,12 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Vendored media_kit_libs downloaded binary caches
+packages/media_kit_libs_*/ios/.cache/
+packages/media_kit_libs_*/ios/Frameworks/
+packages/media_kit_libs_*/ios/Headers/
+packages/media_kit_libs_*/macos/.cache/
+packages/media_kit_libs_*/macos/Frameworks/
+packages/media_kit_libs_*/macos/Headers/
+packages/media_kit_libs_*/android/build/

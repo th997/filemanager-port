@@ -463,6 +463,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get quickHome => 'ホーム';
 
   @override
+  String get quickInbox => '専用スペース';
+
+  @override
+  String get privateInboxSubtitle => 'アプリ専用 · 他アプリから非公開';
+
+  @override
   String quickDrive(String letter) {
     return 'ドライブ ($letter:)';
   }
@@ -2678,4 +2684,357 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get readOnlyViewMode => '読み取り専用表示';
+
+  @override
+  String get privacyFolder => 'プライバシーフォルダ';
+
+  @override
+  String get privacyFolders => 'プライバシーフォルダ';
+
+  @override
+  String get privacyFoldersDesc => '独立したプライバシーフォルダの作成・解除・バックアップ・インポート';
+
+  @override
+  String get createPrivacyFolder => 'プライバシーフォルダを作成';
+
+  @override
+  String get openPrivacyFolder => 'プライバシーフォルダを開く';
+
+  @override
+  String get backupPrivacyFolder => 'プライバシーフォルダをバックアップ';
+
+  @override
+  String get importPrivacyFolder => 'プライバシーフォルダをインポート';
+
+  @override
+  String get privacyFolderName => 'フォルダ名';
+
+  @override
+  String get privacyFolderNameHint => '正確なフォルダ名を入力';
+
+  @override
+  String get privacyFolderNotFound => 'プライバシーフォルダが存在しません';
+
+  @override
+  String get privacyFolderAlreadyExists => '同じ名前のプライバシーフォルダが既に存在します';
+
+  @override
+  String get credentialMethod => '認証方式';
+
+  @override
+  String get credentialPassword => '個別パスワード（8〜128文字・記号可）';
+
+  @override
+  String get credentialSystem => 'システム認証（パスコード / 生体認証）';
+
+  @override
+  String get credentialSystemUnavailable => 'この端末ではシステム認証を利用できません';
+
+  @override
+  String get encryptionAlgorithm => '暗号化方式';
+
+  @override
+  String get cipherNone => '暗号化なし';
+
+  @override
+  String get cipherAes128Gcm => 'AES-128-GCM（デフォルト・HWアクセラレーション）';
+
+  @override
+  String get cipherAes256Gcm => 'AES-256-GCM（HWアクセラレーション）';
+
+  @override
+  String get storageLocation => '保存先';
+
+  @override
+  String get useDefaultLocation => 'デフォルト';
+
+  @override
+  String get changeLocation => '変更';
+
+  @override
+  String get privacyPasswordLabel => 'パスワード（8〜128文字・記号可）';
+
+  @override
+  String get privacyConfirmPasswordLabel => 'パスワード（確認）';
+
+  @override
+  String get passwordLengthError => 'パスワードは8〜128文字で入力してください';
+
+  @override
+  String get passwordMismatchError => 'パスワードが一致しません';
+
+  @override
+  String get privacyUnlockedLabel => '解除済み • 終了またはバックグラウンド10分で自動非表示';
+
+  @override
+  String get lockAndHide => 'ロックして非表示';
+
+  @override
+  String lockAllPrivacyFolders(int count) {
+    return 'すべてロックして非表示 ($count)';
+  }
+
+  @override
+  String vaultLockedNotice(String name) {
+    return 'プライバシーフォルダ「$name」をロックして非表示にしました';
+  }
+
+  @override
+  String get nextStep => '次へ';
+
+  @override
+  String get unlockAction => 'ロック解除';
+
+  @override
+  String unlockWithSystemPrompt(String name) {
+    return '「$name」のロックを解除するため認証してください';
+  }
+
+  @override
+  String get setupSystemAuthPrompt => 'システム認証を設定するため認証してください';
+
+  @override
+  String get wrongCredentialError => 'パスワードまたは認証情報が正しくありません';
+
+  @override
+  String cooldownRetryError(int seconds) {
+    return '失敗回数が多すぎます。$seconds 秒後に再試行してください';
+  }
+
+  @override
+  String get selectBackupSourceVault => '解除済みフォルダを選択または名前を入力';
+
+  @override
+  String get backupPasswordRequiredNotice =>
+      'システム認証フォルダのため、他端末へのインポート用に8〜128文字のバックアップパスワードを設定してください。';
+
+  @override
+  String get backupPasswordLabel => 'バックアップパスワード（8〜128文字）';
+
+  @override
+  String get selectBackupDestFile => 'バックアップ保存先フォルダを選択';
+
+  @override
+  String backupExportSuccess(String path) {
+    return 'バックアップをエクスポートしました: $path';
+  }
+
+  @override
+  String get selectBackupArchive => '.fpmvault バックアップファイルを選択';
+
+  @override
+  String backupArchiveSummary(String cipher, int count) {
+    return '暗号方式: $cipher • オブジェクト: $count';
+  }
+
+  @override
+  String get backupPasswordToVerify => 'バックアップ / フォルダパスワード';
+
+  @override
+  String get localUnlockAfterImport => 'インポート後の認証方式';
+
+  @override
+  String get newLocalPasswordOptional => '新しいローカルパスワード（空欄で元のパスワードを継続）';
+
+  @override
+  String importSuccessNotice(String name) {
+    return 'プライバシーフォルダ「$name」をインポートし解除しました';
+  }
+
+  @override
+  String get saveToPrivacyFolder => 'プライバシーフォルダに保存';
+
+  @override
+  String get saveToPrivacyFolderSubtitle => '暗号化して解除済みのプライバシーフォルダに保存';
+
+  @override
+  String get selectPrivacyFolder => 'プライバシーフォルダを選択';
+
+  @override
+  String get privacyFolderNoHistoryBookmark => 'プライバシーフォルダ内では履歴とブックマークは無効です';
+
+  @override
+  String get unlockedBadge => '解除中';
+
+  @override
+  String importKeepOriginalName(String name) {
+    return '元のフォルダ名を維持します：「$name」';
+  }
+
+  @override
+  String get importWillKeepOriginalName =>
+      '元のフォルダ名がそのまま維持されます。すでに同名のフォルダがある場合は、新しい名前の入力を求められます。';
+
+  @override
+  String importNameExistsEnterNew(String name) {
+    return 'プライバシーフォルダ「$name」はすでに存在します。新しいフォルダ名を手動で入力してください。';
+  }
+
+  @override
+  String get importNewFolderNameLabel => '新しいプライバシーフォルダ名';
+
+  @override
+  String get importEnterFolderNamePrompt =>
+      'このバックアップに元のフォルダ名が含まれていません。フォルダ名を入力してください。';
+
+  @override
+  String get renamePrivacyFolder => 'プライバシーフォルダの名前を変更';
+
+  @override
+  String privacyFolderRenamedNotice(String name) {
+    return 'プライバシーフォルダ名を「$name」に変更しました';
+  }
+
+  @override
+  String largeFilePagedNotice(String start, String end, String total) {
+    return '大容量ファイル読み取り専用（$start – $end / $total）';
+  }
+
+  @override
+  String get previousPage => '前のページ';
+
+  @override
+  String get nextPage => '次のページ';
+
+  @override
+  String get jumpToPosition => '位置へ移動';
+
+  @override
+  String get deletePrivacyFolder => 'プライバシーフォルダを削除';
+
+  @override
+  String deletePrivacyFolderWarning(String name) {
+    return 'プライバシーフォルダ「$name」と内部のすべての暗号化ファイル、およびこの端末に保存された鍵を完全に削除します。この操作は元に戻せません。';
+  }
+
+  @override
+  String deletePrivacyFolderConfirmLabel(String name) {
+    return '削除を確認するため「$name」と入力してください';
+  }
+
+  @override
+  String privacyFolderDeletedNotice(String name) {
+    return 'プライバシーフォルダ「$name」を完全に削除しました';
+  }
+
+  @override
+  String get privacyMediaAudio => 'プライベート音声';
+
+  @override
+  String get privacyMediaVideo => 'プライベート動画';
+
+  @override
+  String get vaultAutoLockTitle => 'バックグラウンド自動ロック';
+
+  @override
+  String get vaultAutoLockImmediate => 'すぐにロック';
+
+  @override
+  String vaultAutoLockMinutes(int minutes) {
+    return '$minutes 分';
+  }
+
+  @override
+  String get vaultAutoLockNever => '自動ロックしない';
+
+  @override
+  String get vaultConfirmExternalOpenTitle => '外部共有・開く前に確認';
+
+  @override
+  String get vaultConfirmExternalOpenDesc => '一時的に復号して外部アプリへ渡す前に確認ダイアログを表示します';
+
+  @override
+  String get vaultExternalOpenWarningTitle => '外部アプリで開きますか？';
+
+  @override
+  String get vaultExternalOpenWarningBody =>
+      'このファイルは一時的に復号され、プライバシーフォルダ外のアプリへ渡されます。必要に応じて外部アプリ側のコピーも削除してください。';
+
+  @override
+  String get dontAskAgain => '次回から表示しない';
+
+  @override
+  String get continueAction => '続行';
+
+  @override
+  String get vaultVideoThumbnailsTitle => 'プライバシーフォルダの動画サムネイル';
+
+  @override
+  String get vaultVideoThumbnailsDesc =>
+      '動画プレビューをオンデマンドで生成し暗号化キャッシュに保存します（省電力のため既定はオフ）';
+
+  @override
+  String get vaultSecuritySettings => 'パスワードとロック解除方法';
+
+  @override
+  String get vaultChangePasswordOption => 'パスワードを変更';
+
+  @override
+  String get vaultSwitchToSystemOption => 'システム認証へ切り替え';
+
+  @override
+  String get vaultSwitchToPasswordOption => '個別パスワードへ切り替え';
+
+  @override
+  String get vaultCurrentPasswordLabel => '現在のパスワード';
+
+  @override
+  String get vaultNewPasswordLabel => '新しいパスワード（8〜128文字）';
+
+  @override
+  String get vaultOldBackupsPasswordNotice =>
+      '以前に書き出した .fpmvault バックアップの復元には、作成時の古いパスワードが必要です。';
+
+  @override
+  String get vaultSwitchToSystemBackupNotice =>
+      'システム認証へ切り替えた後は .fpmvault バックアップを大切に保管してください。端末移行時にキーチェーンの鍵は引き継がれません。';
+
+  @override
+  String get vaultSecurityUpdatedNotice => 'プライバシーフォルダのセキュリティ設定を更新しました';
+
+  @override
+  String get vaultFolderInfo => 'フォルダ情報とストレージ';
+
+  @override
+  String get vaultStatsFiles => 'ファイル数';
+
+  @override
+  String get vaultStatsFolders => 'サブフォルダ';
+
+  @override
+  String get vaultStatsPlainSize => 'データ合計';
+
+  @override
+  String get vaultStatsDiskUsage => 'ディスク使用量';
+
+  @override
+  String get vaultStatsOrphaned => '回収可能な孤立データ';
+
+  @override
+  String vaultStatsOrphanDetail(int count, String size) {
+    return '$count 件（$size）';
+  }
+
+  @override
+  String get vaultCleanupOrphansAction => '孤立データを整理';
+
+  @override
+  String vaultCleanupResultNotice(int count, String size) {
+    return '$count 件の孤立ファイルを削除し、$size を解放しました';
+  }
+
+  @override
+  String backupProgressLabel(String done, String total, int percent) {
+    return '$done / $total ($percent%)';
+  }
+
+  @override
+  String get backupCancelling => 'キャンセル中…';
+
+  @override
+  String get backupCancelledNotice => 'バックアップ操作をキャンセルしました';
+
+  @override
+  String get deleteVaultPermanentWarning =>
+      '選択した項目をプライバシーフォルダから完全に削除します（ゴミ箱からは復元できません）。';
 }

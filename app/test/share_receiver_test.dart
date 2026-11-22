@@ -430,5 +430,88 @@ void main() {
       expect(find.text('保存到本地'), findsOneWidget);
       expect(find.text('保存到远程'), findsOneWidget);
     });
+
+    testWidgets('onShareReceived returns true ack and displays PDF share dialog', (tester) async {
+      final pdfFile = File('${tempDir.path}/contract.pdf')
+        ..writeAsBytesSync([0x25, 0x50, 0x44, 0x46]);
+      final navKey = GlobalKey<NavigatorState>();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+        return null;
+      });
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+        ExternalFileService.instance.resetForTesting();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          locale: const Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(body: SizedBox()),
+        ),
+      );
+      ExternalFileService.instance.init(navKey);
+      await tester.pumpAndSettle();
+
+      ByteData? replyData;
+      final data = const StandardMethodCodec().encodeMethodCall(
+        MethodCall('onShareReceived', {'paths': [pdfFile.path]}),
+      );
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        channel.name,
+        data,
+        (reply) => replyData = reply,
+      );
+      await tester.pumpAndSettle();
+
+      expect(replyData, isNotNull);
+      expect(const StandardMethodCodec().decodeEnvelope(replyData!), isTrue);
+      expect(find.byType(ShareReceiverContent), findsOneWidget);
+      expect(find.text('contract.pdf'), findsOneWidget);
+      expect(find.text('保存到本地'), findsOneWidget);
+    });
+
+    testWidgets('checkPendingRequests pulls queued PDF share on resume', (tester) async {
+      final pdfFile = File('${tempDir.path}/resume_report.pdf')
+        ..writeAsBytesSync([0x25, 0x50, 0x44, 0x46]);
+      final navKey = GlobalKey<NavigatorState>();
+      List<String>? queuedShare;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getInitialShareRequest') {
+          final current = queuedShare;
+          queuedShare = null;
+          return current;
+        }
+        return null;
+      });
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+        ExternalFileService.instance.resetForTesting();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          locale: const Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(body: SizedBox()),
+        ),
+      );
+      ExternalFileService.instance.init(navKey);
+      await tester.pumpAndSettle();
+      expect(find.byType(ShareReceiverContent), findsNothing);
+
+      // Simulate iOS queueing a PDF while app was backgrounded, then app resumes.
+      queuedShare = [pdfFile.path];
+      await ExternalFileService.instance.checkPendingRequests();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ShareReceiverContent), findsOneWidget);
+      expect(find.text('resume_report.pdf'), findsOneWidget);
+      expect(find.text('直接打开'), findsOneWidget);
+    });
   });
 }

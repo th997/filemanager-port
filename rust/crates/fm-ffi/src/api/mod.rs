@@ -3,3 +3,4 @@ pub mod metadata;
 pub mod remotes;
 pub mod servers;
 pub mod tasks;
+pub mod vault;

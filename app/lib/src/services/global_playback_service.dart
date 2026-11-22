@@ -149,6 +149,28 @@ class GlobalPlaybackService extends ChangeNotifier {
   int _lastNowPlayingSec = -1;
   double _lastNowPlayingDuration = -1;
   double _lastNowPlayingRate = -1;
+  String _privacyAudioTitle = 'Private Audio';
+  String _privacyVideoTitle = 'Private Video';
+
+  void setPrivacyMediaLabels({required String audio, required String video}) {
+    if (_privacyAudioTitle == audio && _privacyVideoTitle == video) return;
+    _privacyAudioTitle = audio;
+    _privacyVideoTitle = video;
+    if (Platform.isIOS && hasActiveSession && vaultIdFromRoot(currentRoot ?? '') != null) {
+      _updateNowPlaying(force: true);
+    }
+  }
+
+  String redactedNowPlayingTitle({
+    required String? root,
+    required String? fileName,
+    required bool isAudio,
+  }) {
+    if (root != null && vaultIdFromRoot(root) != null) {
+      return isAudio ? _privacyAudioTitle : _privacyVideoTitle;
+    }
+    return fileName ?? '';
+  }
 
   bool get hasActiveSession {
     final vpc = videoPlayerController;
@@ -581,6 +603,7 @@ class GlobalPlaybackService extends ChangeNotifier {
     final root = currentRoot;
     final path = currentPath;
     if (root == null || path == null || duration <= Duration.zero) return;
+    if (vaultIdFromRoot(root) != null) return;
     final key = 'player.resume.$root|$path';
     if (position < const Duration(seconds: 5) || position > duration * 0.95) {
       PreferencesService.instance.remove(key);
@@ -676,7 +699,11 @@ class GlobalPlaybackService extends ChangeNotifier {
     _lastNowPlayingRate = currentRate;
 
     _nowPlayingChannel.invokeMethod('update', {
-      'title': currentFileName ?? '',
+      'title': redactedNowPlayingTitle(
+        root: currentRoot,
+        fileName: currentFileName,
+        isAudio: isAudio,
+      ),
       'duration': durationSec,
       'position': position.inMilliseconds / 1000.0,
       'rate': currentRate,

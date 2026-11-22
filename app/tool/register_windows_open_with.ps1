@@ -6,13 +6,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 $SupportedExtensions = @(
-    ".zip", ".apk", ".apkm", ".apks", ".obb", ".cbz", ".jar", ".tar", ".tgz", ".gz", ".7z", ".epub", ".txt", ".md", ".markdown", ".json", ".jsonc", ".json5", ".geojson", ".topojson", ".map", ".lock", ".yaml", ".yml", ".xml", ".plist", ".svg", ".rs", ".dart", ".c", ".cpp", ".cc", ".h", ".hpp", ".py", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".html", ".htm", ".xhtml", ".css", ".toml", ".sh", ".bash", ".zsh", ".log", ".ini", ".cfg", ".csv", ".java", ".kt", ".go", ".swift", ".sql", ".properties", ".diff", ".patch", ".conf", ".gradle", ".dockerfile", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".m4v", ".wmv", ".rmvb", ".rm", ".vob", ".ogv", ".m2ts", ".mts", ".f4v", ".asf", ".divx", ".mpg", ".mpeg", ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".amr", ".ape", ".alac", ".aiff", ".mka", ".oga", ".wv", ".mid"
+    ".zip", ".apk", ".apkm", ".apks", ".obb", ".cbz", ".jar", ".tar", ".tgz", ".gz", ".7z", ".epub", ".txt", ".md", ".markdown", ".json", ".jsonc", ".json5", ".geojson", ".topojson", ".map", ".lock", ".yaml", ".yml", ".xml", ".plist", ".svg", ".rs", ".dart", ".c", ".cpp", ".cc", ".h", ".hpp", ".py", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".html", ".htm", ".xhtml", ".css", ".toml", ".sh", ".bash", ".zsh", ".log", ".ini", ".cfg", ".csv", ".java", ".kt", ".go", ".swift", ".sql", ".properties", ".diff", ".patch", ".conf", ".gradle", ".dockerfile", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".m4v", ".wmv", ".rmvb", ".rm", ".vob", ".ogv", ".m2ts", ".mts", ".f4v", ".asf", ".divx", ".mpg", ".mpeg", ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".amr", ".ape", ".alac", ".aiff", ".mka", ".oga", ".wv", ".mid", ".pdf", ".rtf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".db", ".sqlite", ".sqlite3", ".fpmvault"
 )
 
 if ($Unregister) {
     Remove-Item -Path "HKCU:\Software\Classes\FPFileManager.Document" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -Path "HKCU:\Software\Classes\Applications\filemanager.exe" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -Path "HKCU:\Software\Classes\Directory\shell\FPFileManager" -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path "HKCU:\Software\Classes\*\OpenWithProgids") {
+        Remove-ItemProperty -Path "HKCU:\Software\Classes\*\OpenWithProgids" -Name "FPFileManager.Document" -ErrorAction SilentlyContinue
+    }
     foreach ($ext in $SupportedExtensions) {
         $progIdPath = "HKCU:\Software\Classes\$ext\OpenWithProgids"
         if (Test-Path $progIdPath) {
@@ -64,6 +67,12 @@ foreach ($ext in $SupportedExtensions) {
     $progIdKey.SetValue("FPFileManager.Document", [byte[]]@(), [Microsoft.Win32.RegistryValueKind]::None)
     $progIdKey.Close()
 }
+
+$wildcardProgIdPath = "HKCU:\Software\Classes\*\OpenWithProgids"
+New-Item -Path $wildcardProgIdPath -Force | Out-Null
+$wildcardProgIdKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\*\OpenWithProgids", $true)
+$wildcardProgIdKey.SetValue("FPFileManager.Document", [byte[]]@(), [Microsoft.Win32.RegistryValueKind]::None)
+$wildcardProgIdKey.Close()
 
 New-Item -Path "HKCU:\Software\Classes\Directory\shell\FPFileManager\command" -Force | Out-Null
 Set-ItemProperty -Path "HKCU:\Software\Classes\Directory\shell\FPFileManager" -Name "(Default)" -Value "Open with FP File Manager"

@@ -14,26 +14,29 @@ class SceneDelegate: FlutterSceneDelegate {
     willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
   ) {
-    super.scene(scene, willConnectTo: session, options: connectionOptions)
-    setupChannels(from: scene)
     if !connectionOptions.urlContexts.isEmpty {
       AppDelegate.handleIncomingURLContexts(connectionOptions.urlContexts)
     }
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+    setupChannels(from: scene)
+    AppDelegate.deliverPendingRequestsIfNeeded()
   }
 
   override func sceneDidBecomeActive(_ scene: UIScene) {
     super.sceneDidBecomeActive(scene)
     setupChannels(from: scene)
+    AppDelegate.deliverPendingRequestsIfNeeded()
   }
 
   override func scene(
     _ scene: UIScene,
     openURLContexts URLContexts: Set<UIOpenURLContext>
   ) {
-    super.scene(scene, openURLContexts: URLContexts)
-    setupChannels(from: scene)
     if !URLContexts.isEmpty {
       AppDelegate.handleIncomingURLContexts(URLContexts)
     }
+    super.scene(scene, openURLContexts: URLContexts)
+    setupChannels(from: scene)
+    AppDelegate.deliverPendingRequestsIfNeeded()
   }
 }

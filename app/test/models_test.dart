@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:filemanager/src/models/entry_item.dart';
 import 'package:filemanager/src/rust/api/file_manager.dart';
 import 'package:filemanager/src/services/path_utils.dart';
@@ -129,6 +131,53 @@ void main() {
     test('databasePath is within appDataDir', () {
       final dbPath = PlatformPaths.databasePath();
       expect(dbPath.endsWith('filemanager.db'), isTrue);
+    });
+
+    test('privateInboxDir creates private Inbox and quickTargets exposes it', () {
+      final inbox = PlatformPaths.privateInboxDir();
+      expect(inbox, isNotEmpty);
+      expect(inbox.endsWith('Inbox'), isTrue);
+      expect(Directory(inbox).existsSync(), isTrue);
+
+      final targets = PlatformPaths.quickTargets();
+      final inboxTargets = targets.where((t) => t.kind == 'inbox').toList();
+      expect(inboxTargets, hasLength(1));
+      expect(inboxTargets.first.name, equals('My Space'));
+      expect(inboxTargets.first.root, equals(inbox));
+      expect(inboxTargets.first.relPath, isEmpty);
+    });
+
+    test('Inbox containment helpers reject parent and sibling paths', () {
+      final inbox = PlatformPaths.privateInboxDir();
+      final sep = Platform.pathSeparator;
+
+      expect(PlatformPaths.isPrivateInboxRoot(inbox), isTrue);
+      expect(PlatformPaths.isPrivateInboxRoot('$inbox$sep'), isTrue);
+      expect(PlatformPaths.isInsidePrivateInbox(inbox), isTrue);
+
+      final nested = '$inbox${sep}Work${sep}Contract.pdf';
+      expect(PlatformPaths.isPrivateInboxRoot(nested), isFalse);
+      expect(PlatformPaths.isInsidePrivateInbox(nested), isTrue);
+      final splitNested = PlatformPaths.splitPrivateInboxPath(nested);
+      expect(splitNested, isNotNull);
+      expect(splitNested!.root, equals(inbox));
+      expect(splitNested.relPath, equals('Work/Contract.pdf'));
+
+      final splitRoot = PlatformPaths.splitPrivateInboxPath('$inbox$sep');
+      expect(splitRoot, isNotNull);
+      expect(splitRoot!.root, equals(inbox));
+      expect(splitRoot.relPath, isEmpty);
+
+      final parentDir = PlatformPaths.appDataDir();
+      expect(PlatformPaths.isPrivateInboxRoot(parentDir), isFalse);
+      expect(PlatformPaths.isInsidePrivateInbox(parentDir), isFalse);
+      expect(PlatformPaths.splitPrivateInboxPath(parentDir), isNull);
+
+      final sibling = '${inbox}_extra';
+      expect(PlatformPaths.isPrivateInboxRoot(sibling), isFalse);
+      expect(PlatformPaths.isInsidePrivateInbox(sibling), isFalse);
+      expect(PlatformPaths.isInsidePrivateInbox('$sibling${sep}a.txt'), isFalse);
+      expect(PlatformPaths.splitPrivateInboxPath('$sibling${sep}a.txt'), isNull);
     });
   });
 }

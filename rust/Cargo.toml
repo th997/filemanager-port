@@ -9,6 +9,7 @@ members = [
     "crates/fm-server",
     "crates/fm-index",
     "crates/fm-ops",
+    "crates/fm-vault",
     "crates/fm-ffi",
 ]
 
@@ -27,6 +28,7 @@ fm-remote = { path = "crates/fm-remote" }
 fm-server = { path = "crates/fm-server" }
 fm-index = { path = "crates/fm-index" }
 fm-ops = { path = "crates/fm-ops" }
+fm-vault = { path = "crates/fm-vault" }
 
 async-trait = "0.1"
 thiserror = "2"
@@ -56,6 +58,11 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 hmac = "0.13"
 sha1 = "0.11"
 sha2 = "0.11"
+hkdf = "0.13"
+aes-gcm = "0.11"
+argon2 = "0.6"
+zeroize = "1.9"
+rand_core = { version = "0.6", features = ["getrandom"] }
 base64 = "0.23"
 regex = "1"
 hex = "0.4"

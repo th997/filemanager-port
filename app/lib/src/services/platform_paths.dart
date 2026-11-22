@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 class PlatformPaths {
   static String? _iosDocuments;
   static String? _iosSupport;
+  static String? _macosSupport;
   static String? _androidSupport;
 
   /// Resolve app-private directories before anything else runs.
@@ -20,11 +21,21 @@ class PlatformPaths {
         _iosDocuments = (await getApplicationDocumentsDirectory()).path;
         _iosSupport = (await getApplicationSupportDirectory()).path;
       } catch (_) {}
+    } else if (Platform.isMacOS) {
+      try {
+        _macosSupport = (await getApplicationSupportDirectory()).path;
+      } catch (_) {}
     } else if (Platform.isAndroid) {
       try {
         _androidSupport = (await getApplicationSupportDirectory()).path;
       } catch (_) {}
       _migrateLegacyAndroidData();
+    }
+    final inbox = privateInboxDir();
+    if (Platform.isLinux || Platform.isMacOS) {
+      try {
+        Process.runSync('chmod', ['700', inbox]);
+      } catch (_) {}
     }
   }
 
@@ -151,6 +162,122 @@ class PlatformPaths {
     return '${appDataDir()}/filemanager.db';
   }
 
+  /// App-private Inbox folder inside sandboxed application support/data storage.
+  ///
+  /// Inaccessible to other apps on iOS (not exposed in Files app) and Android
+  /// (UID/SELinux isolated internal storage, hidden from MediaStore & MTP).
+  static String privateInboxDir({bool create = true}) {
+    final String dir;
+    if (Platform.isIOS) {
+      final base = _iosSupport ?? appDataDir();
+      dir = '$base/Inbox';
+    } else if (Platform.isMacOS) {
+      final base = _macosSupport ?? appDataDir();
+      dir = '$base/Inbox';
+    } else if (Platform.isAndroid) {
+      final base = _androidSupport ?? appDataDir();
+      dir = '$base/Inbox';
+    } else if (Platform.isWindows) {
+      dir = '${appDataDir()}\\Inbox';
+    } else {
+      dir = '${appDataDir()}/Inbox';
+    }
+    if (create) {
+      final d = Directory(dir);
+      if (!d.existsSync()) {
+        try {
+          d.createSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+    return dir;
+  }
+
+  static String _canonicalComparePath(String path) {
+    var s = path.replaceAll('\\', '/');
+    while (s.length > 1 && s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    if ((Platform.isIOS || Platform.isMacOS) &&
+        (s.startsWith('/private/var/') ||
+            s == '/private/var' ||
+            s.startsWith('/private/tmp/') ||
+            s == '/private/tmp')) {
+      s = s.substring('/private'.length);
+    }
+    if (Platform.isWindows) {
+      s = s.toLowerCase();
+    }
+    return s;
+  }
+
+  static bool isPrivateInboxRoot(String path) {
+    if (path.isEmpty) return false;
+    return _canonicalComparePath(path) ==
+        _canonicalComparePath(privateInboxDir(create: false));
+  }
+
+  static bool isInsidePrivateInbox(String path) {
+    if (path.isEmpty) return false;
+    final inbox = _canonicalComparePath(privateInboxDir(create: false));
+    final c = _canonicalComparePath(path);
+    return c == inbox || c.startsWith('$inbox/');
+  }
+
+  static ({String root, String relPath})? splitPrivateInboxPath(String fullPath) {
+    if (!isInsidePrivateInbox(fullPath)) return null;
+    final inboxCmp = _canonicalComparePath(privateInboxDir(create: false));
+    final fullCmp = _canonicalComparePath(fullPath);
+    if (fullCmp == inboxCmp) {
+      return (root: privateInboxDir(), relPath: '');
+    }
+    var norm = fullPath.replaceAll('\\', '/');
+    while (norm.length > 1 && norm.endsWith('/')) {
+      norm = norm.substring(0, norm.length - 1);
+    }
+    if ((Platform.isIOS || Platform.isMacOS) &&
+        (norm.startsWith('/private/var/') || norm.startsWith('/private/tmp/'))) {
+      norm = norm.substring('/private'.length);
+    }
+    final rel = norm.length > inboxCmp.length + 1
+        ? norm.substring(inboxCmp.length + 1)
+        : '';
+    return (root: privateInboxDir(), relPath: rel);
+  }
+
+  /// Default storage directory for privacy folders.
+  ///
+  /// Android / iOS / macOS keep vaults inside app-private Application Support
+  /// storage (inaccessible to other apps and hidden from iOS Files app).
+  /// Windows / Linux default to the hidden `~/.fpm` folder.
+  static String defaultVaultStorageDir() {
+    if (Platform.isIOS) {
+      final base = _iosSupport ?? appDataDir();
+      return '$base/private_vaults';
+    }
+    if (Platform.isMacOS) {
+      final base = _macosSupport ?? appDataDir();
+      return '$base/private_vaults';
+    }
+    if (Platform.isAndroid) {
+      final base = _androidSupport ?? appDataDir();
+      return '$base/private_vaults';
+    }
+    if (Platform.isWindows) {
+      final home = Platform.environment['USERPROFILE'] ??
+          Platform.environment['APPDATA'] ??
+          'C:\\';
+      final trimmed = home.endsWith('\\') || home.endsWith('/')
+          ? home.substring(0, home.length - 1)
+          : home;
+      return '$trimmed\\.fpm';
+    }
+    final home = Platform.environment['HOME'] ?? '/tmp';
+    final trimmed =
+        home.endsWith('/') ? home.substring(0, home.length - 1) : home;
+    return '$trimmed/.fpm';
+  }
+
   /// Folders that commonly hold photos, newest-first scanning happens in the
   /// gallery page. Only existing directories are returned.
   static List<String> galleryDirs() {
@@ -175,6 +302,14 @@ class PlatformPaths {
 
   static List<QuickTarget> quickTargets() {
     final targets = <QuickTarget>[];
+    final inbox = privateInboxDir();
+    final inboxTarget = QuickTarget(
+      name: 'My Space',
+      kind: 'inbox',
+      path: inbox,
+      root: inbox,
+      relPath: '',
+    );
     if (Platform.isIOS) {
       final docs = _iosDocuments;
       if (docs != null) {
@@ -186,6 +321,7 @@ class PlatformPaths {
           relPath: '',
         ));
       }
+      targets.add(inboxTarget);
       return targets;
     }
     if (Platform.isAndroid) {
@@ -197,6 +333,7 @@ class PlatformPaths {
           root: '/storage/emulated/0',
           relPath: '',
         ),
+        inboxTarget,
         const QuickTarget(
           name: 'Download',
           kind: 'download',
@@ -236,6 +373,7 @@ class PlatformPaths {
           root: home,
           relPath: '',
         ),
+        inboxTarget,
         QuickTarget(
           name: 'Downloads',
           kind: 'downloads',
@@ -275,6 +413,7 @@ class PlatformPaths {
           root: home,
           relPath: '',
         ),
+        inboxTarget,
         QuickTarget(
           name: 'Downloads',
           kind: 'downloads',
@@ -353,6 +492,8 @@ class QuickTarget {
         return l10n.quickPictures;
       case 'home':
         return l10n.quickHome;
+      case 'inbox':
+        return l10n.quickInbox;
       case 'desktop':
         return l10n.quickDesktop;
       case 'volumes':

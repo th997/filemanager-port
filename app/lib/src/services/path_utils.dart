@@ -104,3 +104,24 @@ bool isValidFileName(String name) {
       !name.contains('/') &&
       !name.contains('\\');
 }
+
+/// Whether [root] addresses an unlocked privacy folder (`vault://<id>`).
+bool isVaultRoot(String root) => root.startsWith('vault://');
+
+/// Extracts the vault ID from `vault://<id>` or `archive://vault://<id>/...`,
+/// returning null for any non-vault root.
+String? vaultIdFromRoot(String root) {
+  if (root.startsWith('vault://')) {
+    final rest = root.substring('vault://'.length);
+    final slash = rest.indexOf('/');
+    final id = slash >= 0 ? rest.substring(0, slash) : rest;
+    return id.isEmpty ? null : id;
+  }
+  if (root.startsWith('archive://vault://')) {
+    final rest = root.substring('archive://vault://'.length);
+    final slash = rest.indexOf('/');
+    final id = slash >= 0 ? rest.substring(0, slash) : rest;
+    return id.isEmpty ? null : id;
+  }
+  return null;
+}

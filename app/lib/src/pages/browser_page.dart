@@ -13,6 +13,7 @@ import '../dialogs/download_prompt_dialog.dart';
 import '../dialogs/file_picker_dialog.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/task_progress_dialog.dart';
+import '../dialogs/vault_dialogs.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../rust/api/metadata.dart';
@@ -28,6 +29,7 @@ import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../services/vault_service.dart';
 import '../widgets/browser/browser_action_sheets.dart';
 import '../widgets/browser/browser_bottom_action_bar.dart';
 import '../widgets/browser/browser_toolbar.dart';
@@ -186,6 +188,12 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       if (remote != null) {
         rootPart = 'remote://${remote.name}';
       }
+    } else if (isVaultRoot(_root)) {
+      final vid = vaultIdFromRoot(_root);
+      final vault = vid == null ? null : VaultService.instance.findUnlockedById(vid);
+      if (vault != null) {
+        rootPart = 'vault://${vault.name}';
+      }
     }
     if (_relPath.isEmpty) return rootPart;
     final cleanRel = _relPath.startsWith('/') ? _relPath.substring(1) : _relPath;
@@ -281,6 +289,114 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   // Clipboard state for copy/cut/paste
   static ClipboardState? _clipboard;
 
+  bool _secureScreenHeld = false;
+  bool _vaultAutoClosing = false;
+
+  String? get _currentVaultId => vaultIdFromRoot(_root);
+  bool get _isInVault => _currentVaultId != null;
+
+  void _syncSecureScreen() {
+    final shouldSecure = _isInVault;
+    if (shouldSecure && !_secureScreenHeld) {
+      _secureScreenHeld = true;
+      VaultService.instance.pushSecureScreen();
+    } else if (!shouldSecure && _secureScreenHeld) {
+      _secureScreenHeld = false;
+      VaultService.instance.popSecureScreen();
+    }
+  }
+
+  void _onVaultChanged() {
+    final vid = _currentVaultId;
+    if (vid != null && !VaultService.instance.isUnlocked(vid)) {
+      if (widget.embedded) {
+        navigateTo(PlatformPaths.defaultRoot(), '');
+        return;
+      }
+      if (!_vaultAutoClosing && mounted) {
+        _vaultAutoClosing = true;
+        final route = ModalRoute.of(context);
+        if (route != null && route.isActive && !route.isFirst) {
+          Navigator.of(context).removeRoute(route);
+        } else {
+          _vaultAutoClosing = false;
+          navigateTo(PlatformPaths.defaultRoot(), '');
+        }
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _lockCurrentVault() {
+    final vid = _currentVaultId;
+    if (vid == null) return;
+    final vault = VaultService.instance.findUnlockedById(vid);
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    VaultService.instance.lockVault(vid);
+    if (vault != null) {
+      messenger?.showSnackBar(
+        SnackBar(content: Text(l10n.vaultLockedNotice(vault.name))),
+      );
+    }
+  }
+
+  Future<void> _renameCurrentVault() async {
+    final vid = _currentVaultId;
+    if (vid == null) return;
+    final vault = VaultService.instance.findUnlockedById(vid);
+    if (vault == null) return;
+    final l10n = AppLocalizations.of(context);
+    final updated = await RenameVaultDialog.show(context, vault);
+    if (updated != null && updated.name != vault.name && mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.privacyFolderRenamedNotice(updated.name))),
+      );
+    }
+  }
+
+  Future<void> _showCurrentVaultInfo() async {
+    final vid = _currentVaultId;
+    if (vid == null) return;
+    final vault = VaultService.instance.findUnlockedById(vid);
+    if (vault == null) return;
+    await VaultInfoDialog.show(context, vault);
+  }
+
+  Future<void> _changeCurrentVaultSecurity() async {
+    final vid = _currentVaultId;
+    if (vid == null) return;
+    final vault = VaultService.instance.findUnlockedById(vid);
+    if (vault == null) return;
+    final l10n = AppLocalizations.of(context);
+    final updated = await ChangeVaultSecurityDialog.show(context, vault);
+    if (updated != null && mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.vaultSecurityUpdatedNotice)),
+      );
+    }
+  }
+
+  Future<void> _deleteCurrentVault() async {
+    final vid = _currentVaultId;
+    if (vid == null) return;
+    final vault = VaultService.instance.findUnlockedById(vid);
+    if (vault == null) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final deleted = await DeleteVaultDialog.show(context, vault);
+    if (deleted) {
+      messenger?.showSnackBar(
+        SnackBar(content: Text(l10n.privacyFolderDeletedNotice(vault.name))),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -292,6 +408,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     _scrollController.addListener(_onScroll);
     PreferencesService.toolbarAtBottom.addListener(_onToolbarPositionChanged);
     GlobalPlaybackService.instance.addListener(_onPlaybackChanged);
+    VaultService.instance.addListener(_onVaultChanged);
+    _syncSecureScreen();
     _loadRemotesMetadata();
     _load();
   }
@@ -351,6 +469,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   @override
   void dispose() {
     appRouteObserver.unsubscribe(this);
+    VaultService.instance.removeListener(_onVaultChanged);
+    if (_secureScreenHeld) {
+      _secureScreenHeld = false;
+      VaultService.instance.popSecureScreen();
+    }
     GlobalPlaybackService.instance.removeListener(_onPlaybackChanged);
     GlobalPlaybackService.instance.setBottomBarInset(0.0);
     PreferencesService.toolbarAtBottom.removeListener(_onToolbarPositionChanged);
@@ -564,6 +687,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       _currentPage = 1;
       _hasMore = false;
     });
+    _syncSecureScreen();
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
@@ -588,6 +712,21 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         final remote = _findRemote(withoutPrefix);
         final resolvedId = remote != null ? remote.id : withoutPrefix;
         navigateTo('remote://$resolvedId', '');
+      }
+    } else if (path.startsWith('vault://')) {
+      final withoutPrefix = path.substring('vault://'.length);
+      final slashIdx = withoutPrefix.indexOf('/');
+      final target = slashIdx != -1 ? withoutPrefix.substring(0, slashIdx) : withoutPrefix;
+      final rel = slashIdx != -1
+          ? withoutPrefix.substring(slashIdx + 1).replaceAll(RegExp(r'^/+'), '')
+          : '';
+      final unlocked = VaultService.instance.unlockedVaults;
+      final lowerTarget = target.toLowerCase();
+      for (final v in unlocked) {
+        if (v.id == target || v.name.toLowerCase() == lowerTarget) {
+          navigateTo('vault://${v.id}', rel);
+          return;
+        }
       }
     } else if (path.startsWith('archive://')) {
       final withoutPrefix = path.substring('archive://'.length);
@@ -675,7 +814,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       if (!refresh && _scrollController.hasClients) {
         _scrollController.jumpTo(0);
       }
-      StorageService.instance.recordHistory(root: _root, path: _relPath);
+      if (!_isInVault) {
+        StorageService.instance.recordHistory(root: _root, path: _relPath);
+      }
 
       // If hidden files are filtered out and this batch left the visible list empty,
       // keep fetching the next page so directories with many dotfiles (like $HOME)
@@ -712,6 +853,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
   bool get _canNavigateUp {
     if (_relPath.isNotEmpty) return true;
+    if (PlatformPaths.isPrivateInboxRoot(_root)) return false;
     if (_root.startsWith('archive://')) return true;
     if (Platform.isAndroid) {
       // Only the emulated shared volume is browsable; its parents are not
@@ -752,6 +894,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         return;
       }
     }
+    if (PlatformPaths.isPrivateInboxRoot(_root)) return;
     if (_root.startsWith('/') && _root != '/') {
       final segments = _root.split('/').where((s) => s.isNotEmpty).toList();
       if (segments.isNotEmpty) {
@@ -788,6 +931,21 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           return;
         } else {
           navigateTo('remote://$withoutPrefix', '');
+          return;
+        }
+      }
+      if (archiveHost.startsWith('vault://')) {
+        final withoutPrefix = archiveHost.substring('vault://'.length);
+        final slashIdx = withoutPrefix.indexOf('/');
+        if (slashIdx != -1) {
+          final vaultId = withoutPrefix.substring(0, slashIdx);
+          final fullVaultPath = withoutPrefix.substring(slashIdx + 1);
+          final segments = fullVaultPath.split('/').where((s) => s.isNotEmpty).toList();
+          if (segments.isNotEmpty) segments.removeLast();
+          navigateTo('vault://$vaultId', segments.join('/'));
+          return;
+        } else {
+          navigateTo('vault://$withoutPrefix', '');
           return;
         }
       }
@@ -890,15 +1048,6 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       _downloadThenOpen(item);
       return;
     }
-    // The editor loads the whole file into memory (and the find index
-    // roughly doubles it); multi-hundred-MB logs would OOM the app.
-    const maxTextBytes = 20 * 1024 * 1024;
-    if (item.size != null && item.size! > BigInt.from(maxTextBytes)) {
-      _showError(
-        '"${item.name}" is too large to edit (${item.formattedSize}). Open it with an external app instead.',
-      );
-      return;
-    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TextEditorPage(
@@ -906,6 +1055,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           path: _fullEntryPath(item),
           fileName: item.name,
           readOnly: !_canWrite,
+          fileSizeBytes: item.size?.toInt(),
         ),
       ),
     ).then((_) {
@@ -978,6 +1128,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
   bool _isRemoteOrArchive(String root) =>
       root.startsWith('remote://') || root.startsWith('archive://');
+
+  bool get _canExportToLocal => _isRemoteOrArchive(_root) || _isInVault;
 
   /// Whether the current backend accepts edits. Archive contents and
   /// read-only accounts do not, so their menus must not offer writes.
@@ -1097,6 +1249,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             path: path,
             fileName: item.name,
             readOnly: root.startsWith('archive://'),
+            fileSizeBytes: item.size?.toInt(),
           ),
         ),
       );
@@ -1183,11 +1336,13 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             ? ImageViewerEntry(
                 name: e.name,
                 localPath: joinNative(_root, _fullEntryPath(e)),
+                sizeBytes: e.size?.toInt(),
               )
             : ImageViewerEntry(
                 name: e.name,
                 root: _root,
                 remotePath: _fullEntryPath(e),
+                sizeBytes: e.size?.toInt(),
               ))
         .toList();
     final index = images.indexWhere((e) => e.name == item.name);
@@ -1227,8 +1382,67 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     );
   }
 
+  Future<bool> _confirmExternalVaultExport() async {
+    if (vaultIdFromRoot(_root) == null ||
+        PreferencesService.instance.vaultSkipExternalOpenWarning) {
+      return true;
+    }
+    final l10n = AppLocalizations.of(context);
+    bool dontAskAgain = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, size: 28),
+          title: Text(l10n.vaultExternalOpenWarningTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.vaultExternalOpenWarningBody,
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                value: dontAskAgain,
+                onChanged: (v) =>
+                    setDialogState(() => dontAskAgain = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+                title: Text(
+                  l10n.dontAskAgain,
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.continueAction),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      if (dontAskAgain) {
+        PreferencesService.instance.vaultSkipExternalOpenWarning = true;
+      }
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _openWithSystem(EntryItem item) async {
     try {
+      if (!await _confirmExternalVaultExport() || !mounted) return;
       if (Platform.isAndroid && item.name.toLowerCase().endsWith('.apk')) {
         if (!await PermissionService.instance.hasInstallPackagesAccess()) {
           final granted = await PermissionService.instance.requestInstallPackagesAccess();
@@ -1239,7 +1453,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           }
         }
       }
-      final result = await FileOpenService.instance.openWith(_root, _fullEntryPath(item));
+      final result = await VaultService.instance.runWithAutoLockSuppressed(
+        () => FileOpenService.instance.openWith(_root, _fullEntryPath(item)),
+      );
       if (!mounted) return;
       if (result.type == ResultType.noAppToOpen) {
         _showError(AppLocalizations.of(context).noAppToOpenFile(item.name));
@@ -1254,7 +1470,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
   Future<void> _shareEntry(EntryItem item) async {
     try {
-      await FileOpenService.instance.share(_root, _fullEntryPath(item));
+      if (!await _confirmExternalVaultExport() || !mounted) return;
+      await VaultService.instance.runWithAutoLockSuppressed(
+        () => FileOpenService.instance.share(_root, _fullEntryPath(item)),
+      );
     } catch (e) {
       if (!mounted) return;
       _showError(AppLocalizations.of(context).cannotShareFile('$e'));
@@ -1499,9 +1718,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final action = await showBrowserEntryModalBottomSheet(
       context: context,
       item: item,
-      isRemoteOrArchive: _isRemoteOrArchive(_root),
+      isRemoteOrArchive: _canExportToLocal,
       canWrite: _canWrite,
       canArchive: _canArchive,
+      canBookmark: !_isInVault,
     );
     if (action != null && mounted) {
       _handleEntryAction(action, item);
@@ -1516,9 +1736,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       context: originContext,
       position: position,
       item: item,
-      isRemoteOrArchive: _isRemoteOrArchive(_root),
+      isRemoteOrArchive: _canExportToLocal,
       canWrite: _canWrite,
       canArchive: _canArchive,
+      canBookmark: !_isInVault,
     );
     if (action != null && mounted) {
       _handleEntryAction(action, item);
@@ -1625,6 +1846,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       hasClipboard: _clipboard != null,
       clipboardCount: _clipboard?.paths.length,
       isZh: isZh,
+      canBookmark: !_isInVault,
     );
 
     if (action == null || !mounted) return;
@@ -1942,9 +2164,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
     List<XFile> files;
     try {
-      files = await openFiles(
-        initialDirectory: initialDir,
-        confirmButtonText: AppLocalizations.of(context).upload,
+      files = await VaultService.instance.runWithAutoLockSuppressed(
+        () => openFiles(
+          initialDirectory: initialDir,
+          confirmButtonText: AppLocalizations.of(context).upload,
+        ),
       );
     } catch (_) {
       return _uploadFilesInApp();
@@ -2009,9 +2233,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
     String? selectedPath;
     try {
-      selectedPath = await getDirectoryPath(
-        initialDirectory: initialDir,
-        confirmButtonText: AppLocalizations.of(context).uploadThisFolder,
+      selectedPath = await VaultService.instance.runWithAutoLockSuppressed(
+        () => getDirectoryPath(
+          initialDirectory: initialDir,
+          confirmButtonText: AppLocalizations.of(context).uploadThisFolder,
+        ),
       );
     } catch (_) {
       return _uploadFolderInApp();
@@ -2035,6 +2261,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       title: AppLocalizations.of(context).selectFolderToUpload,
       initialRoot: PlatformPaths.defaultRoot(),
       confirmLabel: AppLocalizations.of(context).uploadThisFolder,
+      includeUnlockedVaults: !_pickMode,
     );
     if (picked == null || !mounted) return;
 
@@ -2072,7 +2299,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
   Future<void> _downloadSelected() async {
     if (_selectedPaths.isEmpty) return;
-    if (!_isRemoteOrArchive(_root)) {
+    if (!_canExportToLocal) {
       _showError(AppLocalizations.of(context).alreadyLocalUseCopy);
       return;
     }
@@ -2080,6 +2307,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       context,
       title: AppLocalizations.of(context).downloadDestination,
       initialRoot: PlatformPaths.defaultRoot(),
+      includeUnlockedVaults: !_pickMode,
     );
     if (dest == null || !mounted) return;
 
@@ -2120,6 +2348,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       context,
       title: AppLocalizations.of(context).downloadDestination,
       initialRoot: PlatformPaths.defaultRoot(),
+      includeUnlockedVaults: !_pickMode,
     );
     if (dest == null || !mounted) return;
 
@@ -2661,7 +2890,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
               ? AppLocalizations.of(context).deleteChoiceTrashOrPermanent
               : permanent
                   ? AppLocalizations.of(context).deletePermanentWarning
-                  : AppLocalizations.of(context).deleteRemotePermanentWarning,
+                  : (vaultIdFromRoot(_root) != null
+                      ? AppLocalizations.of(context).deleteVaultPermanentWarning
+                      : AppLocalizations.of(context).deleteRemotePermanentWarning),
 
         ),
         actions: [
@@ -3137,6 +3368,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       _addBookmark(root: _root, path: _fullEntryPath(item));
 
   Future<void> _addBookmark({required String root, required String path}) async {
+    if (vaultIdFromRoot(root) != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).privacyFolderNoHistoryBookmark)),
+        );
+      }
+      return;
+    }
     final segments = path.split('/').where((s) => s.isNotEmpty).toList();
     final name = segments.isEmpty
         ? (root.split('/').last.isEmpty ? AppLocalizations.of(context).rootLabel : root.split('/').last)
@@ -4019,6 +4258,12 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           ],
         ),
       ],
+      if (_isInVault)
+        action(
+          Icons.lock_outline,
+          AppLocalizations.of(context).lockAndHide,
+          _lockCurrentVault,
+        ),
       if (Navigator.of(context).canPop())
         action(
           Icons.home_outlined,
@@ -4064,6 +4309,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             _uploadFiles(forceInApp: true);
           } else if (val == 'new_folder') {
             _createFolder();
+          } else if (val == 'vault_info') {
+            _showCurrentVaultInfo();
+          } else if (val == 'vault_security') {
+            _changeCurrentVaultSecurity();
+          } else if (val == 'rename_vault') {
+            _renameCurrentVault();
+          } else if (val == 'delete_vault') {
+            _deleteCurrentVault();
           }
         },
         itemBuilder: (ctx) => [
@@ -4171,6 +4424,56 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             checked: _showHidden,
             child: Text(AppLocalizations.of(context).showHiddenFiles),
           ),
+          if (_isInVault) ...[
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'vault_info',
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).vaultFolderInfo),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'vault_security',
+              child: Row(
+                children: [
+                  const Icon(Icons.security_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).vaultSecuritySettings),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'rename_vault',
+              child: Row(
+                children: [
+                  const Icon(Icons.drive_file_rename_outline, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).renamePrivacyFolder),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'delete_vault',
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.delete_forever_outlined,
+                    size: 18,
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    AppLocalizations.of(context).deletePrivacyFolder,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     ];
@@ -4251,8 +4554,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       final remoteId = _root.substring('remote://'.length);
       final remote = _findRemote(remoteId);
       rootLabel = remote != null ? '☁️ ${remote.name}' : AppLocalizations.of(context).remote;
+    } else if (isVaultRoot(_root)) {
+      final vid = vaultIdFromRoot(_root);
+      final vault = vid == null ? null : VaultService.instance.findUnlockedById(vid);
+      rootLabel = vault != null ? '🔒 ${vault.name}' : AppLocalizations.of(context).privacyFolder;
     } else if (_root.startsWith('archive://')) {
       rootLabel = AppLocalizations.of(context).archiveLabel;
+    } else if (PlatformPaths.isPrivateInboxRoot(_root)) {
+      rootLabel = AppLocalizations.of(context).quickInbox;
     } else if (_root == '/storage/emulated/0') {
       // Last segment of this path is "0", which reads as a drive letter.
       rootLabel = AppLocalizations.of(context).internalStorage;
@@ -4554,6 +4863,28 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                         navigateTo(PlatformPaths.defaultRoot(), '');
                       },
                     ),
+                    if (!_pickMode && VaultService.instance.unlockedVaults.isNotEmpty) ...[
+                      const Divider(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Text(
+                          l10n.privacyFolders,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ),
+                      for (final v in VaultService.instance.unlockedVaults)
+                        ListTile(
+                          leading: const Icon(Icons.lock_open_rounded),
+                          title: Text(v.name),
+                          subtitle: Text(l10n.unlockedBadge),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            navigateTo('vault://${v.id}', '');
+                          },
+                        ),
+                    ],
                     if (bookmarks.isNotEmpty) ...[
                       const Divider(),
                       Padding(
@@ -4684,7 +5015,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   Widget _buildBottomActionBar() {
     return BrowserBottomActionBar(
       isSelecting: _isSelecting,
-      isRemoteOrArchive: _isRemoteOrArchive(_root),
+      isRemoteOrArchive: _canExportToLocal,
       canWrite: _canWrite,
       canArchive: _canArchive,
       selectedCount: _selectedPaths.length,

@@ -47,10 +47,19 @@ impl StreamServer {
 struct StreamState {
     vfs: Arc<dyn Vfs>,
     token: String,
+    no_cache: bool,
 }
 
 /// Start a loopback stream server for `vfs`.
 pub async fn start_stream_server(vfs: Arc<dyn Vfs>) -> Result<StreamServer, String> {
+    start_stream_server_with_options(vfs, false).await
+}
+
+/// Start a loopback stream server for `vfs` with privacy/cache controls.
+pub async fn start_stream_server_with_options(
+    vfs: Arc<dyn Vfs>,
+    no_cache: bool,
+) -> Result<StreamServer, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("failed to bind loopback port: {e}"))?;
@@ -63,6 +72,7 @@ pub async fn start_stream_server(vfs: Arc<dyn Vfs>) -> Result<StreamServer, Stri
     let state = Arc::new(StreamState {
         vfs,
         token: token.clone(),
+        no_cache,
     });
 
     let app = Router::new()
@@ -134,7 +144,9 @@ async fn handle_stream(
         raw_mime
     };
 
-    let cache_control = if mime.starts_with("image/")
+    let cache_control = if state.no_cache {
+        "no-store, private, max-age=0"
+    } else if mime.starts_with("image/")
         || mime.starts_with("font/")
         || mime.starts_with("video/")
         || mime.starts_with("audio/")
@@ -151,8 +163,12 @@ async fn handle_stream(
         .header(header::CONTENT_TYPE, mime)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONNECTION, "keep-alive")
-        .header(header::CACHE_CONTROL, cache_control)
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        .header(header::CACHE_CONTROL, cache_control);
+    if state.no_cache {
+        builder = builder.header(header::PRAGMA, "no-cache");
+    } else {
+        builder = builder.header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    }
 
     match (total, length) {
         (Some(total), Some(length)) => {

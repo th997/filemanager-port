@@ -16,9 +16,10 @@ class FileOpenService {
   static final FileOpenService instance = FileOpenService._();
   FileOpenService._();
 
-  Future<Directory> _exportDir() async {
+  Future<Directory> _exportDir({String? vaultId}) async {
     final base = await getTemporaryDirectory();
-    final dir = Directory(joinNative(base.path, 'open-with'));
+    final sub = vaultId == null ? 'open-with' : joinNative('open-with', 'vault_$vaultId');
+    final dir = Directory(joinNative(base.path, sub));
     if (!dir.existsSync()) {
       await dir.create(recursive: true);
     }
@@ -31,7 +32,7 @@ class FileOpenService {
       final native = joinNative(root, path);
       if (File(native).existsSync()) return native;
     }
-    final dir = await _exportDir();
+    final dir = await _exportDir(vaultId: vaultIdFromRoot(root));
     return exportToNative(root: root, path: path, cacheDir: dir.path);
   }
 
@@ -79,5 +80,28 @@ class FileOpenService {
     if (dir.existsSync()) {
       await dir.delete(recursive: true);
     }
+  }
+
+  /// Remove any exported plaintext copies produced from a locked privacy folder.
+  Future<void> clearVaultExports([String? vaultId]) async {
+    try {
+      if (vaultId != null) {
+        final dir = await _exportDir(vaultId: vaultId);
+        if (dir.existsSync()) {
+          await dir.delete(recursive: true);
+        }
+        return;
+      }
+      final base = await _exportDir();
+      if (!base.existsSync()) return;
+      for (final entity in base.listSync(followLinks: false)) {
+        if (entity is Directory &&
+            entity.path.split(Platform.pathSeparator).last.startsWith('vault_')) {
+          try {
+            await entity.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 }

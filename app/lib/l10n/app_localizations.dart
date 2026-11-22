@@ -916,6 +916,18 @@ abstract class AppLocalizations {
   /// **'Home'**
   String get quickHome;
 
+  /// No description provided for @quickInbox.
+  ///
+  /// In en, this message translates to:
+  /// **'My Space'**
+  String get quickInbox;
+
+  /// No description provided for @privateInboxSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'App-private · Hidden from other apps'**
+  String get privateInboxSubtitle;
+
   /// No description provided for @quickDrive.
   ///
   /// In en, this message translates to:
@@ -4749,6 +4761,624 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Read-only view'**
   String get readOnlyViewMode;
+
+  /// No description provided for @privacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Folder'**
+  String get privacyFolder;
+
+  /// No description provided for @privacyFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Folders'**
+  String get privacyFolders;
+
+  /// No description provided for @privacyFoldersDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Create, unlock, back up, or import isolated privacy folders'**
+  String get privacyFoldersDesc;
+
+  /// No description provided for @createPrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Privacy Folder'**
+  String get createPrivacyFolder;
+
+  /// No description provided for @openPrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Privacy Folder'**
+  String get openPrivacyFolder;
+
+  /// No description provided for @backupPrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Back Up Privacy Folder'**
+  String get backupPrivacyFolder;
+
+  /// No description provided for @importPrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Privacy Folder'**
+  String get importPrivacyFolder;
+
+  /// No description provided for @privacyFolderName.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder Name'**
+  String get privacyFolderName;
+
+  /// No description provided for @privacyFolderNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter exact folder name'**
+  String get privacyFolderNameHint;
+
+  /// No description provided for @privacyFolderNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder does not exist'**
+  String get privacyFolderNotFound;
+
+  /// No description provided for @privacyFolderAlreadyExists.
+  ///
+  /// In en, this message translates to:
+  /// **'A privacy folder with this name already exists'**
+  String get privacyFolderAlreadyExists;
+
+  /// No description provided for @credentialMethod.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Credential'**
+  String get credentialMethod;
+
+  /// No description provided for @credentialPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Standalone Password (8–128 chars)'**
+  String get credentialPassword;
+
+  /// No description provided for @credentialSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System Unlock (Passcode / Biometrics)'**
+  String get credentialSystem;
+
+  /// No description provided for @credentialSystemUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'System unlock is not supported on this device'**
+  String get credentialSystemUnavailable;
+
+  /// No description provided for @encryptionAlgorithm.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption Method'**
+  String get encryptionAlgorithm;
+
+  /// No description provided for @cipherNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No Encryption'**
+  String get cipherNone;
+
+  /// No description provided for @cipherAes128Gcm.
+  ///
+  /// In en, this message translates to:
+  /// **'AES-128-GCM (Default, hardware accelerated)'**
+  String get cipherAes128Gcm;
+
+  /// No description provided for @cipherAes256Gcm.
+  ///
+  /// In en, this message translates to:
+  /// **'AES-256-GCM (Hardware accelerated)'**
+  String get cipherAes256Gcm;
+
+  /// No description provided for @storageLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Location'**
+  String get storageLocation;
+
+  /// No description provided for @useDefaultLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get useDefaultLocation;
+
+  /// No description provided for @changeLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get changeLocation;
+
+  /// No description provided for @privacyPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Password (8–128 chars, symbols allowed)'**
+  String get privacyPasswordLabel;
+
+  /// No description provided for @privacyConfirmPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Password'**
+  String get privacyConfirmPasswordLabel;
+
+  /// No description provided for @passwordLengthError.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be 8 to 128 characters'**
+  String get passwordLengthError;
+
+  /// No description provided for @passwordMismatchError.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match'**
+  String get passwordMismatchError;
+
+  /// No description provided for @privacyUnlockedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlocked privacy folder • Auto-hides on exit or 10m background'**
+  String get privacyUnlockedLabel;
+
+  /// No description provided for @lockAndHide.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock & Hide'**
+  String get lockAndHide;
+
+  /// No description provided for @lockAllPrivacyFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock & Hide All ({count})'**
+  String lockAllPrivacyFolders(int count);
+
+  /// No description provided for @vaultLockedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" locked and hidden'**
+  String vaultLockedNotice(String name);
+
+  /// No description provided for @nextStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get nextStep;
+
+  /// No description provided for @unlockAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock'**
+  String get unlockAction;
+
+  /// No description provided for @unlockWithSystemPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Authenticate to unlock privacy folder \"{name}\"'**
+  String unlockWithSystemPrompt(String name);
+
+  /// No description provided for @setupSystemAuthPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Authenticate to set up system unlock for privacy folder'**
+  String get setupSystemAuthPrompt;
+
+  /// No description provided for @wrongCredentialError.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password or credential'**
+  String get wrongCredentialError;
+
+  /// No description provided for @cooldownRetryError.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many failed attempts, retry in {seconds}s'**
+  String cooldownRetryError(int seconds);
+
+  /// No description provided for @selectBackupSourceVault.
+  ///
+  /// In en, this message translates to:
+  /// **'Select unlocked folder or enter name'**
+  String get selectBackupSourceVault;
+
+  /// No description provided for @backupPasswordRequiredNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This folder uses system unlock. Set an 8–128 char backup password so the archive can be imported on any device.'**
+  String get backupPasswordRequiredNotice;
+
+  /// No description provided for @backupPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup Password (8–128 chars)'**
+  String get backupPasswordLabel;
+
+  /// No description provided for @selectBackupDestFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Backup Output Folder'**
+  String get selectBackupDestFile;
+
+  /// No description provided for @backupExportSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup exported to: {path}'**
+  String backupExportSuccess(String path);
+
+  /// No description provided for @selectBackupArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Select .fpmvault Backup File'**
+  String get selectBackupArchive;
+
+  /// No description provided for @backupArchiveSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Cipher: {cipher} • Objects: {count}'**
+  String backupArchiveSummary(String cipher, int count);
+
+  /// No description provided for @backupPasswordToVerify.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup / Vault Password'**
+  String get backupPasswordToVerify;
+
+  /// No description provided for @localUnlockAfterImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Method After Import'**
+  String get localUnlockAfterImport;
+
+  /// No description provided for @newLocalPasswordOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'New Local Password (blank to reuse backup password)'**
+  String get newLocalPasswordOptional;
+
+  /// No description provided for @importSuccessNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" imported and unlocked'**
+  String importSuccessNotice(String name);
+
+  /// No description provided for @saveToPrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to Privacy Folder'**
+  String get saveToPrivacyFolder;
+
+  /// No description provided for @saveToPrivacyFolderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypt and save into an unlocked privacy folder'**
+  String get saveToPrivacyFolderSubtitle;
+
+  /// No description provided for @selectPrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Privacy Folder'**
+  String get selectPrivacyFolder;
+
+  /// No description provided for @privacyFolderNoHistoryBookmark.
+  ///
+  /// In en, this message translates to:
+  /// **'History and public bookmarks are disabled inside privacy folders'**
+  String get privacyFolderNoHistoryBookmark;
+
+  /// No description provided for @unlockedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlocked'**
+  String get unlockedBadge;
+
+  /// No description provided for @importKeepOriginalName.
+  ///
+  /// In en, this message translates to:
+  /// **'Original folder name will be kept: \"{name}\"'**
+  String importKeepOriginalName(String name);
+
+  /// No description provided for @importWillKeepOriginalName.
+  ///
+  /// In en, this message translates to:
+  /// **'Original folder name will be preserved automatically. If it already exists, you will be prompted to enter a new name.'**
+  String get importWillKeepOriginalName;
+
+  /// No description provided for @importNameExistsEnterNew.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" already exists. Please enter a new folder name.'**
+  String importNameExistsEnterNew(String name);
+
+  /// No description provided for @importNewFolderNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New Privacy Folder Name'**
+  String get importNewFolderNameLabel;
+
+  /// No description provided for @importEnterFolderNamePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup does not contain the original folder name. Please enter a folder name.'**
+  String get importEnterFolderNamePrompt;
+
+  /// No description provided for @renamePrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename Privacy Folder'**
+  String get renamePrivacyFolder;
+
+  /// No description provided for @privacyFolderRenamedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder renamed to \"{name}\"'**
+  String privacyFolderRenamedNotice(String name);
+
+  /// No description provided for @largeFilePagedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Large file read-only mode ({start} – {end} / {total})'**
+  String largeFilePagedNotice(String start, String end, String total);
+
+  /// No description provided for @previousPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous Page'**
+  String get previousPage;
+
+  /// No description provided for @nextPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Next Page'**
+  String get nextPage;
+
+  /// No description provided for @jumpToPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to Position'**
+  String get jumpToPosition;
+
+  /// No description provided for @deletePrivacyFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Privacy Folder'**
+  String get deletePrivacyFolder;
+
+  /// No description provided for @deletePrivacyFolderWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete privacy folder \"{name}\" and all encrypted files inside it, along with its stored key on this device. This action cannot be undone.'**
+  String deletePrivacyFolderWarning(String name);
+
+  /// No description provided for @deletePrivacyFolderConfirmLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Type \"{name}\" to confirm deletion'**
+  String deletePrivacyFolderConfirmLabel(String name);
+
+  /// No description provided for @privacyFolderDeletedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" has been permanently deleted'**
+  String privacyFolderDeletedNotice(String name);
+
+  /// No description provided for @privacyMediaAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Private Audio'**
+  String get privacyMediaAudio;
+
+  /// No description provided for @privacyMediaVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Private Video'**
+  String get privacyMediaVideo;
+
+  /// No description provided for @vaultAutoLockTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-lock in background'**
+  String get vaultAutoLockTitle;
+
+  /// No description provided for @vaultAutoLockImmediate.
+  ///
+  /// In en, this message translates to:
+  /// **'Immediately'**
+  String get vaultAutoLockImmediate;
+
+  /// No description provided for @vaultAutoLockMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes} min'**
+  String vaultAutoLockMinutes(int minutes);
+
+  /// No description provided for @vaultAutoLockNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get vaultAutoLockNever;
+
+  /// No description provided for @vaultConfirmExternalOpenTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm before external open & share'**
+  String get vaultConfirmExternalOpenTitle;
+
+  /// No description provided for @vaultConfirmExternalOpenDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Warn before exporting a decrypted temporary copy to other apps'**
+  String get vaultConfirmExternalOpenDesc;
+
+  /// No description provided for @vaultExternalOpenWarningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Open with external app?'**
+  String get vaultExternalOpenWarningTitle;
+
+  /// No description provided for @vaultExternalOpenWarningBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This file will be temporarily decrypted and passed to another app outside the privacy folder. Remove any saved copy in that app afterward if needed.'**
+  String get vaultExternalOpenWarningBody;
+
+  /// No description provided for @dontAskAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t ask again'**
+  String get dontAskAgain;
+
+  /// No description provided for @continueAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get continueAction;
+
+  /// No description provided for @vaultVideoThumbnailsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder video thumbnails'**
+  String get vaultVideoThumbnailsTitle;
+
+  /// No description provided for @vaultVideoThumbnailsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Decode and cache encrypted video preview frames on demand (off by default to save battery)'**
+  String get vaultVideoThumbnailsDesc;
+
+  /// No description provided for @vaultSecuritySettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Password & Unlock Method'**
+  String get vaultSecuritySettings;
+
+  /// No description provided for @vaultChangePasswordOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Change password'**
+  String get vaultChangePasswordOption;
+
+  /// No description provided for @vaultSwitchToSystemOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to system unlock'**
+  String get vaultSwitchToSystemOption;
+
+  /// No description provided for @vaultSwitchToPasswordOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to separate password'**
+  String get vaultSwitchToPasswordOption;
+
+  /// No description provided for @vaultCurrentPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Current password'**
+  String get vaultCurrentPasswordLabel;
+
+  /// No description provided for @vaultNewPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New password (8–128 chars)'**
+  String get vaultNewPasswordLabel;
+
+  /// No description provided for @vaultOldBackupsPasswordNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Existing .fpmvault backup archives exported earlier still require the password used when they were created.'**
+  String get vaultOldBackupsPasswordNotice;
+
+  /// No description provided for @vaultSwitchToSystemBackupNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep a .fpmvault backup in a safe place. If you move to another device, Keychain/Keystore keys will not migrate encrypted folders.'**
+  String get vaultSwitchToSystemBackupNotice;
+
+  /// No description provided for @vaultSecurityUpdatedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder security settings updated'**
+  String get vaultSecurityUpdatedNotice;
+
+  /// No description provided for @vaultFolderInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder Info & Storage'**
+  String get vaultFolderInfo;
+
+  /// No description provided for @vaultStatsFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get vaultStatsFiles;
+
+  /// No description provided for @vaultStatsFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Subfolders'**
+  String get vaultStatsFolders;
+
+  /// No description provided for @vaultStatsPlainSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Content Size'**
+  String get vaultStatsPlainSize;
+
+  /// No description provided for @vaultStatsDiskUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'Disk Usage'**
+  String get vaultStatsDiskUsage;
+
+  /// No description provided for @vaultStatsOrphaned.
+  ///
+  /// In en, this message translates to:
+  /// **'Reclaimable Orphaned Data'**
+  String get vaultStatsOrphaned;
+
+  /// No description provided for @vaultStatsOrphanDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items ({size})'**
+  String vaultStatsOrphanDetail(int count, String size);
+
+  /// No description provided for @vaultCleanupOrphansAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean Up Orphaned Space'**
+  String get vaultCleanupOrphansAction;
+
+  /// No description provided for @vaultCleanupResultNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed {count} orphaned files and freed {size}'**
+  String vaultCleanupResultNotice(int count, String size);
+
+  /// No description provided for @backupProgressLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{done} / {total} ({percent}%)'**
+  String backupProgressLabel(String done, String total, int percent);
+
+  /// No description provided for @backupCancelling.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling…'**
+  String get backupCancelling;
+
+  /// No description provided for @backupCancelledNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup operation cancelled'**
+  String get backupCancelledNotice;
+
+  /// No description provided for @deleteVaultPermanentWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin.'**
+  String get deleteVaultPermanentWarning;
 }
 
 class _AppLocalizationsDelegate

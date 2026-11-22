@@ -41,6 +41,21 @@ class _SettingsPageState extends State<SettingsPage> {
   late String _localeCode = widget.localeCode;
   late int _bufferDurationSec = PreferencesService.instance.bufferDurationSec;
   late int _bufferSizeMb = PreferencesService.instance.bufferSizeMb;
+  late int _vaultAutoLockSec = _normalizeAutoLockSec(
+    PreferencesService.instance.vaultAutoLockTimeoutSec,
+  );
+
+  static int _normalizeAutoLockSec(int raw) {
+    const allowed = {0, 60, 300, 600, -1};
+    return allowed.contains(raw) ? raw : 600;
+  }
+
+  String _autoLockLabel(int sec) {
+    final l10n = AppLocalizations.of(context);
+    if (sec < 0) return l10n.vaultAutoLockNever;
+    if (sec == 0) return l10n.vaultAutoLockImmediate;
+    return l10n.vaultAutoLockMinutes((sec / 60).round());
+  }
 
   ThemeMode get currentThemeMode => _themeMode;
 
@@ -514,6 +529,122 @@ class _SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                 ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSectionHeader(context, l10n.privacyFolder),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.lock_clock_outlined,
+                    color: Colors.indigo,
+                  ),
+                  title: Text(l10n.vaultAutoLockTitle),
+                  subtitle: Text(
+                    _autoLockLabel(_vaultAutoLockSec),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: _vaultAutoLockSec,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      DropdownMenuItem(
+                        value: 0,
+                        child: Text(
+                          l10n.vaultAutoLockImmediate,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 60,
+                        child: Text(
+                          l10n.vaultAutoLockMinutes(1),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 300,
+                        child: Text(
+                          l10n.vaultAutoLockMinutes(5),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 600,
+                        child: Text(
+                          l10n.vaultAutoLockMinutes(10),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: -1,
+                        child: Text(
+                          l10n.vaultAutoLockNever,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _vaultAutoLockSec = val);
+                        PreferencesService.instance.vaultAutoLockTimeoutSec = val;
+                      }
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                  minTileHeight: 40,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  secondary: const AppCircleBadge(
+                    icon: Icons.shield_outlined,
+                    color: Colors.deepPurple,
+                  ),
+                  title: Text(l10n.vaultConfirmExternalOpenTitle),
+                  subtitle: Text(
+                    l10n.vaultConfirmExternalOpenDesc,
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                  value: !PreferencesService.instance.vaultSkipExternalOpenWarning,
+                  onChanged: (val) {
+                    setState(() {
+                      PreferencesService.instance.vaultSkipExternalOpenWarning =
+                          !val;
+                    });
+                  },
+                ),
+                if (!Platform.isIOS) ...[
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    dense: true,
+                    visualDensity:
+                        const VisualDensity(horizontal: -2, vertical: -2),
+                    minTileHeight: 40,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    secondary: const AppCircleBadge(
+                      icon: Icons.video_library_outlined,
+                      color: Colors.blueGrey,
+                    ),
+                    title: Text(l10n.vaultVideoThumbnailsTitle),
+                    subtitle: Text(
+                      l10n.vaultVideoThumbnailsDesc,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                    value: PreferencesService.instance.vaultVideoThumbnails,
+                    onChanged: (val) {
+                      setState(() {
+                        PreferencesService.instance.vaultVideoThumbnails = val;
+                      });
+                    },
+                  ),
+                ],
               ],
             ),
           ),

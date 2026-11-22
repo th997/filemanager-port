@@ -14,6 +14,7 @@ import 'src/services/global_playback_service.dart';
 import 'src/services/platform_paths.dart';
 import 'src/services/preferences_service.dart';
 import 'src/services/storage_service.dart';
+import 'src/services/vault_service.dart';
 import 'src/widgets/global_mini_player_bar.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
@@ -34,6 +35,7 @@ Future<void> main(List<String> args) async {
   await RustLib.init();
   await PlatformPaths.init();
   StorageService.instance.ensureInitialized();
+  await VaultService.instance.init();
   await PreferencesService.instance.load();
   PreferencesService.instance.syncToolbarAtBottom();
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
@@ -162,6 +164,14 @@ class _FileManagerAppState extends State<FileManagerApp>
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
       PreferencesService.instance.flush();
+    }
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      VaultService.instance.onAppBackgrounded();
+    } else if (state == AppLifecycleState.resumed) {
+      VaultService.instance.onAppResumed();
+      ExternalFileService.instance.checkPendingRequests();
+    } else if (state == AppLifecycleState.detached) {
+      VaultService.instance.lockAll();
     }
   }
 

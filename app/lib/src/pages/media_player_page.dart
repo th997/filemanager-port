@@ -12,6 +12,7 @@ import '../rust/api/servers.dart';
 import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
+import '../services/vault_service.dart';
 import '../widgets/app_swipe_back.dart';
 import '../widgets/media_player/media_player_controls.dart';
 import '../widgets/media_player/media_player_hud.dart';
@@ -169,6 +170,36 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   double _boostRate = 2.0;
 
   BoxFit _videoFit = BoxFit.contain;
+  bool _vaultAutoClosing = false;
+
+  void _onVaultChanged() {
+    final vid = vaultIdFromRoot(widget.root);
+    if (vid == null || VaultService.instance.isUnlocked(vid)) return;
+    if (!_isExplicitlyClosed) {
+      _isExplicitlyClosed = true;
+      final ownedByService =
+          identical(GlobalPlaybackService.instance.desktopPlayer, _player);
+      final streamOwnedByService = GlobalPlaybackService.instance.startedStream;
+      _player.stop();
+      GlobalPlaybackService.instance.stop();
+      if (!ownedByService) {
+        _player.dispose();
+      }
+      if (_startedStream && !streamOwnedByService) {
+        _startedStream = false;
+        stopMediaStreams();
+      }
+    }
+    if (!_vaultAutoClosing && mounted) {
+      _vaultAutoClosing = true;
+      final route = ModalRoute.of(context);
+      if (route != null && route.isActive && !route.isFirst) {
+        Navigator.of(context).removeRoute(route);
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
 
   void _cycleVideoFit() {
     HapticFeedback.lightImpact();
@@ -420,6 +451,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   @override
   void initState() {
     super.initState();
+    VaultService.instance.addListener(_onVaultChanged);
     // Must be set before any _track access: _track indexes the playlist.
     _index = widget.playlist.isEmpty
         ? 0
@@ -541,6 +573,16 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
     if (!_opened) {
       _open();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final l10n = AppLocalizations.of(context);
+    GlobalPlaybackService.instance.setPrivacyMediaLabels(
+      audio: l10n.privacyMediaAudio,
+      video: l10n.privacyMediaVideo,
+    );
   }
 
   /// Switches playback to another track in the playlist, saving the
@@ -704,6 +746,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   /// for the first non-zero duration before deciding whether the saved spot is
   /// past the end.
   void _applyResume([String? key]) {
+    if (vaultIdFromRoot(widget.root) != null) return;
     if (_resumeApplied) return;
     _resumeApplied = true;
     final saved = int.tryParse(
@@ -720,6 +763,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   }
 
   void _saveResumePosition() {
+    if (vaultIdFromRoot(widget.root) != null) return;
     final position = _player.state.position;
     final duration = _player.state.duration;
     if (duration <= Duration.zero) return;
@@ -804,6 +848,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
 
   @override
   void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
     WakelockPlus.disable().catchError((_) {});
     _playingSub?.cancel();
     _rateSub?.cancel();

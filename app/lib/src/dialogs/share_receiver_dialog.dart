@@ -8,11 +8,13 @@ import 'package:filemanager/l10n/app_localizations.dart';
 import '../models/entry_item.dart';
 import '../pages/browser_page.dart';
 import '../rust/api/remotes.dart';
+import '../rust/api/vault.dart';
 import '../services/external_file_service.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../services/vault_service.dart';
 import 'folder_picker_dialog.dart';
 import 'remote_wizard_dialog.dart';
 import 'task_progress_dialog.dart';
@@ -22,6 +24,7 @@ export '../services/path_utils.dart' show isValidFileName;
 enum ShareReceiverAction {
   saveLocal,
   saveRemote,
+  saveVault,
   openDirectly,
 }
 
@@ -73,7 +76,22 @@ Future<void> showShareReceiverDialog({
       return false;
     }
   }).toList();
-  if (validPaths.isEmpty) return;
+  if (validPaths.isEmpty) {
+    debugPrint('[ShareReceiver] No readable incoming files: $filePaths');
+    if (context.mounted) {
+      final name = filePaths.isNotEmpty ? p.basename(filePaths.first) : '';
+      final msg = name.isNotEmpty
+          ? '${AppLocalizations.of(context).failed}: $name'
+          : AppLocalizations.of(context).failed;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+    return;
+  }
 
   final isWide = MediaQuery.sizeOf(context).width >= 600;
   final result = await (isWide
@@ -128,6 +146,9 @@ Future<void> showShareReceiverDialog({
       break;
     case ShareReceiverAction.saveRemote:
       await _handleSaveToRemote(activeContext, validPaths, customName: result.customName);
+      break;
+    case ShareReceiverAction.saveVault:
+      await _handleSaveToVault(activeContext, validPaths, customName: result.customName);
       break;
     case ShareReceiverAction.openDirectly:
       ExternalFileService.instance.openFiles(validPaths);
@@ -288,6 +309,90 @@ Future<RemoteConfigDto?> _selectRemote(
   );
 }
 
+Future<void> _handleSaveToVault(
+  BuildContext context,
+  List<String> filePaths, {
+  String? customName,
+}) async {
+  final l10n = AppLocalizations.of(context);
+  final vaults = VaultService.instance.unlockedVaults;
+  if (vaults.isEmpty) return;
+
+  final UnlockedVaultDto? chosenVault;
+  if (vaults.length == 1) {
+    chosenVault = vaults.first;
+  } else {
+    chosenVault = await _selectUnlockedVault(context, vaults);
+  }
+  if (chosenVault == null) return;
+  if (!VaultService.instance.isUnlocked(chosenVault.id)) return;
+
+  final navCtx1 = ExternalFileService.instance.navContext;
+  final curCtx = (navCtx1 != null && navCtx1.mounted)
+      ? navCtx1
+      : (context.mounted ? context : null);
+  if (curCtx == null || !curCtx.mounted) return;
+  final dest = await FolderPickerDialog.show(
+    curCtx,
+    title: '${l10n.saveToPrivacyFolder} (${chosenVault.name})',
+    initialRoot: 'vault://${chosenVault.id}',
+    includeUnlockedVaults: true,
+  );
+  if (dest == null) return;
+
+  final navCtx2 = ExternalFileService.instance.navContext;
+  final finalCtx = (navCtx2 != null && navCtx2.mounted)
+      ? navCtx2
+      : (curCtx.mounted ? curCtx : null);
+  if (finalCtx == null || !finalCtx.mounted) return;
+  await _executeCopy(finalCtx, filePaths, dest, customName: customName);
+}
+
+Future<UnlockedVaultDto?> _selectUnlockedVault(
+  BuildContext context,
+  List<UnlockedVaultDto> vaults,
+) {
+  final l10n = AppLocalizations.of(context);
+  return showModalBottomSheet<UnlockedVaultDto>(
+    context: context,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 16),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              l10n.selectPrivacyFolder,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          const Divider(),
+          for (final v in vaults)
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.lock_open_rounded, color: Colors.indigo),
+              ),
+              title: Text(v.name),
+              subtitle: Text(l10n.unlockedBadge),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(ctx).pop(v),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
 Future<void> _executeCopy(
   BuildContext context,
   List<String> paths,
@@ -414,6 +519,7 @@ class ShareReceiverContent extends StatefulWidget {
   final ValueChanged<ShareReceiverAction> onAction;
   final void Function(ShareReceiverAction action, String? customName)? onActionWithName;
   final VoidCallback onCancel;
+  final List<UnlockedVaultDto>? unlockedVaultsOverride;
 
   const ShareReceiverContent({
     super.key,
@@ -421,6 +527,7 @@ class ShareReceiverContent extends StatefulWidget {
     required this.onAction,
     this.onActionWithName,
     required this.onCancel,
+    this.unlockedVaultsOverride,
   });
 
   @override
@@ -432,16 +539,29 @@ class _ShareReceiverContentState extends State<ShareReceiverContent> {
   bool _isEditingName = false;
   String? _nameError;
 
+  List<UnlockedVaultDto> get _unlockedVaults =>
+      widget.unlockedVaultsOverride ?? VaultService.instance.unlockedVaults;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(
       text: widget.filePaths.length == 1 ? p.basename(widget.filePaths.first) : '',
     );
+    if (widget.unlockedVaultsOverride == null) {
+      VaultService.instance.addListener(_onVaultChanged);
+    }
+  }
+
+  void _onVaultChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    if (widget.unlockedVaultsOverride == null) {
+      VaultService.instance.removeListener(_onVaultChanged);
+    }
     _nameController.dispose();
     super.dispose();
   }
@@ -708,6 +828,20 @@ class _ShareReceiverContentState extends State<ShareReceiverContent> {
               subtitle: l10n.saveToRemoteSubtitle,
               onTap: () => _triggerAction(ShareReceiverAction.saveRemote),
             ),
+
+            // Action 2b: Save to unlocked privacy folder (only shown when unlocked)
+            if (_unlockedVaults.isNotEmpty)
+              _buildActionCard(
+                context: context,
+                icon: Icons.enhanced_encryption_outlined,
+                iconBgColor: Colors.indigo.withValues(alpha: 0.15),
+                iconColor: Colors.indigo.shade700,
+                title: l10n.saveToPrivacyFolder,
+                subtitle: _unlockedVaults.length == 1
+                    ? '${l10n.saveToPrivacyFolderSubtitle} (${_unlockedVaults.first.name})'
+                    : l10n.saveToPrivacyFolderSubtitle,
+                onTap: () => _triggerAction(ShareReceiverAction.saveVault),
+              ),
 
             // Action 3: Open directly
             _buildActionCard(

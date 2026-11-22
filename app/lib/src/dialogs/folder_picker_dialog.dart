@@ -9,6 +9,7 @@ import '../rust/api/file_manager.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
+import '../services/vault_service.dart';
 import 'vfs_picker_scaffold.dart';
 
 /// Result of picking a destination folder.
@@ -31,6 +32,7 @@ class FolderPickerDialog extends StatefulWidget {
   final String initialRoot;
   final String initialPath;
   final String? confirmLabel;
+  final bool includeUnlockedVaults;
 
   const FolderPickerDialog({
     super.key,
@@ -38,6 +40,7 @@ class FolderPickerDialog extends StatefulWidget {
     required this.initialRoot,
     this.initialPath = '',
     this.confirmLabel,
+    this.includeUnlockedVaults = false,
   });
 
   static Future<PickedFolder?> show(
@@ -46,6 +49,7 @@ class FolderPickerDialog extends StatefulWidget {
     String? initialRoot,
     String initialPath = '',
     String? confirmLabel,
+    bool includeUnlockedVaults = false,
   }) {
     String root;
     String path;
@@ -55,7 +59,8 @@ class FolderPickerDialog extends StatefulWidget {
     } else {
       final recentDirs = PreferencesService.instance.getRecentUploadDirs();
       if (recentDirs.isNotEmpty) {
-        final split = splitPathToRootAndRel(recentDirs.first);
+        final split = PlatformPaths.splitPrivateInboxPath(recentDirs.first) ??
+            splitPathToRootAndRel(recentDirs.first);
         root = split.root;
         path = split.relPath;
       } else {
@@ -70,6 +75,7 @@ class FolderPickerDialog extends StatefulWidget {
         initialRoot: root,
         initialPath: path,
         confirmLabel: confirmLabel,
+        includeUnlockedVaults: includeUnlockedVaults,
       ),
     );
   }
@@ -147,6 +153,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   bool get _canGoUp {
     if (_relPath.isNotEmpty) return true;
+    if (PlatformPaths.isPrivateInboxRoot(_root)) return false;
     if (isNativeRoot(_root)) {
       final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
       return parts.length > 1 || (parts.length == 1 && !RegExp(r'^[a-zA-Z]:$').hasMatch(parts.first));
@@ -167,6 +174,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       _load();
       return;
     }
+    if (PlatformPaths.isPrivateInboxRoot(_root)) return;
     if (isNativeRoot(_root)) {
       final isWindows = _root.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(_root);
       final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
@@ -217,7 +225,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
 
   void _navigateTo(String fullPath) {
-    final split = splitPathToRootAndRel(fullPath);
+    final split = PlatformPaths.splitPrivateInboxPath(fullPath) ??
+        splitPathToRootAndRel(fullPath);
     setState(() {
       _root = split.root;
       _relPath = split.relPath;
@@ -255,9 +264,19 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     final recentDirs = isNativeRoot(_root)
         ? PreferencesService.instance.getRecentUploadDirs()
         : const <String>[];
-    final quickTargets = PlatformPaths.quickTargets()
-        .where((t) => isNativeRoot(t.root))
-        .toList();
+    final quickTargets = <QuickTarget>[
+      if (isNativeRoot(_root) || widget.includeUnlockedVaults)
+        ...PlatformPaths.quickTargets().where((t) => isNativeRoot(t.root)),
+      if (widget.includeUnlockedVaults)
+        for (final v in VaultService.instance.unlockedVaults)
+          QuickTarget(
+            name: '🔒 ${v.name}',
+            kind: 'vault',
+            path: 'vault://${v.id}',
+            root: 'vault://${v.id}',
+            relPath: '',
+          ),
+    ];
 
     final filtered = _filterQuery.isEmpty
         ? _folders
@@ -329,6 +348,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         setState(() {
           _root = target.root;
           _relPath = target.relPath;
+          _selectedFolder = null;
           _filterQuery = '';
           _filterController.clear();
         });
