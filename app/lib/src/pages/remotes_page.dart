@@ -9,6 +9,7 @@ import '../rust/api/remotes.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
+import '../services/platform_capabilities.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
@@ -402,18 +403,20 @@ class _RemotesPageState extends State<RemotesPage> {
                     );
                   },
                 ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.share, size: 18),
-                  label: Text(AppLocalizations.of(context).shareSaveToFiles),
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    SharePlus.instance.share(ShareParams(
-                      text: jsonStr,
-                      subject: 'remotes_backup.json',
-                    ));
-                  },
-                ),
+                if (PlatformCapabilities.supportsNativeShareSheet) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.share, size: 18),
+                    label: Text(AppLocalizations.of(context).shareSaveToFiles),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      SharePlus.instance.share(ShareParams(
+                        text: jsonStr,
+                        subject: 'remotes_backup.json',
+                      ));
+                    },
+                  ),
+                ],
               ],
             ),
           ),

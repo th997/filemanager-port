@@ -17,7 +17,12 @@ import '../services/sharing_service.dart';
 import '../services/storage_service.dart';
 import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
+import '../widgets/qr_code_widget.dart';
 import 'browser_page.dart';
+import 'duplicate_finder_page.dart';
+import 'offline_pinned_page.dart';
+import 'storage_analyzer_page.dart';
+import 'sync_page.dart';
 import 'trash_page.dart';
 
 class UtilitiesPage extends StatefulWidget {
@@ -32,6 +37,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   int _cacheSizeBytes = 0;
   int _archiveCacheBytes = 0;
   bool _clearingCache = false;
+  int _selectedNicIndex = 0;
 
   bool _serverRunning = false;
   ServerStatusDto? _serverStatus;
@@ -425,6 +431,94 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
 
           const SizedBox(height: 12),
 
+          // Professional Toolbox: Storage Analyzer, Duplicate Finder, Directory Sync, Offline Pinned
+          _buildSectionHeader(l10n.utilities),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.pie_chart_outline,
+                    color: Colors.teal,
+                    size: 32,
+                    iconSize: 18,
+                  ),
+                  title: Text(l10n.storageAnalyzer, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text(l10n.storageAnalyzerSubtitle, style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => StorageAnalyzerPage(
+                          root: PlatformPaths.defaultRoot(),
+                          title: l10n.localStorage,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.find_replace,
+                    color: Colors.orange,
+                    size: 32,
+                    iconSize: 18,
+                  ),
+                  title: Text(l10n.duplicateFinder, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text(l10n.duplicateFinderSubtitle, style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => DuplicateFinderPage(
+                          root: PlatformPaths.defaultRoot(),
+                          title: l10n.localStorage,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.sync,
+                    color: Colors.blue,
+                    size: 32,
+                    iconSize: 18,
+                  ),
+                  title: Text(l10n.directorySync, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text(l10n.directorySyncSubtitle, style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SyncPage()),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.offline_pin_outlined,
+                    color: Colors.indigo,
+                    size: 32,
+                    iconSize: 18,
+                  ),
+                  title: Text(l10n.offlinePinned, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text(l10n.offlinePinnedSubtitle, style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OfflinePinnedPage()),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           // 2. LAN HTTP Sharing Card
           _buildSectionHeader(l10n.lanSharing),
           Card(
@@ -521,7 +615,50 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                           style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.warning),
                         ),
                       )
-                    else
+                    else ...[
+                      Builder(
+                        builder: (ctx) {
+                          final addrs = _serverStatus!.addresses;
+                          final idx = _selectedNicIndex.clamp(0, addrs.length - 1);
+                          final activeIp = addrs[idx];
+                          final query = Uri.tryParse(_serverStatus!.url)?.query ?? '';
+                          final activeUrl =
+                              'http://$activeIp:${_serverStatus!.port}${query.isEmpty ? '' : '?$query'}';
+                          return Column(
+                            children: [
+                              if (addrs.length > 1)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    children: [
+                                      for (int i = 0; i < addrs.length; i++)
+                                        ChoiceChip(
+                                          label: Text(addrs[i], style: const TextStyle(fontSize: 11)),
+                                          selected: i == idx,
+                                          onSelected: (_) => setState(() => _selectedNicIndex = i),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              Center(
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Theme.of(ctx).dividerColor.withValues(alpha: 0.25),
+                                    ),
+                                  ),
+                                  child: QrCodeWidget(data: activeUrl, size: 150),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                       ..._serverStatus!.addresses.map((ip) {
                       // The backend URL carries a random per-share session
                       // token. Keep it on every listed address: a copied link
@@ -548,6 +685,14 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                               ),
                             ),
                             IconButton(
+                              icon: const Icon(Icons.qr_code_2, size: 18),
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                              tooltip: l10n.showQrCode,
+                              onPressed: () => _showLanQrDialog(url),
+                            ),
+                            IconButton(
                               icon: const Icon(Icons.copy, size: 16),
                               visualDensity: VisualDensity.compact,
                               padding: const EdgeInsets.all(8),
@@ -564,6 +709,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                         ),
                       );
                     }),
+                    ],
                     if ((SharingService.instance.password ?? _pwdCtrl.text.trim()).isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Builder(
@@ -786,6 +932,8 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
 
   Widget _buildPrivacyFoldersSection(AppLocalizations l10n) {
     final List<UnlockedVaultDto> unlocked = VaultService.instance.unlockedVaults;
+    final List<PinnedVaultEntry> lockedPinned =
+        VaultService.instance.lockedPinnedVaults;
     final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -822,67 +970,143 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                       )
                     : null,
               ),
-              if (unlocked.isNotEmpty) ...[
+              if (unlocked.isNotEmpty || lockedPinned.isNotEmpty) ...[
                 const Divider(height: 1),
                 for (final vault in unlocked)
+                  Builder(
+                    builder: (_) {
+                      final isPinned =
+                          VaultService.instance.isAlwaysVisible(vault.id);
+                      return ListTile(
+                        dense: true,
+                        leading: Icon(
+                          Icons.lock_open_rounded,
+                          size: 18,
+                          color: colorScheme.primary,
+                        ),
+                        title: Text(
+                          vault.name,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          isPinned
+                              ? '${l10n.unlockedBadge} · ${l10n.vaultAlwaysVisibleTitle}'
+                              : l10n.unlockedBadge,
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppIconButton(
+                              icon: isPinned
+                                  ? Icons.push_pin
+                                  : Icons.push_pin_outlined,
+                              size: 28,
+                              iconSize: 17,
+                              color: isPinned ? colorScheme.primary : null,
+                              tooltip: l10n.vaultAlwaysVisibleTitle,
+                              onPressed: () {
+                                VaultService.instance.setAlwaysVisible(
+                                  vaultId: vault.id,
+                                  name: vault.name,
+                                  alwaysVisible: !isPinned,
+                                );
+                              },
+                            ),
+                            AppIconButton(
+                              icon: Icons.drive_file_rename_outline,
+                              size: 28,
+                              iconSize: 17,
+                              tooltip: l10n.renamePrivacyFolder,
+                              onPressed: () async {
+                                final updated =
+                                    await RenameVaultDialog.show(context, vault);
+                                if (updated != null &&
+                                    updated.name != vault.name &&
+                                    mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        l10n.privacyFolderRenamedNotice(
+                                            updated.name),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            AppIconButton(
+                              icon: Icons.lock_outline,
+                              size: 28,
+                              iconSize: 17,
+                              color: colorScheme.error,
+                              tooltip: l10n.lockAndHide,
+                              onPressed: () {
+                                final keepVisible = VaultService.instance
+                                    .isAlwaysVisible(vault.id);
+                                VaultService.instance.lockVault(vault.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      keepVisible
+                                          ? l10n.vaultLockedKeepVisibleNotice(
+                                              vault.name)
+                                          : l10n.vaultLockedNotice(vault.name),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Icon(Icons.chevron_right, size: 16),
+                          ],
+                        ),
+                        onTap: () => _openVaultBrowser(vault),
+                      );
+                    },
+                  ),
+                for (final pinned in lockedPinned)
                   ListTile(
                     dense: true,
                     leading: Icon(
-                      Icons.lock_open_rounded,
+                      Icons.lock_outline,
                       size: 18,
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                     title: Text(
-                      vault.name,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      pinned.name,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
-                      l10n.unlockedBadge,
+                      '${l10n.lockedBadge} · ${l10n.vaultAlwaysVisibleTitle}',
                       style: const TextStyle(fontSize: 10),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         AppIconButton(
-                          icon: Icons.drive_file_rename_outline,
+                          icon: Icons.push_pin,
                           size: 28,
                           iconSize: 17,
-                          tooltip: l10n.renamePrivacyFolder,
-                          onPressed: () async {
-                            final updated =
-                                await RenameVaultDialog.show(context, vault);
-                            if (updated != null &&
-                                updated.name != vault.name &&
-                                mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    l10n.privacyFolderRenamedNotice(updated.name),
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                        AppIconButton(
-                          icon: Icons.lock_outline,
-                          size: 28,
-                          iconSize: 17,
-                          color: colorScheme.error,
-                          tooltip: l10n.lockAndHide,
+                          color: colorScheme.primary,
+                          tooltip: l10n.vaultUnpinAlwaysVisible,
                           onPressed: () {
-                            VaultService.instance.lockVault(vault.id);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(l10n.vaultLockedNotice(vault.name)),
-                              ),
-                            );
+                            VaultService.instance.unpinVault(pinned.id);
                           },
                         ),
                         const Icon(Icons.chevron_right, size: 16),
                       ],
                     ),
-                    onTap: () => _openVaultBrowser(vault),
+                    onTap: () async {
+                      final unlockedVault = await OpenVaultDialog.show(
+                        context,
+                        initialName: pinned.name,
+                      );
+                      if (unlockedVault != null && mounted) {
+                        await _openVaultBrowser(unlockedVault);
+                      }
+                    },
                   ),
               ],
               const Divider(height: 1),
@@ -921,6 +1145,63 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
           ),
         ),
       ],
+    );
+  }
+
+
+  void _showLanQrDialog(String url) {
+    final l10n = AppLocalizations.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.showQrCode),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Theme.of(ctx).dividerColor.withValues(alpha: 0.25)),
+              ),
+              child: QrCodeWidget(data: url, size: 220),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.scanQrToConnect,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            SelectableText(
+              url,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy, size: 16),
+            label: Text(l10n.copyUrl),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: url));
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.urlCopied)),
+              );
+            },
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(l10n.close),
+          ),
+        ],
+      ),
     );
   }
 

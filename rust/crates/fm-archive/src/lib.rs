@@ -5,8 +5,11 @@ pub mod ops;
 
 use fm_core::LocationKind;
 
-pub use archive_fs::ArchiveFs;
-pub use ops::{create_zip, extract_archive};
+pub use archive_fs::{is_archive_encrypted, ArchiveFs};
+pub use ops::{
+    create_zip, create_zip_with_cancel, create_zip_with_password, extract_archive,
+    extract_archive_with_cancel, extract_archive_with_password,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
@@ -117,5 +120,48 @@ mod tests {
             buf
         });
         assert_eq!(bytes, b"456789");
+    }
+
+    #[test]
+    fn encrypted_zip_roundtrip_and_password_errors() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src_file = temp_dir.path().join("secret.txt");
+        std::fs::write(&src_file, b"top secret vault-grade payload").unwrap();
+
+        let zip_file = temp_dir.path().join("encrypted.zip");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        create_zip_with_password(&[&src_file], &zip_file, Some("my-pass-123"), &cancel).unwrap();
+
+        assert!(is_archive_encrypted(&zip_file));
+
+        // Reading without password reports ARCHIVE_PASSWORD_REQUIRED.
+        let fs_no_pw = ArchiveFs::open(&zip_file).unwrap();
+        let err = fs_no_pw
+            .read_entry_bytes(&fm_core::VfsPath::from_slash_path("secret.txt"))
+            .unwrap_err();
+        assert!(err.to_string().contains("ARCHIVE_PASSWORD_REQUIRED"), "{err}");
+
+        // Reading with wrong password reports ARCHIVE_WRONG_PASSWORD.
+        let fs_bad_pw =
+            ArchiveFs::open_with_password(&zip_file, Some("wrong".into())).unwrap();
+        let err = fs_bad_pw
+            .read_entry_bytes(&fm_core::VfsPath::from_slash_path("secret.txt"))
+            .unwrap_err();
+        assert!(err.to_string().contains("ARCHIVE_WRONG_PASSWORD"), "{err}");
+
+        // Reading and extracting with the right password succeeds.
+        let fs_ok =
+            ArchiveFs::open_with_password(&zip_file, Some("my-pass-123".into())).unwrap();
+        let bytes = fs_ok
+            .read_entry_bytes(&fm_core::VfsPath::from_slash_path("secret.txt"))
+            .unwrap();
+        assert_eq!(bytes, b"top secret vault-grade payload");
+
+        let out_dir = temp_dir.path().join("out");
+        extract_archive_with_password(&zip_file, &out_dir, Some("my-pass-123"), &cancel).unwrap();
+        assert_eq!(
+            std::fs::read(out_dir.join("secret.txt")).unwrap(),
+            b"top secret vault-grade payload"
+        );
     }
 }

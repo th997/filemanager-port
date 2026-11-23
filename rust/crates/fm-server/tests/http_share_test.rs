@@ -297,3 +297,85 @@ async fn upload_cannot_plant_directories_through_a_symlink() {
 
     let _ = server.shutdown_tx.send(());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn web_ui_honours_accept_language_and_app_default_lang() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = fm_server::start_http_share(temp.path().to_path_buf(), None, None, true)
+        .await
+        .expect("start http share");
+
+    for (accept, expected_lang) in [
+        ("ja-JP,ja;q=0.9,en;q=0.8", "ja"),
+        ("zh-CN,zh;q=0.9", "zh"),
+        ("en-US,en;q=0.9", "en"),
+        ("fr-FR,fr;q=0.9", "en"),
+    ] {
+        let mut stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+        let req = format!(
+            "GET /?token={} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept-Language: {accept}\r\nConnection: close\r\n\r\n",
+            server.share_token
+        );
+        stream.write_all(req.as_bytes()).unwrap();
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).unwrap();
+        let text = String::from_utf8_lossy(&raw);
+        assert!(
+            text.contains(&format!("data-server-lang=\"{expected_lang}\"")),
+            "expected {expected_lang} for Accept-Language: {accept}"
+        );
+        assert!(
+            text.to_lowercase()
+                .contains(&format!("content-language: {expected_lang}")),
+            "expected Content-Language: {expected_lang}"
+        );
+    }
+    let _ = server.shutdown_tx.send(());
+
+    // App-configured default_lang overrides Accept-Language.
+    let server_ja = fm_server::start_http_share_with_lang(
+        temp.path().to_path_buf(),
+        None,
+        None,
+        true,
+        Some("ja".into()),
+    )
+    .await
+    .expect("start http share with default lang");
+    let (_, _, body) = get_request(server_ja.port, &with_token("/", &server_ja.share_token));
+    assert!(body.contains("data-server-lang=\"ja\""));
+    let _ = server_ja.shutdown_tx.send(());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn single_file_share_lists_and_downloads_only_that_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("report.txt");
+    std::fs::write(&target, b"single file payload").unwrap();
+    std::fs::write(temp.path().join("other.txt"), b"should not leak").unwrap();
+
+    let server = fm_server::start_http_share(target, None, None, false)
+        .await
+        .expect("start single file share");
+
+    let (status, _, list_body) =
+        get_request(server.port, &with_token("/api/list", &server.share_token));
+    assert_eq!(status, 200);
+    assert!(list_body.contains("report.txt"));
+    assert!(!list_body.contains("other.txt"));
+
+    let (dl_status, _, dl_body) = get_request(
+        server.port,
+        &with_token("/download/report.txt", &server.share_token),
+    );
+    assert_eq!(dl_status, 200);
+    assert_eq!(dl_body, "single file payload");
+
+    let (other_status, _, _) = get_request(
+        server.port,
+        &with_token("/download/other.txt", &server.share_token),
+    );
+    assert_eq!(other_status, 404);
+
+    let _ = server.shutdown_tx.send(());
+}

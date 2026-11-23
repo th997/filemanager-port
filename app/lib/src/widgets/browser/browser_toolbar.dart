@@ -1,7 +1,8 @@
+import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_ui_tokens.dart';
-import 'package:filemanager/l10n/app_localizations.dart';
+import 'browser_pane.dart';
 
 /// Unified address bar supporting breadcrumb navigation and text-based path jumping.
 class BrowserUnifiedAddressBar extends StatelessWidget {
@@ -164,63 +165,100 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
             ),
           Expanded(
-            child: SingleChildScrollView(
-              reverse: true,
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  DragTarget<({String root, List<String> paths})>(
-                    onAcceptWithDetails: (d) => onAcceptDrop?.call(d.data, ''),
-                    builder: (ctx, candidate, rejected) => InkWell(
-                      borderRadius: BorderRadius.circular(4),
-                      onTap: () => onSegmentTap?.call(''),
-                      onLongPress: () => onCopyPath?.call(''),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        child: Text(
-                          rootLabel,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: relPath.isEmpty
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.onSurface,
-                            fontWeight: relPath.isEmpty ? FontWeight.bold : FontWeight.normal,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: onStartEdit,
+              child: SingleChildScrollView(
+                reverse: true,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                  HoverExpandDragTarget<({String root, List<String> paths})>(
+                    showDefaultDecoration: false,
+                    onAccept: (d) => onAcceptDrop?.call(d, ''),
+                    onHoverExpand: relPath.isNotEmpty
+                        ? () => onSegmentTap?.call('')
+                        : null,
+                    builder: (ctx, isHovering) {
+                      final primary = Theme.of(context).colorScheme.primary;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(4),
+                        onTap: () => onSegmentTap?.call(''),
+                        onLongPress: () => onCopyPath?.call(''),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          decoration: isHovering
+                              ? BoxDecoration(
+                                  color: primary.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: primary, width: 1),
+                                )
+                              : null,
+                          child: Text(
+                            rootLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: (relPath.isEmpty || isHovering)
+                                  ? primary
+                                  : Theme.of(context).colorScheme.onSurface,
+                              fontWeight: (relPath.isEmpty || isHovering)
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                   for (int i = 0; i < segments.length; i++) ...[
                     const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
                     () {
                       final segPath = segments.take(i + 1).join('/');
-                      return DragTarget<({String root, List<String> paths})>(
-                        onAcceptWithDetails: (d) => onAcceptDrop?.call(d.data, segPath),
-                        builder: (ctx, candidate, rejected) => InkWell(
-                          borderRadius: BorderRadius.circular(4),
-                          onTap: () => onSegmentTap?.call(segPath),
-                          onLongPress: () => onCopyPath?.call(segPath),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            child: Text(
-                              segments[i],
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: i == segments.length - 1
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context).colorScheme.onSurface,
-                                fontWeight: i == segments.length - 1
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
+                      final isLast = i == segments.length - 1;
+                      return HoverExpandDragTarget<({String root, List<String> paths})>(
+                        showDefaultDecoration: false,
+                        onAccept: (d) => onAcceptDrop?.call(d, segPath),
+                        onHoverExpand: !isLast
+                            ? () => onSegmentTap?.call(segPath)
+                            : null,
+                        builder: (ctx, isHovering) {
+                          final primary = Theme.of(context).colorScheme.primary;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () => onSegmentTap?.call(segPath),
+                            onLongPress: () => onCopyPath?.call(segPath),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 120),
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: isHovering
+                                  ? BoxDecoration(
+                                      color: primary.withValues(alpha: 0.16),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: primary, width: 1),
+                                    )
+                                  : null,
+                              child: Text(
+                                segments[i],
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: (isLast || isHovering)
+                                      ? primary
+                                      : Theme.of(context).colorScheme.onSurface,
+                                  fontWeight: (isLast || isHovering)
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       );
                     }(),
                   ],
                 ],
               ),
+            ),
             ),
           ),
           IconButton(

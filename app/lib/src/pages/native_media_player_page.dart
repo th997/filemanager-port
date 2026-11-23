@@ -8,10 +8,13 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/file_picker_dialog.dart';
 import '../rust/api/servers.dart';
 import '../services/global_playback_service.dart';
+import '../services/native_pip_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
+import '../services/subtitle_service.dart';
 import '../services/vault_service.dart';
 import '../widgets/app_swipe_back.dart';
 import '../widgets/media_player/media_player_controls.dart';
@@ -57,6 +60,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   bool _isExplicitlyClosed = false;
   bool _fallbackScheduled = false;
   Timer? _controlsTimer;
+  LoadedSubtitle? _externalSubtitle;
+  bool _subtitlesEnabled = true;
+  List<EmbeddedSubtitleTrack> _embeddedSubtitles = const [];
+  int? _activeEmbeddedSubtitleIndex;
 
   static const _prefVolume = 'player.volume';
   static const _prefLoop = 'player.loop';
@@ -306,6 +313,8 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     setState(() {
       _initialized = false;
       _error = null;
+      _embeddedSubtitles = const [];
+      _activeEmbeddedSubtitleIndex = null;
     });
 
     VideoPlayerController? controller;
@@ -354,6 +363,10 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       }
       _controller = controller;
       controller.addListener(_onControllerUpdate);
+      if (!track.isAudio) {
+        unawaited(_autoLoadExternalSubtitle(gen));
+        unawaited(_loadEmbeddedSubtitles(gen));
+      }
 
       GlobalPlaybackService.instance.setIosSession(
         root: widget.root,
@@ -1164,12 +1177,33 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           });
                         },
                       ),
-                      if (!_track.isAudio)
+                      if (!_track.isAudio) ...[
+                        IconButton(
+                          icon: Icon(
+                            (_subtitlesEnabled && _externalSubtitle != null) ||
+                                    _activeEmbeddedSubtitleIndex != null
+                                ? Icons.subtitles
+                                : Icons.subtitles_outlined,
+                            color: (_subtitlesEnabled && _externalSubtitle != null) ||
+                                    _activeEmbeddedSubtitleIndex != null
+                                ? Colors.blueAccent
+                                : Colors.white,
+                          ),
+                          tooltip: AppLocalizations.of(context).subtitles,
+                          onPressed: _showSubtitleSheet,
+                        ),
+                        if (Platform.isIOS)
+                          IconButton(
+                            icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white),
+                            tooltip: AppLocalizations.of(context).pictureInPicture,
+                            onPressed: () => NativePipService.start(),
+                          ),
                         IconButton(
                           icon: const Icon(Icons.aspect_ratio, color: Colors.white),
                           tooltip: AppLocalizations.of(context).videoFitLabel,
                           onPressed: _cycleVideoFit,
                         ),
+                      ],
                       IconButton(
                         icon: Icon(
                           _isFullscreen
@@ -1456,18 +1490,156 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     );
   }
 
-  Widget _buildVideoSurface() {
-    if (_videoFit == BoxFit.fill) {
-      return SizedBox.expand(child: VideoPlayer(_controller!));
+  Future<void> _autoLoadExternalSubtitle(int gen) async {
+    final loaded = await SubtitleService.findMatchingSubtitle(
+      root: widget.root,
+      mediaPath: _track.path,
+    );
+    if (!mounted || gen != _openGeneration) return;
+    if (loaded != null) {
+      await NativePipService.selectEmbeddedSubtitle(null);
+      if (!mounted || gen != _openGeneration) return;
     }
-    if (_videoFit == BoxFit.cover) {
+    setState(() {
+      _externalSubtitle = loaded;
+      _subtitlesEnabled = loaded != null;
+      if (loaded != null) {
+        _activeEmbeddedSubtitleIndex = null;
+      }
+    });
+  }
+
+  Future<void> _loadEmbeddedSubtitles(int gen) async {
+    final tracks = await NativePipService.listEmbeddedSubtitles();
+    if (!mounted || gen != _openGeneration) return;
+    final selectedIdx = tracks.where((t) => t.selected).firstOrNull?.index;
+    setState(() {
+      _embeddedSubtitles = tracks;
+      if (!(_subtitlesEnabled && _externalSubtitle != null)) {
+        _activeEmbeddedSubtitleIndex = selectedIdx;
+      }
+    });
+  }
+
+  Future<void> _showSubtitleSheet() async {
+    final l10n = AppLocalizations.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.subtitles_outlined),
+              title: Text(l10n.subtitles, style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(
+                (!_subtitlesEnabled || _externalSubtitle == null) &&
+                        _activeEmbeddedSubtitleIndex == null
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_off,
+              ),
+              title: Text(l10n.subtitleOff),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                unawaited(NativePipService.selectEmbeddedSubtitle(null));
+                if (mounted) {
+                  setState(() {
+                    _subtitlesEnabled = false;
+                    _activeEmbeddedSubtitleIndex = null;
+                  });
+                }
+              },
+            ),
+            for (final track in _embeddedSubtitles)
+              ListTile(
+                leading: Icon(
+                  _activeEmbeddedSubtitleIndex == track.index && !_subtitlesEnabled
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                ),
+                title: Text(track.title),
+                subtitle: track.language.isNotEmpty ? Text(track.language) : null,
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  final ok = await NativePipService.selectEmbeddedSubtitle(track.index);
+                  if (ok && mounted) {
+                    setState(() {
+                      _subtitlesEnabled = false;
+                      _activeEmbeddedSubtitleIndex = track.index;
+                    });
+                  }
+                },
+              ),
+            if (_externalSubtitle != null)
+              ListTile(
+                leading: Icon(
+                  _subtitlesEnabled ? Icons.radio_button_checked : Icons.radio_button_off,
+                ),
+                title: Text(_externalSubtitle!.name),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  unawaited(NativePipService.selectEmbeddedSubtitle(null));
+                  if (mounted) {
+                    setState(() {
+                      _subtitlesEnabled = true;
+                      _activeEmbeddedSubtitleIndex = null;
+                    });
+                  }
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.folder_open_outlined),
+              title: Text(l10n.loadExternalSubtitle),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                final slash = _track.path.lastIndexOf('/');
+                final dir = slash >= 0 ? _track.path.substring(0, slash) : '';
+                final picked = await FilePickerDialog.show(
+                  context,
+                  title: l10n.loadExternalSubtitle,
+                  initialRoot: widget.root,
+                  initialPath: dir,
+                );
+                if (picked == null || picked.paths.isEmpty || !mounted) return;
+                final subPath = picked.paths.first;
+                final subName = subPath.split('/').last;
+                final loaded = await SubtitleService.loadFromVfs(
+                  root: picked.root,
+                  path: subPath,
+                  name: subName,
+                );
+                if (loaded != null && mounted) {
+                  await NativePipService.selectEmbeddedSubtitle(null);
+                  if (!mounted) return;
+                  setState(() {
+                    _externalSubtitle = loaded;
+                    _subtitlesEnabled = true;
+                    _activeEmbeddedSubtitleIndex = null;
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoSurface() {
+    Widget surface;
+    if (_videoFit == BoxFit.fill) {
+      surface = SizedBox.expand(child: VideoPlayer(_controller!));
+    } else if (_videoFit == BoxFit.cover) {
       final size = _controller!.value.size;
       final ar = _controller!.value.aspectRatio > 0
           ? _controller!.value.aspectRatio
           : 16 / 9;
       final videoWidth = size.width > 0 ? size.width : ar * 1080.0;
       final videoHeight = size.height > 0 ? size.height : 1080.0;
-      return SizedBox.expand(
+      surface = SizedBox.expand(
         child: FittedBox(
           fit: BoxFit.cover,
           clipBehavior: Clip.hardEdge,
@@ -1478,12 +1650,31 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
           ),
         ),
       );
+    } else {
+      surface = AspectRatio(
+        aspectRatio: _controller!.value.aspectRatio > 0
+            ? _controller!.value.aspectRatio
+            : 16 / 9,
+        child: VideoPlayer(_controller!),
+      );
     }
-    return AspectRatio(
-      aspectRatio: _controller!.value.aspectRatio > 0
-          ? _controller!.value.aspectRatio
-          : 16 / 9,
-      child: VideoPlayer(_controller!),
+
+    if (!_subtitlesEnabled || _externalSubtitle == null) {
+      return surface;
+    }
+    final activeText = SubtitleParser.activeTextAt(
+      _externalSubtitle!.cues,
+      _controller!.value.position,
+    );
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        surface,
+        VideoSubtitleOverlay(
+          text: activeText,
+          bottomPadding: _showControls ? 88 : 28,
+        ),
+      ],
     );
   }
 

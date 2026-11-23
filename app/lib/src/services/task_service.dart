@@ -257,6 +257,22 @@ class TaskService {
     return tasks_api.cancelTask(taskId: taskId);
   }
 
+  bool pause(String taskId) {
+    return tasks_api.pauseTask(taskId: taskId);
+  }
+
+  bool resume(String taskId) {
+    return tasks_api.resumeTask(taskId: taskId);
+  }
+
+  bool setRateLimit(String taskId, BigInt bytesPerSec) {
+    return tasks_api.setTaskRateLimit(taskId: taskId, bytesPerSec: bytesPerSec);
+  }
+
+  Future<String> retryFailed(String taskId) {
+    return tasks_api.retryFailedTaskItems(taskId: taskId);
+  }
+
   /// All registered tasks, oldest first, finished ones included.
   List<tasks_api.TaskProgressDto> list() {
     return tasks_api.listTasks();

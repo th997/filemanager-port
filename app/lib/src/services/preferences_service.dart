@@ -20,6 +20,10 @@ class PreferencesService {
   static const String prefToolbarBottom = 'browser.toolbar_bottom';
   static final ValueNotifier<bool> vaultVideoThumbnailsNotifier =
       ValueNotifier<bool>(false);
+  static const String prefHistoryRetentionDays = 'history.retention_days';
+  static const int defaultHistoryRetentionDays = 30;
+  static final ValueNotifier<int> historyRetentionDaysNotifier =
+      ValueNotifier<int>(defaultHistoryRetentionDays);
 
   Map<String, String> _values = {};
   bool _loaded = false;
@@ -43,6 +47,7 @@ class PreferencesService {
     }
     vaultVideoThumbnailsNotifier.value =
         getBool(prefVaultVideoThumbnails) ?? false;
+    historyRetentionDaysNotifier.value = historyRetentionDays;
   }
 
   /// Loads [toolbarAtBottom] once preferences are available.
@@ -58,6 +63,50 @@ class PreferencesService {
   static const String prefVaultSkipExternalOpenWarning =
       'vault.skip_external_open_warning';
   static const String prefVaultVideoThumbnails = 'vault.video_thumbnails';
+  static const String prefPinnedVaults = 'vault.pinned_entries';
+  static const String prefSidebarCollapsed = 'sidebar.collapsed';
+  static const String prefSidebarCollapsedGroups = 'sidebar.collapsed_groups';
+  static const String prefSidebarWidth = 'sidebar.width';
+
+  int get historyRetentionDays {
+    final raw = getString(prefHistoryRetentionDays);
+    if (raw != null) {
+      final parsed = int.tryParse(raw);
+      if (parsed != null && parsed >= 0) return parsed;
+    }
+    return defaultHistoryRetentionDays;
+  }
+
+  set historyRetentionDays(int value) {
+    final clamped = value < 0 ? 0 : value;
+    setString(prefHistoryRetentionDays, clamped.toString());
+    historyRetentionDaysNotifier.value = clamped;
+  }
+
+  bool get sidebarCollapsed => getBool(prefSidebarCollapsed) ?? false;
+
+  set sidebarCollapsed(bool value) => setBool(prefSidebarCollapsed, value);
+
+  Set<String> get sidebarCollapsedGroups {
+    final raw = getString(prefSidebarCollapsedGroups);
+    if (raw == null || raw.isEmpty) return <String>{};
+    return raw.split(',').where((e) => e.isNotEmpty).toSet();
+  }
+
+  set sidebarCollapsedGroups(Set<String> value) {
+    final sorted = value.where((e) => e.isNotEmpty).toList()..sort();
+    setString(prefSidebarCollapsedGroups, sorted.join(','));
+  }
+
+  double get sidebarWidth {
+    final raw = getString(prefSidebarWidth);
+    final parsed = raw != null ? double.tryParse(raw) : null;
+    if (parsed == null) return 240.0;
+    return parsed.clamp(196.0, 360.0);
+  }
+
+  set sidebarWidth(double value) =>
+      setString(prefSidebarWidth, value.clamp(196.0, 360.0).toStringAsFixed(1));
 
   int get vaultAutoLockTimeoutSec {
     final raw = getString(prefVaultAutoLockSec);

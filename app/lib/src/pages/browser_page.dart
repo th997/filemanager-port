@@ -8,23 +8,30 @@ import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/advanced_search_dialog.dart';
+import '../dialogs/archive_password_dialog.dart';
 import '../dialogs/batch_rename_dialog.dart';
+import '../dialogs/browser_info_dialog.dart';
 import '../dialogs/download_prompt_dialog.dart';
 import '../dialogs/file_picker_dialog.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../dialogs/task_progress_dialog.dart';
-import '../dialogs/vault_dialogs.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
+import '../rust/api/tasks.dart' as tasks_api;
 import '../services/app_route_observer.dart';
+import '../services/browser_clipboard_service.dart';
+import '../services/browser_file_ops.dart';
+import '../services/browser_vault_actions.dart';
 import '../services/error_text.dart';
 import '../services/external_file_service.dart';
 import '../services/file_open_service.dart';
 import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/permission_service.dart';
+import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
@@ -32,13 +39,22 @@ import '../services/task_service.dart';
 import '../services/vault_service.dart';
 import '../widgets/browser/browser_action_sheets.dart';
 import '../widgets/browser/browser_bottom_action_bar.dart';
+import '../widgets/browser/browser_list_header.dart';
+import '../widgets/browser/browser_pane.dart';
 import '../widgets/browser/browser_toolbar.dart';
 import '../widgets/entry_thumbnail.dart';
+import 'browser_workspace_page.dart';
+import 'diff_viewer_page.dart';
+import 'duplicate_finder_page.dart';
 import 'image_viewer_page.dart';
 import 'media_player_page.dart';
+import 'pdf_viewer_page.dart';
+import 'storage_analyzer_page.dart';
+import 'structured_viewer_page.dart';
+import 'sync_page.dart';
 import 'text_editor_page.dart';
 
-enum SortField { name, size, modified, type }
+export '../widgets/browser/browser_list_header.dart' show SortField;
 
 extension SortFieldLabel on SortField {
   String get label => switch (this) {
@@ -80,6 +96,12 @@ class BrowserPage extends StatefulWidget {
   /// split host to restore the left pane's location on exit).
   final void Function(String root, String path)? onLocationChanged;
 
+  /// Optional callback invoked when the user chooses "Open in New Tab".
+  final void Function(String root, String relPath, String title)? onOpenInNewTab;
+
+  /// Optional callback invoked when the user toggles Split View inside a workspace.
+  final VoidCallback? onToggleSplitView;
+
   /// When set, the browser acts as a file picker for another app's
   /// GET_CONTENT / PICK request: taps select instead of open, and the
   /// result is popped as a list of local paths.
@@ -91,6 +113,8 @@ class BrowserPage extends StatefulWidget {
     this.initialPath = '',
     this.embedded = false,
     this.onLocationChanged,
+    this.onOpenInNewTab,
+    this.onToggleSplitView,
     this.pickRequest,
   });
 
@@ -101,6 +125,12 @@ class BrowserPage extends StatefulWidget {
 class BrowserPageState extends State<BrowserPage> with RouteAware {
   late String _root;
   late String _relPath;
+
+  String get currentRoot => _root;
+  String get currentRelPath => _relPath;
+  String get _rootTitle => _displayFullPath;
+  List<String> get selectedPathsSnapshot => _selectedPaths.toList(growable: false);
+  void refreshEntries() => _load(refresh: true);
   List<EntryItem> _entries = [];
   bool _loading = false;
   /// A refresh keeps the old list on screen, so without this the F5 / Cmd+R
@@ -253,12 +283,13 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   /// Anchor index (into the visible list) for Shift+click range selection.
   int? _selectionAnchor;
 
-  /// Rubber-band (lasso) selection state, grid view only: mouse drag on
-  /// the grid background selects every tile the rectangle covers.
+  /// Rubber-band (lasso) selection state: mouse drag on grid or list
+  /// background selects every item the rectangle covers.
   Offset? _lassoStart;
   Rect? _lassoRect;
   Set<String> _lassoBase = {};
   double _gridWidth = 0;
+  double _listRowHeight = 36.0;
 
   /// Set while a tile drag (stage H) is in flight so the lasso stands down.
   bool _itemDragActive = false;
@@ -287,7 +318,25 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   final ScrollController _scrollController = ScrollController();
 
   // Clipboard state for copy/cut/paste
-  static ClipboardState? _clipboard;
+  static ClipboardState? get _clipboard {
+    final snap = BrowserClipboardService.instance.snapshot;
+    if (snap == null) return null;
+    return ClipboardState(
+      srcRoot: snap.sourceRoot,
+      paths: snap.paths,
+      isCut: snap.isCut,
+    );
+  }
+
+  static set _clipboard(ClipboardState? value) {
+    if (value == null) {
+      BrowserClipboardService.instance.clear();
+    } else if (value.isCut) {
+      BrowserClipboardService.instance.setCut(value.srcRoot, value.paths);
+    } else {
+      BrowserClipboardService.instance.setCopy(value.srcRoot, value.paths);
+    }
+  }
 
   bool _secureScreenHeld = false;
   bool _vaultAutoClosing = false;
@@ -334,12 +383,35 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final vid = _currentVaultId;
     if (vid == null) return;
     final vault = VaultService.instance.findUnlockedById(vid);
-    final l10n = AppLocalizations.of(context);
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    VaultService.instance.lockVault(vid);
-    if (vault != null) {
-      messenger?.showSnackBar(
-        SnackBar(content: Text(l10n.vaultLockedNotice(vault.name))),
+    if (vault == null) {
+      VaultService.instance.lockVault(vid);
+      return;
+    }
+    unawaited(BrowserVaultActions.lockCurrentVault(context, vault));
+  }
+
+  void _toggleCurrentVaultAlwaysVisible() {
+    final vid = _currentVaultId;
+    if (vid == null) return;
+    final vault = VaultService.instance.findUnlockedById(vid);
+    if (vault == null) return;
+    final next = !VaultService.instance.isAlwaysVisible(vid);
+    VaultService.instance.setAlwaysVisible(
+      vaultId: vault.id,
+      name: vault.name,
+      alwaysVisible: next,
+    );
+    if (mounted) {
+      final l10n = AppLocalizations.of(context);
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next
+                ? l10n.vaultPinnedNotice(vault.name)
+                : l10n.vaultUnpinnedNotice(vault.name),
+          ),
+        ),
       );
     }
   }
@@ -350,7 +422,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final vault = VaultService.instance.findUnlockedById(vid);
     if (vault == null) return;
     final l10n = AppLocalizations.of(context);
-    final updated = await RenameVaultDialog.show(context, vault);
+    final updated = await BrowserVaultActions.renameVault(context, vault);
     if (updated != null && updated.name != vault.name && mounted) {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
@@ -364,7 +436,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     if (vid == null) return;
     final vault = VaultService.instance.findUnlockedById(vid);
     if (vault == null) return;
-    await VaultInfoDialog.show(context, vault);
+    await BrowserVaultActions.showVaultInfo(context, vault);
   }
 
   Future<void> _changeCurrentVaultSecurity() async {
@@ -373,7 +445,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final vault = VaultService.instance.findUnlockedById(vid);
     if (vault == null) return;
     final l10n = AppLocalizations.of(context);
-    final updated = await ChangeVaultSecurityDialog.show(context, vault);
+    final updated = await BrowserVaultActions.showVaultSecurity(context, vault);
     if (updated != null && mounted) {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
@@ -389,7 +461,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     if (vault == null) return;
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.maybeOf(context);
-    final deleted = await DeleteVaultDialog.show(context, vault);
+    final deleted = await BrowserVaultActions.deleteVault(context, vault);
     if (deleted) {
       messenger?.showSnackBar(
         SnackBar(content: Text(l10n.privacyFolderDeletedNotice(vault.name))),
@@ -445,11 +517,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     _syncBottomBarInset();
   }
 
+  bool get _effectiveToolbarAtBottom =>
+      PlatformCapabilities.supportsBottomToolbar &&
+      PreferencesService.toolbarAtBottom.value;
+
   void _syncBottomBarInset() {
     if (!mounted) return;
     final hasActionBar = !_pickMode && (_isSelecting || _clipboard != null);
     final hasPick = _pickMode && widget.pickRequest != null;
-    final toolbarAtBottom = PreferencesService.toolbarAtBottom.value;
+    final toolbarAtBottom = _effectiveToolbarAtBottom;
     final compact = MediaQuery.sizeOf(context).width < 600;
     final toolbarHeight = toolbarAtBottom ? (compact ? 40.0 : 46.0) : 0.0;
     final actionBarHeight = hasActionBar ? 46.0 : 0.0;
@@ -561,6 +637,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   (String, String)? _splitReturn;
 
   void _toggleSplit() {
+    if (widget.onToggleSplitView != null) {
+      widget.onToggleSplitView!();
+      return;
+    }
     if (_splitActive) {
       setState(() {
         _splitActive = false;
@@ -1005,8 +1085,40 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _downloadThenOpen(item);
         return;
       }
-      final fullPath = joinNative(_root, _fullEntryPath(item));
-      navigateTo('archive://$fullPath', '');
+      _openArchiveEntry(item);
+      return;
+    }
+
+    if (item.nameLower.endsWith('.pdf')) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PdfViewerPage(
+            root: _root,
+            path: _fullEntryPath(item),
+            fileName: item.name,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (StructuredViewerPage.supports(item.name)) {
+      if (_needsDownloadPrompt(item)) {
+        _downloadThenOpen(item);
+        return;
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StructuredViewerPage(
+            root: _root,
+            path: _fullEntryPath(item),
+            fileName: item.name,
+            readOnly: !_canWrite,
+          ),
+        ),
+      ).then((_) {
+        if (mounted) _load(refresh: true);
+      });
       return;
     }
 
@@ -1041,6 +1153,28 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       return;
     }
     _openWithSystem(item);
+  }
+
+  Future<void> _openArchiveEntry(EntryItem item) async {
+    final rel = _fullEntryPath(item);
+    final archiveRoot = isNativeRoot(_root)
+        ? 'archive://${joinNative(_root, rel)}'
+        : 'archive://$_root/$rel';
+    if (isNativeRoot(_root)) {
+      try {
+        final encrypted = await checkArchiveEncrypted(root: _root, path: rel);
+        if (encrypted && mounted) {
+          final pw = await showArchivePasswordDialog(
+            context,
+            archiveName: item.name,
+          );
+          if (pw == null || !mounted) return;
+          setArchivePassword(archiveRoot: archiveRoot, password: pw);
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    navigateTo(archiveRoot, '');
   }
 
   void _openAsText(EntryItem item) {
@@ -1262,6 +1396,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           builder: (_) => ImageViewerPage(
             filePath: native,
             fileName: item.name,
+            onDeleted: () {
+              if (mounted) _load(refresh: true);
+            },
           ),
         ),
       );
@@ -1362,6 +1499,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             fileName: item.name,
             siblings: siblings,
             initialIndex: index,
+            onDeleted: () {
+              if (mounted) _load(refresh: true);
+            },
           ),
         ),
       );
@@ -1377,6 +1517,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           fileName: item.name,
           siblings: siblings,
           initialIndex: index,
+          onDeleted: () {
+            if (mounted) _load(refresh: true);
+          },
         ),
       ),
     );
@@ -1498,7 +1641,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     });
     _searchDebounce?.cancel();
     final query = value.trim();
-    if (query.length < 2) {
+    final hasNonAscii = query.runes.any((r) => r > 127);
+    if (query.isEmpty || (!hasNonAscii && query.length < 2)) {
       setState(() {
         _searchResults = [];
         _searchBusy = false;
@@ -1722,6 +1866,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       canWrite: _canWrite,
       canArchive: _canArchive,
       canBookmark: !_isInVault,
+      canShareLan: isNativeRoot(_root),
+      canPinOffline: _root.startsWith('remote://'),
+      canOpenInNewTab: widget.onOpenInNewTab != null ||
+          PlatformCapabilities.supportsMultiTab(context),
+      canShare: PlatformCapabilities.supportsNativeShareSheet,
     );
     if (action != null && mounted) {
       _handleEntryAction(action, item);
@@ -1732,6 +1881,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   Future<void> _showContextMenu(BuildContext originContext, Offset position, EntryItem item) async {
     HapticFeedback.mediumImpact();
     _lastItemSecondaryTap = DateTime.now();
+    final path = _fullEntryPath(item);
+    if (PlatformCapabilities.isDesktop && !_isSelecting && !_selectedPaths.contains(path)) {
+      setState(() {
+        _selectedPaths
+          ..clear()
+          ..add(path);
+        _syncBottomBarInset();
+      });
+    }
     final action = await showBrowserContextMenu(
       context: originContext,
       position: position,
@@ -1740,6 +1898,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       canWrite: _canWrite,
       canArchive: _canArchive,
       canBookmark: !_isInVault,
+      canShareLan: isNativeRoot(_root),
+      canPinOffline: _root.startsWith('remote://'),
+      canOpenInNewTab: widget.onOpenInNewTab != null ||
+          PlatformCapabilities.supportsMultiTab(context),
     );
     if (action != null && mounted) {
       _handleEntryAction(action, item);
@@ -1748,9 +1910,51 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
   void _handleEntryAction(String action, EntryItem item) {
     final path = _fullEntryPath(item);
+    final isMultiSelected = _selectedPaths.length > 1 && _selectedPaths.contains(path);
     switch (action) {
       case 'open':
         _openEntry(item);
+        break;
+      case 'open_in_new_tab':
+        if (item.isDir) {
+          final targetRel = _fullEntryPath(item);
+          if (widget.onOpenInNewTab != null) {
+            widget.onOpenInNewTab!(_root, targetRel, item.name);
+          } else {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  body: SafeArea(
+                    child: BrowserWorkspacePage(
+                      initialRoot: _root,
+                      initialRelPath: targetRel,
+                      initialTitle: item.name,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+        break;
+      case 'share_lan':
+        if (isNativeRoot(_root)) {
+          BrowserFileOps.shareViaLan(
+            context,
+            nativeTargetPath: joinNative(_root, path),
+            displayName: item.name,
+          );
+        }
+        break;
+      case 'pin_offline':
+        if (_root.startsWith('remote://') && !item.isDir) {
+          BrowserFileOps.pinFileOffline(
+            context,
+            remoteRoot: _root,
+            remotePath: path,
+            displayName: item.name,
+          );
+        }
         break;
       case 'open_with':
         _showOpenWithDialog(item);
@@ -1765,6 +1969,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _bookmarkFolder(item);
         break;
       case 'copy':
+        if (isMultiSelected) {
+          _copySelected(isCut: false);
+          break;
+        }
         setState(() {
           _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: false);
         });
@@ -1774,6 +1982,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         );
         break;
       case 'cut':
+        if (isMultiSelected) {
+          _copySelected(isCut: true);
+          break;
+        }
         setState(() {
           _clipboard = ClipboardState(srcRoot: _root, paths: [path], isCut: true);
         });
@@ -1784,8 +1996,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         break;
       case 'select':
         setState(() {
-          _isSelecting = true;
+          _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+            isDesktop: PlatformCapabilities.isDesktop,
+            alreadyInMultiSelectBar: _isSelecting,
+            hasSelection: true,
+            explicitMultiSelectAction: true,
+          );
           _selectedPaths.add(path);
+          _syncBottomBarInset();
         });
         break;
       case 'rename':
@@ -1795,17 +2013,23 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _duplicateEntry(item);
         break;
       case 'delete':
-        _deleteSingle(item);
+        if (isMultiSelected) {
+          _deleteSelected();
+        } else {
+          _deleteSingle(item);
+        }
         break;
       case 'extract':
         _extractArchive(item);
         break;
       case 'compress':
-        setState(() {
-          _selectedPaths
-            ..clear()
-            ..add(path);
-        });
+        if (!isMultiSelected) {
+          setState(() {
+            _selectedPaths
+              ..clear()
+              ..add(path);
+          });
+        }
         _compressSelected();
         break;
       case 'share':
@@ -1873,7 +2097,6 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _load(refresh: true);
         break;
       case 'select_all':
-        setState(() => _isSelecting = true);
         _selectAll();
         break;
       case 'invert_selection':
@@ -1891,9 +2114,16 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
   }
 
-  /// Tile tap with desktop selection semantics: Ctrl/Cmd toggles one
-  /// item, Shift extends from the anchor, plain tap keeps the classic
-  /// behaviour (open, or toggle while selecting).
+  double get _gridMaxCrossAxisExtent =>
+      PlatformCapabilities.isDesktop ? 124.0 : 104.0;
+  double get _gridChildAspectRatio =>
+      PlatformCapabilities.isDesktop ? 0.88 : 0.86;
+
+  /// Tile tap with native desktop & mobile selection semantics:
+  /// - Shift extends range, Ctrl/Cmd toggles one item.
+  /// - Desktop plain click selects the clicked item (double-click opens it),
+  ///   matching Finder / Explorer / Nautilus.
+  /// - Mobile plain tap opens the item directly (or toggles when selecting).
   void _handleTileTap(EntryItem item, int index) {
     final kb = HardwareKeyboard.instance;
     if (kb.isShiftPressed && _selectionAnchor != null) {
@@ -1901,17 +2131,55 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       return;
     }
     if (kb.isControlPressed || kb.isMetaPressed) {
-      if (!_isSelecting) setState(() => _isSelecting = true);
-      _toggleSelect(_fullEntryPath(item));
+      final path = _fullEntryPath(item);
+      setState(() {
+        if (_selectedPaths.contains(path)) {
+          _selectedPaths.remove(path);
+        } else {
+          _selectedPaths.add(path);
+        }
+        _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+          isDesktop: PlatformCapabilities.isDesktop,
+          alreadyInMultiSelectBar: _isSelecting,
+          hasSelection: _selectedPaths.isNotEmpty,
+        );
+        _syncBottomBarInset();
+      });
       _selectionAnchor = index;
       return;
     }
     _selectionAnchor = index;
+    if (PlatformCapabilities.isDesktop && !_pickMode) {
+      final path = _fullEntryPath(item);
+      if (_isSelecting) {
+        _toggleSelect(path);
+      } else {
+        setState(() {
+          _selectedPaths
+            ..clear()
+            ..add(path);
+          _syncBottomBarInset();
+        });
+      }
+      return;
+    }
+    _openEntry(item);
+  }
+
+  void _handleTileDoubleTap(EntryItem item) {
+    if (!PlatformCapabilities.isDesktop || _pickMode) return;
+    setState(() {
+      _selectedPaths.clear();
+      _isSelecting = false;
+      _syncBottomBarInset();
+    });
     _openEntry(item);
   }
 
   void _lassoDown(PointerDownEvent e) {
-    if (e.kind != PointerDeviceKind.mouse || e.buttons != kPrimaryMouseButton) {
+    if (!PlatformCapabilities.isDesktop ||
+        e.kind != PointerDeviceKind.mouse ||
+        e.buttons != kPrimaryMouseButton) {
       return;
     }
     _lassoStart = e.localPosition;
@@ -1936,54 +2204,73 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     if (_lassoRect != null) setState(() => _lassoRect = null);
   }
 
-  /// Maps the lasso rectangle (viewport coordinates) through the grid
-  /// delegate's math and selects every tile it intersects. The delegate
-  /// is SliverGridDelegateWithMaxCrossAxisExtent(88, spacing 6, ratio
-  /// 0.85) with 8px padding — keep these numbers in sync with _buildBody.
+  /// Maps the lasso rectangle (viewport coordinates) through either the grid
+  /// delegate math or list row height and selects every item it intersects.
   void _applyLasso(Rect viewportRect) {
     final list = _filteredAndSortedEntries;
-    if (_gridWidth <= 0 || list.isEmpty) return;
-    const pad = 8.0;
-    const spacing = 6.0;
-    final crossExtent = _gridWidth - pad * 2;
-    var count = (crossExtent / (88.0 + spacing)).ceil();
-    if (count < 1) count = 1;
-    final childCross = (crossExtent - spacing * (count - 1)) / count;
-    final childMain = childCross / 0.85;
-    final colStride = childCross + spacing;
-    final rowStride = childMain + spacing;
+    if (list.isEmpty) return;
     final offset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-    final r = Rect.fromLTRB(
-      viewportRect.left,
-      viewportRect.top + offset,
-      viewportRect.right,
-      viewportRect.bottom + offset,
-    );
     final picked = <String>{};
-    final firstRow = ((r.top - pad) / rowStride).floor().clamp(0, 1 << 30);
-    final lastRow = ((r.bottom - pad) / rowStride).floor().clamp(0, 1 << 30);
-    final firstCol = ((r.left - pad) / colStride).floor().clamp(0, count - 1);
-    final lastCol = ((r.right - pad) / colStride).floor().clamp(0, count - 1);
-    for (var row = firstRow; row <= lastRow; row++) {
-      for (var col = firstCol; col <= lastCol; col++) {
-        final cell = Rect.fromLTWH(
-          pad + col * colStride,
-          pad + row * rowStride,
-          childCross,
-          childMain,
-        );
-        if (!cell.overlaps(r)) continue;
-        final idx = row * count + col;
-        if (idx < 0 || idx >= list.length) continue;
-        picked.add(_fullEntryPath(list[idx]));
+
+    if (_isGrid) {
+      if (_gridWidth <= 0) return;
+      const pad = 8.0;
+      const spacing = 6.0;
+      final crossExtent = _gridWidth - pad * 2;
+      var count = (crossExtent / (_gridMaxCrossAxisExtent + spacing)).ceil();
+      if (count < 1) count = 1;
+      final childCross = (crossExtent - spacing * (count - 1)) / count;
+      final childMain = childCross / _gridChildAspectRatio;
+      final colStride = childCross + spacing;
+      final rowStride = childMain + spacing;
+      final r = Rect.fromLTRB(
+        viewportRect.left,
+        viewportRect.top + offset,
+        viewportRect.right,
+        viewportRect.bottom + offset,
+      );
+      final firstRow = ((r.top - pad) / rowStride).floor().clamp(0, 1 << 30);
+      final lastRow = ((r.bottom - pad) / rowStride).floor().clamp(0, 1 << 30);
+      final firstCol = ((r.left - pad) / colStride).floor().clamp(0, count - 1);
+      final lastCol = ((r.right - pad) / colStride).floor().clamp(0, count - 1);
+      for (var row = firstRow; row <= lastRow; row++) {
+        for (var col = firstCol; col <= lastCol; col++) {
+          final cell = Rect.fromLTWH(
+            pad + col * colStride,
+            pad + row * rowStride,
+            childCross,
+            childMain,
+          );
+          if (!cell.overlaps(r)) continue;
+          final idx = row * count + col;
+          if (idx < 0 || idx >= list.length) continue;
+          picked.add(_fullEntryPath(list[idx]));
+        }
+      }
+    } else {
+      final rowHeight = _listRowHeight > 0 ? _listRowHeight : 36.0;
+      final top = viewportRect.top + offset;
+      final bottom = viewportRect.bottom + offset;
+      if (bottom >= 0 && top <= list.length * rowHeight) {
+        final firstRow = (top / rowHeight).floor().clamp(0, list.length - 1);
+        final lastRow = (bottom / rowHeight).floor().clamp(0, list.length - 1);
+        for (var idx = firstRow; idx <= lastRow; idx++) {
+          picked.add(_fullEntryPath(list[idx]));
+        }
       }
     }
+
     setState(() {
       _selectedPaths
         ..clear()
         ..addAll(_lassoBase)
         ..addAll(picked);
-      _isSelecting = _selectedPaths.isNotEmpty;
+      _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+        isDesktop: PlatformCapabilities.isDesktop,
+        alreadyInMultiSelectBar: _isSelecting,
+        hasSelection: _selectedPaths.isNotEmpty,
+      );
+      _syncBottomBarInset();
     });
   }
 
@@ -1996,11 +2283,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     // Ctrl/Shift adds to what is already selected.
     final additive = kb.isControlPressed || kb.isMetaPressed;
     setState(() {
-      _isSelecting = true;
       if (!additive) _selectedPaths.clear();
       for (var i = lo; i <= hi && i < list.length; i++) {
         _selectedPaths.add(_fullEntryPath(list[i]));
       }
+      _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+        isDesktop: PlatformCapabilities.isDesktop,
+        alreadyInMultiSelectBar: _isSelecting,
+        hasSelection: _selectedPaths.isNotEmpty,
+      );
       _syncBottomBarInset();
     });
   }
@@ -2064,10 +2355,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
     if (!mounted) return;
     setState(() {
-      _isSelecting = true;
       for (final e in _filteredAndSortedEntries) {
         _selectedPaths.add(_fullEntryPath(e));
       }
+      _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+        isDesktop: PlatformCapabilities.isDesktop,
+        alreadyInMultiSelectBar: _isSelecting,
+        hasSelection: _selectedPaths.isNotEmpty,
+      );
       _syncBottomBarInset();
     });
   }
@@ -2082,11 +2377,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           _selectedPaths.add(path);
         }
       }
-      if (_selectedPaths.isEmpty) {
-        _isSelecting = false;
-      } else {
-        _isSelecting = true;
-      }
+      _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+        isDesktop: PlatformCapabilities.isDesktop,
+        alreadyInMultiSelectBar: _isSelecting,
+        hasSelection: _selectedPaths.isNotEmpty,
+      );
       _syncBottomBarInset();
     });
   }
@@ -2099,6 +2394,21 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     if (item == null) return;
     _clearSelection();
     _openEntry(item);
+  }
+
+  void _scrollIndexIntoView(int index) {
+    if (!_scrollController.hasClients || _isGrid) return;
+    final rowHeight = MediaQuery.sizeOf(context).width >= 600 ? 36.0 : 50.0;
+    final itemTop = index * rowHeight;
+    final itemBottom = itemTop + rowHeight;
+    final pos = _scrollController.position;
+    if (itemTop < pos.pixels) {
+      _scrollController.jumpTo(itemTop.clamp(0.0, pos.maxScrollExtent));
+    } else if (itemBottom > pos.pixels + pos.viewportDimension) {
+      _scrollController.jumpTo(
+        (itemBottom - pos.viewportDimension).clamp(0.0, pos.maxScrollExtent),
+      );
+    }
   }
 
   void _selectAdjacent(int delta) {
@@ -2114,23 +2424,34 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         ? (delta > 0 ? 0 : list.length - 1)
         : (currentIndex + delta).clamp(0, list.length - 1);
     final target = list[nextIndex];
+    _selectionAnchor = nextIndex;
     setState(() {
       _selectedPaths.clear();
       _selectedPaths.add(_fullEntryPath(target));
-      _isSelecting = true;
+      if (!PlatformCapabilities.isDesktop) {
+        _isSelecting = true;
+      }
+      _syncBottomBarInset();
     });
+    _scrollIndexIntoView(nextIndex);
   }
 
   void _selectBoundary(bool first) {
     if (_isTyping) return;
     final list = _filteredAndSortedEntries;
     if (list.isEmpty) return;
-    final target = first ? list.first : list.last;
+    final idx = first ? 0 : list.length - 1;
+    final target = list[idx];
+    _selectionAnchor = idx;
     setState(() {
       _selectedPaths.clear();
       _selectedPaths.add(_fullEntryPath(target));
-      _isSelecting = true;
+      if (!PlatformCapabilities.isDesktop) {
+        _isSelecting = true;
+      }
+      _syncBottomBarInset();
     });
+    _scrollIndexIntoView(idx);
   }
 
   void _clearSelection() {
@@ -2684,13 +3005,53 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
   }
 
+  static String _normalizeRel(String rel) {
+    var s = rel.replaceAll('\\', '/');
+    while (s.startsWith('/')) {
+      s = s.substring(1);
+    }
+    while (s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
+  static String _parentRelPathOf(String rel) {
+    final norm = _normalizeRel(rel);
+    final idx = norm.lastIndexOf('/');
+    return idx < 0 ? '' : norm.substring(0, idx);
+  }
+
   Widget _withDropTarget(Widget child) {
     if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
       return child;
     }
+    final primary = Theme.of(context).colorScheme.primary;
+    final currentRel = _normalizeRel(_relPath);
     return DropTarget(
       onDragDone: _handleExternalDrop,
-      child: child,
+      child: DragTarget<({String root, List<String> paths})>(
+        onWillAcceptWithDetails: (d) {
+          if (!_canWrite || d.data.paths.isEmpty) return false;
+          final sameDir = d.data.root == _root &&
+              d.data.paths.every((p) => _parentRelPathOf(p) == currentRel);
+          return !sameDir;
+        },
+        onAcceptWithDetails: (d) => _acceptDrop(d.data, _relPath),
+        builder: (_, candidate, _) {
+          final hovering = candidate.isNotEmpty;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            decoration: hovering
+                ? BoxDecoration(
+                    color: primary.withValues(alpha: 0.06),
+                    border: Border.all(color: primary, width: 2),
+                  )
+                : null,
+            child: child,
+          );
+        },
+      ),
     );
   }
 
@@ -2770,33 +3131,18 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       child: child,
     );
     if (item.isDir && _canWrite) {
-      // The builder closure must wrap the Draggable, not `draggable` itself:
-      // capturing the variable after reassignment would nest the DragTarget
-      // inside its own builder and recurse until the stack overflows.
       final dragSource = draggable;
-      draggable = DragTarget<({String root, List<String> paths})>(
-        onWillAcceptWithDetails: (details) {
-          final d = details.data;
-          if (d.paths.contains(path)) return false;
-          if (d.root == _root &&
-              d.paths.any((p) => path.startsWith('$p/'))) {
-            return false;
-          }
-          return true;
+      draggable = HoverExpandDragTarget<({String root, List<String> paths})>(
+        onAccept: (d) {
+          if (d.paths.contains(path)) return;
+          if (d.root == _root && d.paths.any((p) => path.startsWith('$p/'))) return;
+          _acceptDrop(d, path);
         },
-        onAcceptWithDetails: (details) => _acceptDrop(details.data, path),
-        builder: (ctx, candidate, rejected) => Container(
-          decoration: candidate.isNotEmpty
-              ? BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(ctx).colorScheme.primary,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                )
-              : null,
-          child: dragSource,
-        ),
+        onHoverExpand: () {
+          if (!mounted) return;
+          navigateTo(_root, path);
+        },
+        builder: (ctx, _) => dragSource,
       );
     }
     return draggable;
@@ -3264,8 +3610,6 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   Future<void> _compressSelected() async {
-    // One folder or file compresses to "<name>.zip"; a multi-selection keeps
-    // the generic name. Saves retyping the obvious case.
     String defaultName = 'archive.zip';
     if (_selectedPaths.length == 1) {
       final only = _selectedPaths.first.split('/').last;
@@ -3273,47 +3617,90 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
     final ctrl = TextEditingController(text: defaultName)
       ..selection = TextSelection(baseOffset: 0, extentOffset: defaultName.length - 4);
-    final String? zipName;
+    final pwCtrl = TextEditingController();
+    bool encrypt = false;
+    bool obscurePw = true;
+    ({String name, String? password})? result;
     try {
-      zipName = await showDialog<String>(
+      result = await showDialog<({String name, String? password})>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(AppLocalizations.of(context).compressToZip),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            decoration: InputDecoration(labelText: AppLocalizations.of(context).archiveName, border: const OutlineInputBorder()),
-            onSubmitted: (v) {
-              if (v.trim().isNotEmpty) {
-                Navigator.of(ctx).pop(v.trim());
-              }
-            },
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).cancel)),
-            ListenableBuilder(
-              listenable: ctrl,
-              builder: (ctx, _) => FilledButton(
-                onPressed: ctrl.text.trim().isEmpty
-                    ? null
-                    : () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                child: Text(AppLocalizations.of(context).compress),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final l10n = AppLocalizations.of(ctx);
+            return AlertDialog(
+              title: Text(l10n.compressToZip),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      labelText: l10n.archiveName,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: encrypt,
+                    title: Text(l10n.encryptWithPassword, style: const TextStyle(fontSize: 12.5)),
+                    onChanged: (v) => setDialogState(() => encrypt = v ?? false),
+                  ),
+                  if (encrypt) ...[
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: pwCtrl,
+                      obscureText: obscurePw,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        labelText: l10n.archivePasswordHint,
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(obscurePw ? Icons.visibility : Icons.visibility_off, size: 18),
+                          onPressed: () => setDialogState(() => obscurePw = !obscurePw),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ),
-          ],
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(l10n.cancel)),
+                ListenableBuilder(
+                  listenable: Listenable.merge([ctrl, pwCtrl]),
+                  builder: (ctx, _) => FilledButton(
+                    onPressed: (ctrl.text.trim().isEmpty || (encrypt && pwCtrl.text.isEmpty))
+                        ? null
+                        : () => Navigator.of(ctx).pop((
+                              name: ctrl.text.trim(),
+                              password: encrypt ? pwCtrl.text : null,
+                            )),
+                    child: Text(l10n.compress),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       );
     } finally {
       ctrl.dispose();
+      pwCtrl.dispose();
     }
 
-    if (zipName != null && zipName.isNotEmpty) {
+    if (result != null && result.name.isNotEmpty) {
+      final zipName = result.name;
+      final password = result.password;
       final dstPath = joinNative(_root, _relPath.isEmpty ? zipName : '$_relPath/$zipName');
       try {
-        Future<String> startTask() => TaskService.instance.compress(
+        Future<String> startTask() => tasks_api.startCompressWithPasswordTask(
               srcRoot: _root,
               srcPaths: _selectedPaths.toList(),
               dstArchivePath: dstPath,
+              password: password,
             );
         final taskId = await startTask();
         if (!mounted) return;
@@ -3339,20 +3726,13 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final fullArchive = joinNative(_root, _fullEntryPath(item));
     final targetDir = joinNative(_root, _relPath);
     try {
-      Future<String> startTask() => TaskService.instance.extract(
-            archivePath: fullArchive,
-            dstDir: targetDir,
-          );
-      final taskId = await startTask();
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context);
-      await TaskProgressDialog.show(
+      final ok = await BrowserFileOps.extractArchiveInteractive(
         context,
-        taskId,
-        l10n.extracting,
-        onRetry: startTask,
+        archiveNativePath: fullArchive,
+        archiveName: item.name,
+        dstDir: targetDir,
       );
-      if (mounted) _load(refresh: true);
+      if (ok && mounted) _load(refresh: true);
     } catch (e) {
       if (mounted) {
         _showError(AppLocalizations.of(context).extractFailed(e.toString()));
@@ -3398,155 +3778,18 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
   }
 
-  /// Walks a folder to total its files. Bounded so a huge tree cannot freeze
-  /// the dialog; the count is marked approximate when the cap is hit.
-  Future<String> _measureDirectory(String path) async {
-    final l10n = AppLocalizations.of(context);
-    var total = 0;
-    var count = 0;
-    var capped = false;
-    Future<void> walk(Directory dir, int depth) async {
-      if (capped || depth > 12) return;
-      List<FileSystemEntity> items;
-      try {
-        items = await dir.list(followLinks: false).toList();
-      } catch (_) {
-        return;
-      }
-      for (final entity in items) {
-        if (capped) return;
-        if (entity is File) {
-          try {
-            total += await entity.length();
-          } catch (_) {}
-          if (++count >= 20000) {
-            capped = true;
-            return;
-          }
-        } else if (entity is Directory) {
-          await walk(entity, depth + 1);
-        }
-      }
-    }
-
-    try {
-      await walk(Directory(path), 0);
-    } catch (_) {
-      return l10n.directoryLabel;
-    }
-    if (count == 0) return l10n.directoryEmptyLabel;
-    final size = EntryItem(
-      EntryDto(
-        name: '',
-        path: '',
-        isDir: false,
-        hidden: false,
-        isSymlink: false,
-        size: BigInt.from(total),
-      ),
-    ).formattedSize;
-    return '$size${capped ? '+' : ''} ($count${capped ? '+' : ''} files)';
-  }
-
   Future<void> _showFileInfo(EntryItem item) async {
     final path = _fullEntryPath(item);
-    // Directories report no size from the backend; measure them in the
-    // background and fill the dialog once the walk finishes, instead of
-    // freezing on "Properties" for a large tree.
-    final dirSizeNotifier = ValueNotifier<String?>(null);
-    // The walk can outlive the dialog; writing a disposed notifier throws.
-    var closed = false;
-    if (item.isDir && isNativeRoot(_root)) {
-      final dirPath = joinNative(_root, path);
-      _measureDirectory(dirPath).then((size) {
-        if (!closed) dirSizeNotifier.value = size;
-      }).catchError((_) {});
-    }
-    if (!mounted) {
-      closed = true;
-      dirSizeNotifier.dispose();
-      return;
-    }
     final fullPath = isNativeRoot(_root)
         ? joinNative(_root, path)
         : '$_root/$path';
-    final ext = item.isDir ? null : (item.name.contains('.') ? item.name.split('.').last : null);
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(item.icon, color: item.iconColor(ctx)),
-            const SizedBox(width: 8),
-            Expanded(child: Text(item.name, overflow: TextOverflow.ellipsis)),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _infoRow(AppLocalizations.of(context).nameLabel, item.name),
-              _infoRow(AppLocalizations.of(context).pathLabel, fullPath),
-              if (ext != null) _infoRow(AppLocalizations.of(context).extensionLabel, ext.toUpperCase()),
-              if (item.isDir)
-                ValueListenableBuilder<String?>(
-                  valueListenable: dirSizeNotifier,
-                  builder: (_, size, _) => _infoRow(
-                    AppLocalizations.of(context).sizeLabel,
-                    size ?? AppLocalizations.of(context).measuring,
-                  ),
-                )
-              else
-                _infoRow(
-                  AppLocalizations.of(context).sizeLabel,
-                  item.size != null ? AppLocalizations.of(context).yesBytes(item.formattedSize, '${item.size}') : AppLocalizations.of(context).unknownSize,
-                ),
-              _infoRow(AppLocalizations.of(context).modifiedLabel, item.formattedModified),
-              _infoRow(AppLocalizations.of(context).typeLabel, item.isDir ? AppLocalizations.of(context).directoryLabel : (item.isArchive ? AppLocalizations.of(context).archiveLabel : AppLocalizations.of(context).fileLabel)),
-              _infoRow(AppLocalizations.of(context).hiddenLabel, item.hidden ? AppLocalizations.of(context).yes : AppLocalizations.of(context).no),
-              if (item.isSymlink) _infoRow(AppLocalizations.of(context).symlinkLabel, AppLocalizations.of(context).yes),
-            ],
-          ),
-        ),
-        actions: [
-          FilledButton.tonalIcon(
-            icon: const Icon(Icons.copy, size: 16),
-            label: Text(AppLocalizations.of(context).copyPath),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: fullPath));
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
-              );
-            },
-          ),
-          if (item.isArchive && _canWrite && _canArchive)
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _extractArchive(item);
-              },
-              child: Text(AppLocalizations.of(context).extractHere),
-            ),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(AppLocalizations.of(context).close)),
-        ],
-      ),
-    );
-    closed = true;
-    dirSizeNotifier.dispose();
-  }
-
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 70, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-          Expanded(child: SelectableText(value, style: const TextStyle(fontSize: 12))),
-        ],
-      ),
+    if (!mounted) return;
+    await showBrowserInfoDialog(
+      context,
+      root: _root,
+      item: item,
+      fullPath: fullPath,
+      canModifyPermissions: _canWrite,
     );
   }
 
@@ -3661,6 +3904,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     // Back first leaves selection/search/address, then walks back through
     // folder history. At the initial folder it leaves the page.
     final canInterceptBack = _isSelecting ||
+        _selectedPaths.isNotEmpty ||
         _isSearching ||
         _isEditingAddress ||
         _backStack.isNotEmpty ||
@@ -3704,22 +3948,22 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           _searchFocusNode.requestFocus();
         },
         const SingleActivator(LogicalKeyboardKey.keyC, control: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty) {
+          if (!_isTyping && _selectedPaths.isNotEmpty) {
             _copySelected(isCut: false);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty) {
+          if (!_isTyping && _selectedPaths.isNotEmpty) {
             _copySelected(isCut: false);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyX, control: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
+          if (!_isTyping && _selectedPaths.isNotEmpty && _canWrite) {
             _copySelected(isCut: true);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyX, meta: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.isNotEmpty && _canWrite) {
+          if (!_isTyping && _selectedPaths.isNotEmpty && _canWrite) {
             _copySelected(isCut: true);
           }
         },
@@ -3734,7 +3978,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite && _entries.isNotEmpty) {
+          if (!_isTyping && _selectedPaths.length == 1 && _canWrite && _entries.isNotEmpty) {
             final target = _selectedPaths.first;
             final idx = _entries.indexWhere((e) => _fullEntryPath(e) == target);
             if (idx >= 0) {
@@ -3743,7 +3987,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite && _entries.isNotEmpty) {
+          if (!_isTyping && _selectedPaths.length == 1 && _canWrite && _entries.isNotEmpty) {
             final target = _selectedPaths.first;
             final idx = _entries.indexWhere((e) => _fullEntryPath(e) == target);
             if (idx >= 0) {
@@ -3752,19 +3996,19 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           }
         },
         const SingleActivator(LogicalKeyboardKey.f2): () {
-          if (!_isTyping && _isSelecting && _selectedPaths.length == 1 && _canWrite) {
+          if (!_isTyping && _selectedPaths.length == 1 && _canWrite) {
             _renameSelected();
           }
         },
         const SingleActivator(LogicalKeyboardKey.delete, shift: true): () {
-          if (!_isTyping && _isSelecting && _canWrite) {
+          if (!_isTyping && _selectedPaths.isNotEmpty && _canWrite) {
             _deleteSelected(permanent: true);
           }
         },
         // The Mac "delete" key reports backspace, so Shift+Delete has to be
         // matched on backspace there; otherwise permanent delete is unreachable.
         const SingleActivator(LogicalKeyboardKey.backspace, shift: true): () {
-          if (!_isTyping && Platform.isMacOS && _isSelecting && _canWrite) {
+          if (!_isTyping && Platform.isMacOS && _selectedPaths.isNotEmpty && _canWrite) {
             _deleteSelected(permanent: true);
           }
         },
@@ -3792,7 +4036,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           setState(() => _isEditingAddress = true);
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (_isSelecting) {
+          if (_isSelecting || _selectedPaths.isNotEmpty) {
             _clearSelection();
           } else if (_isSearching) {
             setState(() {
@@ -3807,7 +4051,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           }
         },
         const SingleActivator(LogicalKeyboardKey.delete): () {
-          if (!_isTyping && _isSelecting && _canWrite) {
+          if (!_isTyping && _selectedPaths.isNotEmpty && _canWrite) {
             _deleteSelected();
           }
         },
@@ -3816,7 +4060,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           // it has to delete them; navigating up left the folder instead.
           // Elsewhere Backspace keeps its Explorer-style "go up" meaning.
           if (_isTyping) return;
-          if (Platform.isMacOS && _isSelecting && _canWrite) {
+          if (Platform.isMacOS && _selectedPaths.isNotEmpty && _canWrite) {
             _deleteSelected();
           } else if (!_isSearching) {
             _navigateUp();
@@ -3829,9 +4073,12 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         const SingleActivator(LogicalKeyboardKey.arrowUp): () => _selectAdjacent(-1),
         const SingleActivator(LogicalKeyboardKey.home): () => _selectBoundary(true),
         const SingleActivator(LogicalKeyboardKey.end): () => _selectBoundary(false),
-        // Enter opens the single selected entry, like every desktop file list.
+        // Enter and Space open the single selected entry (quick preview).
         const SingleActivator(LogicalKeyboardKey.enter): _openSelected,
         const SingleActivator(LogicalKeyboardKey.numpadEnter): _openSelected,
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          if (!_isTyping) _openSelected();
+        },
       },
       child: Listener(
         // Mouse back/forward side buttons, like a desktop file manager.
@@ -3848,7 +4095,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       canPop: widget.embedded || !canInterceptBack,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || widget.embedded) return;
-        if (_isSelecting) {
+        if (_isSelecting || _selectedPaths.isNotEmpty) {
           _clearSelection();
         } else if (_isSearching) {
           setState(() {
@@ -3867,7 +4114,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         }
       },
       child: Scaffold(
-      appBar: PreferencesService.toolbarAtBottom.value && !_pickMode ? null : AppBar(
+      appBar: _effectiveToolbarAtBottom && !_pickMode ? null : AppBar(
         titleSpacing: MediaQuery.sizeOf(context).width < 600 ? 10 : 4,
         toolbarHeight: MediaQuery.sizeOf(context).width < 600 ? 40 : 46,
         automaticallyImplyLeading: false,
@@ -3993,15 +4240,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         child: SafeArea(
           // With the toolbar moved to the bottom there is no AppBar to consume
           // the status-bar inset, so the body starts under it otherwise.
-          top: PreferencesService.toolbarAtBottom.value,
+          top: _effectiveToolbarAtBottom,
           bottom: false,
           child: Column(
             children: [
               // A refresh keeps the list, so it needs its own progress line —
               // otherwise F5 and pull-to-refresh look like a no-op.
               if (_refreshing) const LinearProgressIndicator(minHeight: 2),
-              _buildCapabilitiesBar(),
               Expanded(child: _buildBody()),
+              if (!_loading && _error == null) _buildNativeStatusBar(),
             ],
           ),
         ),
@@ -4015,37 +4262,17 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   Widget _toolbarContent(List<String> segments) {
-    // Icons sit flush right; the address bar stays pinned left at a fixed
-    // width so the two regions do not trade space as the window resizes.
     final actions = SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(mainAxisSize: MainAxisSize.min, children: _toolbarActions()),
     );
     final isCompact = MediaQuery.sizeOf(context).width < 600;
-    // The search field, selection summary, or narrow phone screens need the whole bar.
-    if (_isSearching || _isSelecting || isCompact) {
-      return Row(
-        children: [
-          Expanded(child: _buildToolbarTitle(segments)),
-          const SizedBox(width: 4),
-          actions,
-        ],
-      );
-    }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // On desktop, the address bar keeps a stable width; the icon row scrolls
-        // once the window is too narrow to fit every action.
-        final addressWidth = (constraints.maxWidth * 0.45).clamp(200.0, 420.0);
-        return Row(
-          children: [
-            SizedBox(width: addressWidth, child: _buildToolbarTitle(segments)),
-            Expanded(
-              child: Align(alignment: Alignment.centerRight, child: actions),
-            ),
-          ],
-        );
-      },
+    return Row(
+      children: [
+        Expanded(child: _buildToolbarTitle(segments)),
+        SizedBox(width: isCompact ? 4 : 8),
+        actions,
+      ],
     );
   }
 
@@ -4309,6 +4536,39 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             _uploadFiles(forceInApp: true);
           } else if (val == 'new_folder') {
             _createFolder();
+          } else if (val == 'advanced_search') {
+            _openAdvancedSearch();
+          } else if (val == 'storage_analyzer') {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => StorageAnalyzerPage(
+                  root: _root,
+                  initialPath: _relPath,
+                  title: _rootTitle,
+                ),
+              ),
+            );
+          } else if (val == 'duplicate_finder') {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => DuplicateFinderPage(
+                  root: _root,
+                  initialPath: _relPath,
+                  title: _rootTitle,
+                ),
+              ),
+            );
+          } else if (val == 'dir_sync') {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SyncPage(
+                  initialSrcRoot: _root,
+                  initialSrcPath: _relPath,
+                ),
+              ),
+            );
+          } else if (val == 'vault_always_visible') {
+            _toggleCurrentVaultAlwaysVisible();
           } else if (val == 'vault_info') {
             _showCurrentVaultInfo();
           } else if (val == 'vault_security') {
@@ -4419,6 +4679,46 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
               ],
             ),
           ),
+          PopupMenuItem<String>(
+            value: 'advanced_search',
+            child: Row(
+              children: [
+                const Icon(Icons.manage_search, size: 18),
+                const SizedBox(width: 8),
+                Text(AppLocalizations.of(context).advancedSearch),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'storage_analyzer',
+            child: Row(
+              children: [
+                const Icon(Icons.pie_chart_outline, size: 18),
+                const SizedBox(width: 8),
+                Text(AppLocalizations.of(context).storageAnalyzer),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'duplicate_finder',
+            child: Row(
+              children: [
+                const Icon(Icons.find_replace, size: 18),
+                const SizedBox(width: 8),
+                Text(AppLocalizations.of(context).duplicateFinder),
+              ],
+            ),
+          ),
+          PopupMenuItem<String>(
+            value: 'dir_sync',
+            child: Row(
+              children: [
+                const Icon(Icons.sync, size: 18),
+                const SizedBox(width: 8),
+                Text(AppLocalizations.of(context).directorySync),
+              ],
+            ),
+          ),
           CheckedPopupMenuItem<String>(
             value: 'toggle_hidden',
             checked: _showHidden,
@@ -4426,6 +4726,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           ),
           if (_isInVault) ...[
             const PopupMenuDivider(),
+            CheckedPopupMenuItem<String>(
+              value: 'vault_always_visible',
+              checked: VaultService.instance.isAlwaysVisible(_currentVaultId!),
+              child: Text(AppLocalizations.of(context).vaultAlwaysVisibleTitle),
+            ),
             PopupMenuItem<String>(
               value: 'vault_info',
               child: Row(
@@ -4482,7 +4787,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   Widget? _buildScaffoldBottomBar(List<String> segments) {
     if (_pickMode) return _buildPickBar();
     final hasActionBar = _isSelecting || _clipboard != null;
-    final toolbarAtBottom = PreferencesService.toolbarAtBottom.value;
+    final toolbarAtBottom = _effectiveToolbarAtBottom;
     if (!hasActionBar && !toolbarAtBottom) return null;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -4674,66 +4979,44 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
-  Widget _buildCapabilitiesBar() {
-    final caps = _capabilities;
-    if (caps == null) return const SizedBox.shrink();
-    // Clicking the item count opens search directly.
-    void openSearch() {
-      if (!_isSearching) {
-        setState(() => _isSearching = true);
-        _searchFocusNode.requestFocus();
+  void _toggleSortColumn(SortField field) {
+    setState(() {
+      if (_sortField == field) {
+        _sortAsc = !_sortAsc;
+      } else {
+        _sortField = field;
+        _sortAsc = field == SortField.name || field == SortField.type;
       }
-    }
-    // On a phone the capability chips take more room than the item count they
-    // sit next to, so the row keeps only the counts there.
-    final showCaps = MediaQuery.sizeOf(context).width >= 600;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
-      child: Row(
-        children: [
-          if (showCaps) ...[
-            Text(AppLocalizations.of(context).capabilitiesPrefix, style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            _capChip('read', caps.read),
-            _capChip('write', caps.write),
-            _capChip('rename', caps.rename),
-            _capChip('copy', caps.copy),
-            _capChip('mkdir', caps.mkdir),
-            _capChip('remove', caps.remove),
-          ],
-          const Spacer(),
-          InkWell(
-            onTap: openSearch,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              child: Text(
-                (_filterQuery.isNotEmpty
-                        ? AppLocalizations.of(context).itemsOutOfTotal(_filteredAndSortedEntries.length, _entries.where((e) => _showHidden || !e.hidden).length)
-                        : AppLocalizations.of(context).itemsCount(_filteredAndSortedEntries.length)) +
-                    (_totalListedBytes > BigInt.zero ? '  •  ${_formatBytes(_totalListedBytes)}' : '') +
-                    (!_showHidden && _entries.any((e) => e.hidden) ? '  •  ${AppLocalizations.of(context).hiddenFilesOff}' : '') +
-                    (_hasMore ? ' (${AppLocalizations.of(context).moreBelow})' : ''),
-                style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    });
+    _saveViewPreferences();
+    _load();
   }
 
-  Widget _capChip(String label, bool enabled) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          color: enabled ? Colors.green.shade700 : Colors.grey,
-          fontWeight: enabled ? FontWeight.bold : FontWeight.normal,
-        ),
-      ),
+  Widget _buildNativeStatusBar() {
+    final visible = _filteredAndSortedEntries;
+    final nonHidden = _entries.where((e) => _showHidden || !e.hidden).length;
+    return BrowserStatusBar(
+      visibleCount: visible.length,
+      totalNonHiddenCount: nonHidden,
+      isFiltered: _filterQuery.isNotEmpty,
+      totalListedBytes: _totalListedBytes,
+      selectedCount: _selectedPaths.length,
+      selectedBytes: _selectedBytes,
+      hasHiddenEntries: _entries.any((e) => e.hidden),
+      showHidden: _showHidden,
+      isReadOnly: !_canWrite,
+      hasMore: _hasMore,
+      formatBytes: _formatBytes,
+      onTapCount: () {
+        if (!_isSearching) {
+          setState(() => _isSearching = true);
+          _searchFocusNode.requestFocus();
+        }
+      },
+      onToggleHidden: () {
+        setState(() => _showHidden = !_showHidden);
+        _saveViewPreferences();
+      },
     );
   }
 
@@ -5012,7 +5295,65 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }).catchError((_) {});
   }
 
+  Future<void> _openAdvancedSearch() async {
+    final picked = await showAdvancedSearchDialog(
+      context,
+      root: _root,
+      relPath: _relPath,
+      readOnly: !_canWrite,
+    );
+    if (picked != null && mounted) {
+      final entry = picked.entry;
+      if (entry == null) return;
+      if (entry.isDir) {
+        navigateTo(_root, entry.path);
+      } else {
+        final parent = entry.path.contains('/')
+            ? entry.path.substring(0, entry.path.lastIndexOf('/'))
+            : '';
+        navigateTo(_root, parent);
+      }
+    }
+  }
+
+  void _compareSelectedDiff() {
+    if (_selectedPaths.length != 2) return;
+    final paths = _selectedPaths.toList();
+    final matched = paths
+        .map((p) => _entries.where((e) => _fullEntryPath(e) == p).firstOrNull)
+        .whereType<EntryItem>()
+        .toList();
+    if (matched.length != 2) return;
+    final a = matched[0];
+    final b = matched[1];
+    if (a.isDir != b.isDir) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DiffViewerPage(
+          isDirectory: a.isDir,
+          leftRoot: _root,
+          leftPath: _fullEntryPath(a),
+          leftLabel: a.name,
+          rightRoot: _root,
+          rightPath: _fullEntryPath(b),
+          rightLabel: b.name,
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomActionBar() {
+    bool canDiff = false;
+    if (_selectedPaths.length == 2) {
+      final paths = _selectedPaths.toList();
+      final matched = paths
+          .map((p) => _entries.where((e) => _fullEntryPath(e) == p).firstOrNull)
+          .whereType<EntryItem>()
+          .toList();
+      if (matched.length == 2 && matched[0].isDir == matched[1].isDir) {
+        canDiff = true;
+      }
+    }
     return BrowserBottomActionBar(
       isSelecting: _isSelecting,
       isRemoteOrArchive: _canExportToLocal,
@@ -5029,6 +5370,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       onRename: _renameSelected,
       onInfo: _showSelectedInfo,
       onCompress: _compressSelected,
+      onCompareDiff: canDiff ? _compareSelectedDiff : null,
       onPaste: _paste,
       onClearClipboard: () {
         setState(() {
@@ -5162,8 +5504,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 behavior: HitTestBehavior.opaque,
                 onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
                 onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
-                // Tap empty space to leave selection mode, like the platform file managers.
-                onTap: _isSelecting ? _clearSelection : null,
+                // Tap empty space to clear selection / leave selection mode, like native file managers.
+                onTap: (_isSelecting || _selectedPaths.isNotEmpty)
+                    ? _clearSelection
+                    : null,
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -5260,8 +5604,10 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           behavior: HitTestBehavior.translucent,
           onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
           onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
-                // Tap empty space to leave selection mode, like the platform file managers.
-                onTap: _isSelecting ? _clearSelection : null,
+                // Tap empty space to clear selection / leave selection mode, like native file managers.
+                onTap: (_isSelecting || _selectedPaths.isNotEmpty)
+                    ? _clearSelection
+                    : null,
           child: LayoutBuilder(
             builder: (ctx, constraints) {
               _gridWidth = constraints.maxWidth;
@@ -5271,11 +5617,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(8, 8, 8, _scrollBottomPadding),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 88,
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: _gridMaxCrossAxisExtent,
             mainAxisSpacing: 6,
             crossAxisSpacing: 6,
-            childAspectRatio: 0.85,
+            childAspectRatio: _gridChildAspectRatio,
           ),
           itemCount: list.length + (_hasMore ? 1 : 0),
           itemBuilder: (ctx, i) {
@@ -5314,19 +5660,31 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
               },
               child: InkWell(
                 onTap: () => _handleTileTap(item, i),
+                onDoubleTap: PlatformCapabilities.isDesktop && !_pickMode
+                    ? () => _handleTileDoubleTap(item)
+                    : null,
                 onLongPress: () => _showEntryActions(item),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
+                hoverColor: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.55),
                 child: Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5) : null,
-                    border: Border.all(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).dividerColor.withValues(alpha: 0.25),
-                      width: isSelected ? 1.5 : 1,
-                    ),
-                    borderRadius: BorderRadius.circular(6),
+                    color: isSelected
+                        ? Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.55)
+                        : Colors.transparent,
+                    border: isSelected
+                        ? Border.all(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 1.5,
+                          )
+                        : null,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Stack(
                     children: [
@@ -5339,16 +5697,20 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                                 root: _root,
                                 relPath: _fullEntryPath(item),
                                 item: item,
-                                size: 52,
+                                size: PlatformCapabilities.isDesktop ? 68 : 56,
                               )
                             else
-                              Icon(item.icon, size: 28, color: item.iconColor(ctx)),
-                            const SizedBox(height: 4),
+                              Icon(
+                                item.icon,
+                                size: PlatformCapabilities.isDesktop ? 42 : 34,
+                                color: item.iconColor(ctx),
+                              ),
+                            const SizedBox(height: 6),
                             _buildItemNameText(
                               item.name,
                               TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
                               lowerName: item.nameLower,
@@ -5356,7 +5718,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 1),
-                            Text(item.formattedSize, style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                            Text(
+                              item.isDir ? '' : item.formattedSize,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -5414,115 +5784,334 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () async => _load(refresh: true),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onSecondaryTapDown: (details) => _showBackgroundContextMenu(details.globalPosition),
-        onLongPressStart: (details) => _showBackgroundContextMenu(details.globalPosition),
-                // Tap empty space to leave selection mode, like the platform file managers.
-                onTap: _isSelecting ? _clearSelection : null,
-        child: ListView.builder(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.only(bottom: _scrollBottomPadding),
-          itemCount: list.length + (_hasMore ? 1 : 0),
-        itemBuilder: (ctx, i) {
-          if (i == list.length) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: _loadingMore
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : TextButton.icon(
-                        icon: const Icon(Icons.expand_more, size: 18),
-                        label: Text(AppLocalizations.of(context).loadMore),
-                        onPressed: _loadMore,
-                      ),
-              ),
-            );
-          }
-          final item = list[i];
-          final path = _fullEntryPath(item);
-          final isSelected = _selectedPaths.contains(path);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDetailTable = constraints.maxWidth >= 600;
+        final showTypeCol = constraints.maxWidth >= 780;
+        _listRowHeight = isDetailTable ? 36.0 : 56.0;
+        final l10n = AppLocalizations.of(context);
+        final scheme = Theme.of(context).colorScheme;
 
-          return RepaintBoundary(
-            key: ValueKey(path),
-            child: _draggableTile(
-              item: item,
-              path: path,
-              child: GestureDetector(
-              onSecondaryTapDown: (details) {
-                _lastItemSecondaryTap = DateTime.now();
-                if (Platform.isIOS || Platform.isAndroid) {
-                  _showEntryActions(item);
-                } else {
-                  _showContextMenu(context, details.globalPosition, item);
-                }
-              },
-              child: ListTile(
-                dense: true,
-                visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                minVerticalPadding: 0,
-                minLeadingWidth: 20,
-                minTileHeight: 34,
-                selected: isSelected,
-                leading: _isSelecting
-                    ? Checkbox(
-                        value: isSelected,
-                        onChanged: (_) => _toggleSelect(path),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (item.isImage || item.isVideo)
-                            EntryThumbnail(
-                              root: _root,
-                              relPath: path,
-                              item: item,
-                              size: 28,
+        final listBody = RefreshIndicator(
+          onRefresh: () async => _load(refresh: true),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onSecondaryTapDown: (details) =>
+                _showBackgroundContextMenu(details.globalPosition),
+            onLongPressStart: (details) =>
+                _showBackgroundContextMenu(details.globalPosition),
+            // Tap empty space to clear selection / leave selection mode, like native file managers.
+            onTap: (_isSelecting || _selectedPaths.isNotEmpty)
+                ? _clearSelection
+                : null,
+            child: Stack(
+              children: [
+                ListView.builder(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.only(bottom: _scrollBottomPadding),
+              itemCount: list.length + (_hasMore ? 1 : 0),
+              itemBuilder: (ctx, i) {
+                if (i == list.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: _loadingMore
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          else
-                            Icon(item.icon, color: item.iconColor(ctx), size: 18),
-                          if (item.isSymlink)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 2),
-                              child: Icon(Icons.link, size: 11, color: Colors.grey.shade600),
+                          : TextButton.icon(
+                              icon: const Icon(Icons.expand_more, size: 18),
+                              label: Text(l10n.loadMore),
+                              onPressed: _loadMore,
                             ),
+                    ),
+                  );
+                }
+                final item = list[i];
+                final path = _fullEntryPath(item);
+                final isSelected = _selectedPaths.contains(path);
+
+                Widget rowWidget;
+                if (isDetailTable) {
+                  final typeText = item.isDir
+                      ? l10n.folderLabel
+                      : (item.extension.isEmpty
+                          ? '-'
+                          : item.extension.toUpperCase());
+                  rowWidget = InkWell(
+                    onTap: () => _handleTileTap(item, i),
+                    onDoubleTap: PlatformCapabilities.isDesktop && !_pickMode
+                        ? () => _handleTileDoubleTap(item)
+                        : null,
+                    onLongPress: () => _showEntryActions(item),
+                    hoverColor:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                    child: Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? scheme.primaryContainer.withValues(alpha: 0.48)
+                            : (i.isOdd
+                                ? scheme.surfaceContainerLowest
+                                    .withValues(alpha: 0.35)
+                                : Colors.transparent),
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.14),
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          if (_isSelecting)
+                            SizedBox(
+                              width: 30,
+                              child: Checkbox(
+                                value: isSelected,
+                                onChanged: (_) => _toggleSelect(path),
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          SizedBox(
+                            width: 26,
+                            child: (item.isImage || item.isVideo)
+                                ? EntryThumbnail(
+                                    root: _root,
+                                    relPath: path,
+                                    item: item,
+                                    size: 22,
+                                  )
+                                : Icon(
+                                    item.icon,
+                                    color: item.iconColor(ctx),
+                                    size: 18,
+                                  ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: _buildItemNameText(
+                                    item.name,
+                                    TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: scheme.onSurface,
+                                    ),
+                                    lowerName: item.nameLower,
+                                  ),
+                                ),
+                                if (item.isSymlink)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Icon(
+                                      Icons.link,
+                                      size: 12,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (showTypeCol)
+                            SizedBox(
+                              width: 84,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                child: Text(
+                                  typeText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          SizedBox(
+                            width: 136,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
+                              child: Text(
+                                item.formattedModified,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: scheme.onSurfaceVariant,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 90,
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: Text(
+                                item.formattedSize,
+                                textAlign: TextAlign.right,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: scheme.onSurfaceVariant,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                title: _buildItemNameText(
-                  item.name,
-                  TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  );
+                } else {
+                  rowWidget = ListTile(
+                    dense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    minLeadingWidth: 24,
+                    minTileHeight: 48,
+                    selected: isSelected,
+                    leading: _isSelecting
+                        ? Checkbox(
+                            value: isSelected,
+                            onChanged: (_) => _toggleSelect(path),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (item.isImage || item.isVideo)
+                                EntryThumbnail(
+                                  root: _root,
+                                  relPath: path,
+                                  item: item,
+                                  size: 32,
+                                )
+                              else
+                                Icon(
+                                  item.icon,
+                                  color: item.iconColor(ctx),
+                                  size: 22,
+                                ),
+                              if (item.isSymlink)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 2),
+                                  child: Icon(
+                                    Icons.link,
+                                    size: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                            ],
+                          ),
+                    title: _buildItemNameText(
+                      item.name,
+                      TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                      ),
+                      lowerName: item.nameLower,
+                    ),
+                    subtitle: Text(
+                      item.isDir
+                          ? item.formattedModified
+                          : '${item.formattedSize}  •  ${item.formattedModified}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    trailing: item.isDir || item.isArchive
+                        ? const Icon(Icons.chevron_right, size: 16)
+                        : null,
+                    onTap: () => _handleTileTap(item, i),
+                    onLongPress: () => _showEntryActions(item),
+                  );
+                }
+
+                return RepaintBoundary(
+                  key: ValueKey(path),
+                  child: _draggableTile(
+                    item: item,
+                    path: path,
+                    child: GestureDetector(
+                      onSecondaryTapDown: (details) {
+                        _lastItemSecondaryTap = DateTime.now();
+                        if (Platform.isIOS || Platform.isAndroid) {
+                          _showEntryActions(item);
+                        } else {
+                          _showContextMenu(
+                              context, details.globalPosition, item);
+                        }
+                      },
+                      child: rowWidget,
+                    ),
                   ),
-                  lowerName: item.nameLower,
-                ),
-                subtitle: Text(
-                  item.isDir
-                      ? item.formattedModified
-                      : '${item.formattedSize}  •  ${item.formattedModified}',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                trailing: item.isDir || item.isArchive ? const Icon(Icons.chevron_right, size: 14) : null,
-                onTap: () => _handleTileTap(item, i),
-                onLongPress: () => _showEntryActions(item),
-              ),
-              ),
+                );
+              },
             ),
-          );
-        },
-      ),
-    ),
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: _lassoDown,
+                    onPointerMove: _lassoMove,
+                    onPointerUp: (_) => _lassoEnd(),
+                    onPointerCancel: (_) => _lassoEnd(),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                if (_lassoRect != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _LassoPainter(_lassoRect!, scheme.primary),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+
+        if (!isDetailTable) return listBody;
+        return Column(
+          children: [
+            BrowserListColumnHeader(
+              sortField: _sortField,
+              sortAsc: _sortAsc,
+              showTypeColumn: showTypeCol,
+              hasLeadingCheckbox: _isSelecting,
+              onSortTap: _toggleSortColumn,
+              nameLabel: l10n.nameLabel,
+              modifiedLabel: l10n.modifiedLabel,
+              typeLabel: l10n.typeLabel,
+              sizeLabel: l10n.sizeLabel,
+            ),
+            Expanded(child: listBody),
+          ],
+        );
+      },
     );
   }
 }

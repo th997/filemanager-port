@@ -11,6 +11,10 @@ Future<String?> showBrowserEntryModalBottomSheet({
   required bool canWrite,
   required bool canArchive,
   bool canBookmark = true,
+  bool canShareLan = false,
+  bool canPinOffline = false,
+  bool canOpenInNewTab = true,
+  bool canShare = true,
 }) {
   final l10n = AppLocalizations.of(context);
   return showModalBottomSheet<String>(
@@ -35,6 +39,12 @@ Future<String?> showBrowserEntryModalBottomSheet({
               subtitle: Text(item.isDir ? l10n.folderLabel : item.formattedSize),
             ),
             const Divider(height: 1),
+            if (item.isDir && canOpenInNewTab)
+              ListTile(
+                leading: const Icon(Icons.tab_outlined),
+                title: Text(l10n.openInNewTab),
+                onTap: () => Navigator.of(ctx).pop('open_in_new_tab'),
+              ),
             if (!item.isDir) ...[
               ListTile(
                 leading: const Icon(Icons.open_in_new),
@@ -47,6 +57,18 @@ Future<String?> showBrowserEntryModalBottomSheet({
                 onTap: () => Navigator.of(ctx).pop('open_as_text'),
               ),
             ],
+            if (canShareLan)
+              ListTile(
+                leading: const Icon(Icons.wifi_tethering, color: Colors.teal),
+                title: Text(l10n.shareViaLan),
+                onTap: () => Navigator.of(ctx).pop('share_lan'),
+              ),
+            if (canPinOffline && !item.isDir)
+              ListTile(
+                leading: const Icon(Icons.offline_pin_outlined, color: Colors.indigo),
+                title: Text(l10n.pinOffline),
+                onTap: () => Navigator.of(ctx).pop('pin_offline'),
+              ),
             if (isRemoteOrArchive)
               ListTile(
                 leading: const Icon(Icons.download_outlined, color: Colors.blue),
@@ -92,7 +114,7 @@ Future<String?> showBrowserEntryModalBottomSheet({
                 title: Text(l10n.bookmarkThisFolder),
                 onTap: () => Navigator.of(ctx).pop('bookmark'),
               ),
-            if (!item.isDir)
+            if (!item.isDir && canShare)
               ListTile(
                 leading: const Icon(Icons.share_outlined),
                 title: Text(l10n.share),
@@ -137,6 +159,9 @@ Future<String?> showBrowserContextMenu({
   required bool canWrite,
   required bool canArchive,
   bool canBookmark = true,
+  bool canShareLan = false,
+  bool canPinOffline = false,
+  bool canOpenInNewTab = true,
 }) {
   final l10n = AppLocalizations.of(context);
   return showMenu<String>(
@@ -162,6 +187,39 @@ Future<String?> showBrowserContextMenu({
           ],
         ),
       ),
+      if (item.isDir && canOpenInNewTab)
+        PopupMenuItem(
+          value: 'open_in_new_tab',
+          child: Row(
+            children: [
+              const Icon(Icons.tab_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.openInNewTab),
+            ],
+          ),
+        ),
+      if (canShareLan)
+        PopupMenuItem(
+          value: 'share_lan',
+          child: Row(
+            children: [
+              const Icon(Icons.wifi_tethering, size: 18, color: Colors.teal),
+              const SizedBox(width: 8),
+              Text(l10n.shareViaLan),
+            ],
+          ),
+        ),
+      if (canPinOffline && !item.isDir)
+        PopupMenuItem(
+          value: 'pin_offline',
+          child: Row(
+            children: [
+              const Icon(Icons.offline_pin_outlined, size: 18, color: Colors.indigo),
+              const SizedBox(width: 8),
+              Text(l10n.pinOffline),
+            ],
+          ),
+        ),
       if (!item.isDir) ...[
         PopupMenuItem(
           value: 'open_with',

@@ -3037,4 +3037,507 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get deleteVaultPermanentWarning =>
       '選択した項目をプライバシーフォルダから完全に削除します（ゴミ箱からは復元できません）。';
+
+  @override
+  String get showQrCode => 'QRコードを表示';
+
+  @override
+  String get scanQrToConnect => 'スマートフォンで読み取ってブラウザで開く';
+
+  @override
+  String get newTab => '新しいタブ';
+
+  @override
+  String get closeTab => 'タブを閉じる';
+
+  @override
+  String get openInNewTab => '新しいタブで開く';
+
+  @override
+  String get copyToOtherPane => '反対のペインへコピー';
+
+  @override
+  String get moveToOtherPane => '反対のペインへ移動';
+
+  @override
+  String get pdfViewerTitle => 'PDF ビューアー';
+
+  @override
+  String pdfPageOf(int current, int total) {
+    return '$current / $total ページ';
+  }
+
+  @override
+  String get pdfSearchHint => 'PDF 内を検索…';
+
+  @override
+  String get pdfJumpToPage => 'ページへ移動';
+
+  @override
+  String get pdfOutline => '目次';
+
+  @override
+  String get pdfNoOutline => 'この文書には目次がありません';
+
+  @override
+  String get pdfZeroDiskBadge => 'メモリ描画・ディスク書出なし';
+
+  @override
+  String get scanLanDevices => 'LAN デバイスをスキャン';
+
+  @override
+  String get scanningLan => 'ローカルネットワークをスキャン中…';
+
+  @override
+  String get noLanDevicesFound =>
+      'LAN 内に SMB / SFTP / WebDAV / FTP が見つかりませんでした';
+
+  @override
+  String get storageAnalyzer => 'ストレージ分析';
+
+  @override
+  String get storageAnalyzerSubtitle => 'フォルダ容量ランキング、種別内訳、大容量ファイル';
+
+  @override
+  String get topFolders => '大容量フォルダ';
+
+  @override
+  String get topFiles => '大容量ファイル';
+
+  @override
+  String get fileTypesBreakdown => 'ファイル種別';
+
+  @override
+  String storageUsedOf(String used, String total, String free) {
+    return '$total 中 $used 使用（空き $free）';
+  }
+
+  @override
+  String get duplicateFinder => '重複ファイル検索';
+
+  @override
+  String get duplicateFinderSubtitle => '3段階 SHA-256 スキャンと一括整理';
+
+  @override
+  String get keepNewest => '最新を残す';
+
+  @override
+  String get keepOldest => '最古を残す';
+
+  @override
+  String get keepShortestPath => '最短パスを残す';
+
+  @override
+  String cleanSelectedDuplicates(int count) {
+    return '選択項目を削除 ($count)';
+  }
+
+  @override
+  String wastedSpace(String size) {
+    return '解放可能：$size';
+  }
+
+  @override
+  String get noDuplicatesFound => '重複ファイルは見つかりませんでした';
+
+  @override
+  String get categoryDocuments => 'ドキュメント';
+
+  @override
+  String get categoryVideos => '動画';
+
+  @override
+  String get categoryAudio => '音楽';
+
+  @override
+  String get categoryArchives => 'アーカイブ';
+
+  @override
+  String get categoryDownloads => 'ダウンロード';
+
+  @override
+  String get categoryApks => 'インストーラー';
+
+  @override
+  String get globalSearchHint => 'ファイル・ブックマーク・履歴を検索…';
+
+  @override
+  String get advancedSearch => '詳細検索';
+
+  @override
+  String get grepContentSearch => '全文検索 (Grep)';
+
+  @override
+  String get matchContains => '部分一致';
+
+  @override
+  String get matchWildcard => 'ワイルドカード (* ?)';
+
+  @override
+  String get matchRegex => '正規表現';
+
+  @override
+  String get minSizeMb => '最小サイズ (MB)';
+
+  @override
+  String get maxSizeMb => '最大サイズ (MB)';
+
+  @override
+  String get modifiedDaysAgo => '更新日数以内';
+
+  @override
+  String get pauseTask => '一時停止';
+
+  @override
+  String get resumeTask => '再開';
+
+  @override
+  String retryFailedItems(int count) {
+    return '失敗項目を再試行 ($count)';
+  }
+
+  @override
+  String get taskPaused => '一時停止中';
+
+  @override
+  String get rateLimitLabel => '速度制限';
+
+  @override
+  String get rateLimitUnlimited => '無制限';
+
+  @override
+  String get encryptWithPassword => 'パスワードで暗号化 (AES-256)';
+
+  @override
+  String get archivePasswordRequired => 'アーカイブのパスワードが必要です';
+
+  @override
+  String get archivePasswordHint => 'パスワードを入力';
+
+  @override
+  String get archiveWrongPassword => 'パスワードが正しくありません';
+
+  @override
+  String get subtitles => '字幕';
+
+  @override
+  String get subtitleOff => 'オフ';
+
+  @override
+  String get loadExternalSubtitle => 'ファイルから字幕を読み込む…';
+
+  @override
+  String subtitleAutoLoaded(String name) {
+    return '字幕を読み込みました：$name';
+  }
+
+  @override
+  String get pictureInPicture => 'ピクチャ・イン・ピクチャ';
+
+  @override
+  String get directorySync => 'フォルダ同期・バックアップ';
+
+  @override
+  String get directorySyncSubtitle => 'ローカルとリモートの増分・ミラー・双方向同期';
+
+  @override
+  String get syncModeIncremental => '増分同期（新規・更新のみコピー）';
+
+  @override
+  String get syncModeMirror => 'ミラー同期（余分なファイルを削除）';
+
+  @override
+  String get syncModeBidirectional => '双方向同期';
+
+  @override
+  String get syncPreviewChanges => '差分をプレビュー';
+
+  @override
+  String get syncStart => '同期を開始';
+
+  @override
+  String get syncNoChanges => 'フォルダはすでに同期されています';
+
+  @override
+  String get offlinePinned => 'オフライン固定ファイル';
+
+  @override
+  String get offlinePinnedSubtitle => 'リモートファイルのオフラインキャッシュ管理';
+
+  @override
+  String get pinOffline => 'オフラインに固定';
+
+  @override
+  String get unpinOffline => 'オフライン固定を解除';
+
+  @override
+  String pinnedOfflineNotice(String name) {
+    return '「$name」をオフラインに固定しました';
+  }
+
+  @override
+  String get checksumsTitle => 'チェックサム (MD5 / SHA-1 / SHA-256)';
+
+  @override
+  String get computeChecksums => 'チェックサムを計算';
+
+  @override
+  String get expectedHashHint => '期待されるハッシュ値を貼り付けて検証…';
+
+  @override
+  String get hashMatches => 'チェックサムが一致しました';
+
+  @override
+  String get hashMismatch => 'チェックサムが一致しません';
+
+  @override
+  String get structuredView => '構造化ビュー';
+
+  @override
+  String get rawTextView => 'テキスト表示';
+
+  @override
+  String get copyJsonPath => 'パスをコピー';
+
+  @override
+  String get compareDiff => '差分を比較';
+
+  @override
+  String get diffUnified => '統合表示';
+
+  @override
+  String get diffSideBySide => '並列表示';
+
+  @override
+  String get diffOnlyInLeft => '左側のみ';
+
+  @override
+  String get diffOnlyInRight => '右側のみ';
+
+  @override
+  String get diffModified => '変更あり';
+
+  @override
+  String get diffIdentical => '一致';
+
+  @override
+  String get unixPermissions => 'Unix パーミッション (chmod)';
+
+  @override
+  String get permOwner => '所有者';
+
+  @override
+  String get permGroup => 'グループ';
+
+  @override
+  String get permOther => 'その他';
+
+  @override
+  String get applyPermissions => '権限を適用';
+
+  @override
+  String permissionsUpdated(String mode) {
+    return '権限を $mode に更新しました';
+  }
+
+  @override
+  String get lockVaultNow => '今すぐロック';
+
+  @override
+  String get deleteOriginalAfterImport => 'インポート後に元のファイルを削除';
+
+  @override
+  String get vaultExternalOpenNotice =>
+      '外部アプリで開くと一時的な平文コピーが作成されます。プライバシーフォルダをロックすると自動的に削除されます。';
+
+  @override
+  String get shareViaLan => 'LAN で共有';
+
+  @override
+  String get calculateDirSize => '計算する';
+
+  @override
+  String activeTasksBanner(int count) {
+    return '$count 件の転送が進行中';
+  }
+
+  @override
+  String get jsonFormattedPreview => '整形プレビュー';
+
+  @override
+  String get jsonTreeView => 'ツリー表示';
+
+  @override
+  String jsonIndentSpaces(int count) {
+    return '$count スペース';
+  }
+
+  @override
+  String get jsonSortKeys => 'キーを並べ替え';
+
+  @override
+  String get jsonCopyFormatted => '整形 JSON をコピー';
+
+  @override
+  String get jsonCopyMinified => '圧縮 JSON をコピー';
+
+  @override
+  String get jsonCopiedFormatted => '整形済み JSON をコピーしました';
+
+  @override
+  String get jsonCopiedMinified => '圧縮済み JSON をコピーしました';
+
+  @override
+  String get jsonInvalidFormat => '無効な JSON 形式';
+
+  @override
+  String get jsonExpandAll => 'すべて展開';
+
+  @override
+  String get jsonCollapseAll => 'すべて折りたたむ';
+
+  @override
+  String get jsonFormatInEditor => 'JSON を整形';
+
+  @override
+  String jsonLinesCount(int count) {
+    return '$count 行';
+  }
+
+  @override
+  String jsonMatchesCount(int current, int total) {
+    return '$current/$total 件一致';
+  }
+
+  @override
+  String get vaultAlwaysVisibleTitle => '常に表示';
+
+  @override
+  String get vaultAlwaysVisibleDesc =>
+      'ロック後もホームやサイドバーに表示を残します。開く際は従来どおり認証が必要で、自動ロックも有効です。';
+
+  @override
+  String get lockedBadge => 'ロック中';
+
+  @override
+  String get vaultUnlockToOpen => 'ロック解除して開く';
+
+  @override
+  String get vaultUnpinAlwaysVisible => '常時表示を解除';
+
+  @override
+  String vaultPinnedNotice(String name) {
+    return 'プライバシーフォルダ「$name」を常時表示にしました';
+  }
+
+  @override
+  String vaultUnpinnedNotice(String name) {
+    return 'プライバシーフォルダ「$name」の常時表示を解除しました';
+  }
+
+  @override
+  String vaultLockedKeepVisibleNotice(String name) {
+    return 'プライバシーフォルダ「$name」をロックしました';
+  }
+
+  @override
+  String get searchCategoryAll => 'すべて';
+
+  @override
+  String get searchCategoryCode => 'コード';
+
+  @override
+  String get searchCategoryFolders => 'フォルダ';
+
+  @override
+  String get searchFilesAndFolders => 'ファイルとフォルダ';
+
+  @override
+  String get searchEnterQueryHint => 'キーワードを入力してファイル・フォルダ・ブックマーク・履歴を検索';
+
+  @override
+  String get searchingFilesProgress => 'ファイルを検索中…';
+
+  @override
+  String get collapseSidebar => 'サイドバーを折りたたむ';
+
+  @override
+  String get expandSidebar => 'サイドバーを展開';
+
+  @override
+  String get categoryAllFilter => 'すべて';
+
+  @override
+  String categorySummary(int count, String size) {
+    return '$count 件 · $size';
+  }
+
+  @override
+  String categoryScanning(String category) {
+    return '$categoryをスキャン中…';
+  }
+
+  @override
+  String categoryEmptyTitle(String category) {
+    return '$categoryが見つかりません';
+  }
+
+  @override
+  String get categoryEmptySubtitle => 'このカテゴリのファイルがここに自動的に表示されます。';
+
+  @override
+  String get locateInFolder => 'フォルダで表示';
+
+  @override
+  String get clearFilters => 'フィルターをクリア';
+
+  @override
+  String filterCategoryHint(String category) {
+    return '$category内を絞り込み…';
+  }
+
+  @override
+  String get historyRetentionTitle => '履歴の保持日数';
+
+  @override
+  String get historyRetentionDesc => '指定日数を超えた履歴は自動削除されます。0 を設定すると履歴を保存しません。';
+
+  @override
+  String historyRetentionDaysLabel(int days) {
+    return '$days 日間保持';
+  }
+
+  @override
+  String historyRetentionDaysShort(int days) {
+    return '$days 日';
+  }
+
+  @override
+  String get historyRetentionDisabled => '保持しない（0 日）';
+
+  @override
+  String get historyRetentionDisabledShort => '保存しない';
+
+  @override
+  String get historyRetentionInputLabel => '保持日数（0 = 保持しない）';
+
+  @override
+  String get historyRetentionInvalidInput => '0 以上の整数を入力してください';
+
+  @override
+  String historyRetentionUpdatedDays(int days) {
+    return '履歴の保持日数を $days 日に設定しました';
+  }
+
+  @override
+  String get historyRetentionUpdatedOff => '履歴の保存を無効にし、既存の履歴を消去しました';
+
+  @override
+  String get historyDisabledTitle => '履歴の保存が無効です';
+
+  @override
+  String get historyDisabledSubtitle => '保持日数が 0 日に設定されているため、アクセス履歴は保存されません。';
+
+  @override
+  String get historyRetentionChange => '保持日数を変更';
 }

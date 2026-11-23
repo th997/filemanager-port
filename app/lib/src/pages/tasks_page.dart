@@ -387,49 +387,103 @@ class _TasksPageState extends State<TasksPage> {
               ),
             ),
             if (!terminal)
-              AppIconButton(
-                icon: Icons.close,
-                tooltip: l10n.cancelTask,
-                onPressed: () {
-                  // The backend refuses cancellation for some task types; the
-                  // button used to look like it worked either way.
-                  if (!TaskService.instance.cancel(t.id)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(l10n.cannotCancelTask),
-                      ),
-                    );
-                  } else {
-                    // Cancellation is asynchronous; without immediate
-                    // feedback the row keeps saying "running" and users
-                    // press the button again.
-                    setState(() => _cancelling.add(t.id));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(l10n.cancelling),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  }
-                  _refresh();
-                },
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (t.canPause && (t.state == 'running' || t.state == 'paused'))
+                    AppIconButton(
+                      icon: t.state == 'paused' ? Icons.play_arrow : Icons.pause,
+                      tooltip: t.state == 'paused' ? l10n.resumeTask : l10n.pauseTask,
+                      onPressed: () {
+                        if (t.state == 'paused') {
+                          TaskService.instance.resume(t.id);
+                        } else {
+                          TaskService.instance.pause(t.id);
+                        }
+                        _refresh();
+                      },
+                    ),
+                  if (t.canPause)
+                    PopupMenuButton<int>(
+                      tooltip: l10n.rateLimitLabel,
+                      icon: const Icon(Icons.speed, size: 18),
+                      onSelected: (bps) {
+                        TaskService.instance.setRateLimit(t.id, BigInt.from(bps));
+                        _refresh();
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(value: 0, child: Text(l10n.rateLimitUnlimited)),
+                        const PopupMenuItem(value: 512 * 1024, child: Text('512 KB/s')),
+                        const PopupMenuItem(value: 2 * 1024 * 1024, child: Text('2 MB/s')),
+                        const PopupMenuItem(value: 10 * 1024 * 1024, child: Text('10 MB/s')),
+                        const PopupMenuItem(value: 50 * 1024 * 1024, child: Text('50 MB/s')),
+                      ],
+                    ),
+                  AppIconButton(
+                    icon: Icons.close,
+                    tooltip: l10n.cancelTask,
+                    onPressed: () {
+                      if (!TaskService.instance.cancel(t.id)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(l10n.cannotCancelTask),
+                          ),
+                        );
+                      } else {
+                        setState(() => _cancelling.add(t.id));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(l10n.cancelling),
+                            duration: const Duration(seconds: 1),
+                          ),
+                        );
+                      }
+                      _refresh();
+                    },
+                  ),
+                ],
               )
             else
-              AppIconButton(
-                icon: Icons.clear,
-                tooltip: l10n.dismiss,
-                onPressed: () {
-                  if (!TaskService.instance.dismiss(t.id)) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(l10n.cannotDismissTask),
-                        ),
-                      );
-                    }
-                  }
-                  _refresh();
-                },
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (t.canRetry && t.failedItems.isNotEmpty)
+                    TextButton.icon(
+                      icon: const Icon(Icons.replay, size: 15),
+                      label: Text(
+                        l10n.retryFailedItems(t.failedItems.length),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      onPressed: () async {
+                        try {
+                          await TaskService.instance.retryFailed(t.id);
+                          _refresh();
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('$e')),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  AppIconButton(
+                    icon: Icons.clear,
+                    tooltip: l10n.dismiss,
+                    onPressed: () {
+                      if (!TaskService.instance.dismiss(t.id)) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(l10n.cannotDismissTask),
+                            ),
+                          );
+                        }
+                      }
+                      _refresh();
+                    },
+                  ),
+                ],
               ),
           ],
         ),

@@ -1,0 +1,17 @@
+{
+  "htmlLang": "ja",
+  "docTitle": "LAN ファイル共有 - FP File Manager",
+  "pageTitle": "📁 LAN ファイル共有",
+  "filterPlaceholder": "このフォルダ内のファイルを絞り込み...",
+  "uploadFile": "📄 ファイルを選択",
+  "uploadFileTitle": "1つ以上のファイルをアップロード",
+  "uploadFolder": "📁 フォルダを選択",
+  "uploadFolderTitle": "フォルダ内のファイルを再帰的にアップロード",
+  "root": "ルート",
+  "loading": "ファイル一覧を読み込み中...",
+  "emptyFolder": "フォルダは空です",
+  "noMatch": "一致するファイルが見つかりません",
+  "folder": "フォルダ",
+  "download": "ダウンロード",
+  "dropHint": "ここにドロップして現在のフォルダにアップロード"
+}

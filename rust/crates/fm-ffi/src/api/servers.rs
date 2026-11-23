@@ -1,8 +1,8 @@
 use crate::registry::VfsRegistry;
 use fm_server::{
-    get_lan_ip_addresses, start_http_share, start_stream_server_with_options, RunningServer,
+    discover_lan_services as discover_lan_services_impl, get_lan_ip_addresses,
+    start_http_share_with_lang, start_stream_server_with_options, RunningServer, StreamServer,
 };
-use fm_server::StreamServer;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -18,11 +18,30 @@ pub struct ServerStatusDto {
     pub url: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct LanServiceDto {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub protocol: String,
+    pub source: String,
+}
+
 pub async fn start_lan_http_server(
     root_dir: String,
     port: Option<u16>,
     password: Option<String>,
     read_only: bool,
+) -> Result<ServerStatusDto, String> {
+    start_lan_http_server_with_lang(root_dir, port, password, read_only, None).await
+}
+
+pub async fn start_lan_http_server_with_lang(
+    root_dir: String,
+    port: Option<u16>,
+    password: Option<String>,
+    read_only: bool,
+    default_lang: Option<String>,
 ) -> Result<ServerStatusDto, String> {
     let existing = {
         let mut guard = HTTP_RUNNING.lock();
@@ -32,11 +51,15 @@ pub async fn start_lan_http_server(
         let _ = s.shutdown_tx.send(());
     }
 
-    let server = start_http_share(PathBuf::from(root_dir), port, password, read_only).await?;
+    let server = start_http_share_with_lang(
+        PathBuf::from(root_dir),
+        port,
+        password,
+        read_only,
+        default_lang,
+    )
+    .await?;
     let actual_port = server.port;
-    // A random per-share session token, never the user's password: sharing
-    // this link does not disclose the password to browser history, Referer
-    // headers or proxy logs.
     let share_token = server.share_token.clone();
 
     {
@@ -54,6 +77,21 @@ pub async fn start_lan_http_server(
         addresses,
         url,
     })
+}
+
+/// Discover LAN file servers (SMB, SFTP, WebDAV, FTP) via mDNS and subnet scan.
+pub async fn discover_lan_services(timeout_ms: Option<u32>) -> Vec<LanServiceDto> {
+    discover_lan_services_impl(timeout_ms.unwrap_or(2500))
+        .await
+        .into_iter()
+        .map(|s| LanServiceDto {
+            name: s.name,
+            host: s.host,
+            port: s.port,
+            protocol: s.protocol,
+            source: s.source,
+        })
+        .collect()
 }
 
 #[flutter_rust_bridge::frb(sync)]

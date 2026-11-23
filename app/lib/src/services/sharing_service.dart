@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../rust/api/servers.dart' as srv_api;
+import 'preferences_service.dart';
 
 class SharingService {
   static final SharingService instance = SharingService._();
@@ -81,12 +82,16 @@ class SharingService {
     int? port,
     String? password,
     bool readOnly = true,
+    String? defaultLang,
   }) async {
-    final status = await srv_api.startLanHttpServer(
+    final savedLang = defaultLang ?? PreferencesService.instance.getString('app.language');
+    final effectiveLang = (savedLang == null || savedLang == 'system') ? null : savedLang;
+    final status = await srv_api.startLanHttpServerWithLang(
       rootDir: rootDir,
       port: port,
       password: password,
       readOnly: readOnly,
+      defaultLang: effectiveLang,
     );
 
     // Enrich and prioritize with true physical LAN IPs detected across OS interfaces

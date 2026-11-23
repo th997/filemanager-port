@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../dialogs/history_retention_dialog.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/platform_paths.dart';
+import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
@@ -11,8 +13,15 @@ import '../services/external_file_service.dart';
 
 class RecentPage extends StatefulWidget {
   final ExternalPickRequest? pickRequest;
+  final Future<List<HistoryDto>> Function()? loadHistoryOverride;
+  final Future<void> Function(int days)? applyRetentionOverride;
 
-  const RecentPage({super.key, this.pickRequest});
+  const RecentPage({
+    super.key,
+    this.pickRequest,
+    this.loadHistoryOverride,
+    this.applyRetentionOverride,
+  });
 
   @override
   State<RecentPage> createState() => _RecentPageState();
@@ -25,15 +34,27 @@ class _RecentPageState extends State<RecentPage> {
   bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  int _retentionDays = PreferencesService.instance.historyRetentionDays;
 
   @override
   void initState() {
     super.initState();
+    PreferencesService.historyRetentionDaysNotifier
+        .addListener(_onRetentionChanged);
     _loadHistory();
+  }
+
+  void _onRetentionChanged() {
+    if (!mounted) return;
+    setState(() {
+      _retentionDays = PreferencesService.historyRetentionDaysNotifier.value;
+    });
   }
 
   @override
   void dispose() {
+    PreferencesService.historyRetentionDaysNotifier
+        .removeListener(_onRetentionChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -75,6 +96,16 @@ class _RecentPageState extends State<RecentPage> {
 
   Future<void> _loadHistory() async {
     try {
+      if (widget.loadHistoryOverride != null) {
+        final history = await widget.loadHistoryOverride!();
+        if (!mounted) return;
+        setState(() {
+          _history = history;
+          _remotes = const [];
+          _loading = false;
+        });
+        return;
+      }
       final results = await Future.wait([
         StorageService.instance.getHistory(),
         StorageService.instance.getRemotes(),
@@ -353,18 +384,45 @@ class _RecentPageState extends State<RecentPage> {
     return segments.isNotEmpty ? segments.last : h.path;
   }
 
+  Future<void> _configureRetention() async {
+    final picked = await showHistoryRetentionDialog(
+      context,
+      currentDays: _retentionDays,
+    );
+    if (picked == null || !mounted) return;
+    final applyFn = widget.applyRetentionOverride ??
+        StorageService.instance.applyHistoryRetention;
+    await applyFn(picked);
+    if (!mounted) return;
+    setState(() {
+      _retentionDays = PreferencesService.instance.historyRetentionDays;
+    });
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          picked == 0
+              ? l10n.historyRetentionUpdatedOff
+              : l10n.historyRetentionUpdatedDays(picked),
+        ),
+      ),
+    );
+    await _loadHistory();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final visibleHistory = _visibleHistory;
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).recentHistory),
+        title: Text(l10n.recentHistory),
         actions: [
           if (_history.isNotEmpty) ...[
             IconButton(
               icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: _showSearch ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchHistory,
+              tooltip: _showSearch ? l10n.closeSearch : l10n.searchHistory,
               onPressed: () {
                 setState(() {
                   _showSearch = !_showSearch;
@@ -377,12 +435,23 @@ class _RecentPageState extends State<RecentPage> {
             ),
             TextButton(
               onPressed: _clearHistory,
-              child: Text(AppLocalizations.of(context).clear, style: const TextStyle(fontSize: 12)),
+              child: Text(l10n.clear, style: const TextStyle(fontSize: 12)),
             ),
           ],
+          TextButton.icon(
+            key: const ValueKey('recent_retention_btn'),
+            icon: const Icon(Icons.schedule_outlined, size: 16),
+            label: Text(
+              _retentionDays == 0
+                  ? l10n.historyRetentionDisabledShort
+                  : l10n.historyRetentionDaysShort(_retentionDays),
+              style: const TextStyle(fontSize: 12),
+            ),
+            onPressed: _configureRetention,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: AppLocalizations.of(context).refresh,
+            tooltip: l10n.refresh,
             onPressed: _loadHistory,
           ),
         ],
@@ -427,11 +496,23 @@ class _RecentPageState extends State<RecentPage> {
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                                 child: AppEmptyState(
-                                  icon: _history.isEmpty ? Icons.history : Icons.search_off,
-                                  title: _history.isEmpty ? AppLocalizations.of(context).noRecentHistory : AppLocalizations.of(context).noMatchingLocations,
-                                  subtitle: _history.isEmpty
-                                      ? AppLocalizations.of(context).recentEmptyHint
-                                      : AppLocalizations.of(context).nothingMatchesQuery(_searchQuery),
+                                  icon: _history.isEmpty && _retentionDays == 0
+                                      ? Icons.history_toggle_off_rounded
+                                      : (_history.isEmpty ? Icons.history : Icons.search_off),
+                                  title: _history.isEmpty && _retentionDays == 0
+                                      ? l10n.historyDisabledTitle
+                                      : (_history.isEmpty ? l10n.noRecentHistory : l10n.noMatchingLocations),
+                                  subtitle: _history.isEmpty && _retentionDays == 0
+                                      ? l10n.historyDisabledSubtitle
+                                      : (_history.isEmpty
+                                          ? l10n.recentEmptyHint
+                                          : l10n.nothingMatchesQuery(_searchQuery)),
+                                  action: _history.isEmpty && _retentionDays == 0
+                                      ? FilledButton.tonal(
+                                          onPressed: _configureRetention,
+                                          child: Text(l10n.historyRetentionChange),
+                                        )
+                                      : null,
                                 ),
                               ),
                             ),

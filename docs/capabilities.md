@@ -11,10 +11,16 @@ Target platforms and minimum versions follow Flutter 3.47:
 | Feature | Android | iOS | Linux | macOS | Windows |
 |---|---|---|---|---|---|
 | Browse local files | SAF tree or `MANAGE_EXTERNAL_STORAGE` | granted roots only | native | sandbox + bookmark | native |
-| Archive browse/extract/compress | Rust | Rust | Rust | Rust | Rust |
-| S3 / OSS / WebDAV / SFTP / FTP / SMB | Rust | Rust | Rust | Rust | Rust |
-| HTTP share server | foreground service | foreground only | yes | yes | yes |
-| FTP share server | foreground service | foreground only | yes | yes | yes |
+| Desktop persistent sidebar, Multi-Tab & Dual-Pane | tablet (`>=900px`) | iPad (`>=900px`) | yes | yes | yes |
+| Built-in zero-disk PDF reader & CSV/JSON/XML viewer | yes | yes | yes | yes | yes |
+| Archive browse/extract/compress (incl. AES-256 Zip & 7z password) | Rust | Rust | Rust | Rust | Rust |
+| S3 / OSS / WebDAV / SFTP / FTP / SMB + LAN Auto-Discovery | Rust | Rust | Rust | Rust | Rust |
+| HTTP share server (folder/file, multi-NIC QR, trilingual Web UI) | foreground service | foreground only | yes | yes | yes |
+| Storage analyzer, 3-stage SHA-256 duplicate finder, Directory Sync | Rust | Rust | Rust | Rust | Rust |
+| Offline pinned remote files (LRU cache) & Checksums (MD5/SHA-1/256) | Rust | Rust | Rust | Rust | Rust |
+| Unix permissions (`chmod`) | local/SFTP | SFTP | local/SFTP | local/SFTP | SFTP |
+| External subtitles (`.srt`/`.ass`/`.vtt`) & PiP | media_kit | AVPlayer + PiP | media_kit | media_kit | media_kit |
+| Encrypted Privacy Vault (`fm-vault`) | Rust | Rust | Rust | Rust | Rust |
 | Recycle bin | in-app | in-app | in-app | in-app | in-app |
 | APK install / backup | yes | no | no | no | no |
 | Background tasks | WorkManager / foreground service | BGTaskScheduler | n/a | n/a | n/a |

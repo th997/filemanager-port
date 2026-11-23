@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/entry_item.dart';
 import '../services/external_file_service.dart';
+import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
 import '../theme/app_ui_tokens.dart';
 import 'image_viewer_page.dart';
@@ -30,6 +32,8 @@ class _Photo {
   const _Photo.asset(this.name, AssetEntity this.asset, {this.takenAt})
       : file = null;
 
+  String get key => asset != null ? 'asset:${asset!.id}' : 'file:${file!.path}';
+
   Future<File?> resolve() async => file ?? await asset?.file;
 }
 
@@ -40,8 +44,17 @@ class _Photo {
 /// thumbnail grid for the places photos actually live.
 class GalleryPage extends StatefulWidget {
   final ExternalPickRequest? pickRequest;
+  final Future<List<File>> Function()? scanFilesOverride;
+  final Future<int> Function(List<File> files)? deleteFilesOverride;
+  final Future<void> Function(List<String> paths)? shareFilesOverride;
 
-  const GalleryPage({super.key, this.pickRequest});
+  const GalleryPage({
+    super.key,
+    this.pickRequest,
+    this.scanFilesOverride,
+    this.deleteFilesOverride,
+    this.shareFilesOverride,
+  });
 
   @override
   State<GalleryPage> createState() => _GalleryPageState();
@@ -64,6 +77,13 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   bool _loadingMore = false;
   bool _showScrollToTop = false;
   final ScrollController _scrollController = ScrollController();
+
+  final Set<String> _selectedKeys = {};
+  late bool _isSelecting = _isMultiPickMode;
+  int? _lastSelectedIndex;
+  bool _batchBusy = false;
+
+  bool get _isMultiPickMode => widget.pickRequest?.allowMultiple == true;
 
   @override
   void initState() {
@@ -113,23 +133,45 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     await Future<void>.delayed(Duration.zero);
     List<_Photo> found;
     try {
-      found = Platform.isIOS || Platform.isAndroid
-          ? await _loadSystemAlbum()
-          : await _scanFolders();
+      if (widget.scanFilesOverride != null) {
+        final files = await widget.scanFilesOverride!();
+        found = files
+            .map((f) => _Photo.file(
+                  f.path.split(Platform.pathSeparator).last,
+                  f,
+                  takenAt: f.existsSync() ? f.statSync().modified : null,
+                ))
+            .toList();
+      } else {
+        found = Platform.isIOS || Platform.isAndroid
+            ? await _loadSystemAlbum()
+            : await _scanFolders();
+      }
     } catch (e) {
       // A failed scan must not leave the page on a spinner forever.
       if (!mounted) return;
       setState(() {
         _photos = [];
         _loading = false;
+        _selectedKeys.clear();
+        if (!_isMultiPickMode) _isSelecting = false;
+        _groupedPhotos = null;
+        _lastGroupedLength = -1;
         _notice = mounted ? AppLocalizations.of(context).couldNotScanPhotos('$e') : 'Could not scan for photos.\n$e';
       });
       return;
     }
     if (!mounted) return;
+    final availableKeys = found.map((p) => p.key).toSet();
     setState(() {
       _photos = found;
       _loading = false;
+      _groupedPhotos = null;
+      _lastGroupedLength = -1;
+      _selectedKeys.retainAll(availableKeys);
+      if (!_isMultiPickMode && found.isEmpty) {
+        _isSelecting = false;
+      }
     });
   }
 
@@ -256,6 +298,14 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               resolvePath: p.file == null
                   ? () async => (await p.asset!.file)?.path
                   : null,
+              deleteHandler: p.file == null && p.asset != null
+                  ? () async {
+                      final deleted = await PhotoManager.editor.deleteWithIds(
+                        [p.asset!.id],
+                      );
+                      return deleted.isNotEmpty;
+                    }
+                  : null,
             ))
         .toList();
     final resolved = file;
@@ -266,9 +316,173 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
           fileName: _photos[index].name,
           siblings: siblings,
           initialIndex: index,
+          onDeleted: () {
+            if (!mounted) return;
+            setState(() {
+              _groupedPhotos = null;
+              _lastGroupedLength = -1;
+            });
+            _scan();
+          },
         ),
       ),
     );
+  }
+
+  Future<void> _deletePhoto(int index) async {
+    if (index < 0 || index >= _photos.length) return;
+    final photo = _photos[index];
+    final l10n = AppLocalizations.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 28),
+        title: Text(l10n.deleteSingleConfirmTitle(photo.name)),
+        content: Text(l10n.deleteImageConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    try {
+      bool deleted = false;
+      if (photo.file != null) {
+        if (photo.file!.existsSync()) {
+          await photo.file!.delete();
+        }
+        deleted = true;
+      } else if (photo.asset != null) {
+        final ids = await PhotoManager.editor.deleteWithIds([photo.asset!.id]);
+        deleted = ids.isNotEmpty;
+      }
+      if (!deleted || !mounted) return;
+      HapticFeedback.lightImpact();
+      setState(() {
+        if (index < _photos.length && identical(_photos[index], photo)) {
+          _photos.removeAt(index);
+        } else {
+          _photos.remove(photo);
+        }
+        _groupedPhotos = null;
+        _lastGroupedLength = -1;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.deletedItem(photo.name))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.failedToDelete('$e')),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showPhotoContextMenu(Offset globalPosition, int index) async {
+    if (index < 0 || index >= _photos.length) return;
+    HapticFeedback.mediumImpact();
+    final photo = _photos[index];
+    final file = await photo.resolve();
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context);
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      globalPosition & const Size(1, 1),
+      Offset.zero & overlay.size,
+    );
+    final action = await showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        PopupMenuItem(
+          value: 'select',
+          child: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, size: 18),
+              const SizedBox(width: 10),
+              Text(l10n.selectItems),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'open',
+          child: Row(
+            children: [
+              const Icon(Icons.fullscreen, size: 18),
+              const SizedBox(width: 10),
+              Text(l10n.openInViewer),
+            ],
+          ),
+        ),
+        if (file != null) ...[
+          if (PlatformCapabilities.supportsNativeShareSheet)
+            PopupMenuItem(
+              value: 'share',
+              child: Row(
+                children: [
+                  const Icon(Icons.share, size: 18),
+                  const SizedBox(width: 10),
+                  Text(l10n.sharePhoto),
+                ],
+              ),
+            ),
+          PopupMenuItem(
+            value: 'copy_path',
+            child: Row(
+              children: [
+                const Icon(Icons.copy_outlined, size: 18),
+                const SizedBox(width: 10),
+                Text(l10n.copyFilePath),
+              ],
+            ),
+          ),
+        ],
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+              const SizedBox(width: 10),
+              Text(l10n.deleteImage, style: const TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'select':
+        _enterSelectionMode(index);
+        break;
+      case 'open':
+        _open(index);
+        break;
+      case 'share':
+        if (file != null) {
+          SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+        }
+        break;
+      case 'copy_path':
+        _copyPhotoPath(index);
+        break;
+      case 'delete':
+        _deletePhoto(index);
+        break;
+    }
   }
 
   Future<void> _copyPhotoPath(int index) async {
@@ -283,103 +497,487 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
-  Future<void> _showPhotoActionSheet(int index) async {
-    HapticFeedback.mediumImpact();
-    final photo = _photos[index];
-    final file = await photo.resolve();
+  List<_Photo> get _selectedPhotos =>
+      _photos.where((p) => _selectedKeys.contains(p.key)).toList();
 
-    if (!mounted) return;
-    showModalBottomSheet(
+  void _enterSelectionMode([int? initialIndex]) {
+    setState(() {
+      _isSelecting = true;
+      if (initialIndex != null &&
+          initialIndex >= 0 &&
+          initialIndex < _photos.length) {
+        _selectedKeys.add(_photos[initialIndex].key);
+        _lastSelectedIndex = initialIndex;
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    if (_isMultiPickMode) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _isSelecting = false;
+      _selectedKeys.clear();
+      _lastSelectedIndex = null;
+    });
+  }
+
+  void _toggleSelectIndex(int index, {bool rangeSelect = false}) {
+    if (index < 0 || index >= _photos.length) return;
+    setState(() {
+      if (rangeSelect && _lastSelectedIndex != null) {
+        final start = math.min(_lastSelectedIndex!, index);
+        final end = math.max(_lastSelectedIndex!, index);
+        for (var i = start; i <= end; i++) {
+          _selectedKeys.add(_photos[i].key);
+        }
+      } else {
+        final key = _photos[index].key;
+        if (!_selectedKeys.remove(key)) {
+          _selectedKeys.add(key);
+        }
+      }
+      _lastSelectedIndex = index;
+    });
+  }
+
+  void _toggleSelectAll() {
+    if (_photos.isEmpty) return;
+    setState(() {
+      if (_selectedKeys.length == _photos.length) {
+        _selectedKeys.clear();
+      } else {
+        _selectedKeys.addAll(_photos.map((p) => p.key));
+      }
+    });
+  }
+
+  void _toggleMonthGroup(List<_Photo> slice) {
+    if (slice.isEmpty) return;
+    final allSelected = slice.every((p) => _selectedKeys.contains(p.key));
+    setState(() {
+      if (allSelected) {
+        for (final p in slice) {
+          _selectedKeys.remove(p.key);
+        }
+      } else {
+        for (final p in slice) {
+          _selectedKeys.add(p.key);
+        }
+      }
+    });
+  }
+
+  void _handleTileTap(int index) {
+    final kb = HardwareKeyboard.instance;
+    final ctrlOrMeta = kb.isControlPressed || kb.isMetaPressed;
+    final shift = kb.isShiftPressed;
+
+    if (_isSelecting) {
+      _toggleSelectIndex(index, rangeSelect: shift);
+      return;
+    }
+    if (ctrlOrMeta || shift) {
+      setState(() {
+        _isSelecting = true;
+        if (shift && _lastSelectedIndex != null) {
+          final start = math.min(_lastSelectedIndex!, index);
+          final end = math.max(_lastSelectedIndex!, index);
+          for (var i = start; i <= end; i++) {
+            _selectedKeys.add(_photos[i].key);
+          }
+        } else {
+          _selectedKeys.add(_photos[index].key);
+        }
+        _lastSelectedIndex = index;
+      });
+      return;
+    }
+    _open(index);
+  }
+
+  void _handleTileLongPress(int index) {
+    HapticFeedback.mediumImpact();
+    if (!_isSelecting) {
+      _enterSelectionMode(index);
+    } else {
+      _toggleSelectIndex(index);
+    }
+  }
+
+  Future<void> _batchDeleteSelected() async {
+    final selected = _selectedPhotos;
+    if (selected.isEmpty || _batchBusy) return;
+
+    final l10n = AppLocalizations.of(context);
+    final confirm = await showDialog<bool>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Text(
-                  photo.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (photo.takenAt != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    _monthLabel(photo.takenAt),
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.fullscreen),
-                title: Text(AppLocalizations.of(context).openInViewer),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _open(index);
-                },
-              ),
-              if (file != null) ...[
-                ListTile(
-                  leading: const Icon(Icons.share),
-                  title: Text(AppLocalizations.of(context).sharePhoto),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.copy_outlined),
-                  title: Text(AppLocalizations.of(context).copyFilePath),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _copyPhotoPath(index);
-                  },
-                ),
-              ],
-            ],
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 28),
+        title: Text(
+          selected.length == 1
+              ? l10n.deleteSingleConfirmTitle(selected.first.name)
+              : l10n.deleteMultipleConfirmTitle(selected.length),
+        ),
+        content: Text(l10n.deletePermanentWarning),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _batchBusy = true);
+    try {
+      final deletedKeys = <String>{};
+      if (widget.deleteFilesOverride != null) {
+        final files = selected.map((p) => p.file).whereType<File>().toList();
+        await widget.deleteFilesOverride!(files);
+        for (final p in selected) {
+          if (p.file != null) deletedKeys.add(p.key);
+        }
+      } else {
+        for (final p in selected) {
+          if (p.file != null) {
+            if (p.file!.existsSync()) {
+              await p.file!.delete();
+            }
+            deletedKeys.add(p.key);
+          }
+        }
+        final assetIds = selected
+            .map((p) => p.asset?.id)
+            .whereType<String>()
+            .toList();
+        if (assetIds.isNotEmpty) {
+          final deletedIds = await PhotoManager.editor.deleteWithIds(assetIds);
+          final deletedIdSet = deletedIds.toSet();
+          for (final p in selected) {
+            if (p.asset != null && deletedIdSet.contains(p.asset!.id)) {
+              deletedKeys.add(p.key);
+            }
+          }
+        }
+      }
+      if (!mounted) return;
+      if (deletedKeys.isNotEmpty) {
+        HapticFeedback.lightImpact();
+        final singleName = selected.length == 1 ? selected.first.name : '';
+        setState(() {
+          _photos = _photos
+              .where((p) => !deletedKeys.contains(p.key))
+              .toList();
+          _groupedPhotos = null;
+          _lastGroupedLength = -1;
+          _selectedKeys.removeAll(deletedKeys);
+          if (!_isMultiPickMode && _selectedKeys.isEmpty) {
+            _isSelecting = false;
+            _lastSelectedIndex = null;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              deletedKeys.length == 1 && singleName.isNotEmpty
+                  ? l10n.deletedItem(singleName)
+                  : l10n.deletedCount(deletedKeys.length),
+            ),
           ),
         );
-      },
-    );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.failedToDelete('$e')),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _batchBusy = false);
+      }
+    }
+  }
+
+  Future<void> _batchShareSelected() async {
+    final selected = _selectedPhotos;
+    if (selected.isEmpty || _batchBusy) return;
+
+    setState(() => _batchBusy = true);
+    try {
+      final paths = <String>[];
+      for (final p in selected) {
+        final file = await p.resolve();
+        if (file != null) paths.add(file.path);
+      }
+      if (!mounted || paths.isEmpty) return;
+      if (widget.shareFilesOverride != null) {
+        await widget.shareFilesOverride!(paths);
+      } else {
+        await SharePlus.instance.share(
+          ShareParams(files: paths.map(XFile.new).toList()),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _batchBusy = false);
+      }
+    }
+  }
+
+  Future<void> _batchCopyPathsSelected() async {
+    final selected = _selectedPhotos;
+    if (selected.isEmpty || _batchBusy) return;
+
+    setState(() => _batchBusy = true);
+    try {
+      final paths = <String>[];
+      for (final p in selected) {
+        final file = await p.resolve();
+        if (file != null) paths.add(file.path);
+      }
+      if (!mounted || paths.isEmpty) return;
+      await Clipboard.setData(ClipboardData(text: paths.join('\n')));
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      final label = paths.length == 1
+          ? paths.first.split(Platform.pathSeparator).last
+          : '${paths.length}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.copiedValue(label))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _batchBusy = false);
+      }
+    }
+  }
+
+  Future<void> _confirmMultiPick() async {
+    final selected = _selectedPhotos;
+    if (selected.isEmpty || _batchBusy) return;
+
+    setState(() => _batchBusy = true);
+    try {
+      final paths = <String>[];
+      for (final p in selected) {
+        final file = await p.resolve();
+        if (file != null &&
+            (widget.pickRequest == null ||
+                widget.pickRequest!.matchesFileName(file.path))) {
+          paths.add(file.path);
+        }
+      }
+      if (!mounted || paths.isEmpty) return;
+      Navigator.of(context).pop(paths);
+    } finally {
+      if (mounted) {
+        setState(() => _batchBusy = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final allSelected =
+        _photos.isNotEmpty && _selectedKeys.length == _photos.length;
+
     return AppSwipeBack(
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            _loading
-                ? AppLocalizations.of(context).photosTitle
-                : '${AppLocalizations.of(context).photosTitle} (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
+      child: PopScope(
+        canPop: !_isSelecting || _isMultiPickMode,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _isSelecting && !_isMultiPickMode) {
+            _exitSelectionMode();
+          }
+        },
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              if (_isSelecting) _exitSelectionMode();
+            },
+            const SingleActivator(LogicalKeyboardKey.keyA, control: true): () {
+              if (_isSelecting) _toggleSelectAll();
+            },
+            const SingleActivator(LogicalKeyboardKey.keyA, meta: true): () {
+              if (_isSelecting) _toggleSelectAll();
+            },
+            const SingleActivator(LogicalKeyboardKey.delete): () {
+              if (_isSelecting && _selectedKeys.isNotEmpty) {
+                _batchDeleteSelected();
+              }
+            },
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              appBar: _isSelecting
+                  ? AppBar(
+                      leading: IconButton(
+                        key: const ValueKey('gallery_exit_select_btn'),
+                        icon: const Icon(Icons.close),
+                        tooltip: l10n.cancelSelectionEsc,
+                        onPressed: _exitSelectionMode,
+                      ),
+                      title: Text(l10n.selectedCountLabel(_selectedKeys.length)),
+                      actions: [
+                        if (_photos.isNotEmpty)
+                          IconButton(
+                            key: const ValueKey('gallery_select_all_btn'),
+                            icon: Icon(
+                              allSelected ? Icons.deselect : Icons.select_all,
+                            ),
+                            tooltip:
+                                allSelected ? l10n.deselectAll : l10n.selectAll,
+                            onPressed: _toggleSelectAll,
+                          ),
+                      ],
+                    )
+                  : AppBar(
+                      title: Text(
+                        _loading
+                            ? l10n.photosTitle
+                            : '${l10n.photosTitle} (${_photos.length}${_albumTotal > _photos.length ? '/$_albumTotal' : ''})',
+                      ),
+                      actions: [
+                        if (_photos.isNotEmpty && !_loading)
+                          IconButton(
+                            key: const ValueKey('gallery_select_mode_btn'),
+                            icon: const Icon(Icons.checklist_rounded),
+                            tooltip: l10n.selectItems,
+                            onPressed: () => _enterSelectionMode(),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          tooltip: l10n.rescan,
+                          onPressed: _scan,
+                        ),
+                      ],
+                    ),
+              body: _buildBody(),
+              bottomNavigationBar: _isSelecting ? _buildBottomActionBar(l10n) : null,
+              floatingActionButton: _showScrollToTop
+                  ? FloatingActionButton.small(
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        _scrollController.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                        );
+                      },
+                      tooltip: l10n.scrollToTop,
+                      child: const Icon(Icons.arrow_upward),
+                    )
+                  : null,
+            ),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: AppLocalizations.of(context).rescan,
-              onPressed: _scan,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomActionBar(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasSelection = _selectedKeys.isNotEmpty && !_batchBusy;
+
+    Widget actionItem({
+      required Key key,
+      required IconData icon,
+      required String label,
+      required VoidCallback? onTap,
+      Color? color,
+    }) {
+      final effectiveColor = onTap == null
+          ? scheme.onSurfaceVariant.withValues(alpha: 0.38)
+          : (color ?? scheme.onSurface);
+      return InkWell(
+        key: key,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: effectiveColor),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(fontSize: 11, color: effectiveColor),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      elevation: 3,
+      color: scheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_batchBusy) const LinearProgressIndicator(minHeight: 2),
+            SizedBox(
+              height: 60,
+              child: _isMultiPickMode
+                  ? Center(
+                      child: FilledButton.icon(
+                        key: const ValueKey('gallery_confirm_pick_btn'),
+                        icon: const Icon(Icons.check, size: 18),
+                        label: Text(l10n.selectCount(_selectedKeys.length)),
+                        onPressed: hasSelection ? _confirmMultiPick : null,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        if (PlatformCapabilities.supportsNativeShareSheet)
+                          actionItem(
+                            key: const ValueKey('gallery_batch_share_btn'),
+                            icon: Icons.share_outlined,
+                            label: l10n.share,
+                            onTap: hasSelection ? _batchShareSelected : null,
+                          ),
+                        actionItem(
+                          key: const ValueKey('gallery_batch_copy_btn'),
+                          icon: Icons.copy_outlined,
+                          label: l10n.copyPath,
+                          onTap:
+                              hasSelection ? _batchCopyPathsSelected : null,
+                        ),
+                        actionItem(
+                          key: const ValueKey('gallery_batch_delete_btn'),
+                          icon: Icons.delete_outline,
+                          label: l10n.delete,
+                          color: scheme.error,
+                          onTap: hasSelection ? _batchDeleteSelected : null,
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),
-        body: _buildBody(),
-        floatingActionButton: _showScrollToTop
-            ? FloatingActionButton.small(
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  _scrollController.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                  );
-                },
-                tooltip: AppLocalizations.of(context).scrollToTop,
-                child: const Icon(Icons.arrow_upward),
-              )
-            : null,
       ),
     );
   }
@@ -468,13 +1066,40 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     final slivers = <Widget>[];
     final groups = _getGroupedPhotos();
     for (final group in groups) {
+      final groupAllSelected = _isSelecting &&
+          group.slice.isNotEmpty &&
+          group.slice.every((p) => _selectedKeys.contains(p.key));
       slivers.add(
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
-            child: Text(
-              group.label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    group.label,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (_isSelecting)
+                  InkWell(
+                    key: ValueKey('gallery_month_select_${group.label}'),
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => _toggleMonthGroup(group.slice),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        groupAllSelected
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        size: 20,
+                        color: groupAllSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -511,28 +1136,76 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 
   Widget _buildTile(_Photo photo, int index) {
     final thumb = photo.asset;
+    final isSelected = _selectedKeys.contains(photo.key);
+    final scheme = Theme.of(context).colorScheme;
+
     return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            thumb != null
-                ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
-                : Image.file(
-                    photo.file!,
-                    fit: BoxFit.cover,
-                    cacheWidth: 220,
-                    errorBuilder: (_, _, _) => _brokenThumb(),
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 140),
+        padding: _isSelecting && isSelected
+            ? const EdgeInsets.all(5)
+            : EdgeInsets.zero,
+        child: DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: _isSelecting && isSelected
+                ? Border.all(color: scheme.primary, width: 2.5)
+                : null,
+            color: _isSelecting && isSelected
+                ? scheme.primary.withValues(alpha: 0.16)
+                : null,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                thumb != null
+                    ? _AssetThumb(key: ValueKey(thumb.id), asset: thumb)
+                    : Image.file(
+                        photo.file!,
+                        fit: BoxFit.cover,
+                        cacheWidth: 220,
+                        errorBuilder: (_, _, _) => _brokenThumb(),
+                      ),
+                if (_isSelecting)
+                  Positioned(
+                    top: 5,
+                    left: 5,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? scheme.primary
+                            : Colors.black.withValues(alpha: 0.42),
+                        border: Border.all(
+                          color: isSelected ? scheme.onPrimary : Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: isSelected
+                          ? Icon(Icons.check, size: 14, color: scheme.onPrimary)
+                          : null,
+                    ),
                   ),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => _open(index),
-                onLongPress: () => _showPhotoActionSheet(index),
-              ),
+                Material(
+                  color: Colors.transparent,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onSecondaryTapDown: (d) =>
+                        _showPhotoContextMenu(d.globalPosition, index),
+                    child: InkWell(
+                      onTap: () => _handleTileTap(index),
+                      onLongPress: () => _handleTileLongPress(index),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

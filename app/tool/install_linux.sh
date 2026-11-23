@@ -6,6 +6,11 @@ APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "=== Building FP File Manager (Linux Release) ==="
 cd "$APP_DIR"
+# Clear cached flutter_assets and Linux asset-bundle stamps so icon tree-shaking
+# always regenerates MaterialIcons-Regular.otf against the latest Dart code.
+rm -rf "$APP_DIR/build/flutter_assets"
+rm -f "$APP_DIR/.dart_tool/flutter_build"/*/release_bundle_linux-*_assets.stamp \
+      "$APP_DIR/.dart_tool/flutter_build"/*/flutter_assets.d
 flutter build linux --release
 
 BUNDLE_DIR="$APP_DIR/build/linux/x64/release/bundle"

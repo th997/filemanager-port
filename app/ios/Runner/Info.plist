@@ -442,6 +442,16 @@
 	<string>Browse and preview your photos inside the file manager.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Authenticate with Face ID or device passcode to unlock your privacy folders.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Discover nearby SMB, SFTP, WebDAV, and FTP servers and share files over the local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_smb._tcp</string>
+		<string>_sftp-ssh._tcp</string>
+		<string>_webdav._tcp</string>
+		<string>_webdavs._tcp</string>
+		<string>_ftp._tcp</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

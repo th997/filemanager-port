@@ -5,10 +5,14 @@
 //! layer can drive and the UI can observe.
 
 use fm_core::VfsPath;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod runner;
-pub use runner::{copy_recursive, delete_recursive, total_bytes, TaskHandle, TaskManager};
+pub use runner::{
+    copy_recursive, copy_recursive_with_control, delete_recursive, total_bytes, TaskControl,
+    TaskHandle, TaskManager,
+};
 
 /// What to do when a copy/move destination already exists.
 ///
@@ -25,7 +29,7 @@ pub enum ConflictPolicy {
     Rename,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationKind {
     Copy,
     Move,
@@ -33,15 +37,42 @@ pub enum OperationKind {
     Rename,
     Compress,
     Extract,
+    Sync,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskState {
     Pending,
     Running,
+    Paused,
     Cancelled,
     Failed,
     Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailedTaskItem {
+    pub src_root: String,
+    pub src_path: String,
+    pub dst_root: String,
+    pub dst_path: String,
+    pub is_dir: bool,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskHistoryRecord {
+    pub id: String,
+    pub state: TaskState,
+    pub completed: u64,
+    pub total: Option<u64>,
+    pub current: Option<String>,
+    pub error: Option<String>,
+    pub skipped: u64,
+    pub label: Option<String>,
+    pub failed_items: Vec<FailedTaskItem>,
+    pub retry_kind: Option<String>,
+    pub conflict_policy: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +95,17 @@ pub struct TaskProgress {
     /// Short human label for the operation ("Copy", "Move", ...), set by
     /// whoever started the task so a task list can say what each row is.
     pub label: Option<String>,
+    /// Per-item failures recorded during batch operations so failed items can
+    /// be retried individually without re-running the entire batch.
+    pub failed_items: Vec<FailedTaskItem>,
+    /// Operation kind tag used for partial retry ("copy", "move", "delete", "sync").
+    pub retry_kind: Option<String>,
+    /// Conflict policy used by the original task ("overwrite", "skip", "rename").
+    pub conflict_policy: Option<String>,
+    /// Optional bandwidth throttle in bytes/second (0 = unlimited).
+    pub rate_limit_bps: u64,
+    /// Whether this task supports pause/resume.
+    pub can_pause: bool,
 }
 
 impl TaskProgress {
@@ -77,6 +119,48 @@ impl TaskProgress {
             skipped: 0,
             policy_skips: 0,
             label: None,
+            failed_items: Vec::new(),
+            retry_kind: None,
+            conflict_policy: None,
+            rate_limit_bps: 0,
+            can_pause: false,
+        }
+    }
+
+    pub fn from_history(record: &TaskHistoryRecord) -> Self {
+        Self {
+            state: match record.state {
+                TaskState::Pending | TaskState::Running | TaskState::Paused => TaskState::Cancelled,
+                terminal => terminal,
+            },
+            completed: record.completed,
+            total: record.total,
+            current: record.current.as_deref().map(VfsPath::from_slash_path),
+            error: record.error.clone(),
+            skipped: record.skipped,
+            policy_skips: 0,
+            label: record.label.clone(),
+            failed_items: record.failed_items.clone(),
+            retry_kind: record.retry_kind.clone(),
+            conflict_policy: record.conflict_policy.clone(),
+            rate_limit_bps: 0,
+            can_pause: false,
+        }
+    }
+
+    pub fn to_history(&self, id: &str) -> TaskHistoryRecord {
+        TaskHistoryRecord {
+            id: id.to_string(),
+            state: self.state,
+            completed: self.completed,
+            total: self.total,
+            current: self.current.as_ref().map(|c| c.to_slash_string()),
+            error: self.error.clone(),
+            skipped: self.skipped,
+            label: self.label.clone(),
+            failed_items: self.failed_items.clone(),
+            retry_kind: self.retry_kind.clone(),
+            conflict_policy: self.conflict_policy.clone(),
         }
     }
 
@@ -114,6 +198,7 @@ impl fmt::Display for OperationKind {
             Self::Rename => "rename",
             Self::Compress => "compress",
             Self::Extract => "extract",
+            Self::Sync => "sync",
         };
         f.write_str(name)
     }
@@ -291,5 +376,72 @@ mod tests {
         );
         #[cfg(unix)]
         assert!(progress.lock().unwrap().skipped >= 1);
+    }
+
+    #[tokio::test]
+    async fn pause_resume_and_resumable_copy_work() {
+        use fm_local::LocalFs;
+
+        let src_dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+        let payload: Vec<u8> = (0..(512 * 1024)).map(|i| (i % 251) as u8).collect();
+        std::fs::write(src_dir.path().join("big.bin"), &payload).unwrap();
+        // Pre-seed a half-written `.fm-resume` file to verify range resume appends cleanly.
+        std::fs::write(dst_dir.path().join(".big.bin.fm-resume"), &payload[..100_000]).unwrap();
+
+        let src_fs = LocalFs::new(src_dir.path());
+        let dst_fs = LocalFs::new(dst_dir.path());
+        let mgr = TaskManager::new();
+        let (progress, cancel, control) = mgr.register_with_control("t1");
+        mgr.pause("t1");
+        assert_eq!(mgr.get_progress("t1").unwrap().state, TaskState::Paused);
+
+        let mgr_clone = mgr.clone();
+        let resumer = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            assert!(mgr_clone.resume("t1"));
+        });
+
+        copy_recursive_with_control(
+            &src_fs,
+            &VfsPath::from_slash_path("big.bin"),
+            &dst_fs,
+            &VfsPath::from_slash_path("big.bin"),
+            &progress,
+            &cancel,
+            &control,
+            ConflictPolicy::Overwrite,
+        )
+        .await
+        .unwrap();
+        resumer.await.unwrap();
+
+        assert_eq!(std::fs::read(dst_dir.path().join("big.bin")).unwrap(), payload);
+        assert!(!dst_dir.path().join(".big.bin.fm-resume").exists());
+
+        // History persistence round-trip.
+        {
+            let mut p = progress.lock().unwrap();
+            p.state = TaskState::Failed;
+            p.label = Some("Copy".into());
+            p.failed_items.push(FailedTaskItem {
+                src_root: "/a".into(),
+                src_path: "x.txt".into(),
+                dst_root: "/b".into(),
+                dst_path: "x.txt".into(),
+                is_dir: false,
+                error: "timeout".into(),
+            });
+        }
+        let hist_file = dst_dir.path().join("tasks.json");
+        mgr.set_history_path(hist_file.clone());
+        mgr.persist_history();
+
+        let mgr2 = TaskManager::new();
+        mgr2.set_history_path(hist_file);
+        let restored = mgr2.get_progress("t1").unwrap();
+        assert_eq!(restored.state, TaskState::Failed);
+        assert_eq!(restored.failed_items.len(), 1);
+        assert_eq!(restored.failed_items[0].src_path, "x.txt");
     }
 }

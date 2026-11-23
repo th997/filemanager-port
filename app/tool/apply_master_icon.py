@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import os
-from PIL import Image, ImageDraw
+from PIL import Image
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(APP, "tool/master_icon.png")
@@ -9,25 +9,21 @@ master = Image.open(SRC).convert("RGBA")
 W, H = master.size
 
 # 1. Prepare Android adaptive foreground (108dp canvas with safe zone 66dp)
-# Scale the master down to 70% so all edges/tabs fit comfortably inside circular mask
-scaled_size = int(W * 0.70)
+# Scale the full-bleed master to 58% so corners fit comfortably inside circular mask
+scaled_size = int(W * 0.58)
 scaled_master = master.resize((scaled_size, scaled_size), Image.LANCZOS)
 # Foreground canvas MUST be transparent
 fg_canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 offset = ((W - scaled_size) // 2, (H - scaled_size) // 2)
 fg_canvas.paste(scaled_master, offset, scaled_master)
 
-# 2. Prepare rounded squircle version for legacy launcher & desktop
-rounded = master.copy()
-mask = Image.new("L", (W, H), 0)
-ImageDraw.Draw(mask).rounded_rectangle([0, 0, W - 1, H - 1], radius=int(W * 0.20), fill=255)
-rounded.putalpha(mask)
-
-# 3. Prepare circular round version for round icon requests
-circle_icon = master.copy()
-circle_mask = Image.new("L", (W, H), 0)
-ImageDraw.Draw(circle_mask).ellipse([0, 0, W - 1, H - 1], fill=255)
-circle_icon.putalpha(circle_mask)
+# 2. Prepare iOS opaque RGB master (App Store forbids transparent icons)
+ios_size = int(W * 0.93)
+ios_scaled = master.resize((ios_size, ios_size), Image.LANCZOS)
+ios_master = Image.new("RGBA", (W, H), (255, 255, 255, 255))
+ios_offset = ((W - ios_size) // 2, (H - ios_size) // 2)
+ios_master.paste(ios_scaled, ios_offset, ios_scaled)
+ios_rgb = ios_master.convert("RGB")
 
 def save(img, path, size):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -41,8 +37,8 @@ with open(bg_xml, "w") as f:
 # Android mipmaps
 ANDROID = os.path.join(APP, "android/app/src/main/res")
 for density, px in [("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)]:
-    save(rounded, os.path.join(ANDROID, f"mipmap-{density}/ic_launcher.png"), px)
-    save(circle_icon, os.path.join(ANDROID, f"mipmap-{density}/ic_launcher_round.png"), px)
+    save(master, os.path.join(ANDROID, f"mipmap-{density}/ic_launcher.png"), px)
+    save(master, os.path.join(ANDROID, f"mipmap-{density}/ic_launcher_round.png"), px)
 
 for density, px in [("mdpi", 108), ("hdpi", 162), ("xhdpi", 216), ("xxhdpi", 324), ("xxxhdpi", 432)]:
     save(fg_canvas, os.path.join(ANDROID, f"mipmap-{density}/ic_launcher_foreground.png"), px)
@@ -57,7 +53,7 @@ with open(round_xml, "w") as f:
 </adaptive-icon>
 ''')
 
-# iOS AppIcon
+# iOS AppIcon (opaque RGB on white background)
 IOS = os.path.join(APP, "ios/Runner/Assets.xcassets/AppIcon.appiconset")
 for name, px in [
     ("Icon-App-20x20@1x.png", 20),
@@ -76,22 +72,22 @@ for name, px in [
     ("Icon-App-83.5x83.5@2x.png", 167),
     ("Icon-App-1024x1024@1x.png", 1024),
 ]:
-    save(master.convert("RGB"), os.path.join(IOS, name), px)
+    save(ios_rgb, os.path.join(IOS, name), px)
 
-# macOS AppIcon
+# macOS AppIcon (transparent background preserved)
 MACOS = os.path.join(APP, "macos/Runner/Assets.xcassets/AppIcon.appiconset")
 for px in [16, 32, 64, 128, 256, 512, 1024]:
-    save(rounded, os.path.join(MACOS, f"app_icon_{px}.png"), px)
+    save(master, os.path.join(MACOS, f"app_icon_{px}.png"), px)
 
-# Windows .ico
-rounded.save(
+# Windows .ico (transparent background preserved)
+master.save(
     os.path.join(APP, "windows/runner/resources/app_icon.ico"),
     sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
 )
 
-# Linux icons
+# Linux icons (transparent background preserved)
 LINUX = os.path.join(APP, "linux")
 for px in [16, 32, 48, 64, 128, 256, 512]:
-    save(rounded, os.path.join(LINUX, f"icons/{px}x{px}/apps/filemanager.png"), px)
+    save(master, os.path.join(LINUX, f"icons/{px}x{px}/apps/filemanager.png"), px)
 
 print("All platform launcher icons successfully generated and applied!")

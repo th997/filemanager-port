@@ -1,6 +1,9 @@
 pub mod file_manager;
+pub mod inspect;
 pub mod metadata;
 pub mod remotes;
+pub mod search;
 pub mod servers;
+pub mod sync;
 pub mod tasks;
 pub mod vault;

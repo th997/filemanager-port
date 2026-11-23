@@ -2251,5 +2251,272 @@
   },
   "backupCancelling": "Cancelling…",
   "backupCancelledNotice": "Backup operation cancelled",
-  "deleteVaultPermanentWarning": "This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin."
+  "deleteVaultPermanentWarning": "This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin.",
+  "showQrCode": "Show QR Code",
+  "scanQrToConnect": "Scan with your phone to open in browser",
+  "newTab": "New Tab",
+  "closeTab": "Close Tab",
+  "openInNewTab": "Open in New Tab",
+  "copyToOtherPane": "Copy to Other Pane",
+  "moveToOtherPane": "Move to Other Pane",
+  "pdfViewerTitle": "PDF Viewer",
+  "pdfPageOf": "Page {current} / {total}",
+  "@pdfPageOf": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "pdfSearchHint": "Search text in PDF…",
+  "pdfJumpToPage": "Jump to page",
+  "pdfOutline": "Table of Contents",
+  "pdfNoOutline": "No outline in this document",
+  "pdfZeroDiskBadge": "In-Memory · Zero Disk",
+  "scanLanDevices": "Scan LAN Devices",
+  "scanningLan": "Scanning local network…",
+  "noLanDevicesFound": "No SMB / SFTP / WebDAV / FTP devices found on LAN",
+  "storageAnalyzer": "Storage Analyzer",
+  "storageAnalyzerSubtitle": "Folder size ranking, file types & largest files",
+  "topFolders": "Largest Folders",
+  "topFiles": "Largest Files",
+  "fileTypesBreakdown": "By File Type",
+  "storageUsedOf": "{used} used of {total} ({free} free)",
+  "@storageUsedOf": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "total": { "type": "String" },
+      "free": { "type": "String" }
+    }
+  },
+  "duplicateFinder": "Duplicate Finder",
+  "duplicateFinderSubtitle": "3-stage SHA-256 duplicate scan & cleanup",
+  "keepNewest": "Keep Newest",
+  "keepOldest": "Keep Oldest",
+  "keepShortestPath": "Keep Shortest Path",
+  "cleanSelectedDuplicates": "Clean Selected ({count})",
+  "@cleanSelectedDuplicates": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "wastedSpace": "Reclaimable: {size}",
+  "@wastedSpace": {
+    "placeholders": {
+      "size": { "type": "String" }
+    }
+  },
+  "noDuplicatesFound": "No duplicate files found",
+  "categoryDocuments": "Documents",
+  "categoryVideos": "Videos",
+  "categoryAudio": "Audio",
+  "categoryArchives": "Archives",
+  "categoryDownloads": "Downloads",
+  "categoryApks": "Installers",
+  "globalSearchHint": "Search files, bookmarks & recent…",
+  "advancedSearch": "Advanced Search",
+  "grepContentSearch": "Content Search (Grep)",
+  "matchContains": "Contains",
+  "matchWildcard": "Wildcard (* ?)",
+  "matchRegex": "Regex",
+  "minSizeMb": "Min size (MB)",
+  "maxSizeMb": "Max size (MB)",
+  "modifiedDaysAgo": "Modified within (days)",
+  "pauseTask": "Pause",
+  "resumeTask": "Resume",
+  "retryFailedItems": "Retry Failed ({count})",
+  "@retryFailedItems": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "taskPaused": "Paused",
+  "rateLimitLabel": "Speed Limit",
+  "rateLimitUnlimited": "Unlimited",
+  "encryptWithPassword": "Encrypt with password (AES-256)",
+  "archivePasswordRequired": "Archive Password Required",
+  "archivePasswordHint": "Enter archive password",
+  "archiveWrongPassword": "Incorrect archive password",
+  "subtitles": "Subtitles",
+  "subtitleOff": "Off",
+  "loadExternalSubtitle": "Load Subtitle from Files…",
+  "subtitleAutoLoaded": "Loaded subtitle: {name}",
+  "@subtitleAutoLoaded": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "pictureInPicture": "Picture in Picture",
+  "directorySync": "Directory Sync & Backup",
+  "directorySyncSubtitle": "Incremental, mirror or two-way sync across local & remote",
+  "syncModeIncremental": "Incremental (Copy new & updated)",
+  "syncModeMirror": "Mirror (Exact copy, deletes extra files)",
+  "syncModeBidirectional": "Two-Way Sync",
+  "syncPreviewChanges": "Preview Changes",
+  "syncStart": "Start Sync",
+  "syncNoChanges": "Directories are already in sync",
+  "offlinePinned": "Offline Pinned Files",
+  "offlinePinnedSubtitle": "Managed offline copies of remote files",
+  "pinOffline": "Pin for Offline",
+  "unpinOffline": "Remove Offline Pin",
+  "pinnedOfflineNotice": "Pinned \"{name}\" for offline access",
+  "@pinnedOfflineNotice": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "checksumsTitle": "Checksums (MD5 / SHA-1 / SHA-256)",
+  "computeChecksums": "Compute Checksums",
+  "expectedHashHint": "Paste expected hash to verify…",
+  "hashMatches": "Checksum matches",
+  "hashMismatch": "Checksum does NOT match",
+  "structuredView": "Structured View",
+  "rawTextView": "Raw Text",
+  "copyJsonPath": "Copy Path",
+  "compareDiff": "Compare Diff",
+  "diffUnified": "Unified",
+  "diffSideBySide": "Side-by-Side",
+  "diffOnlyInLeft": "Only in Left",
+  "diffOnlyInRight": "Only in Right",
+  "diffModified": "Modified",
+  "diffIdentical": "Identical",
+  "unixPermissions": "Unix Permissions (chmod)",
+  "permOwner": "Owner",
+  "permGroup": "Group",
+  "permOther": "Other",
+  "applyPermissions": "Apply Permissions",
+  "permissionsUpdated": "Permissions updated to {mode}",
+  "@permissionsUpdated": {
+    "placeholders": {
+      "mode": { "type": "String" }
+    }
+  },
+  "lockVaultNow": "Lock Now",
+  "deleteOriginalAfterImport": "Delete original file after importing to vault",
+  "vaultExternalOpenNotice": "Opening this file in an external app writes a temporary plaintext copy. Locking the privacy folder automatically deletes all temporary plaintext copies.",
+  "shareViaLan": "Share via LAN",
+  "calculateDirSize": "Calculate",
+  "activeTasksBanner": "{count} active transfer(s)",
+  "@activeTasksBanner": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "jsonFormattedPreview": "Formatted",
+  "jsonTreeView": "Tree",
+  "jsonIndentSpaces": "{count} spaces",
+  "@jsonIndentSpaces": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "jsonSortKeys": "Sort keys",
+  "jsonCopyFormatted": "Copy formatted JSON",
+  "jsonCopyMinified": "Copy minified JSON",
+  "jsonCopiedFormatted": "Formatted JSON copied",
+  "jsonCopiedMinified": "Minified JSON copied",
+  "jsonInvalidFormat": "Invalid JSON format",
+  "jsonExpandAll": "Expand all",
+  "jsonCollapseAll": "Collapse all",
+  "jsonFormatInEditor": "Format JSON",
+  "jsonLinesCount": "{count} lines",
+  "@jsonLinesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "jsonMatchesCount": "{current}/{total} matches",
+  "@jsonMatchesCount": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "vaultAlwaysVisibleTitle": "Always Show",
+  "vaultAlwaysVisibleDesc": "Keep this privacy folder visible when locked. Opening it still requires authentication and respects auto-lock timeout.",
+  "lockedBadge": "Locked",
+  "vaultUnlockToOpen": "Unlock & Open",
+  "vaultUnpinAlwaysVisible": "Stop Always Showing",
+  "vaultPinnedNotice": "Privacy folder \"{name}\" set to always show",
+  "@vaultPinnedNotice": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "vaultUnpinnedNotice": "Privacy folder \"{name}\" will hide when locked",
+  "@vaultUnpinnedNotice": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "vaultLockedKeepVisibleNotice": "Privacy folder \"{name}\" locked",
+  "@vaultLockedKeepVisibleNotice": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "searchCategoryAll": "All Types",
+  "searchCategoryCode": "Code",
+  "searchCategoryFolders": "Folders",
+  "searchFilesAndFolders": "Files & Folders",
+  "searchEnterQueryHint": "Type to search files, folders, bookmarks, remotes & history",
+  "searchingFilesProgress": "Searching files…",
+  "collapseSidebar": "Collapse sidebar",
+  "expandSidebar": "Expand sidebar",
+  "categoryAllFilter": "All",
+  "categorySummary": "{count} items · {size}",
+  "@categorySummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "categoryScanning": "Scanning {category}…",
+  "@categoryScanning": {
+    "placeholders": {
+      "category": { "type": "String" }
+    }
+  },
+  "categoryEmptyTitle": "No {category} found",
+  "@categoryEmptyTitle": {
+    "placeholders": {
+      "category": { "type": "String" }
+    }
+  },
+  "categoryEmptySubtitle": "Files in this category will appear here automatically.",
+  "locateInFolder": "Locate in folder",
+  "clearFilters": "Clear filters",
+  "filterCategoryHint": "Filter in {category}…",
+  "@filterCategoryHint": {
+    "placeholders": {
+      "category": { "type": "String" }
+    }
+  },
+  "historyRetentionTitle": "History retention",
+  "historyRetentionDesc": "Entries older than this are automatically removed. Set to 0 to disable history.",
+  "historyRetentionDaysLabel": "Keep for {days} days",
+  "@historyRetentionDaysLabel": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "historyRetentionDaysShort": "{days}d",
+  "@historyRetentionDaysShort": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "historyRetentionDisabled": "Do not retain (0 days)",
+  "historyRetentionDisabledShort": "Off",
+  "historyRetentionInputLabel": "Retention days (0 = do not retain)",
+  "historyRetentionInvalidInput": "Enter a non-negative whole number",
+  "historyRetentionUpdatedDays": "History retention set to {days} days",
+  "@historyRetentionUpdatedDays": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "historyRetentionUpdatedOff": "History retention disabled and existing history cleared",
+  "historyDisabledTitle": "History is disabled",
+  "historyDisabledSubtitle": "Retention is set to 0 days, so visited folders are not saved.",
+  "historyRetentionChange": "Change retention"
 }

@@ -24,11 +24,15 @@ const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub struct ServerState {
     pub root_dir: PathBuf,
     pub canonical_root: Option<PathBuf>,
+    /// When `Some`, the server shares a single file rather than a directory.
+    pub single_file_name: Option<String>,
     pub password: Option<String>,
     /// Random per-share bearer token used by the web UI. Deliberately NOT
     /// the password: a share link must never disclose the password itself.
     pub share_token: String,
     pub read_only: bool,
+    /// Optional App-configured default language (`"en"`, `"zh"`, `"ja"`).
+    pub default_lang: Option<String>,
     /// Failed auth attempts per client IP, for brute-force throttling.
     pub auth_failures: std::sync::Mutex<std::collections::HashMap<std::net::IpAddr, (u32, std::time::Instant)>>,
 }
@@ -55,6 +59,8 @@ pub struct UploadQuery {
 #[derive(Serialize)]
 pub struct ConfigResponse {
     pub read_only: bool,
+    pub lang: String,
+    pub single_file: bool,
 }
 
 #[derive(Serialize)]
@@ -76,10 +82,30 @@ pub async fn start_http_share(
     password: Option<String>,
     read_only: bool,
 ) -> Result<RunningServer, String> {
+    start_http_share_with_lang(root_dir, preferred_port, password, read_only, None).await
+}
+
+pub async fn start_http_share_with_lang(
+    root_dir: PathBuf,
+    preferred_port: Option<u16>,
+    password: Option<String>,
+    read_only: bool,
+    default_lang: Option<String>,
+) -> Result<RunningServer, String> {
     let password = password
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty());
     let share_token = uuid::Uuid::new_v4().simple().to_string();
+    let single_file_name = if root_dir.is_file() {
+        root_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    };
+    let effective_read_only = read_only || single_file_name.is_some();
+    let normalized_lang = default_lang.and_then(|l| normalize_lang_code(&l).map(|s| s.to_string()));
 
     let port = preferred_port.unwrap_or(0);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -96,9 +122,11 @@ pub async fn start_http_share(
     let state = Arc::new(ServerState {
         root_dir,
         canonical_root,
+        single_file_name,
         password,
         share_token: share_token.clone(),
-        read_only,
+        read_only: effective_read_only,
+        default_lang: normalized_lang,
         auth_failures: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
@@ -267,749 +295,79 @@ fn unauthorized_response() -> Response {
     response
 }
 
-async fn handle_index() -> Html<&'static str> {
-    Html(r###"<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>文件共享 - LAN File Sharing</title>
-    <style>
-        :root {
-            --bg-page: #f8fafc;
-            --bg-card: #ffffff;
-            --border-color: #e2e8f0;
-            --text-main: #0f172a;
-            --text-sub: #64748b;
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --item-hover: #f1f5f9;
-            --badge-bg: #e0e7ff;
-            --badge-text: #3730a3;
-        }
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-page: #0f172a;
-                --bg-card: #1e293b;
-                --border-color: #334155;
-                --text-main: #f8fafc;
-                --text-sub: #94a3b8;
-                --primary: #3b82f6;
-                --primary-hover: #60a5fa;
-                --item-hover: #293548;
-                --badge-bg: #1e3a8a;
-                --badge-text: #bfdbfe;
+const INDEX_HTML_TEMPLATE: &str = include_str!("../assets/index.html");
+const APP_CSS: &str = include_str!("../assets/app.css");
+const APP_JS: &str = include_str!("../assets/app.js");
+const I18N_EN_JSON: &str = include_str!("../assets/i18n/en.json");
+const I18N_ZH_JSON: &str = include_str!("../assets/i18n/zh.json");
+const I18N_JA_JSON: &str = include_str!("../assets/i18n/ja.json");
+
+fn normalize_lang_code(raw: &str) -> Option<&'static str> {
+    let lower = raw.trim().to_ascii_lowercase();
+    if lower.starts_with("zh") {
+        Some("zh")
+    } else if lower.starts_with("ja") {
+        Some("ja")
+    } else if lower.starts_with("en") {
+        Some("en")
+    } else {
+        None
+    }
+}
+
+pub(crate) fn pick_language(default_lang: Option<&str>, headers: &HeaderMap) -> &'static str {
+    if let Some(d) = default_lang.and_then(normalize_lang_code) {
+        return d;
+    }
+    if let Some(val) = headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()) {
+        for part in val.split(',') {
+            let tag = part.split(';').next().unwrap_or("");
+            if let Some(code) = normalize_lang_code(tag) {
+                return code;
             }
         }
-        * { box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 0;
-            padding: 24px 16px;
-            background: var(--bg-page);
-            color: var(--text-main);
-            transition: background-color 0.2s ease;
-        }
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-            background: var(--bg-card);
-            border-radius: 14px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-            border: 1px solid var(--border-color);
-            padding: 24px 28px;
-        }
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        h1 {
-            margin: 0;
-            font-size: 22px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--text-main);
-        }
-        .search-box {
-            position: relative;
-            flex-grow: 1;
-            max-width: 320px;
-            min-width: 200px;
-        }
-        .search-input {
-            width: 100%;
-            padding: 8px 12px 8px 32px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-page);
-            color: var(--text-main);
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        .search-input:focus {
-            border-color: var(--primary);
-        }
-        .search-icon {
-            position: absolute;
-            left: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-sub);
-            font-size: 13px;
-        }
-        .breadcrumb {
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 6px;
-            padding: 10px 14px;
-            background: var(--bg-page);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 14px;
-            margin-bottom: 16px;
-        }
-        .breadcrumb-item {
-            color: var(--primary);
-            text-decoration: none;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        .breadcrumb-item:hover {
-            text-decoration: underline;
-        }
-        .breadcrumb-sep {
-            color: var(--text-sub);
-            font-size: 12px;
-        }
-        .breadcrumb-current {
-            color: var(--text-sub);
-            font-weight: 600;
-        }
-        ul.file-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        li.file-item {
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid var(--border-color);
-            transition: background 0.15s ease;
-            gap: 12px;
-        }
-        li.file-item:last-child {
-            border-bottom: none;
-        }
-        li.file-item:hover {
-            background: var(--item-hover);
-        }
-        .item-main {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex: 1;
-            min-width: 0;
-            text-decoration: none;
-            color: var(--text-main);
-            cursor: pointer;
-        }
-        .item-main:hover .item-name {
-            color: var(--primary);
-        }
-        .item-icon {
-            font-size: 18px;
-            flex-shrink: 0;
-        }
-        .item-name {
-            font-size: 14px;
-            font-weight: 500;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            transition: color 0.15s;
-        }
-        .item-actions {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-shrink: 0;
-        }
-        .item-size {
-            font-size: 13px;
-            color: var(--text-sub);
-            font-variant-numeric: tabular-nums;
-            min-width: 70px;
-            text-align: right;
-        }
-        .btn-download {
-            padding: 4px 10px;
-            border-radius: 6px;
-            background: var(--primary);
-            color: #ffffff;
-            font-size: 12px;
-            font-weight: 500;
-            text-decoration: none;
-            transition: background 0.15s;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .btn-download:hover {
-            background: var(--primary-hover);
-        }
-        .empty-state {
-            padding: 36px 16px;
-            text-align: center;
-            color: var(--text-sub);
-            font-size: 14px;
-        }
-        .footer-info {
-            margin-top: 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            color: var(--text-sub);
-        }
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .upload-buttons {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .btn-primary, .btn-secondary {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 8px 14px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border: 1px solid transparent;
-            transition: all 0.15s ease;
-        }
-        .btn-primary {
-            background: var(--primary);
-            color: #ffffff;
-            border-color: var(--primary);
-        }
-        .btn-primary:hover {
-            background: var(--primary-hover);
-        }
-        .btn-secondary {
-            background: var(--bg-page);
-            color: var(--text-main);
-            border-color: var(--border-color);
-        }
-        .btn-secondary:hover {
-            background: var(--item-hover);
-        }
-        .upload-status {
-            margin-bottom: 16px;
-            padding: 12px 16px;
-            background: var(--bg-page);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-        }
-        .upload-status-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 13px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: var(--border-color);
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            width: 0%;
-            background: var(--primary);
-            border-radius: 3px;
-            transition: width 0.15s ease;
-        }
-        .drop-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.45);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            backdrop-filter: blur(2px);
-        }
-        .drop-overlay.active {
-            display: flex;
-        }
-        .drop-overlay-box {
-            background: var(--bg-card);
-            padding: 32px 48px;
-            border-radius: 16px;
-            border: 2px dashed var(--primary);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            pointer-events: none;
-        }
-        .drop-icon {
-            font-size: 40px;
-        }
-        .drop-text {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>📁 局域网文件共享</h1>
-            <div class="header-right">
-                <div class="search-box">
-                    <span class="search-icon">🔍</span>
-                    <input type="text" id="filter-input" class="search-input" placeholder="筛选当前目录文件..." />
-                </div>
-                <div class="upload-buttons" id="upload-buttons">
-                    <button class="btn-primary" id="btn-upload-file" title="上传单个或多个文件">
-                        <span>📄 上传文件</span>
-                    </button>
-                    <button class="btn-secondary" id="btn-upload-folder" title="选择文件夹并递归上传内部所有文件">
-                        <span>📁 上传文件夹</span>
-                    </button>
-                    <input type="file" id="file-input" multiple style="display:none;" />
-                    <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none;" />
-                </div>
-            </div>
-        </header>
+    }
+    "en"
+}
 
-        <div class="upload-status" id="upload-status" style="display:none;">
-            <div class="upload-status-info">
-                <span id="upload-status-text">正在上传...</span>
-                <span id="upload-status-percent">0%</span>
-            </div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-fill"></div>
-            </div>
-        </div>
+fn rendered_index_html_for_lang(lang: &str) -> String {
+    let html_lang = match lang {
+        "zh" => "zh-CN",
+        "ja" => "ja",
+        _ => "en",
+    };
+    let i18n_bundle = format!(
+        "{{\"en\":{I18N_EN_JSON},\"zh\":{I18N_ZH_JSON},\"ja\":{I18N_JA_JSON}}}"
+    );
+    INDEX_HTML_TEMPLATE
+        .replace("__HTML_LANG__", html_lang)
+        .replace("__SERVER_LANG__", lang)
+        .replace("/*__APP_CSS__*/", APP_CSS)
+        .replace("/*__I18N_JSON__*/", &i18n_bundle)
+        .replace("/*__APP_JS__*/", APP_JS)
+}
 
-        <div class="breadcrumb" id="breadcrumb-bar">
-            <span class="breadcrumb-item" data-path="">根目录</span>
-        </div>
-
-        <ul class="file-list" id="file-list">
-            <li class="empty-state">正在加载文件列表...</li>
-        </ul>
-
-        <div class="footer-info">
-            <span id="item-count-text">0 项内容</span>
-            <span>FileManager LAN Share</span>
-        </div>
-    </div>
-
-    <script>
-        let currentPath = '';
-        let allItems = [];
-
-        // The share link carries a per-session token; every API request must
-        // echo it back or the auth middleware rejects it with 401.
-        const shareToken = new URLSearchParams(window.location.search).get('token');
-        function withToken(url) {
-            if (!shareToken) return url;
-            return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(shareToken);
-        }
-
-        function escapeHtml(str) {
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function formatSize(bytes) {
-            if (bytes == null || bytes === undefined) return '-';
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-            if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
-            return (bytes / 1073741824).toFixed(2) + ' GB';
-        }
-
-        function getFileIcon(name, isDir) {
-            if (isDir) return '📁';
-            const ext = (name.split('.').pop() || '').toLowerCase();
-            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return '🖼️';
-            if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv'].includes(ext)) return '🎬';
-            if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'].includes(ext)) return '🎵';
-            if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(ext)) return '📦';
-            if (['html', 'htm', 'js', 'css', 'json', 'xml', 'rs', 'dart', 'py', 'c', 'cpp', 'java', 'ts'].includes(ext)) return '💻';
-            if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md'].includes(ext)) return '📄';
-            return '📄';
-        }
-
-        function buildListUrl(path) {
-            const clean = (path || '').replace(/^\/+|\/+$/g, '');
-            if (!clean) return withToken('/api/list');
-            return withToken('/api/list/' + clean.split('/').map(encodeURIComponent).join('/'));
-        }
-
-        function buildDownloadUrl(path) {
-            const clean = (path || '').replace(/^\/+|\/+$/g, '');
-            return withToken('/download/' + clean.split('/').map(encodeURIComponent).join('/'));
-        }
-
-        function renderBreadcrumbs(path) {
-            const bar = document.getElementById('breadcrumb-bar');
-            const clean = (path || '').replace(/^\/+|\/+$/g, '');
-            let html = '<span class="breadcrumb-item" data-path="">根目录</span>';
-            if (clean) {
-                const parts = clean.split('/');
-                let accum = '';
-                for (let i = 0; i < parts.length; i++) {
-                    accum = accum ? (accum + '/' + parts[i]) : parts[i];
-                    html += '<span class="breadcrumb-sep">/</span>';
-                    if (i === parts.length - 1) {
-                        html += `<span class="breadcrumb-current">${escapeHtml(parts[i])}</span>`;
-                    } else {
-                        html += `<span class="breadcrumb-item" data-path="${escapeHtml(accum)}">${escapeHtml(parts[i])}</span>`;
-                    }
-                }
-            }
-            bar.innerHTML = html;
-        }
-
-        function renderItems(filterText) {
-            const listEl = document.getElementById('file-list');
-            const query = (filterText || '').trim().toLowerCase();
-            const filtered = query
-                ? allItems.filter(item => item.name.toLowerCase().includes(query))
-                : allItems;
-
-            document.getElementById('item-count-text').innerText = `${filtered.length} 项内容`;
-
-            if (filtered.length === 0) {
-                listEl.innerHTML = query
-                    ? '<li class="empty-state">没有找到匹配的文件</li>'
-                    : '<li class="empty-state">文件夹为空</li>';
-                return;
-            }
-
-            let html = '';
-            for (const item of filtered) {
-                const icon = getFileIcon(item.name, item.is_dir);
-                const safeName = escapeHtml(item.name);
-                const safePath = escapeHtml(item.path);
-
-                if (item.is_dir) {
-                    html += `
-                        <li class="file-item">
-                            <div class="item-main folder-link" data-path="${safePath}">
-                                <span class="item-icon">${icon}</span>
-                                <span class="item-name">${safeName}</span>
-                            </div>
-                            <div class="item-actions">
-                                <span class="item-size">文件夹</span>
-                            </div>
-                        </li>
-                    `;
-                } else {
-                    const dlUrl = buildDownloadUrl(item.path);
-                    const sizeStr = formatSize(item.size);
-                    html += `
-                        <li class="file-item">
-                            <a class="item-main" href="${dlUrl}" target="_blank">
-                                <span class="item-icon">${icon}</span>
-                                <span class="item-name">${safeName}</span>
-                            </a>
-                            <div class="item-actions">
-                                <span class="item-size">${sizeStr}</span>
-                                <a class="btn-download" href="${dlUrl}" download="${safeName}">下载</a>
-                            </div>
-                        </li>
-                    `;
-                }
-            }
-            listEl.innerHTML = html;
-        }
-
-        async function loadDir(path) {
-            currentPath = (path || '').replace(/^\/+|\/+$/g, '');
-            renderBreadcrumbs(currentPath);
-            document.getElementById('file-list').innerHTML = '<li class="empty-state">正在加载文件列表...</li>';
-
-            try {
-                const res = await fetch(buildListUrl(currentPath));
-                if (!res.ok) {
-                    document.getElementById('file-list').innerHTML = '<li class="empty-state" style="color:#ef4444;">加载目录失败（HTTP ' + res.status + '）</li>';
-                    return;
-                }
-                allItems = await res.json();
-                document.getElementById('filter-input').value = '';
-                renderItems('');
-            } catch (err) {
-                document.getElementById('file-list').innerHTML = '<li class="empty-state" style="color:#ef4444;">网络请求出错：' + escapeHtml(err.message) + '</li>';
-            }
-        }
-
-        document.getElementById('breadcrumb-bar').addEventListener('click', (e) => {
-            const target = e.target.closest('.breadcrumb-item');
-            if (target) {
-                loadDir(target.getAttribute('data-path') || '');
-            }
-        });
-
-        document.getElementById('file-list').addEventListener('click', (e) => {
-            const folderLink = e.target.closest('.folder-link');
-            if (folderLink) {
-                e.preventDefault();
-                loadDir(folderLink.getAttribute('data-path') || '');
-            }
-        });
-
-        document.getElementById('filter-input').addEventListener('input', (e) => {
-            renderItems(e.target.value);
-        });
-
-        let isReadOnly = false;
-
-        async function checkConfig() {
-            try {
-                const res = await fetch(withToken('/api/config'));
-                if (res.ok) {
-                    const cfg = await res.json();
-                    isReadOnly = Boolean(cfg.read_only);
-                    if (isReadOnly) {
-                        const btns = document.getElementById('upload-buttons');
-                        if (btns) btns.style.display = 'none';
-                    }
-                }
-            } catch (_) {}
-        }
-
-        document.getElementById('btn-upload-file').addEventListener('click', () => {
-            document.getElementById('file-input').click();
-        });
-
-        document.getElementById('btn-upload-folder').addEventListener('click', () => {
-            document.getElementById('folder-input').click();
-        });
-
-        document.getElementById('file-input').addEventListener('change', (e) => {
-            if (e.target.files && e.target.files.length > 0) {
-                const filesToUpload = Array.from(e.target.files).map(f => ({
-                    file: f,
-                    relPath: f.name
-                }));
-                uploadFiles(filesToUpload);
-                e.target.value = '';
-            }
-        });
-
-        document.getElementById('folder-input').addEventListener('change', (e) => {
-            if (e.target.files && e.target.files.length > 0) {
-                const filesToUpload = Array.from(e.target.files).map(f => ({
-                    file: f,
-                    relPath: f.webkitRelativePath || f.name
-                }));
-                uploadFiles(filesToUpload);
-                e.target.value = '';
-            }
-        });
-
-        async function getFilesFromEntry(entry, path = '') {
-            if (entry.isFile) {
-                return new Promise((resolve) => {
-                    entry.file(f => {
-                        resolve([{ file: f, relPath: (path ? path + '/' : '') + f.name }]);
-                    }, () => resolve([]));
-                });
-            } else if (entry.isDirectory) {
-                const dirReader = entry.createReader();
-                const entries = await new Promise((resolve) => {
-                    let all = [];
-                    function readBatch() {
-                        dirReader.readEntries((results) => {
-                            if (!results || results.length === 0) {
-                                resolve(all);
-                            } else {
-                                all = all.concat(results);
-                                readBatch();
-                            }
-                        }, () => resolve(all));
-                    }
-                    readBatch();
-                });
-                let list = [];
-                const nextPath = path ? (path + '/' + entry.name) : entry.name;
-                for (const child of entries) {
-                    const sub = await getFilesFromEntry(child, nextPath);
-                    list = list.concat(sub);
-                }
-                return list;
-            }
-            return [];
-        }
-
-        let dragCounter = 0;
-        const getDropOverlay = () => document.getElementById('drop-overlay');
-
-        window.addEventListener('dragenter', (e) => {
-            e.preventDefault();
-            if (isReadOnly) return;
-            dragCounter++;
-            const dropOverlay = getDropOverlay();
-            if (dropOverlay) dropOverlay.classList.add('active');
-        });
-
-        window.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            if (isReadOnly) return;
-            dragCounter--;
-            if (dragCounter <= 0) {
-                dragCounter = 0;
-                const dropOverlay = getDropOverlay();
-                if (dropOverlay) dropOverlay.classList.remove('active');
-            }
-        });
-
-        window.addEventListener('dragover', (e) => {
-            e.preventDefault();
-        });
-
-        window.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            dragCounter = 0;
-            const dropOverlay = getDropOverlay();
-            if (dropOverlay) dropOverlay.classList.remove('active');
-            if (isReadOnly) return;
-
-            const items = e.dataTransfer && e.dataTransfer.items;
-            let filesToUpload = [];
-
-            if (items && items.length > 0 && items[0].webkitGetAsEntry) {
-                for (let i = 0; i < items.length; i++) {
-                    const entry = items[i].webkitGetAsEntry();
-                    if (entry) {
-                        const sub = await getFilesFromEntry(entry);
-                        filesToUpload = filesToUpload.concat(sub);
-                    }
-                }
-            } else if (e.dataTransfer && e.dataTransfer.files) {
-                filesToUpload = Array.from(e.dataTransfer.files).map(f => ({
-                    file: f,
-                    relPath: f.name
-                }));
-            }
-
-            if (filesToUpload.length > 0) {
-                uploadFiles(filesToUpload);
-            }
-        });
-
-        function uploadFiles(fileList) {
-            if (isReadOnly || !fileList || fileList.length === 0) return;
-
-            const statusEl = document.getElementById('upload-status');
-            const textEl = document.getElementById('upload-status-text');
-            const percentEl = document.getElementById('upload-status-percent');
-            const fillEl = document.getElementById('progress-fill');
-
-            statusEl.style.display = 'block';
-            textEl.style.color = '';
-            textEl.innerText = `正在准备上传 ${fileList.length} 个文件...`;
-            percentEl.innerText = '0%';
-            fillEl.style.width = '0%';
-
-            const formData = new FormData();
-            for (const item of fileList) {
-                formData.append('files', item.file, item.relPath);
-            }
-
-            const url = withToken('/api/upload?dir=' + encodeURIComponent(currentPath));
-
-            const xhr = new XMLHttpRequest();
-            xhr.upload.onprogress = (event) => {
-                if (event.lengthComputable) {
-                    const percent = Math.round((event.loaded / event.total) * 100);
-                    fillEl.style.width = percent + '%';
-                    percentEl.innerText = percent + '%';
-                    textEl.innerText = `正在上传 (${formatSize(event.loaded)} / ${formatSize(event.total)})...`;
-                }
-            };
-
-            xhr.onload = () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    textEl.innerText = `上传成功（共 ${fileList.length} 个文件）`;
-                    percentEl.innerText = '100%';
-                    fillEl.style.width = '100%';
-                    loadDir(currentPath);
-                    setTimeout(() => {
-                        statusEl.style.display = 'none';
-                    }, 3000);
-                } else {
-                    textEl.innerText = `上传失败（HTTP ${xhr.status}）：${xhr.responseText || '请重试'}`;
-                    textEl.style.color = '#ef4444';
-                }
-            };
-
-            xhr.onerror = () => {
-                textEl.innerText = '网络连接异常，上传失败';
-                textEl.style.color = '#ef4444';
-            };
-
-            xhr.open('POST', url, true);
-            xhr.send(formData);
-        }
-
-        checkConfig();
-        loadDir('');
-    </script>
-    <div id="drop-overlay" class="drop-overlay">
-        <div class="drop-overlay-box">
-            <span class="drop-icon">📥</span>
-            <span class="drop-text">释放鼠标以上传文件或文件夹到当前目录</span>
-        </div>
-    </div>
-</body>
-</html>"###)
+async fn handle_index(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+) -> Response {
+    let lang = pick_language(state.default_lang.as_deref(), &headers);
+    let mut resp = Html(rendered_index_html_for_lang(lang)).into_response();
+    if let Ok(val) = header::HeaderValue::from_str(lang) {
+        resp.headers_mut().insert(header::CONTENT_LANGUAGE, val);
+    }
+    resp
 }
 
 async fn handle_config(
     State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
 ) -> Json<ConfigResponse> {
+    let lang = pick_language(state.default_lang.as_deref(), &headers).to_string();
     Json(ConfigResponse {
         read_only: state.read_only,
+        lang,
+        single_file: state.single_file_name.is_some(),
     })
 }
 
@@ -1182,6 +540,22 @@ async fn handle_list_internal(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
+    if let Some(ref single_name) = state.single_file_name {
+        if !subpath.is_empty() {
+            return Err(StatusCode::NOT_FOUND);
+        }
+        let size = tokio::fs::metadata(&state.root_dir)
+            .await
+            .map(|m| m.len())
+            .ok();
+        return Ok(Json(vec![FileItem {
+            name: single_name.clone(),
+            path: single_name.clone(),
+            is_dir: false,
+            size,
+        }]));
+    }
+
     let target_dir = resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), subpath)
         .map_err(|_| StatusCode::FORBIDDEN)?;
     let mut reader = tokio::fs::read_dir(target_dir)
@@ -1281,8 +655,17 @@ async fn handle_download(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let file_path = resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), &subpath)
-        .map_err(|_| StatusCode::FORBIDDEN)?;
+    let file_path = if let Some(ref single_name) = state.single_file_name {
+        let trimmed = subpath.trim_start_matches('/');
+        if trimmed == single_name.as_str() {
+            state.root_dir.clone()
+        } else {
+            return Err(StatusCode::NOT_FOUND);
+        }
+    } else {
+        resolve_path_inner(&state.root_dir, state.canonical_root.as_deref(), &subpath)
+            .map_err(|_| StatusCode::FORBIDDEN)?
+    };
     let file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     if metadata.is_dir() {
@@ -1491,9 +874,11 @@ mod tests {
         ServerState {
             root_dir: PathBuf::from("/tmp"),
             canonical_root: None,
+            single_file_name: None,
             password: password.map(str::to_string),
             share_token: token.to_string(),
             read_only: true,
+            default_lang: None,
             auth_failures: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }

@@ -5379,6 +5379,918 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin.'**
   String get deleteVaultPermanentWarning;
+
+  /// No description provided for @showQrCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Show QR Code'**
+  String get showQrCode;
+
+  /// No description provided for @scanQrToConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with your phone to open in browser'**
+  String get scanQrToConnect;
+
+  /// No description provided for @newTab.
+  ///
+  /// In en, this message translates to:
+  /// **'New Tab'**
+  String get newTab;
+
+  /// No description provided for @closeTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Close Tab'**
+  String get closeTab;
+
+  /// No description provided for @openInNewTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in New Tab'**
+  String get openInNewTab;
+
+  /// No description provided for @copyToOtherPane.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy to Other Pane'**
+  String get copyToOtherPane;
+
+  /// No description provided for @moveToOtherPane.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to Other Pane'**
+  String get moveToOtherPane;
+
+  /// No description provided for @pdfViewerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF Viewer'**
+  String get pdfViewerTitle;
+
+  /// No description provided for @pdfPageOf.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {current} / {total}'**
+  String pdfPageOf(int current, int total);
+
+  /// No description provided for @pdfSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search text in PDF…'**
+  String get pdfSearchHint;
+
+  /// No description provided for @pdfJumpToPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to page'**
+  String get pdfJumpToPage;
+
+  /// No description provided for @pdfOutline.
+  ///
+  /// In en, this message translates to:
+  /// **'Table of Contents'**
+  String get pdfOutline;
+
+  /// No description provided for @pdfNoOutline.
+  ///
+  /// In en, this message translates to:
+  /// **'No outline in this document'**
+  String get pdfNoOutline;
+
+  /// No description provided for @pdfZeroDiskBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'In-Memory · Zero Disk'**
+  String get pdfZeroDiskBadge;
+
+  /// No description provided for @scanLanDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan LAN Devices'**
+  String get scanLanDevices;
+
+  /// No description provided for @scanningLan.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning local network…'**
+  String get scanningLan;
+
+  /// No description provided for @noLanDevicesFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No SMB / SFTP / WebDAV / FTP devices found on LAN'**
+  String get noLanDevicesFound;
+
+  /// No description provided for @storageAnalyzer.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Analyzer'**
+  String get storageAnalyzer;
+
+  /// No description provided for @storageAnalyzerSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder size ranking, file types & largest files'**
+  String get storageAnalyzerSubtitle;
+
+  /// No description provided for @topFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Largest Folders'**
+  String get topFolders;
+
+  /// No description provided for @topFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Largest Files'**
+  String get topFiles;
+
+  /// No description provided for @fileTypesBreakdown.
+  ///
+  /// In en, this message translates to:
+  /// **'By File Type'**
+  String get fileTypesBreakdown;
+
+  /// No description provided for @storageUsedOf.
+  ///
+  /// In en, this message translates to:
+  /// **'{used} used of {total} ({free} free)'**
+  String storageUsedOf(String used, String total, String free);
+
+  /// No description provided for @duplicateFinder.
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate Finder'**
+  String get duplicateFinder;
+
+  /// No description provided for @duplicateFinderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'3-stage SHA-256 duplicate scan & cleanup'**
+  String get duplicateFinderSubtitle;
+
+  /// No description provided for @keepNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Newest'**
+  String get keepNewest;
+
+  /// No description provided for @keepOldest.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Oldest'**
+  String get keepOldest;
+
+  /// No description provided for @keepShortestPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Shortest Path'**
+  String get keepShortestPath;
+
+  /// No description provided for @cleanSelectedDuplicates.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean Selected ({count})'**
+  String cleanSelectedDuplicates(int count);
+
+  /// No description provided for @wastedSpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Reclaimable: {size}'**
+  String wastedSpace(String size);
+
+  /// No description provided for @noDuplicatesFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No duplicate files found'**
+  String get noDuplicatesFound;
+
+  /// No description provided for @categoryDocuments.
+  ///
+  /// In en, this message translates to:
+  /// **'Documents'**
+  String get categoryDocuments;
+
+  /// No description provided for @categoryVideos.
+  ///
+  /// In en, this message translates to:
+  /// **'Videos'**
+  String get categoryVideos;
+
+  /// No description provided for @categoryAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio'**
+  String get categoryAudio;
+
+  /// No description provided for @categoryArchives.
+  ///
+  /// In en, this message translates to:
+  /// **'Archives'**
+  String get categoryArchives;
+
+  /// No description provided for @categoryDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get categoryDownloads;
+
+  /// No description provided for @categoryApks.
+  ///
+  /// In en, this message translates to:
+  /// **'Installers'**
+  String get categoryApks;
+
+  /// No description provided for @globalSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search files, bookmarks & recent…'**
+  String get globalSearchHint;
+
+  /// No description provided for @advancedSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced Search'**
+  String get advancedSearch;
+
+  /// No description provided for @grepContentSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Content Search (Grep)'**
+  String get grepContentSearch;
+
+  /// No description provided for @matchContains.
+  ///
+  /// In en, this message translates to:
+  /// **'Contains'**
+  String get matchContains;
+
+  /// No description provided for @matchWildcard.
+  ///
+  /// In en, this message translates to:
+  /// **'Wildcard (* ?)'**
+  String get matchWildcard;
+
+  /// No description provided for @matchRegex.
+  ///
+  /// In en, this message translates to:
+  /// **'Regex'**
+  String get matchRegex;
+
+  /// No description provided for @minSizeMb.
+  ///
+  /// In en, this message translates to:
+  /// **'Min size (MB)'**
+  String get minSizeMb;
+
+  /// No description provided for @maxSizeMb.
+  ///
+  /// In en, this message translates to:
+  /// **'Max size (MB)'**
+  String get maxSizeMb;
+
+  /// No description provided for @modifiedDaysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'Modified within (days)'**
+  String get modifiedDaysAgo;
+
+  /// No description provided for @pauseTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get pauseTask;
+
+  /// No description provided for @resumeTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get resumeTask;
+
+  /// No description provided for @retryFailedItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry Failed ({count})'**
+  String retryFailedItems(int count);
+
+  /// No description provided for @taskPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get taskPaused;
+
+  /// No description provided for @rateLimitLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed Limit'**
+  String get rateLimitLabel;
+
+  /// No description provided for @rateLimitUnlimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlimited'**
+  String get rateLimitUnlimited;
+
+  /// No description provided for @encryptWithPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypt with password (AES-256)'**
+  String get encryptWithPassword;
+
+  /// No description provided for @archivePasswordRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive Password Required'**
+  String get archivePasswordRequired;
+
+  /// No description provided for @archivePasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter archive password'**
+  String get archivePasswordHint;
+
+  /// No description provided for @archiveWrongPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect archive password'**
+  String get archiveWrongPassword;
+
+  /// No description provided for @subtitles.
+  ///
+  /// In en, this message translates to:
+  /// **'Subtitles'**
+  String get subtitles;
+
+  /// No description provided for @subtitleOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get subtitleOff;
+
+  /// No description provided for @loadExternalSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Load Subtitle from Files…'**
+  String get loadExternalSubtitle;
+
+  /// No description provided for @subtitleAutoLoaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded subtitle: {name}'**
+  String subtitleAutoLoaded(String name);
+
+  /// No description provided for @pictureInPicture.
+  ///
+  /// In en, this message translates to:
+  /// **'Picture in Picture'**
+  String get pictureInPicture;
+
+  /// No description provided for @directorySync.
+  ///
+  /// In en, this message translates to:
+  /// **'Directory Sync & Backup'**
+  String get directorySync;
+
+  /// No description provided for @directorySyncSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incremental, mirror or two-way sync across local & remote'**
+  String get directorySyncSubtitle;
+
+  /// No description provided for @syncModeIncremental.
+  ///
+  /// In en, this message translates to:
+  /// **'Incremental (Copy new & updated)'**
+  String get syncModeIncremental;
+
+  /// No description provided for @syncModeMirror.
+  ///
+  /// In en, this message translates to:
+  /// **'Mirror (Exact copy, deletes extra files)'**
+  String get syncModeMirror;
+
+  /// No description provided for @syncModeBidirectional.
+  ///
+  /// In en, this message translates to:
+  /// **'Two-Way Sync'**
+  String get syncModeBidirectional;
+
+  /// No description provided for @syncPreviewChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview Changes'**
+  String get syncPreviewChanges;
+
+  /// No description provided for @syncStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Sync'**
+  String get syncStart;
+
+  /// No description provided for @syncNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Directories are already in sync'**
+  String get syncNoChanges;
+
+  /// No description provided for @offlinePinned.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline Pinned Files'**
+  String get offlinePinned;
+
+  /// No description provided for @offlinePinnedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Managed offline copies of remote files'**
+  String get offlinePinnedSubtitle;
+
+  /// No description provided for @pinOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin for Offline'**
+  String get pinOffline;
+
+  /// No description provided for @unpinOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove Offline Pin'**
+  String get unpinOffline;
+
+  /// No description provided for @pinnedOfflineNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned \"{name}\" for offline access'**
+  String pinnedOfflineNotice(String name);
+
+  /// No description provided for @checksumsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Checksums (MD5 / SHA-1 / SHA-256)'**
+  String get checksumsTitle;
+
+  /// No description provided for @computeChecksums.
+  ///
+  /// In en, this message translates to:
+  /// **'Compute Checksums'**
+  String get computeChecksums;
+
+  /// No description provided for @expectedHashHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste expected hash to verify…'**
+  String get expectedHashHint;
+
+  /// No description provided for @hashMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'Checksum matches'**
+  String get hashMatches;
+
+  /// No description provided for @hashMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Checksum does NOT match'**
+  String get hashMismatch;
+
+  /// No description provided for @structuredView.
+  ///
+  /// In en, this message translates to:
+  /// **'Structured View'**
+  String get structuredView;
+
+  /// No description provided for @rawTextView.
+  ///
+  /// In en, this message translates to:
+  /// **'Raw Text'**
+  String get rawTextView;
+
+  /// No description provided for @copyJsonPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy Path'**
+  String get copyJsonPath;
+
+  /// No description provided for @compareDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare Diff'**
+  String get compareDiff;
+
+  /// No description provided for @diffUnified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unified'**
+  String get diffUnified;
+
+  /// No description provided for @diffSideBySide.
+  ///
+  /// In en, this message translates to:
+  /// **'Side-by-Side'**
+  String get diffSideBySide;
+
+  /// No description provided for @diffOnlyInLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Only in Left'**
+  String get diffOnlyInLeft;
+
+  /// No description provided for @diffOnlyInRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Only in Right'**
+  String get diffOnlyInRight;
+
+  /// No description provided for @diffModified.
+  ///
+  /// In en, this message translates to:
+  /// **'Modified'**
+  String get diffModified;
+
+  /// No description provided for @diffIdentical.
+  ///
+  /// In en, this message translates to:
+  /// **'Identical'**
+  String get diffIdentical;
+
+  /// No description provided for @unixPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Unix Permissions (chmod)'**
+  String get unixPermissions;
+
+  /// No description provided for @permOwner.
+  ///
+  /// In en, this message translates to:
+  /// **'Owner'**
+  String get permOwner;
+
+  /// No description provided for @permGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Group'**
+  String get permGroup;
+
+  /// No description provided for @permOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get permOther;
+
+  /// No description provided for @applyPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply Permissions'**
+  String get applyPermissions;
+
+  /// No description provided for @permissionsUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Permissions updated to {mode}'**
+  String permissionsUpdated(String mode);
+
+  /// No description provided for @lockVaultNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock Now'**
+  String get lockVaultNow;
+
+  /// No description provided for @deleteOriginalAfterImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete original file after importing to vault'**
+  String get deleteOriginalAfterImport;
+
+  /// No description provided for @vaultExternalOpenNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening this file in an external app writes a temporary plaintext copy. Locking the privacy folder automatically deletes all temporary plaintext copies.'**
+  String get vaultExternalOpenNotice;
+
+  /// No description provided for @shareViaLan.
+  ///
+  /// In en, this message translates to:
+  /// **'Share via LAN'**
+  String get shareViaLan;
+
+  /// No description provided for @calculateDirSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculate'**
+  String get calculateDirSize;
+
+  /// No description provided for @activeTasksBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} active transfer(s)'**
+  String activeTasksBanner(int count);
+
+  /// No description provided for @jsonFormattedPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Formatted'**
+  String get jsonFormattedPreview;
+
+  /// No description provided for @jsonTreeView.
+  ///
+  /// In en, this message translates to:
+  /// **'Tree'**
+  String get jsonTreeView;
+
+  /// No description provided for @jsonIndentSpaces.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} spaces'**
+  String jsonIndentSpaces(int count);
+
+  /// No description provided for @jsonSortKeys.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort keys'**
+  String get jsonSortKeys;
+
+  /// No description provided for @jsonCopyFormatted.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy formatted JSON'**
+  String get jsonCopyFormatted;
+
+  /// No description provided for @jsonCopyMinified.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy minified JSON'**
+  String get jsonCopyMinified;
+
+  /// No description provided for @jsonCopiedFormatted.
+  ///
+  /// In en, this message translates to:
+  /// **'Formatted JSON copied'**
+  String get jsonCopiedFormatted;
+
+  /// No description provided for @jsonCopiedMinified.
+  ///
+  /// In en, this message translates to:
+  /// **'Minified JSON copied'**
+  String get jsonCopiedMinified;
+
+  /// No description provided for @jsonInvalidFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid JSON format'**
+  String get jsonInvalidFormat;
+
+  /// No description provided for @jsonExpandAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand all'**
+  String get jsonExpandAll;
+
+  /// No description provided for @jsonCollapseAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse all'**
+  String get jsonCollapseAll;
+
+  /// No description provided for @jsonFormatInEditor.
+  ///
+  /// In en, this message translates to:
+  /// **'Format JSON'**
+  String get jsonFormatInEditor;
+
+  /// No description provided for @jsonLinesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} lines'**
+  String jsonLinesCount(int count);
+
+  /// No description provided for @jsonMatchesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{current}/{total} matches'**
+  String jsonMatchesCount(int current, int total);
+
+  /// No description provided for @vaultAlwaysVisibleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Always Show'**
+  String get vaultAlwaysVisibleTitle;
+
+  /// No description provided for @vaultAlwaysVisibleDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep this privacy folder visible when locked. Opening it still requires authentication and respects auto-lock timeout.'**
+  String get vaultAlwaysVisibleDesc;
+
+  /// No description provided for @lockedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Locked'**
+  String get lockedBadge;
+
+  /// No description provided for @vaultUnlockToOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock & Open'**
+  String get vaultUnlockToOpen;
+
+  /// No description provided for @vaultUnpinAlwaysVisible.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop Always Showing'**
+  String get vaultUnpinAlwaysVisible;
+
+  /// No description provided for @vaultPinnedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" set to always show'**
+  String vaultPinnedNotice(String name);
+
+  /// No description provided for @vaultUnpinnedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" will hide when locked'**
+  String vaultUnpinnedNotice(String name);
+
+  /// No description provided for @vaultLockedKeepVisibleNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy folder \"{name}\" locked'**
+  String vaultLockedKeepVisibleNotice(String name);
+
+  /// No description provided for @searchCategoryAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All Types'**
+  String get searchCategoryAll;
+
+  /// No description provided for @searchCategoryCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get searchCategoryCode;
+
+  /// No description provided for @searchCategoryFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Folders'**
+  String get searchCategoryFolders;
+
+  /// No description provided for @searchFilesAndFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Files & Folders'**
+  String get searchFilesAndFolders;
+
+  /// No description provided for @searchEnterQueryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Type to search files, folders, bookmarks, remotes & history'**
+  String get searchEnterQueryHint;
+
+  /// No description provided for @searchingFilesProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching files…'**
+  String get searchingFilesProgress;
+
+  /// No description provided for @collapseSidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse sidebar'**
+  String get collapseSidebar;
+
+  /// No description provided for @expandSidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand sidebar'**
+  String get expandSidebar;
+
+  /// No description provided for @categoryAllFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get categoryAllFilter;
+
+  /// No description provided for @categorySummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items · {size}'**
+  String categorySummary(int count, String size);
+
+  /// No description provided for @categoryScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning {category}…'**
+  String categoryScanning(String category);
+
+  /// No description provided for @categoryEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No {category} found'**
+  String categoryEmptyTitle(String category);
+
+  /// No description provided for @categoryEmptySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Files in this category will appear here automatically.'**
+  String get categoryEmptySubtitle;
+
+  /// No description provided for @locateInFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Locate in folder'**
+  String get locateInFolder;
+
+  /// No description provided for @clearFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get clearFilters;
+
+  /// No description provided for @filterCategoryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter in {category}…'**
+  String filterCategoryHint(String category);
+
+  /// No description provided for @historyRetentionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'History retention'**
+  String get historyRetentionTitle;
+
+  /// No description provided for @historyRetentionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Entries older than this are automatically removed. Set to 0 to disable history.'**
+  String get historyRetentionDesc;
+
+  /// No description provided for @historyRetentionDaysLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep for {days} days'**
+  String historyRetentionDaysLabel(int days);
+
+  /// No description provided for @historyRetentionDaysShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{days}d'**
+  String historyRetentionDaysShort(int days);
+
+  /// No description provided for @historyRetentionDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not retain (0 days)'**
+  String get historyRetentionDisabled;
+
+  /// No description provided for @historyRetentionDisabledShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get historyRetentionDisabledShort;
+
+  /// No description provided for @historyRetentionInputLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Retention days (0 = do not retain)'**
+  String get historyRetentionInputLabel;
+
+  /// No description provided for @historyRetentionInvalidInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a non-negative whole number'**
+  String get historyRetentionInvalidInput;
+
+  /// No description provided for @historyRetentionUpdatedDays.
+  ///
+  /// In en, this message translates to:
+  /// **'History retention set to {days} days'**
+  String historyRetentionUpdatedDays(int days);
+
+  /// No description provided for @historyRetentionUpdatedOff.
+  ///
+  /// In en, this message translates to:
+  /// **'History retention disabled and existing history cleared'**
+  String get historyRetentionUpdatedOff;
+
+  /// No description provided for @historyDisabledTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'History is disabled'**
+  String get historyDisabledTitle;
+
+  /// No description provided for @historyDisabledSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Retention is set to 0 days, so visited folders are not saved.'**
+  String get historyDisabledSubtitle;
+
+  /// No description provided for @historyRetentionChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change retention'**
+  String get historyRetentionChange;
 }
 
 class _AppLocalizationsDelegate

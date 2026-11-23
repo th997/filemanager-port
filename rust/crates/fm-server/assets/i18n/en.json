@@ -1,0 +1,17 @@
+{
+  "htmlLang": "en",
+  "docTitle": "LAN File Sharing - FP File Manager",
+  "pageTitle": "📁 LAN File Sharing",
+  "filterPlaceholder": "Filter files in current folder...",
+  "uploadFile": "📄 Upload Files",
+  "uploadFileTitle": "Upload one or more files",
+  "uploadFolder": "📁 Upload Folder",
+  "uploadFolderTitle": "Select a folder and upload all files recursively",
+  "root": "Root",
+  "loading": "Loading files...",
+  "emptyFolder": "Folder is empty",
+  "noMatch": "No matching files found",
+  "folder": "Folder",
+  "download": "Download",
+  "dropHint": "Drop files or folders to upload to this folder"
+}

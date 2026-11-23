@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import Security
 import AVFoundation
+import AVKit
 import MediaPlayer
 
 private var avPlayerSwizzled = false
@@ -574,6 +575,7 @@ private class NowPlayingManager {
       configuredMessenger = messengerObj
       setupKeychainChannel(messenger: messenger)
       setupVaultNativeChannel(messenger: messenger)
+      setupPipChannel(messenger: messenger)
       setupOpenFileChannel(messenger: messenger)
       NowPlayingManager.shared.setupChannel(messenger: messenger)
       NSLog("AppDelegate: all method channels configured")
@@ -917,6 +919,115 @@ private class NowPlayingManager {
   static func removePrivacyBlurOverlay() {
     for window in allAppWindows() {
       window.viewWithTag(privacyBlurTag)?.removeFromSuperview()
+    }
+  }
+
+  private static var activePipController: AVPictureInPictureController?
+  private static var fallbackPipLayer: AVPlayerLayer?
+
+  private static func activePlaybackPlayer() -> AVPlayer? {
+    let players = activeAVPlayers.allObjects
+    return players.last(where: { $0.currentItem != nil }) ?? players.last
+  }
+
+  private static func setupPipChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.github.th997.filemanager/pip",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { call, result in
+      DispatchQueue.main.async {
+        switch call.method {
+        case "isPipSupported":
+          result(AVPictureInPictureController.isPictureInPictureSupported())
+        case "startPip":
+          guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            result(false)
+            return
+          }
+          var targetLayer = getAllPlayerLayers().first(where: { $0.player != nil })
+          if targetLayer == nil, let player = activePlaybackPlayer() {
+            if let existing = fallbackPipLayer {
+              existing.player = player
+              targetLayer = existing
+            } else if let hostLayer = allAppWindows().first?.layer {
+              // video_player renders via FlutterTexture (CVPixelBuffer) without
+              // an attached AVPlayerLayer; attach a 1px layer so iOS PiP can start.
+              let layer = AVPlayerLayer(player: player)
+              layer.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+              layer.opacity = 0.01
+              hostLayer.addSublayer(layer)
+              fallbackPipLayer = layer
+              targetLayer = layer
+            }
+          }
+          guard let layer = targetLayer else {
+            result(false)
+            return
+          }
+          if activePipController == nil || activePipController?.playerLayer !== layer {
+            activePipController = AVPictureInPictureController(playerLayer: layer)
+          }
+          guard let pip = activePipController else {
+            result(false)
+            return
+          }
+          if pip.isPictureInPicturePossible {
+            pip.startPictureInPicture()
+            result(true)
+          } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+              if pip.isPictureInPicturePossible {
+                pip.startPictureInPicture()
+                result(true)
+              } else {
+                result(false)
+              }
+            }
+          }
+        case "stopPip":
+          activePipController?.stopPictureInPicture()
+          fallbackPipLayer?.removeFromSuperlayer()
+          fallbackPipLayer = nil
+          result(true)
+        case "listEmbeddedSubtitles":
+          guard let item = activePlaybackPlayer()?.currentItem else {
+            result([[String: Any]]())
+            return
+          }
+          guard let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+            result([[String: Any]]())
+            return
+          }
+          let currentOption = item.currentMediaSelection.selectedMediaOption(in: group)
+          var list: [[String: Any]] = []
+          for (idx, option) in group.options.enumerated() {
+            list.append([
+              "index": idx,
+              "title": option.displayName,
+              "language": option.locale?.identifier ?? "",
+              "selected": currentOption == option,
+            ])
+          }
+          result(list)
+        case "selectEmbeddedSubtitle":
+          guard let item = activePlaybackPlayer()?.currentItem,
+                let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+            result(false)
+            return
+          }
+          let args = call.arguments as? [String: Any]
+          if let idx = args?["index"] as? Int, idx >= 0, idx < group.options.count {
+            item.select(group.options[idx], in: group)
+            result(true)
+          } else {
+            item.select(nil, in: group)
+            result(true)
+          }
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
     }
   }
 

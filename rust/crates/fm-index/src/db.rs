@@ -17,6 +17,19 @@ pub struct RemoteRecord {
     pub created_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PinnedFileRecord {
+    pub id: i64,
+    pub remote_root: String,
+    pub remote_path: String,
+    pub display_name: String,
+    pub local_cache_path: String,
+    pub size: u64,
+    pub modified_millis: Option<i64>,
+    pub pinned_at: i64,
+    pub last_accessed_at: i64,
+}
+
 /// Serialize a path for the bookmarks/history tables.
 ///
 /// The segments are stored as a JSON array. The previous format — the
@@ -166,10 +179,24 @@ impl Database {
                             deleted_at INTEGER NOT NULL
                         );
 
+                        CREATE TABLE IF NOT EXISTS pinned_files (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            remote_root TEXT NOT NULL,
+                            remote_path TEXT NOT NULL,
+                            display_name TEXT NOT NULL,
+                            local_cache_path TEXT NOT NULL,
+                            size INTEGER NOT NULL,
+                            modified_millis INTEGER,
+                            pinned_at INTEGER NOT NULL,
+                            last_accessed_at INTEGER NOT NULL,
+                            UNIQUE(remote_root, remote_path)
+                        );
+
                         CREATE INDEX IF NOT EXISTS idx_history_loc_path ON history(location, path);
                         CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at);
                         CREATE INDEX IF NOT EXISTS idx_bookmarks_loc_path ON bookmarks(location, path);
                         CREATE INDEX IF NOT EXISTS idx_recycle_bin_deleted ON recycle_bin(deleted_at);
+                        CREATE INDEX IF NOT EXISTS idx_pinned_lru ON pinned_files(last_accessed_at);
                         ",
                     );
                 }
@@ -441,5 +468,163 @@ impl Database {
         }
         conn.execute("DELETE FROM recycle_bin", [])?;
         Ok(paths)
+    }
+
+    // Offline Pinned Files CRUD & LRU eviction
+    pub fn offline_cache_dir(&self) -> PathBuf {
+        let dir = self.data_dir.join("offline_cache");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    pub fn upsert_pinned_file(
+        &self,
+        remote_root: &str,
+        remote_path: &str,
+        display_name: &str,
+        local_cache_path: &str,
+        size: u64,
+        modified_millis: Option<i64>,
+    ) -> Result<(), rusqlite::Error> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "INSERT INTO pinned_files
+                (remote_root, remote_path, display_name, local_cache_path, size, modified_millis, pinned_at, last_accessed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+             ON CONFLICT(remote_root, remote_path) DO UPDATE SET
+                display_name = excluded.display_name,
+                local_cache_path = excluded.local_cache_path,
+                size = excluded.size,
+                modified_millis = excluded.modified_millis,
+                last_accessed_at = excluded.last_accessed_at",
+            params![
+                remote_root,
+                remote_path,
+                display_name,
+                local_cache_path,
+                size as i64,
+                modified_millis,
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_pinned_files(&self) -> Result<Vec<PinnedFileRecord>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, remote_root, remote_path, display_name, local_cache_path, size, modified_millis, pinned_at, last_accessed_at
+             FROM pinned_files ORDER BY last_accessed_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PinnedFileRecord {
+                id: r.get(0)?,
+                remote_root: r.get(1)?,
+                remote_path: r.get(2)?,
+                display_name: r.get(3)?,
+                local_cache_path: r.get(4)?,
+                size: r.get::<_, i64>(5)?.max(0) as u64,
+                modified_millis: r.get(6)?,
+                pinned_at: r.get(7)?,
+                last_accessed_at: r.get(8)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn touch_pinned_file(
+        &self,
+        remote_root: &str,
+        remote_path: &str,
+    ) -> Result<Option<PinnedFileRecord>, rusqlite::Error> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE pinned_files SET last_accessed_at = ?1 WHERE remote_root = ?2 AND remote_path = ?3",
+            params![now, remote_root, remote_path],
+        )?;
+        let res = conn
+            .query_row(
+                "SELECT id, remote_root, remote_path, display_name, local_cache_path, size, modified_millis, pinned_at, last_accessed_at
+                 FROM pinned_files WHERE remote_root = ?1 AND remote_path = ?2",
+                params![remote_root, remote_path],
+                |r| {
+                    Ok(PinnedFileRecord {
+                        id: r.get(0)?,
+                        remote_root: r.get(1)?,
+                        remote_path: r.get(2)?,
+                        display_name: r.get(3)?,
+                        local_cache_path: r.get(4)?,
+                        size: r.get::<_, i64>(5)?.max(0) as u64,
+                        modified_millis: r.get(6)?,
+                        pinned_at: r.get(7)?,
+                        last_accessed_at: r.get(8)?,
+                    })
+                },
+            )
+            .ok();
+        Ok(res)
+    }
+
+    pub fn remove_pinned_file(
+        &self,
+        remote_root: &str,
+        remote_path: &str,
+    ) -> Result<Option<String>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let local_path: Option<String> = conn
+            .query_row(
+                "SELECT local_cache_path FROM pinned_files WHERE remote_root = ?1 AND remote_path = ?2",
+                params![remote_root, remote_path],
+                |r| r.get(0),
+            )
+            .ok();
+        conn.execute(
+            "DELETE FROM pinned_files WHERE remote_root = ?1 AND remote_path = ?2",
+            params![remote_root, remote_path],
+        )?;
+        Ok(local_path)
+    }
+
+    /// Evict least-recently-used pinned cache entries until total cached size <= `max_bytes`.
+    /// Returns the list of local file paths evicted.
+    pub fn evict_pinned_lru(&self, max_bytes: u64) -> Result<Vec<String>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, local_cache_path, size FROM pinned_files ORDER BY last_accessed_at ASC",
+        )?;
+        let rows: Vec<(i64, String, u64)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?.max(0) as u64,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        let mut total: u64 = rows.iter().map(|(_, _, s)| *s).sum();
+        let mut evicted_paths = Vec::new();
+        for (id, local_path, size) in rows {
+            if total <= max_bytes {
+                break;
+            }
+            conn.execute("DELETE FROM pinned_files WHERE id = ?1", params![id])?;
+            total = total.saturating_sub(size);
+            evicted_paths.push(local_path);
+        }
+        Ok(evicted_paths)
     }
 }

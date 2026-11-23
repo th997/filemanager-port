@@ -239,7 +239,7 @@ fn cancelled_err() -> VfsError {
 }
 
 pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult<()> {
-    extract_archive_with_cancel(archive_path, destination_dir, &CancellationToken::new())
+    extract_archive_with_password(archive_path, destination_dir, None, &CancellationToken::new())
 }
 
 /// Extract with cooperative cancellation. The token is checked at every
@@ -248,6 +248,17 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> VfsResult
 pub fn extract_archive_with_cancel(
     archive_path: &Path,
     destination_dir: &Path,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
+    extract_archive_with_password(archive_path, destination_dir, None, cancel)
+}
+
+/// Extract an archive (including password-protected `.zip` and `.7z`) with
+/// cooperative cancellation.
+pub fn extract_archive_with_password(
+    archive_path: &Path,
+    destination_dir: &Path,
+    password: Option<&str>,
     cancel: &CancellationToken,
 ) -> VfsResult<()> {
     std::fs::create_dir_all(destination_dir).map_err(backend_err)?;
@@ -271,6 +282,7 @@ pub fn extract_archive_with_cancel(
         format,
         archive_path,
         destination_dir,
+        password.filter(|p| !p.is_empty()),
         &budget,
         &mut created,
         cancel,
@@ -285,6 +297,7 @@ fn extract_inner(
     format: ArchiveFormat,
     archive_path: &Path,
     destination_dir: &Path,
+    password: Option<&str>,
     budget: &SharedBudget,
     created: &mut CreatedPaths,
     cancel: &CancellationToken,
@@ -313,8 +326,30 @@ fn extract_inner(
                 if cancel.is_cancelled() {
                     return Err(cancelled_err());
                 }
-                let mut entry = zip.by_index(i).map_err(|e| {
-                    backend_err(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+                let mut entry = match password {
+                    Some(pw) => zip.by_index_decrypt(i, pw.as_bytes()),
+                    None => zip.by_index(i),
+                }
+                .map_err(|e| {
+                    let msg = match e {
+                        zip::result::ZipError::UnsupportedArchive(
+                            zip::result::ZipError::PASSWORD_REQUIRED,
+                        ) => "ARCHIVE_PASSWORD_REQUIRED: password required to extract zip".to_string(),
+                        zip::result::ZipError::InvalidPassword => {
+                            "ARCHIVE_WRONG_PASSWORD: invalid password for zip".to_string()
+                        }
+                        other => {
+                            let text = other.to_string();
+                            if text.to_lowercase().contains("password required") {
+                                format!("ARCHIVE_PASSWORD_REQUIRED: {text}")
+                            } else if text.to_lowercase().contains("invalid password") {
+                                format!("ARCHIVE_WRONG_PASSWORD: {text}")
+                            } else {
+                                text
+                            }
+                        }
+                    };
+                    backend_err(std::io::Error::new(std::io::ErrorKind::InvalidData, msg))
                 })?;
                 let Some(rel) = entry.enclosed_name() else {
                     return Err(backend_err(std::io::Error::new(
@@ -390,9 +425,15 @@ fn extract_inner(
             // sevenz-rust joins entry names onto the destination without
             // sanitising them, so a crafted archive can write outside it.
             let mut entries_seen = 0usize;
-            let result = sevenz_rust::decompress_file_with_extract_fn(
-                archive_path,
+            let file = File::open(archive_path).map_err(backend_err)?;
+            let pw = match password {
+                Some(p) => sevenz_rust::Password::from(p),
+                None => sevenz_rust::Password::empty(),
+            };
+            let result = sevenz_rust::decompress_with_extract_fn_and_password(
+                file,
                 destination_dir,
+                pw,
                 |entry, reader, _dest| {
                     if cancel.is_cancelled() {
                         return Err(sevenz_rust::Error::other("operation cancelled"));
@@ -442,7 +483,18 @@ fn extract_inner(
                     Ok(true)
                 },
             );
-            result.map_err(|e| backend_err(std::io::Error::other(e.to_string())))
+            result.map_err(|e| {
+                let msg = match e {
+                    sevenz_rust::Error::PasswordRequired => {
+                        "ARCHIVE_PASSWORD_REQUIRED: password required to extract 7z".to_string()
+                    }
+                    sevenz_rust::Error::MaybeBadPassword(_) => {
+                        "ARCHIVE_WRONG_PASSWORD: invalid password for 7z".to_string()
+                    }
+                    other => other.to_string(),
+                };
+                backend_err(std::io::Error::other(msg))
+            })
         }
     }
 }
@@ -538,7 +590,7 @@ fn safe_join(base: &Path, entry_name: &str) -> Option<std::path::PathBuf> {
 }
 
 pub fn create_zip(sources: &[impl AsRef<Path>], destination_zip: &Path) -> VfsResult<()> {
-    create_zip_with_cancel(sources, destination_zip, &CancellationToken::new())
+    create_zip_with_password(sources, destination_zip, None, &CancellationToken::new())
 }
 
 /// Compress with cooperative cancellation. The archive is built in a unique
@@ -549,8 +601,25 @@ pub fn create_zip_with_cancel(
     destination_zip: &Path,
     cancel: &CancellationToken,
 ) -> VfsResult<()> {
+    create_zip_with_password(sources, destination_zip, None, cancel)
+}
+
+/// Compress into a `.zip` archive with optional AES-256 password encryption and
+/// cooperative cancellation.
+pub fn create_zip_with_password(
+    sources: &[impl AsRef<Path>],
+    destination_zip: &Path,
+    password: Option<&str>,
+    cancel: &CancellationToken,
+) -> VfsResult<()> {
     let tmp_path = temp_zip_path(destination_zip);
-    let result = create_zip_inner(sources, &tmp_path, destination_zip, cancel);
+    let result = create_zip_inner(
+        sources,
+        &tmp_path,
+        destination_zip,
+        password.filter(|p| !p.is_empty()),
+        cancel,
+    );
     match result {
         Ok(()) => {
             if let Err(e) = install_temp(&tmp_path, destination_zip) {
@@ -605,6 +674,7 @@ fn create_zip_inner(
     sources: &[impl AsRef<Path>],
     write_path: &Path,
     final_dest: &Path,
+    password: Option<&str>,
     cancel: &CancellationToken,
 ) -> VfsResult<()> {
     if cancel.is_cancelled() {
@@ -615,9 +685,12 @@ fn create_zip_inner(
         source: e,
     })?;
     let mut zip = zip::ZipWriter::new(std::io::BufWriter::with_capacity(128 * 1024, file));
-    let options = SimpleFileOptions::default()
+    let mut options: zip::write::FileOptions<'_, '_, ()> = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o755);
+    if let Some(pw) = password {
+        options = options.with_aes_encryption(zip::AesMode::Aes256, pw);
+    }
 
     // Exclude both the temp file being written and any pre-existing final
     // archive, so compressing a folder into a zip inside it never pulls the
@@ -686,11 +759,11 @@ fn create_zip_inner(
     Ok(())
 }
 
-fn add_dir_to_zip<W: Write + std::io::Seek>(
+fn add_dir_to_zip<'a, 'b, W: Write + std::io::Seek>(
     zip: &mut zip::ZipWriter<W>,
     base_dir: &Path,
     current_dir: &Path,
-    options: SimpleFileOptions,
+    options: zip::write::FileOptions<'a, 'b, ()>,
     exclude_canon: &[std::path::PathBuf],
     cancel: &CancellationToken,
 ) -> VfsResult<()> {

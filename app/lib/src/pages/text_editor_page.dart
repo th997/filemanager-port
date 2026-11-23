@@ -20,6 +20,7 @@ import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../theme/markdown_themes.dart';
 import '../widgets/html_preview_widget.dart';
+import '../widgets/json_formatted_preview.dart';
 import '../widgets/markdown_callout_builder.dart';
 import '../widgets/markdown_code_builder.dart';
 
@@ -40,6 +41,9 @@ class TextEditorPage extends StatefulWidget {
   final bool readOnly;
   final int? fileSizeBytes;
 
+  /// Optional 1-based line number to jump to once loaded (e.g. from Grep search).
+  final int? initialLine;
+
   const TextEditorPage({
     super.key,
     required this.root,
@@ -47,6 +51,7 @@ class TextEditorPage extends StatefulWidget {
     required this.fileName,
     this.readOnly = false,
     this.fileSizeBytes,
+    this.initialLine,
   });
 
   @override
@@ -219,6 +224,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
   String get _lowerName => _fileName.toLowerCase();
   bool get _isMarkdown => _lowerName.endsWith('.md') || _lowerName.endsWith('.markdown');
   bool get _isHtml => _lowerName.endsWith('.html') || _lowerName.endsWith('.htm') || _lowerName.endsWith('.xhtml');
+  bool get _isJson =>
+      _lowerName.endsWith('.json') ||
+      _lowerName.endsWith('.geojson') ||
+      _lowerName.endsWith('.topojson');
 
   bool _vaultAutoClosing = false;
 
@@ -898,9 +907,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
       final content = await readTextFile(root: _root, path: _path);
       if (mounted) {
         _clearLineCache();
-        // Large preview files (> 128KB) automatically switch to code mode to avoid
-        // freezing the UI isolate on complex markdown AST rendering.
-        if (content.length > 128 * 1024 && _mode == TextFileMode.preview) {
+        // Large preview files (> 128KB for Markdown/HTML, > 2MB for JSON)
+        // automatically switch to code mode to keep the UI responsive.
+        final previewLimit = _isJson ? 2 * 1024 * 1024 : 128 * 1024;
+        if (content.length > previewLimit && _mode == TextFileMode.preview) {
+          _mode = TextFileMode.code;
+        }
+        if (widget.initialLine != null && _mode == TextFileMode.preview) {
           _mode = TextFileMode.code;
         }
         setState(() {
@@ -908,6 +921,27 @@ class _TextEditorPageState extends State<TextEditorPage> {
           _loading = false;
           _isDirty = false;
         });
+        if (widget.initialLine != null && widget.initialLine! > 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final targetLine = widget.initialLine!;
+            final lineHeight = _fontSize * 1.45;
+            final offset = ((targetLine - 1) * lineHeight).clamp(0.0, double.infinity);
+            if (_codeScrollController.hasClients) {
+              _codeScrollController.jumpTo(
+                offset.clamp(0.0, _codeScrollController.position.maxScrollExtent),
+              );
+            }
+            // Also move text selection to start of that line for Edit mode.
+            final lines = content.split('\n');
+            int charOffset = 0;
+            for (int i = 0; i < (targetLine - 1).clamp(0, lines.length); i++) {
+              charOffset += lines[i].length + 1;
+            }
+            charOffset = charOffset.clamp(0, content.length);
+            _controller.selection = TextSelection.collapsed(offset: charOffset);
+          });
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -1201,14 +1235,32 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   void _setMode(TextFileMode mode) {
-    if (mode == TextFileMode.preview && !_isMarkdown && !_isHtml) return;
+    if (mode == TextFileMode.preview && !_isMarkdown && !_isHtml && !_isJson) return;
     if (mode == TextFileMode.edit && _readOnly) return;
     setState(() => _mode = mode);
   }
 
+  void _formatJsonInEditor() {
+    final result = JsonFormatter.format(_controller.text, indentSpaces: 2);
+    if (!result.isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${AppLocalizations.of(context).jsonInvalidFormat}: ${result.errorMessage ?? ''}',
+          ),
+        ),
+      );
+      return;
+    }
+    if (result.formatted != _controller.text) {
+      _controller.text = result.formatted;
+      setState(() => _isDirty = true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canPreview = !_largeFileMode && (_isMarkdown || _isHtml);
+    final canPreview = !_largeFileMode && (_isMarkdown || _isHtml || _isJson);
 
     return AppSwipeBack(
       child: CallbackShortcuts(
@@ -1293,7 +1345,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
           canPop: false,
           onPopInvokedWithResult: (didPop, _) async {
             if (didPop) return;
-            if (_mode == TextFileMode.preview && !_isMarkdown && _webViewController != null) {
+            if (_mode == TextFileMode.preview && _isHtml && _webViewController != null) {
               if (await _webViewController!.canGoBack()) {
                 await _webViewController!.goBack();
                 return;
@@ -1374,6 +1426,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
                     onPressed: () => _setMode(
                       _mode == TextFileMode.preview ? TextFileMode.code : TextFileMode.preview,
                     ),
+                  ),
+                if (_isJson && !_readOnly && _mode == TextFileMode.edit)
+                  IconButton(
+                    icon: const Icon(Icons.auto_fix_high),
+                    tooltip: AppLocalizations.of(context).jsonFormatInEditor,
+                    onPressed: _formatJsonInEditor,
                   ),
                 if (_isHtml && !_largeFileMode)
                   IconButton(
@@ -2135,6 +2193,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
                 },
               ),
             ),
+          );
+        }
+        if (_isJson) {
+          return JsonFormattedPreviewWidget(
+            rawText: _controller.text,
+            fontSize: _fontSize,
+            filterQuery: _showFind ? _findController.text : '',
+            onOpenRawEditor: () => _setMode(TextFileMode.code),
           );
         }
         return HtmlPreviewWidget(

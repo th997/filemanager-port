@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/remotes.dart';
+import '../rust/api/servers.dart' show LanServiceDto, discoverLanServices;
 import '../services/error_text.dart';
 import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
@@ -44,8 +45,69 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   bool _obscurePassphrase = true;
 
   bool _testing = false;
+  bool _scanningLan = false;
   String? _testResult;
   bool _testSuccess = false;
+
+  Future<void> _scanLanDevices() async {
+    if (_scanningLan) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _scanningLan = true);
+    List<LanServiceDto> services = const [];
+    try {
+      services = await discoverLanServices(timeoutMs: 2500);
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _scanningLan = false);
+
+    if (services.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.noLanDevicesFound)),
+      );
+      return;
+    }
+
+    final picked = await showDialog<LanServiceDto>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.scanLanDevices),
+        content: SizedBox(
+          width: 380,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: services.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final s = services[i];
+              return ListTile(
+                dense: true,
+                leading: const Icon(Icons.dns_outlined, size: 18),
+                title: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text('${s.protocol.toUpperCase()} · ${s.host}:${s.port} (${s.source})'),
+                onTap: () => Navigator.of(ctx).pop(s),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: Text(l10n.cancel)),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _kind = picked.protocol;
+      _hostController.text = picked.host;
+      _portController.text = '${picked.port}';
+      if (picked.protocol == 'webdav') {
+        final scheme = picked.port == 443 || picked.port == 5006 ? 'https' : 'http';
+        _endpointController.text = '$scheme://${picked.host}:${picked.port}/';
+      }
+      if (_nameController.text.trim().isEmpty) {
+        _nameController.text = picked.name;
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -381,6 +443,21 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                       });
                     }
                   },
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    icon: _scanningLan
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.radar, size: 16),
+                    label: Text(_scanningLan ? l10n.scanningLan : l10n.scanLanDevices),
+                    onPressed: _scanningLan ? null : _scanLanDevices,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(

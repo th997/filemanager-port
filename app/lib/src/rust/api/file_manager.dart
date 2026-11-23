@@ -54,6 +54,23 @@ Future<List<EntryDto>> searchEntries({
   maxResults: maxResults,
 );
 
+/// Cache a session password for an encrypted archive root (`archive://...`)
+/// and invalidate any cached archive VFS handle so it re-opens with the password.
+void setArchivePassword({required String archiveRoot, String? password}) =>
+    RustLib.instance.api.crateApiFileManagerSetArchivePassword(
+      archiveRoot: archiveRoot,
+      password: password,
+    );
+
+/// Inspect a local archive file and return whether it requires a password.
+Future<bool> checkArchiveEncrypted({
+  required String root,
+  required String path,
+}) => RustLib.instance.api.crateApiFileManagerCheckArchiveEncrypted(
+  root: root,
+  path: path,
+);
+
 Future<EntryDto> statEntry({required String root, required String path}) =>
     RustLib.instance.api.crateApiFileManagerStatEntry(root: root, path: path);
 

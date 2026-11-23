@@ -4,7 +4,7 @@ pub mod db;
 pub mod secret;
 
 use fm_core::{LocationId, VfsPath};
-pub use db::{Database, RemoteRecord};
+pub use db::{Database, PinnedFileRecord, RemoteRecord};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bookmark {

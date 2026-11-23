@@ -7,8 +7,8 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `batch_result`, `discard_partial_copy`, `finish`, `from_progress`, `generate_copy_path`, `parse_policy`, `state_str`, `task_mgr`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `batch_result`, `discard_partial_copy`, `finish_sync_task`, `finish`, `from_progress`, `generate_copy_path`, `parse_policy`, `register_sync_task`, `state_str`, `task_mgr`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 
 Future<String> startCopyTask({
   required String srcRoot,
@@ -56,6 +56,18 @@ Future<String> startCompressTask({
   dstArchivePath: dstArchivePath,
 );
 
+Future<String> startCompressWithPasswordTask({
+  required String srcRoot,
+  required List<String> srcPaths,
+  required String dstArchivePath,
+  String? password,
+}) => RustLib.instance.api.crateApiTasksStartCompressWithPasswordTask(
+  srcRoot: srcRoot,
+  srcPaths: srcPaths,
+  dstArchivePath: dstArchivePath,
+  password: password,
+);
+
 Future<String> startExtractTask({
   required String archivePath,
   required String dstDir,
@@ -63,6 +75,33 @@ Future<String> startExtractTask({
   archivePath: archivePath,
   dstDir: dstDir,
 );
+
+Future<String> startExtractWithPasswordTask({
+  required String archivePath,
+  required String dstDir,
+  String? password,
+}) => RustLib.instance.api.crateApiTasksStartExtractWithPasswordTask(
+  archivePath: archivePath,
+  dstDir: dstDir,
+  password: password,
+);
+
+bool pauseTask({required String taskId}) =>
+    RustLib.instance.api.crateApiTasksPauseTask(taskId: taskId);
+
+bool resumeTask({required String taskId}) =>
+    RustLib.instance.api.crateApiTasksResumeTask(taskId: taskId);
+
+bool setTaskRateLimit({required String taskId, required BigInt bytesPerSec}) =>
+    RustLib.instance.api.crateApiTasksSetTaskRateLimit(
+      taskId: taskId,
+      bytesPerSec: bytesPerSec,
+    );
+
+/// Retry only the failed items of a previous copy/move/sync task without
+/// re-running already succeeded files.
+Future<String> retryFailedTaskItems({required String taskId}) =>
+    RustLib.instance.api.crateApiTasksRetryFailedTaskItems(taskId: taskId);
 
 TaskProgressDto? pollTaskProgress({required String taskId}) =>
     RustLib.instance.api.crateApiTasksPollTaskProgress(taskId: taskId);
@@ -81,6 +120,45 @@ bool cancelTask({required String taskId}) =>
 bool dismissTask({required String taskId}) =>
     RustLib.instance.api.crateApiTasksDismissTask(taskId: taskId);
 
+class FailedTaskItemDto {
+  final String srcRoot;
+  final String srcPath;
+  final String dstRoot;
+  final String dstPath;
+  final bool isDir;
+  final String error;
+
+  const FailedTaskItemDto({
+    required this.srcRoot,
+    required this.srcPath,
+    required this.dstRoot,
+    required this.dstPath,
+    required this.isDir,
+    required this.error,
+  });
+
+  @override
+  int get hashCode =>
+      srcRoot.hashCode ^
+      srcPath.hashCode ^
+      dstRoot.hashCode ^
+      dstPath.hashCode ^
+      isDir.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FailedTaskItemDto &&
+          runtimeType == other.runtimeType &&
+          srcRoot == other.srcRoot &&
+          srcPath == other.srcPath &&
+          dstRoot == other.dstRoot &&
+          dstPath == other.dstPath &&
+          isDir == other.isDir &&
+          error == other.error;
+}
+
 class TaskProgressDto {
   final String id;
   final String state;
@@ -91,6 +169,10 @@ class TaskProgressDto {
   final String? error;
   final BigInt skipped;
   final String? label;
+  final List<FailedTaskItemDto> failedItems;
+  final bool canPause;
+  final bool canRetry;
+  final BigInt rateLimitBps;
 
   const TaskProgressDto({
     required this.id,
@@ -102,6 +184,10 @@ class TaskProgressDto {
     this.error,
     required this.skipped,
     this.label,
+    required this.failedItems,
+    required this.canPause,
+    required this.canRetry,
+    required this.rateLimitBps,
   });
 
   @override
@@ -114,7 +200,11 @@ class TaskProgressDto {
       current.hashCode ^
       error.hashCode ^
       skipped.hashCode ^
-      label.hashCode;
+      label.hashCode ^
+      failedItems.hashCode ^
+      canPause.hashCode ^
+      canRetry.hashCode ^
+      rateLimitBps.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -129,5 +219,9 @@ class TaskProgressDto {
           current == other.current &&
           error == other.error &&
           skipped == other.skipped &&
-          label == other.label;
+          label == other.label &&
+          failedItems == other.failedItems &&
+          canPause == other.canPause &&
+          canRetry == other.canRetry &&
+          rateLimitBps == other.rateLimitBps;
 }

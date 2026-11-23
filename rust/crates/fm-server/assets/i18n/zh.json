@@ -1,0 +1,17 @@
+{
+  "htmlLang": "zh-CN",
+  "docTitle": "文件共享 - FP File Manager",
+  "pageTitle": "📁 局域网文件共享",
+  "filterPlaceholder": "筛选当前目录文件...",
+  "uploadFile": "📄 上传文件",
+  "uploadFileTitle": "上传单个或多个文件",
+  "uploadFolder": "📁 上传文件夹",
+  "uploadFolderTitle": "选择文件夹并递归上传内部所有文件",
+  "root": "根目录",
+  "loading": "正在加载文件列表...",
+  "emptyFolder": "文件夹为空",
+  "noMatch": "没有找到匹配的文件",
+  "folder": "文件夹",
+  "download": "下载",
+  "dropHint": "释放鼠标以上传文件或文件夹到当前目录"
+}

@@ -1,9 +1,11 @@
 use crate::registry::VfsRegistry;
-use fm_archive::ops::{create_zip_with_cancel, extract_archive_with_cancel};
+use fm_archive::ops::{
+    create_zip_with_password, extract_archive_with_password,
+};
 use fm_core::{EntryKind, VfsPath};
 use fm_ops::{
-    copy_recursive, delete_recursive, total_bytes, ConflictPolicy, TaskManager, TaskProgress,
-    TaskState,
+    copy_recursive_with_control, delete_recursive, total_bytes, ConflictPolicy, FailedTaskItem,
+    TaskControl, TaskManager, TaskProgress, TaskState,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -13,7 +15,34 @@ use uuid::Uuid;
 static TASK_MGR: OnceLock<TaskManager> = OnceLock::new();
 
 fn task_mgr() -> &'static TaskManager {
-    TASK_MGR.get_or_init(TaskManager::new)
+    TASK_MGR.get_or_init(|| {
+        let mgr = TaskManager::new();
+        if let Some(db_path) = VfsRegistry::global().get_database_path() {
+            let history_path = PathBuf::from(&db_path)
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .join("task_history.json");
+            mgr.set_history_path(history_path);
+        }
+        mgr
+    })
+}
+
+pub(crate) fn register_sync_task(
+    label: &str,
+) -> (String, Arc<Mutex<TaskProgress>>, CancellationToken, TaskControl) {
+    let task_id = Uuid::new_v4().to_string();
+    let (progress, cancel, control) = task_mgr().register_with_control(&task_id);
+    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some(label.to_string());
+    (task_id, progress, cancel, control)
+}
+
+pub(crate) fn finish_sync_task(
+    progress: &Arc<Mutex<TaskProgress>>,
+    cancel: &CancellationToken,
+    result: Result<(), String>,
+) {
+    finish(progress, cancel, result);
 }
 
 /// Record the terminal state of a task.
@@ -28,21 +57,24 @@ fn finish(
     cancel: &CancellationToken,
     result: Result<(), String>,
 ) {
-    let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-    if cancel.is_cancelled() && result.is_err() {
-        p.state = TaskState::Cancelled;
-        p.error = None;
-        return;
-    }
-    match result {
-        Ok(()) => {
-            p.state = TaskState::Completed;
+    {
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+        if cancel.is_cancelled() && result.is_err() {
+            p.state = TaskState::Cancelled;
+            p.error = None;
+        } else {
+            match result {
+                Ok(()) => {
+                    p.state = TaskState::Completed;
+                }
+                Err(e) => {
+                    p.state = TaskState::Failed;
+                    p.error = Some(e);
+                }
+            }
         }
-        Err(e) => {
-            p.state = TaskState::Failed;
-            p.error = Some(e);
-        }
     }
+    task_mgr().persist_history();
 }
 
 /// Remove a destination that this task created, after a failed or cancelled
@@ -126,6 +158,16 @@ fn batch_result(failures: Vec<String>, total_items: usize) -> Result<(), String>
 }
 
 #[derive(Debug, Clone)]
+pub struct FailedTaskItemDto {
+    pub src_root: String,
+    pub src_path: String,
+    pub dst_root: String,
+    pub dst_path: String,
+    pub is_dir: bool,
+    pub error: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct TaskProgressDto {
     pub id: String,
     pub state: String,
@@ -136,12 +178,17 @@ pub struct TaskProgressDto {
     pub error: Option<String>,
     pub skipped: u64,
     pub label: Option<String>,
+    pub failed_items: Vec<FailedTaskItemDto>,
+    pub can_pause: bool,
+    pub can_retry: bool,
+    pub rate_limit_bps: u64,
 }
 
 fn state_str(s: TaskState) -> String {
     match s {
         TaskState::Pending => "pending",
         TaskState::Running => "running",
+        TaskState::Paused => "paused",
         TaskState::Cancelled => "cancelled",
         TaskState::Failed => "failed",
         TaskState::Completed => "completed",
@@ -151,6 +198,19 @@ fn state_str(s: TaskState) -> String {
 
 impl TaskProgressDto {
     fn from_progress(id: String, p: TaskProgress) -> Self {
+        let can_retry = !p.failed_items.is_empty() && p.retry_kind.is_some();
+        let failed_items = p
+            .failed_items
+            .iter()
+            .map(|f| FailedTaskItemDto {
+                src_root: f.src_root.clone(),
+                src_path: f.src_path.clone(),
+                dst_root: f.dst_root.clone(),
+                dst_path: f.dst_path.clone(),
+                is_dir: f.is_dir,
+                error: f.error.clone(),
+            })
+            .collect();
         Self {
             id,
             state: state_str(p.state),
@@ -161,6 +221,10 @@ impl TaskProgressDto {
             error: p.error,
             skipped: p.skipped,
             label: p.label,
+            failed_items,
+            can_pause: p.can_pause,
+            can_retry,
+            rate_limit_bps: p.rate_limit_bps,
         }
     }
 }
@@ -174,8 +238,14 @@ pub async fn start_copy_task(
     conflict_policy: String,
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
-    let (progress, cancel) = task_mgr().register(&task_id);
-    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Copy".to_string());
+    let (progress, cancel, control) = task_mgr().register_with_control(&task_id);
+    {
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+        p.label = Some("Copy".to_string());
+        p.can_pause = true;
+        p.retry_kind = Some("copy".to_string());
+        p.conflict_policy = Some(conflict_policy.clone());
+    }
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -233,13 +303,14 @@ pub async fn start_copy_task(
                 // A destination that existed before the copy is not ours to
                 // remove if the copy fails.
                 let created = dst_vfs.stat(&dst_p).await.is_err();
-                if let Err(e) = copy_recursive(
+                if let Err(e) = copy_recursive_with_control(
                     src_vfs.as_ref(),
                     &src_p,
                     dst_vfs.as_ref(),
                     &dst_p,
                     &progress,
                     &cancel,
+                    &control,
                     policy,
                 )
                 .await
@@ -248,7 +319,18 @@ pub async fn start_copy_task(
                     if created && !is_dir {
                         discard_partial_copy(dst_vfs.as_ref(), &dst_p).await;
                     }
-                    failures.push(format!("{file_name}: {e}"));
+                    let err_str = e.to_string();
+                    failures.push(format!("{file_name}: {err_str}"));
+                    progress.lock().unwrap_or_else(|e| e.into_inner()).failed_items.push(
+                        FailedTaskItem {
+                            src_root: src_root.clone(),
+                            src_path: src.clone(),
+                            dst_root: dst_root.clone(),
+                            dst_path: dst_p.to_slash_string(),
+                            is_dir,
+                            error: err_str,
+                        },
+                    );
                 }
             }
             batch_result(failures, total_items)
@@ -273,8 +355,14 @@ pub async fn start_move_task(
     conflict_policy: String,
 ) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
-    let (progress, cancel) = task_mgr().register(&task_id);
-    progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Move".to_string());
+    let (progress, cancel, control) = task_mgr().register_with_control(&task_id);
+    {
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+        p.label = Some("Move".to_string());
+        p.can_pause = true;
+        p.retry_kind = Some("move".to_string());
+        p.conflict_policy = Some(conflict_policy.clone());
+    }
 
     let tid = task_id.clone();
     tokio::spawn(async move {
@@ -399,13 +487,14 @@ pub async fn start_move_task(
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .skipped;
-                if let Err(e) = copy_recursive(
+                if let Err(e) = copy_recursive_with_control(
                     src_vfs.as_ref(),
                     &src_p,
                     dst_vfs.as_ref(),
                     &fallback_dst,
                     &progress,
                     &cancel,
+                    &control,
                     policy,
                 )
                 .await
@@ -419,7 +508,18 @@ pub async fn start_move_task(
                             let _ = dst_vfs.rename(&bak, &dst_p).await;
                         }
                     }
-                    failures.push(format!("{file_name}: {e}"));
+                    let err_str = e.to_string();
+                    failures.push(format!("{file_name}: {err_str}"));
+                    progress.lock().unwrap_or_else(|e| e.into_inner()).failed_items.push(
+                        FailedTaskItem {
+                            src_root: src_root.clone(),
+                            src_path: src.clone(),
+                            dst_root: dst_root.clone(),
+                            dst_path: fallback_dst.to_slash_string(),
+                            is_dir,
+                            error: err_str,
+                        },
+                    );
                     continue;
                 }
                 if let Some(bak) = overwrite_backup.take() {
@@ -502,6 +602,15 @@ pub async fn start_compress_task(
     src_paths: Vec<String>,
     dst_archive_path: String,
 ) -> Result<String, String> {
+    start_compress_with_password_task(src_root, src_paths, dst_archive_path, None).await
+}
+
+pub async fn start_compress_with_password_task(
+    src_root: String,
+    src_paths: Vec<String>,
+    dst_archive_path: String,
+    password: Option<String>,
+) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
     progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Compress".to_string());
@@ -529,20 +638,17 @@ pub async fn start_compress_task(
         }
 
         let dst = PathBuf::from(dst_archive_path);
-        // Archiving blocks on the filesystem; keep the async worker free.
-        // The cancel token goes into the blocking closure so it really stops
-        // writing at entry boundaries instead of just relabelling the result.
         let cancel_bg = cancel.clone();
         let res = tokio::task::spawn_blocking(move || {
-            create_zip_with_cancel(&items, &dst, &cancel_bg)
+            create_zip_with_password(&items, &dst, password.as_deref(), &cancel_bg)
         })
-            .await
-            .unwrap_or_else(|e| {
-                Err(fm_vfs::VfsError::Backend {
-                    path: VfsPath::root(),
-                    source: std::io::Error::other(e.to_string()),
-                })
-            });
+        .await
+        .unwrap_or_else(|e| {
+            Err(fm_vfs::VfsError::Backend {
+                path: VfsPath::root(),
+                source: std::io::Error::other(e.to_string()),
+            })
+        });
 
         let result = res.map_err(|e| e.to_string());
         if let Err(e) = &result {
@@ -555,6 +661,14 @@ pub async fn start_compress_task(
 }
 
 pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result<String, String> {
+    start_extract_with_password_task(archive_path, dst_dir, None).await
+}
+
+pub async fn start_extract_with_password_task(
+    archive_path: String,
+    dst_dir: String,
+    password: Option<String>,
+) -> Result<String, String> {
     let task_id = Uuid::new_v4().to_string();
     let (progress, cancel) = task_mgr().register(&task_id);
     progress.lock().unwrap_or_else(|e| e.into_inner()).label = Some("Extract".to_string());
@@ -567,18 +681,17 @@ pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result
         }
         let src = PathBuf::from(archive_path);
         let dst = PathBuf::from(dst_dir);
-        // Extraction blocks on the filesystem; keep the async worker free.
         let cancel_bg = cancel.clone();
         let res = tokio::task::spawn_blocking(move || {
-            extract_archive_with_cancel(&src, &dst, &cancel_bg)
+            extract_archive_with_password(&src, &dst, password.as_deref(), &cancel_bg)
         })
-            .await
-            .unwrap_or_else(|e| {
-                Err(fm_vfs::VfsError::Backend {
-                    path: VfsPath::root(),
-                    source: std::io::Error::other(e.to_string()),
-                })
-            });
+        .await
+        .unwrap_or_else(|e| {
+            Err(fm_vfs::VfsError::Backend {
+                path: VfsPath::root(),
+                source: std::io::Error::other(e.to_string()),
+            })
+        });
 
         let result = res.map_err(|e| e.to_string());
         if let Err(e) = &result {
@@ -588,6 +701,123 @@ pub async fn start_extract_task(archive_path: String, dst_dir: String) -> Result
     });
 
     Ok(task_id)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn pause_task(task_id: String) -> bool {
+    task_mgr().pause(&task_id)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn resume_task(task_id: String) -> bool {
+    task_mgr().resume(&task_id)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_task_rate_limit(task_id: String, bytes_per_sec: u64) -> bool {
+    task_mgr().set_rate_limit(&task_id, bytes_per_sec)
+}
+
+/// Retry only the failed items of a previous copy/move/sync task without
+/// re-running already succeeded files.
+pub async fn retry_failed_task_items(task_id: String) -> Result<String, String> {
+    let Some(prev) = task_mgr().get_progress(&task_id) else {
+        return Err("task not found".to_string());
+    };
+    if prev.failed_items.is_empty() {
+        return Err("task has no failed items to retry".to_string());
+    }
+    let retry_kind = prev.retry_kind.clone().unwrap_or_else(|| "copy".to_string());
+    let policy_str = prev
+        .conflict_policy
+        .clone()
+        .unwrap_or_else(|| "overwrite".to_string());
+    let policy = parse_policy(&policy_str);
+    let items = prev.failed_items.clone();
+
+    let new_id = Uuid::new_v4().to_string();
+    let (progress, cancel, control) = task_mgr().register_with_control(&new_id);
+    {
+        let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+        p.label = Some(format!(
+            "Retry {}",
+            prev.label.as_deref().unwrap_or("Transfer")
+        ));
+        p.can_pause = true;
+        p.retry_kind = Some(retry_kind.clone());
+        p.conflict_policy = Some(policy_str);
+    }
+
+    tokio::spawn(async move {
+        let run = async {
+            let total_items = items.len();
+            let mut total = 0u64;
+            for it in &items {
+                if let Ok(vfs) = VfsRegistry::global().get_or_create(&it.src_root).await {
+                    total += total_bytes(vfs.as_ref(), &VfsPath::from_slash_path(&it.src_path)).await;
+                }
+            }
+            progress.lock().unwrap_or_else(|e| e.into_inner()).total = Some(total);
+
+            let mut failures_msg: Vec<String> = Vec::new();
+            for it in items {
+                if cancel.is_cancelled() {
+                    return Err("operation cancelled".to_string());
+                }
+                let src_vfs = match VfsRegistry::global().get_or_create(&it.src_root).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        failures_msg.push(format!("{}: {e}", it.src_path));
+                        progress.lock().unwrap_or_else(|e| e.into_inner()).failed_items.push(
+                            FailedTaskItem { error: e, ..it },
+                        );
+                        continue;
+                    }
+                };
+                let dst_vfs = match VfsRegistry::global().get_or_create(&it.dst_root).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        failures_msg.push(format!("{}: {e}", it.src_path));
+                        progress.lock().unwrap_or_else(|e| e.into_inner()).failed_items.push(
+                            FailedTaskItem { error: e, ..it },
+                        );
+                        continue;
+                    }
+                };
+                let src_p = VfsPath::from_slash_path(&it.src_path);
+                let dst_p = VfsPath::from_slash_path(&it.dst_path);
+                if let Err(e) = copy_recursive_with_control(
+                    src_vfs.as_ref(),
+                    &src_p,
+                    dst_vfs.as_ref(),
+                    &dst_p,
+                    &progress,
+                    &cancel,
+                    &control,
+                    policy,
+                )
+                .await
+                {
+                    let err_str = e.to_string();
+                    failures_msg.push(format!("{}: {err_str}", it.src_path));
+                    progress.lock().unwrap_or_else(|e| e.into_inner()).failed_items.push(
+                        FailedTaskItem { error: err_str, ..it },
+                    );
+                } else {
+                    if retry_kind == "move" {
+                        let _ = delete_recursive(src_vfs.as_ref(), &src_p, &progress, &cancel).await;
+                        super::file_manager::invalidate_dir_cache(&it.src_root);
+                    }
+                    super::file_manager::invalidate_dir_cache(&it.dst_root);
+                }
+            }
+            batch_result(failures_msg, total_items)
+        };
+        let res = run.await;
+        finish(&progress, &cancel, res);
+    });
+
+    Ok(new_id)
 }
 
 #[flutter_rust_bridge::frb(sync)]

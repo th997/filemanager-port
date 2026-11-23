@@ -8,10 +8,12 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/file_picker_dialog.dart';
 import '../rust/api/servers.dart';
 import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/preferences_service.dart';
+import '../services/subtitle_service.dart';
 import '../services/vault_service.dart';
 import '../widgets/app_swipe_back.dart';
 import '../widgets/media_player/media_player_controls.dart';
@@ -318,6 +320,14 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
               ),
             ),
             const Divider(),
+            ListTile(
+              leading: const Icon(Icons.folder_open_outlined),
+              title: Text(l10n.loadExternalSubtitle),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await _pickExternalSubtitle();
+              },
+            ),
             ListTile(
               leading: Icon(
                 current == SubtitleTrack.no() ? Icons.radio_button_checked : Icons.radio_button_off,
@@ -726,6 +736,9 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
         await _player.setRate(_playbackSpeed);
       }
       if (mounted) setState(() => _opened = true);
+      if (!_track.isAudio) {
+        unawaited(_autoLoadExternalSubtitle(generation));
+      }
       if (_retryPosition != null) {
         final resumePos = _retryPosition!;
         _retryPosition = null;
@@ -745,6 +758,62 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   /// The duration is often still unknown right after `open`, so the seek waits
   /// for the first non-zero duration before deciding whether the saved spot is
   /// past the end.
+  Future<void> _autoLoadExternalSubtitle(int generation) async {
+    final loaded = await SubtitleService.findMatchingSubtitle(
+      root: widget.root,
+      mediaPath: _track.path,
+    );
+    if (loaded == null || !mounted || generation != _openGeneration) return;
+    await _player.setSubtitleTrack(
+      SubtitleTrack.data(loaded.rawContent, title: loaded.name),
+    );
+    if (mounted) {
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.subtitleAutoLoaded(loaded.name)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickExternalSubtitle() async {
+    final l10n = AppLocalizations.of(context);
+    final slash = _track.path.lastIndexOf('/');
+    final dir = slash >= 0 ? _track.path.substring(0, slash) : '';
+    final picked = await FilePickerDialog.show(
+      context,
+      title: l10n.loadExternalSubtitle,
+      initialRoot: widget.root,
+      initialPath: dir,
+    );
+    if (picked == null || picked.paths.isEmpty || !mounted) return;
+    final subPath = picked.paths.first;
+    final subName = subPath.split('/').last;
+    try {
+      final loaded = await SubtitleService.loadFromVfs(
+        root: picked.root,
+        path: subPath,
+        name: subName,
+      );
+      if (loaded != null && mounted) {
+        await _player.setSubtitleTrack(
+          SubtitleTrack.data(loaded.rawContent, title: loaded.name),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.subtitleAutoLoaded(loaded.name))),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
   void _applyResume([String? key]) {
     if (vaultIdFromRoot(widget.root) != null) return;
     if (_resumeApplied) return;

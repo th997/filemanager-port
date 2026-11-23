@@ -5,9 +5,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/history_retention_dialog.dart';
 import '../rust/api/file_manager.dart' show clearArchiveCache, archiveCacheSize;
+import '../services/platform_capabilities.dart';
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
+import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -44,6 +47,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late int _vaultAutoLockSec = _normalizeAutoLockSec(
     PreferencesService.instance.vaultAutoLockTimeoutSec,
   );
+  late int _historyRetentionDays =
+      PreferencesService.instance.historyRetentionDays;
 
   static int _normalizeAutoLockSec(int raw) {
     const allowed = {0, 60, 300, 600, -1};
@@ -76,6 +81,46 @@ class _SettingsPageState extends State<SettingsPage> {
     _buildTimeLabel = _getBuildTime();
     _platformLabel = _getPlatformLabel();
     _updateCacheSize();
+    PreferencesService.historyRetentionDaysNotifier
+        .addListener(_onHistoryRetentionChanged);
+  }
+
+  void _onHistoryRetentionChanged() {
+    if (!mounted) return;
+    setState(() {
+      _historyRetentionDays =
+          PreferencesService.historyRetentionDaysNotifier.value;
+    });
+  }
+
+  @override
+  void dispose() {
+    PreferencesService.historyRetentionDaysNotifier
+        .removeListener(_onHistoryRetentionChanged);
+    super.dispose();
+  }
+
+  Future<void> _configureHistoryRetention() async {
+    final picked = await showHistoryRetentionDialog(
+      context,
+      currentDays: _historyRetentionDays,
+    );
+    if (picked == null || !mounted) return;
+    await StorageService.instance.applyHistoryRetention(picked);
+    if (!mounted) return;
+    setState(() {
+      _historyRetentionDays = PreferencesService.instance.historyRetentionDays;
+    });
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          picked == 0
+              ? l10n.historyRetentionUpdatedOff
+              : l10n.historyRetentionUpdatedDays(picked),
+        ),
+      ),
+    );
   }
 
   String? _getBuildTime() {
@@ -338,31 +383,73 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const Divider(height: 1),
-                ListTile(
-                  leading: AppCircleBadge(
-                    icon: Icons.palette_outlined,
-                    color: _accentSeeds[_accentCode] ?? Theme.of(context).colorScheme.primary,
-                  ),
-                  title: Text(l10n.accentColor),
-                  subtitle: Text(_accentLabel(_accentCode), style: const TextStyle(fontSize: 11)),
-                  trailing: DropdownButton<String>(
-                    value: _accentCode,
-                    underline: const SizedBox.shrink(),
-                    items: [
-                      DropdownMenuItem(value: 'dynamic', child: Text(l10n.accentDynamic, style: const TextStyle(fontSize: 12))),
-                      DropdownMenuItem(value: 'deepTeal', child: Text(l10n.accentDeepTeal, style: const TextStyle(fontSize: 12))),
-                      DropdownMenuItem(value: 'classicBlue', child: Text(l10n.accentClassicBlue, style: const TextStyle(fontSize: 12))),
-                      DropdownMenuItem(value: 'indigo', child: Text(l10n.accentIndigo, style: const TextStyle(fontSize: 12))),
-                      DropdownMenuItem(value: 'forest', child: Text(l10n.accentForest, style: const TextStyle(fontSize: 12))),
-                      DropdownMenuItem(value: 'sunset', child: Text(l10n.accentSunset, style: const TextStyle(fontSize: 12))),
-                      DropdownMenuItem(value: 'grape', child: Text(l10n.accentGrape, style: const TextStyle(fontSize: 12))),
-                    ],
-                    onChanged: (code) {
-                      if (code == null) return;
-                      setState(() => _accentCode = code);
-                      widget.onAccentChanged(code);
-                    },
-                  ),
+                Builder(
+                  builder: (context) {
+                    final effectiveAccent =
+                        !PlatformCapabilities.supportsDynamicColor &&
+                                _accentCode == 'dynamic'
+                            ? 'deepTeal'
+                            : _accentCode;
+                    return ListTile(
+                      leading: AppCircleBadge(
+                        icon: Icons.palette_outlined,
+                        color: _accentSeeds[effectiveAccent] ??
+                            Theme.of(context).colorScheme.primary,
+                      ),
+                      title: Text(l10n.accentColor),
+                      subtitle: Text(
+                        _accentLabel(effectiveAccent),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      trailing: DropdownButton<String>(
+                        value: effectiveAccent,
+                        underline: const SizedBox.shrink(),
+                        items: [
+                          if (PlatformCapabilities.supportsDynamicColor)
+                            DropdownMenuItem(
+                              value: 'dynamic',
+                              child: Text(l10n.accentDynamic,
+                                  style: const TextStyle(fontSize: 12)),
+                            ),
+                          DropdownMenuItem(
+                            value: 'deepTeal',
+                            child: Text(l10n.accentDeepTeal,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'classicBlue',
+                            child: Text(l10n.accentClassicBlue,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'indigo',
+                            child: Text(l10n.accentIndigo,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'forest',
+                            child: Text(l10n.accentForest,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'sunset',
+                            child: Text(l10n.accentSunset,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'grape',
+                            child: Text(l10n.accentGrape,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                        onChanged: (code) {
+                          if (code == null) return;
+                          setState(() => _accentCode = code);
+                          widget.onAccentChanged(code);
+                        },
+                      ),
+                    );
+                  },
                 ),
                 const Divider(height: 1),
                 ListTile(
@@ -419,22 +506,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     });
                   },
                 ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
-                  minTileHeight: 40,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  secondary: const AppCircleBadge(
-                    icon: Icons.vertical_align_bottom,
-                    color: Colors.teal,
+                if (PlatformCapabilities.supportsBottomToolbar) ...[
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    dense: true,
+                    visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+                    minTileHeight: 40,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    secondary: const AppCircleBadge(
+                      icon: Icons.vertical_align_bottom,
+                      color: Colors.teal,
+                    ),
+                    title: Text(l10n.toolbarAtBottom),
+                    subtitle: Text(l10n.toolbarAtBottomDesc,
+                        style: const TextStyle(fontSize: 10)),
+                    value: PreferencesService.toolbarAtBottom.value,
+                    onChanged: _setToolbarAtBottom,
                   ),
-                  title: Text(l10n.toolbarAtBottom),
-                  subtitle: Text(l10n.toolbarAtBottomDesc,
-                      style: const TextStyle(fontSize: 10)),
-                  value: PreferencesService.toolbarAtBottom.value,
-                  onChanged: _setToolbarAtBottom,
-                ),
+                ],
               ],
             ),
           ),
@@ -620,7 +709,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     });
                   },
                 ),
-                if (!Platform.isIOS) ...[
+                if (PlatformCapabilities.supportsVaultVideoThumbnails) ...[
                   const Divider(height: 1),
                   SwitchListTile(
                     dense: true,
@@ -653,32 +742,53 @@ class _SettingsPageState extends State<SettingsPage> {
 
           _buildSectionHeader(context, l10n.storageAndCache),
           Card(
-            child: ListTile(
-              leading: const AppCircleBadge(
-                icon: Icons.cleaning_services_outlined,
-                color: Colors.orange,
-              ),
-              title: Text(l10n.temporaryCache),
-              subtitle: Text(
-                '${_formatBytes(_cacheSizeBytes)}'
-                '${_archiveCacheBytes > 0 ? " • ${l10n.archiveLabel}: ${_formatBytes(_archiveCacheBytes)}" : ""}'
-                '${_inboxCacheBytes > 0 ? " • ${l10n.receivedShareTitle}: ${_formatBytes(_inboxCacheBytes)}" : ""}',
-                style: const TextStyle(fontSize: 11),
-              ),
-              trailing: _clearingCache
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                      ),
-                      onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
-                      child: Text(l10n.clear),
-                    ),
+            child: Column(
+              children: [
+                ListTile(
+                  key: const ValueKey('settings_history_retention_tile'),
+                  leading: const AppCircleBadge(
+                    icon: Icons.history_rounded,
+                    color: Colors.indigo,
+                  ),
+                  title: Text(l10n.historyRetentionTitle),
+                  subtitle: Text(
+                    _historyRetentionDays == 0
+                        ? l10n.historyRetentionDisabled
+                        : l10n.historyRetentionDaysLabel(_historyRetentionDays),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: _configureHistoryRetention,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.cleaning_services_outlined,
+                    color: Colors.orange,
+                  ),
+                  title: Text(l10n.temporaryCache),
+                  subtitle: Text(
+                    '${_formatBytes(_cacheSizeBytes)}'
+                    '${_archiveCacheBytes > 0 ? " • ${l10n.archiveLabel}: ${_formatBytes(_archiveCacheBytes)}" : ""}'
+                    '${_inboxCacheBytes > 0 ? " • ${l10n.receivedShareTitle}: ${_formatBytes(_inboxCacheBytes)}" : ""}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: _clearingCache
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
+                          child: Text(l10n.clear),
+                        ),
+                ),
+              ],
             ),
           ),
 

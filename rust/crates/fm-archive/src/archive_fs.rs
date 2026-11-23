@@ -37,12 +37,64 @@ fn normalize_archive_path(raw: &str) -> Option<VfsPath> {
 pub struct ArchiveFs {
     archive_path: PathBuf,
     format: ArchiveFormat,
+    password: Option<String>,
     dir_entries: HashMap<VfsPath, Vec<Entry>>,
     file_map: HashMap<VfsPath, ArchiveFileInfo>,
 }
 
+/// Inspects a local archive file and returns `true` if it requires a password
+/// to read or extract its contents.
+pub fn is_archive_encrypted(path: &std::path::Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let Some(format) = ArchiveFormat::from_name(name) else {
+        return false;
+    };
+    match format {
+        ArchiveFormat::Zip | ArchiveFormat::Epub => {
+            let Ok(file) = File::open(path) else {
+                return false;
+            };
+            let Ok(mut zip) = zip::ZipArchive::new(std::io::BufReader::new(file)) else {
+                return false;
+            };
+            for i in 0..zip.len() {
+                if let Ok(entry) = zip.by_index_raw(i) {
+                    if entry.encrypted() {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        ArchiveFormat::SevenZip => {
+            match sevenz_rust::Archive::open(path) {
+                Err(sevenz_rust::Error::PasswordRequired)
+                | Err(sevenz_rust::Error::MaybeBadPassword(_)) => true,
+                Ok(archive) => {
+                    // Header may be unencrypted while stream blocks are AES-encrypted.
+                    archive.folders.iter().any(|f| {
+                        f.coders.iter().any(|c| {
+                            // 7z AES-256-SHA256 coder ID is [0x06, 0xF1, 0x07, 0x01]
+                            c.decompression_method_id() == [0x06, 0xF1, 0x07, 0x01]
+                        })
+                    })
+                }
+                Err(_) => false,
+            }
+        }
+        ArchiveFormat::Tar | ArchiveFormat::TarGz => false,
+    }
+}
+
 impl ArchiveFs {
     pub fn open(path: impl Into<PathBuf>) -> VfsResult<Self> {
+        Self::open_with_password(path, None)
+    }
+
+    pub fn open_with_password(
+        path: impl Into<PathBuf>,
+        password: Option<String>,
+    ) -> VfsResult<Self> {
         let archive_path = path.into();
         let name = archive_path
             .file_name()
@@ -52,9 +104,12 @@ impl ArchiveFs {
             operation: "unsupported archive format",
         })?;
 
+        let password = password.filter(|p| !p.is_empty());
+
         let mut fs = Self {
             archive_path,
             format,
+            password,
             dir_entries: HashMap::new(),
             file_map: HashMap::new(),
         };
@@ -231,12 +286,26 @@ impl ArchiveFs {
     }
 
     fn build_7z_index(&mut self) -> VfsResult<()> {
-        let archive = sevenz_rust::Archive::open(&self.archive_path).map_err(|e| {
-            VfsError::Backend {
-                path: VfsPath::root(),
-                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-            }
-        })?;
+        let password = match &self.password {
+            Some(p) => sevenz_rust::Password::from(p.as_str()),
+            None => sevenz_rust::Password::empty(),
+        };
+        let archive = sevenz_rust::Archive::open_with_password(&self.archive_path, &password)
+            .map_err(|e| {
+                let msg = match e {
+                    sevenz_rust::Error::PasswordRequired => {
+                        "ARCHIVE_PASSWORD_REQUIRED: password required to open 7z archive".to_string()
+                    }
+                    sevenz_rust::Error::MaybeBadPassword(_) => {
+                        "ARCHIVE_WRONG_PASSWORD: invalid password for 7z archive".to_string()
+                    }
+                    other => other.to_string(),
+                };
+                VfsError::Backend {
+                    path: VfsPath::root(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, msg),
+                }
+            })?;
 
         for (idx, zip_entry) in archive.files.iter().enumerate() {
             let raw_name = zip_entry.name().replace('\\', "/");
@@ -355,6 +424,7 @@ impl ArchiveFs {
         let index = info.index;
         let format = self.format;
         let archive_path = self.archive_path.clone();
+        let password = self.password.clone();
         let target_name = path.to_slash_string().trim_start_matches('/').to_string();
 
         let (writer, out) = tokio::io::duplex(256 * 1024);
@@ -365,6 +435,7 @@ impl ArchiveFs {
             let res = pump_entry(
                 format,
                 &archive_path,
+                password.as_deref(),
                 index,
                 &target_name,
                 offset,
@@ -400,10 +471,7 @@ impl ArchiveFs {
                     path: path.clone(),
                     source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
                 })?;
-                let mut entry = zip.by_index(info.index).map_err(|e| VfsError::Backend {
-                    path: path.clone(),
-                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-                })?;
+                let mut entry = open_zip_entry(&mut zip, info.index, self.password.as_deref(), path)?;
                 let mut buf = Vec::with_capacity(prealloc_for_declared_size(info.size));
                 entry.read_to_end(&mut buf).map_err(|e| VfsError::Backend {
                     path: path.clone(),
@@ -468,14 +536,19 @@ impl ArchiveFs {
                     .saturating_mul(200)
                     .saturating_add(64 * 1024 * 1024)
                     .min(32 * 1024 * 1024 * 1024);
-                sevenz_rust::decompress_file_with_extract_fn(
-                    &self.archive_path,
+                let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: e,
+                })?;
+                let pw = match &self.password {
+                    Some(p) => sevenz_rust::Password::from(p.as_str()),
+                    None => sevenz_rust::Password::empty(),
+                };
+                sevenz_rust::decompress_with_extract_fn_and_password(
+                    file,
                     "",
+                    pw,
                     |entry, reader, _dest| {
-                        // The index normalised entry names to '/' when it
-                        // was built; raw names here may still use '\\'
-                        // (Windows-created archives) and would never match,
-                        // silently returning empty content.
                         let normalized_entry = normalize_archive_path(entry.name())
                             .map(|p| p.to_slash_string().trim_start_matches('/').to_string());
                         if normalized_entry.as_deref() == Some(target_name.as_str()) {
@@ -495,10 +568,7 @@ impl ArchiveFs {
                         }
                     },
                 )
-                .map_err(|e| VfsError::Backend {
-                    path: path.clone(),
-                    source: std::io::Error::other(e.to_string()),
-                })?;
+                .map_err(|e| map_7z_error(path, e))?;
                 Ok(found_bytes)
             }
         }
@@ -552,10 +622,64 @@ fn prealloc_for_declared_size(declared: u64) -> usize {
     declared.min(MAX_PREALLOC) as usize
 }
 
+fn open_zip_entry<'a, R: Read + std::io::Seek>(
+    zip: &'a mut zip::ZipArchive<R>,
+    index: usize,
+    password: Option<&str>,
+    path: &VfsPath,
+) -> VfsResult<zip::read::ZipFile<'a, R>> {
+    let res = match password {
+        Some(pw) if !pw.is_empty() => zip.by_index_decrypt(index, pw.as_bytes()),
+        _ => zip.by_index(index),
+    };
+    res.map_err(|e| {
+        let msg = match e {
+            zip::result::ZipError::UnsupportedArchive(zip::result::ZipError::PASSWORD_REQUIRED) => {
+                "ARCHIVE_PASSWORD_REQUIRED: archive entry is encrypted".to_string()
+            }
+            zip::result::ZipError::InvalidPassword => {
+                "ARCHIVE_WRONG_PASSWORD: invalid archive password".to_string()
+            }
+            other => {
+                let text = other.to_string();
+                if text.to_lowercase().contains("password required") {
+                    format!("ARCHIVE_PASSWORD_REQUIRED: {text}")
+                } else if text.to_lowercase().contains("invalid password") {
+                    format!("ARCHIVE_WRONG_PASSWORD: {text}")
+                } else {
+                    text
+                }
+            }
+        };
+        VfsError::Backend {
+            path: path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, msg),
+        }
+    })
+}
+
+fn map_7z_error(path: &VfsPath, err: sevenz_rust::Error) -> VfsError {
+    let msg = match err {
+        sevenz_rust::Error::PasswordRequired => {
+            "ARCHIVE_PASSWORD_REQUIRED: password required for 7z archive".to_string()
+        }
+        sevenz_rust::Error::MaybeBadPassword(_) => {
+            "ARCHIVE_WRONG_PASSWORD: invalid password for 7z archive".to_string()
+        }
+        other => other.to_string(),
+    };
+    VfsError::Backend {
+        path: path.clone(),
+        source: std::io::Error::other(msg),
+    }
+}
+
 /// Copy one entry's bytes into `sink`, skipping `offset` bytes first.
+#[allow(clippy::too_many_arguments)]
 fn pump_entry(
     format: ArchiveFormat,
     archive_path: &std::path::Path,
+    password: Option<&str>,
     index: usize,
     target_name: &str,
     offset: u64,
@@ -598,10 +722,7 @@ fn pump_entry(
                 path: VfsPath::root(),
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
             })?;
-            let mut entry = zip.by_index(index).map_err(|e| VfsError::Backend {
-                path: VfsPath::root(),
-                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-            })?;
+            let mut entry = open_zip_entry(&mut zip, index, password, &VfsPath::root())?;
             copy_from(&mut entry, sink).map_err(open_err)?;
         }
         ArchiveFormat::Tar | ArchiveFormat::TarGz => {
@@ -628,9 +749,15 @@ fn pump_entry(
         ArchiveFormat::SevenZip => {
             // Solid archives must be decompressed from the start; the callback
             // skips the prefix of the wanted entry and then stops the scan.
-            sevenz_rust::decompress_file_with_extract_fn(
-                archive_path,
+            let file = File::open(archive_path).map_err(open_err)?;
+            let pw = match password {
+                Some(p) if !p.is_empty() => sevenz_rust::Password::from(p),
+                _ => sevenz_rust::Password::empty(),
+            };
+            sevenz_rust::decompress_with_extract_fn_and_password(
+                file,
                 "",
+                pw,
                 |entry, reader, _dest| {
                     let normalized_entry = normalize_archive_path(entry.name())
                         .map(|p| p.to_slash_string().trim_start_matches('/').to_string());
@@ -644,10 +771,7 @@ fn pump_entry(
                     }
                 },
             )
-            .map_err(|e| VfsError::Backend {
-                path: VfsPath::root(),
-                source: std::io::Error::other(e.to_string()),
-            })?;
+            .map_err(|e| map_7z_error(&VfsPath::root(), e))?;
         }
     }
 

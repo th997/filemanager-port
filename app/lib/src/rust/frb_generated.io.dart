@@ -4,9 +4,12 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/file_manager.dart';
+import 'api/inspect.dart';
 import 'api/metadata.dart';
 import 'api/remotes.dart';
+import 'api/search.dart';
 import 'api/servers.dart';
+import 'api/sync.dart';
 import 'api/tasks.dart';
 import 'api/vault.dart';
 
@@ -30,10 +33,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AdvancedSearchQueryDto dco_decode_advanced_search_query_dto(dynamic raw);
+
+  @protected
   BookmarkDto dco_decode_bookmark_dto(dynamic raw);
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  AdvancedSearchQueryDto dco_decode_box_autoadd_advanced_search_query_dto(
+    dynamic raw,
+  );
 
   @protected
   double dco_decode_box_autoadd_f_32(dynamic raw);
@@ -51,6 +62,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
@@ -66,10 +80,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CapabilitiesDto dco_decode_capabilities_dto(dynamic raw);
 
   @protected
+  DirMeasurementDto dco_decode_dir_measurement_dto(dynamic raw);
+
+  @protected
+  DiskSpaceDto dco_decode_disk_space_dto(dynamic raw);
+
+  @protected
+  DuplicateFileItemDto dco_decode_duplicate_file_item_dto(dynamic raw);
+
+  @protected
+  DuplicateGroupDto dco_decode_duplicate_group_dto(dynamic raw);
+
+  @protected
+  DuplicateScanResultDto dco_decode_duplicate_scan_result_dto(dynamic raw);
+
+  @protected
   EntryDto dco_decode_entry_dto(dynamic raw);
 
   @protected
   double dco_decode_f_32(dynamic raw);
+
+  @protected
+  FailedTaskItemDto dco_decode_failed_task_item_dto(dynamic raw);
+
+  @protected
+  FileHashesDto dco_decode_file_hashes_dto(dynamic raw);
+
+  @protected
+  GrepMatchDto dco_decode_grep_match_dto(dynamic raw);
 
   @protected
   HistoryDto dco_decode_history_dto(dynamic raw);
@@ -78,16 +116,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  LanServiceDto dco_decode_lan_service_dto(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
   List<BookmarkDto> dco_decode_list_bookmark_dto(dynamic raw);
 
   @protected
+  List<DuplicateFileItemDto> dco_decode_list_duplicate_file_item_dto(
+    dynamic raw,
+  );
+
+  @protected
+  List<DuplicateGroupDto> dco_decode_list_duplicate_group_dto(dynamic raw);
+
+  @protected
   List<EntryDto> dco_decode_list_entry_dto(dynamic raw);
 
   @protected
+  List<FailedTaskItemDto> dco_decode_list_failed_task_item_dto(dynamic raw);
+
+  @protected
+  List<GrepMatchDto> dco_decode_list_grep_match_dto(dynamic raw);
+
+  @protected
   List<HistoryDto> dco_decode_list_history_dto(dynamic raw);
+
+  @protected
+  List<LanServiceDto> dco_decode_list_lan_service_dto(dynamic raw);
+
+  @protected
+  List<PinnedFileDto> dco_decode_list_pinned_file_dto(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -97,6 +158,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RemoteConfigDto> dco_decode_list_remote_config_dto(dynamic raw);
+
+  @protected
+  List<StorageCategoryDto> dco_decode_list_storage_category_dto(dynamic raw);
+
+  @protected
+  List<StorageFileRankDto> dco_decode_list_storage_file_rank_dto(dynamic raw);
+
+  @protected
+  List<StorageFolderRankDto> dco_decode_list_storage_folder_rank_dto(
+    dynamic raw,
+  );
+
+  @protected
+  List<SyncDiffItemDto> dco_decode_list_sync_diff_item_dto(dynamic raw);
 
   @protected
   List<TaskProgressDto> dco_decode_list_task_progress_dto(dynamic raw);
@@ -123,6 +198,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
@@ -135,16 +213,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw);
+
+  @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
   PagedEntriesDto dco_decode_paged_entries_dto(dynamic raw);
 
   @protected
+  PinnedFileDto dco_decode_pinned_file_dto(dynamic raw);
+
+  @protected
   RemoteConfigDto dco_decode_remote_config_dto(dynamic raw);
 
   @protected
   ServerStatusDto dco_decode_server_status_dto(dynamic raw);
+
+  @protected
+  StorageAnalysisDto dco_decode_storage_analysis_dto(dynamic raw);
+
+  @protected
+  StorageCategoryDto dco_decode_storage_category_dto(dynamic raw);
+
+  @protected
+  StorageFileRankDto dco_decode_storage_file_rank_dto(dynamic raw);
+
+  @protected
+  StorageFolderRankDto dco_decode_storage_folder_rank_dto(dynamic raw);
+
+  @protected
+  SyncDiffItemDto dco_decode_sync_diff_item_dto(dynamic raw);
+
+  @protected
+  SyncPlanDto dco_decode_sync_plan_dto(dynamic raw);
 
   @protected
   TaskProgressDto dco_decode_task_progress_dto(dynamic raw);
@@ -200,10 +302,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AdvancedSearchQueryDto sse_decode_advanced_search_query_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BookmarkDto sse_decode_bookmark_dto(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  AdvancedSearchQueryDto sse_decode_box_autoadd_advanced_search_query_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   double sse_decode_box_autoadd_f_32(SseDeserializer deserializer);
@@ -225,6 +337,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
@@ -242,10 +357,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CapabilitiesDto sse_decode_capabilities_dto(SseDeserializer deserializer);
 
   @protected
+  DirMeasurementDto sse_decode_dir_measurement_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DiskSpaceDto sse_decode_disk_space_dto(SseDeserializer deserializer);
+
+  @protected
+  DuplicateFileItemDto sse_decode_duplicate_file_item_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DuplicateGroupDto sse_decode_duplicate_group_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DuplicateScanResultDto sse_decode_duplicate_scan_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   EntryDto sse_decode_entry_dto(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_32(SseDeserializer deserializer);
+
+  @protected
+  FailedTaskItemDto sse_decode_failed_task_item_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  FileHashesDto sse_decode_file_hashes_dto(SseDeserializer deserializer);
+
+  @protected
+  GrepMatchDto sse_decode_grep_match_dto(SseDeserializer deserializer);
 
   @protected
   HistoryDto sse_decode_history_dto(SseDeserializer deserializer);
@@ -254,16 +403,49 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  LanServiceDto sse_decode_lan_service_dto(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
   List<BookmarkDto> sse_decode_list_bookmark_dto(SseDeserializer deserializer);
 
   @protected
+  List<DuplicateFileItemDto> sse_decode_list_duplicate_file_item_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<DuplicateGroupDto> sse_decode_list_duplicate_group_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<EntryDto> sse_decode_list_entry_dto(SseDeserializer deserializer);
 
   @protected
+  List<FailedTaskItemDto> sse_decode_list_failed_task_item_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<GrepMatchDto> sse_decode_list_grep_match_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<HistoryDto> sse_decode_list_history_dto(SseDeserializer deserializer);
+
+  @protected
+  List<LanServiceDto> sse_decode_list_lan_service_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PinnedFileDto> sse_decode_list_pinned_file_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -273,6 +455,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RemoteConfigDto> sse_decode_list_remote_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StorageCategoryDto> sse_decode_list_storage_category_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StorageFileRankDto> sse_decode_list_storage_file_rank_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<StorageFolderRankDto> sse_decode_list_storage_folder_rank_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SyncDiffItemDto> sse_decode_list_sync_diff_item_dto(
     SseDeserializer deserializer,
   );
 
@@ -309,6 +511,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
@@ -323,16 +528,48 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
+
+  @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   PagedEntriesDto sse_decode_paged_entries_dto(SseDeserializer deserializer);
 
   @protected
+  PinnedFileDto sse_decode_pinned_file_dto(SseDeserializer deserializer);
+
+  @protected
   RemoteConfigDto sse_decode_remote_config_dto(SseDeserializer deserializer);
 
   @protected
   ServerStatusDto sse_decode_server_status_dto(SseDeserializer deserializer);
+
+  @protected
+  StorageAnalysisDto sse_decode_storage_analysis_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StorageCategoryDto sse_decode_storage_category_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StorageFileRankDto sse_decode_storage_file_rank_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StorageFolderRankDto sse_decode_storage_folder_rank_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SyncDiffItemDto sse_decode_sync_diff_item_dto(SseDeserializer deserializer);
+
+  @protected
+  SyncPlanDto sse_decode_sync_plan_dto(SseDeserializer deserializer);
 
   @protected
   TaskProgressDto sse_decode_task_progress_dto(SseDeserializer deserializer);
@@ -397,10 +634,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_advanced_search_query_dto(
+    AdvancedSearchQueryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bookmark_dto(BookmarkDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_advanced_search_query_dto(
+    AdvancedSearchQueryDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer);
@@ -427,6 +676,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
@@ -448,16 +700,58 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_dir_measurement_dto(
+    DirMeasurementDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_disk_space_dto(DiskSpaceDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_duplicate_file_item_dto(
+    DuplicateFileItemDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_duplicate_group_dto(
+    DuplicateGroupDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_duplicate_scan_result_dto(
+    DuplicateScanResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_entry_dto(EntryDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_32(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_failed_task_item_dto(
+    FailedTaskItemDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_file_hashes_dto(FileHashesDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_grep_match_dto(GrepMatchDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_history_dto(HistoryDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_lan_service_dto(LanServiceDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
@@ -469,11 +763,47 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_duplicate_file_item_dto(
+    List<DuplicateFileItemDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_duplicate_group_dto(
+    List<DuplicateGroupDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_entry_dto(List<EntryDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_failed_task_item_dto(
+    List<FailedTaskItemDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_grep_match_dto(
+    List<GrepMatchDto> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_history_dto(
     List<HistoryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_lan_service_dto(
+    List<LanServiceDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_pinned_file_dto(
+    List<PinnedFileDto> self,
     SseSerializer serializer,
   );
 
@@ -489,6 +819,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_remote_config_dto(
     List<RemoteConfigDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_storage_category_dto(
+    List<StorageCategoryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_storage_file_rank_dto(
+    List<StorageFileRankDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_storage_folder_rank_dto(
+    List<StorageFolderRankDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_sync_diff_item_dto(
+    List<SyncDiffItemDto> self,
     SseSerializer serializer,
   );
 
@@ -532,6 +886,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
@@ -547,6 +904,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
     SseSerializer serializer,
@@ -559,6 +919,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_pinned_file_dto(PinnedFileDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_remote_config_dto(
     RemoteConfigDto self,
     SseSerializer serializer,
@@ -569,6 +932,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ServerStatusDto self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_storage_analysis_dto(
+    StorageAnalysisDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_storage_category_dto(
+    StorageCategoryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_storage_file_rank_dto(
+    StorageFileRankDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_storage_folder_rank_dto(
+    StorageFolderRankDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sync_diff_item_dto(
+    SyncDiffItemDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sync_plan_dto(SyncPlanDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_task_progress_dto(

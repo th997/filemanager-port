@@ -406,6 +406,26 @@ impl Vfs for LocalFs {
             .await
             .map_err(|error| self.io_error(from, error))
     }
+
+    async fn set_mode(&self, path: &VfsPath, mode: u32) -> VfsResult<()> {
+        if !self.capabilities.write {
+            return Err(VfsError::Unsupported { operation: "chmod" });
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let native = self.resolve(path)?;
+            let perms = std::fs::Permissions::from_mode(mode & 0o7777);
+            tokio::fs::set_permissions(&native, perms)
+                .await
+                .map_err(|error| self.io_error(path, error))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (path, mode);
+            Err(VfsError::Unsupported { operation: "chmod" })
+        }
+    }
 }
 
 /// Convenience for callers that want a modification time without pulling in

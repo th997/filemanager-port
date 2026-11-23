@@ -3021,4 +3021,506 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get deleteVaultPermanentWarning => '将从隐私文件夹中永久删除所选项目，不会进入回收站且无法恢复。';
+
+  @override
+  String get showQrCode => '显示二维码';
+
+  @override
+  String get scanQrToConnect => '使用手机扫码即可在浏览器中打开';
+
+  @override
+  String get newTab => '新建标签页';
+
+  @override
+  String get closeTab => '关闭标签页';
+
+  @override
+  String get openInNewTab => '在新标签页中打开';
+
+  @override
+  String get copyToOtherPane => '复制到对侧面板';
+
+  @override
+  String get moveToOtherPane => '移动到对侧面板';
+
+  @override
+  String get pdfViewerTitle => 'PDF 阅读器';
+
+  @override
+  String pdfPageOf(int current, int total) {
+    return '第 $current / $total 页';
+  }
+
+  @override
+  String get pdfSearchHint => '在 PDF 中搜索文本…';
+
+  @override
+  String get pdfJumpToPage => '跳转到页码';
+
+  @override
+  String get pdfOutline => '目录';
+
+  @override
+  String get pdfNoOutline => '此文档无目录';
+
+  @override
+  String get pdfZeroDiskBadge => '内存渲染 · 隐私零落盘';
+
+  @override
+  String get scanLanDevices => '扫描局域网设备';
+
+  @override
+  String get scanningLan => '正在扫描局域网服务…';
+
+  @override
+  String get noLanDevicesFound => '未在局域网中发现 SMB / SFTP / WebDAV / FTP 设备';
+
+  @override
+  String get storageAnalyzer => '存储空间分析';
+
+  @override
+  String get storageAnalyzerSubtitle => '文件夹占用排行、类型分布与大文件清理';
+
+  @override
+  String get topFolders => '大文件夹排行';
+
+  @override
+  String get topFiles => '大文件排行';
+
+  @override
+  String get fileTypesBreakdown => '文件类型占比';
+
+  @override
+  String storageUsedOf(String used, String total, String free) {
+    return '已用 $used / 共 $total（可用 $free）';
+  }
+
+  @override
+  String get duplicateFinder => '重复文件清理';
+
+  @override
+  String get duplicateFinderSubtitle => '三阶段 SHA-256 快速查重与一键清理';
+
+  @override
+  String get keepNewest => '保留最新';
+
+  @override
+  String get keepOldest => '保留最早';
+
+  @override
+  String get keepShortestPath => '保留最短路径';
+
+  @override
+  String cleanSelectedDuplicates(int count) {
+    return '清理已选 ($count)';
+  }
+
+  @override
+  String wastedSpace(String size) {
+    return '可释放空间：$size';
+  }
+
+  @override
+  String get noDuplicatesFound => '未发现重复文件';
+
+  @override
+  String get categoryDocuments => '文档';
+
+  @override
+  String get categoryVideos => '视频';
+
+  @override
+  String get categoryAudio => '音频';
+
+  @override
+  String get categoryArchives => '压缩包';
+
+  @override
+  String get categoryDownloads => '下载';
+
+  @override
+  String get categoryApks => '安装包';
+
+  @override
+  String get globalSearchHint => '全局搜索本地文件、收藏夹与最近访问…';
+
+  @override
+  String get advancedSearch => '高级搜索';
+
+  @override
+  String get grepContentSearch => '内容全文搜索 (Grep)';
+
+  @override
+  String get matchContains => '包含';
+
+  @override
+  String get matchWildcard => '通配符 (* ?)';
+
+  @override
+  String get matchRegex => '正则表达式';
+
+  @override
+  String get minSizeMb => '最小大小 (MB)';
+
+  @override
+  String get maxSizeMb => '最大大小 (MB)';
+
+  @override
+  String get modifiedDaysAgo => '最近修改天数';
+
+  @override
+  String get pauseTask => '暂停';
+
+  @override
+  String get resumeTask => '恢复';
+
+  @override
+  String retryFailedItems(int count) {
+    return '重试失败项 ($count)';
+  }
+
+  @override
+  String get taskPaused => '已暂停';
+
+  @override
+  String get rateLimitLabel => '传输限速';
+
+  @override
+  String get rateLimitUnlimited => '不限速';
+
+  @override
+  String get encryptWithPassword => '设置密码加密 (AES-256)';
+
+  @override
+  String get archivePasswordRequired => '需要压缩包密码';
+
+  @override
+  String get archivePasswordHint => '输入解压密码';
+
+  @override
+  String get archiveWrongPassword => '压缩包密码错误';
+
+  @override
+  String get subtitles => '字幕';
+
+  @override
+  String get subtitleOff => '关闭字幕';
+
+  @override
+  String get loadExternalSubtitle => '从文件选取外挂字幕…';
+
+  @override
+  String subtitleAutoLoaded(String name) {
+    return '已加载外挂字幕：$name';
+  }
+
+  @override
+  String get pictureInPicture => '画中画';
+
+  @override
+  String get directorySync => '目录同步与备份';
+
+  @override
+  String get directorySyncSubtitle => '本地与远程目录增量、镜像或双向同步';
+
+  @override
+  String get syncModeIncremental => '增量同步（仅复制新增和更新）';
+
+  @override
+  String get syncModeMirror => '单向镜像（完全一致，删除多余文件）';
+
+  @override
+  String get syncModeBidirectional => '双向同步';
+
+  @override
+  String get syncPreviewChanges => '预览差异';
+
+  @override
+  String get syncStart => '开始同步';
+
+  @override
+  String get syncNoChanges => '两个目录内容已完全一致';
+
+  @override
+  String get offlinePinned => '离线固定文件';
+
+  @override
+  String get offlinePinnedSubtitle => '远程文件的本地离线缓存与 LRU 管理';
+
+  @override
+  String get pinOffline => '离线固定';
+
+  @override
+  String get unpinOffline => '取消离线固定';
+
+  @override
+  String pinnedOfflineNotice(String name) {
+    return '已将「$name」固定为离线可用';
+  }
+
+  @override
+  String get checksumsTitle => '完整性校验 (MD5 / SHA-1 / SHA-256)';
+
+  @override
+  String get computeChecksums => '计算校验和';
+
+  @override
+  String get expectedHashHint => '粘贴预期哈希值以即时比对…';
+
+  @override
+  String get hashMatches => '校验和一致';
+
+  @override
+  String get hashMismatch => '校验和不一致';
+
+  @override
+  String get structuredView => '结构化视图';
+
+  @override
+  String get rawTextView => '原始文本';
+
+  @override
+  String get copyJsonPath => '复制路径';
+
+  @override
+  String get compareDiff => '对比差异';
+
+  @override
+  String get diffUnified => '统一视图';
+
+  @override
+  String get diffSideBySide => '并排对比';
+
+  @override
+  String get diffOnlyInLeft => '仅在左侧';
+
+  @override
+  String get diffOnlyInRight => '仅在右侧';
+
+  @override
+  String get diffModified => '存在差异';
+
+  @override
+  String get diffIdentical => '完全一致';
+
+  @override
+  String get unixPermissions => 'Unix 权限 (chmod)';
+
+  @override
+  String get permOwner => '所有者';
+
+  @override
+  String get permGroup => '用户组';
+
+  @override
+  String get permOther => '其他用户';
+
+  @override
+  String get applyPermissions => '应用权限';
+
+  @override
+  String permissionsUpdated(String mode) {
+    return '权限已更新为 $mode';
+  }
+
+  @override
+  String get lockVaultNow => '立即锁定';
+
+  @override
+  String get deleteOriginalAfterImport => '导入隐私保险箱后删除原文件';
+
+  @override
+  String get vaultExternalOpenNotice =>
+      '使用外部应用打开隐私保险箱文件会导出临时明文副本。锁定隐私保险箱后会自动清理全部临时明文副本。';
+
+  @override
+  String get shareViaLan => '通过局域网共享';
+
+  @override
+  String get calculateDirSize => '点击计算';
+
+  @override
+  String activeTasksBanner(int count) {
+    return '$count 个传输任务进行中';
+  }
+
+  @override
+  String get jsonFormattedPreview => '格式化预览';
+
+  @override
+  String get jsonTreeView => '树形视图';
+
+  @override
+  String jsonIndentSpaces(int count) {
+    return '$count 空格';
+  }
+
+  @override
+  String get jsonSortKeys => '按键排序';
+
+  @override
+  String get jsonCopyFormatted => '复制格式化 JSON';
+
+  @override
+  String get jsonCopyMinified => '复制压缩 JSON';
+
+  @override
+  String get jsonCopiedFormatted => '已复制格式化 JSON';
+
+  @override
+  String get jsonCopiedMinified => '已复制压缩 JSON';
+
+  @override
+  String get jsonInvalidFormat => 'JSON 格式无效';
+
+  @override
+  String get jsonExpandAll => '全部展开';
+
+  @override
+  String get jsonCollapseAll => '全部折叠';
+
+  @override
+  String get jsonFormatInEditor => '格式化 JSON';
+
+  @override
+  String jsonLinesCount(int count) {
+    return '$count 行';
+  }
+
+  @override
+  String jsonMatchesCount(int current, int total) {
+    return '$current/$total 处匹配';
+  }
+
+  @override
+  String get vaultAlwaysVisibleTitle => '常驻显示';
+
+  @override
+  String get vaultAlwaysVisibleDesc =>
+      '锁定后仍在首页、侧边栏和工具箱保留入口，打开时仍需授权验证并遵循自动锁定超时机制。';
+
+  @override
+  String get lockedBadge => '已锁定';
+
+  @override
+  String get vaultUnlockToOpen => '解锁并打开';
+
+  @override
+  String get vaultUnpinAlwaysVisible => '取消常驻显示';
+
+  @override
+  String vaultPinnedNotice(String name) {
+    return '已将隐私文件夹“$name”设为常驻显示';
+  }
+
+  @override
+  String vaultUnpinnedNotice(String name) {
+    return '隐私文件夹“$name”已取消常驻，锁定后将隐藏';
+  }
+
+  @override
+  String vaultLockedKeepVisibleNotice(String name) {
+    return '隐私文件夹“$name”已锁定';
+  }
+
+  @override
+  String get searchCategoryAll => '全部类型';
+
+  @override
+  String get searchCategoryCode => '代码';
+
+  @override
+  String get searchCategoryFolders => '文件夹';
+
+  @override
+  String get searchFilesAndFolders => '文件与文件夹';
+
+  @override
+  String get searchEnterQueryHint => '输入关键字搜索文件、文件夹、收藏夹、远程连接与历史';
+
+  @override
+  String get searchingFilesProgress => '正在搜索文件…';
+
+  @override
+  String get collapseSidebar => '收起侧边栏';
+
+  @override
+  String get expandSidebar => '展开侧边栏';
+
+  @override
+  String get categoryAllFilter => '全部';
+
+  @override
+  String categorySummary(int count, String size) {
+    return '$count 项 · $size';
+  }
+
+  @override
+  String categoryScanning(String category) {
+    return '正在扫描$category…';
+  }
+
+  @override
+  String categoryEmptyTitle(String category) {
+    return '未找到$category';
+  }
+
+  @override
+  String get categoryEmptySubtitle => '设备上的此类文件会自动汇总在这里。';
+
+  @override
+  String get locateInFolder => '在文件夹中查看';
+
+  @override
+  String get clearFilters => '清除筛选';
+
+  @override
+  String filterCategoryHint(String category) {
+    return '在$category中筛选…';
+  }
+
+  @override
+  String get historyRetentionTitle => '历史记录保留天数';
+
+  @override
+  String get historyRetentionDesc => '超过保留天数的访问记录将自动清理；设为 0 表示不保留历史记录。';
+
+  @override
+  String historyRetentionDaysLabel(int days) {
+    return '保留 $days 天';
+  }
+
+  @override
+  String historyRetentionDaysShort(int days) {
+    return '$days 天';
+  }
+
+  @override
+  String get historyRetentionDisabled => '不保留（0 天）';
+
+  @override
+  String get historyRetentionDisabledShort => '不保留';
+
+  @override
+  String get historyRetentionInputLabel => '保留天数（0 表示不保留）';
+
+  @override
+  String get historyRetentionInvalidInput => '请输入大于或等于 0 的整数';
+
+  @override
+  String historyRetentionUpdatedDays(int days) {
+    return '历史记录保留天数已设为 $days 天';
+  }
+
+  @override
+  String get historyRetentionUpdatedOff => '已关闭历史记录保留并清空现有记录';
+
+  @override
+  String get historyDisabledTitle => '已关闭历史记录保留';
+
+  @override
+  String get historyDisabledSubtitle => '当前保留天数为 0 天，浏览目录时不会保存历史记录。';
+
+  @override
+  String get historyRetentionChange => '设置保留天数';
 }

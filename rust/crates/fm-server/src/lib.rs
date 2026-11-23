@@ -6,9 +6,11 @@
 
 use fm_core::VfsPath;
 
+pub mod discovery;
 pub mod http;
 pub mod stream;
-pub use http::{get_lan_ip_addresses, start_http_share, RunningServer};
+pub use discovery::{discover_lan_services, DiscoveredService};
+pub use http::{get_lan_ip_addresses, start_http_share, start_http_share_with_lang, RunningServer};
 pub use stream::{start_stream_server, start_stream_server_with_options, StreamServer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -19,6 +19,7 @@ class BrowserBottomActionBar extends StatelessWidget {
   final VoidCallback? onRename;
   final VoidCallback? onInfo;
   final VoidCallback? onCompress;
+  final VoidCallback? onCompareDiff;
   final VoidCallback? onPaste;
   final VoidCallback? onClearClipboard;
 
@@ -39,6 +40,7 @@ class BrowserBottomActionBar extends StatelessWidget {
     this.onRename,
     this.onInfo,
     this.onCompress,
+    this.onCompareDiff,
     this.onPaste,
     this.onClearClipboard,
   });
@@ -129,6 +131,12 @@ class BrowserBottomActionBar extends StatelessWidget {
                         icon: Icons.info_outline,
                         label: l10n.actionInfo,
                         onTap: onInfo,
+                      ),
+                    if (selectedCount == 2 && onCompareDiff != null)
+                      _actionButton(
+                        icon: Icons.compare_arrows,
+                        label: l10n.compareDiff,
+                        onTap: onCompareDiff,
                       ),
                     if (canWrite) ...[
                       _actionButton(

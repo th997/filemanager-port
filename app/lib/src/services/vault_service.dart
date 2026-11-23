@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,37 @@ class VaultAuthCancelledException implements Exception {
   String toString() => message;
 }
 
+/// Persisted metadata for a privacy folder whose "always show" toggle is on.
+/// Only stores ID and display name so the entry can still be surfaced when
+/// locked; opening it always invokes full authentication and auto-lock rules.
+class PinnedVaultEntry {
+  final String id;
+  final String name;
+
+  const PinnedVaultEntry({required this.id, required this.name});
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+
+  static PinnedVaultEntry? fromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final id = raw['id']?.toString().trim() ?? '';
+    final name = raw['name']?.toString().trim() ?? '';
+    if (id.isEmpty || name.isEmpty) return null;
+    return PinnedVaultEntry(id: id, name: name);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PinnedVaultEntry &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name;
+
+  @override
+  int get hashCode => Object.hash(id, name);
+}
+
 class VaultService extends ChangeNotifier {
   static final VaultService instance = VaultService._();
   VaultService._();
@@ -43,6 +75,86 @@ class VaultService extends ChangeNotifier {
 
   List<UnlockedVaultDto> get unlockedVaults => List.unmodifiable(_unlocked);
   bool get hasUnlockedVaults => _unlocked.isNotEmpty;
+
+  /// All privacy folders configured by the user to stay visible even when locked.
+  List<PinnedVaultEntry> get pinnedVaults {
+    final raw =
+        PreferencesService.instance.getString(PreferencesService.prefPinnedVaults);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final out = <PinnedVaultEntry>[];
+      final seen = <String>{};
+      for (final item in decoded) {
+        final entry = PinnedVaultEntry.fromJson(item);
+        if (entry != null && seen.add(entry.id)) {
+          out.add(entry);
+        }
+      }
+      return List.unmodifiable(out);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Pinned privacy folders that are currently locked.
+  List<PinnedVaultEntry> get lockedPinnedVaults {
+    final unlockedIds = _unlocked.map((v) => v.id).toSet();
+    return List.unmodifiable(
+      pinnedVaults.where((e) => !unlockedIds.contains(e.id)),
+    );
+  }
+
+  bool isAlwaysVisible(String vaultId) =>
+      pinnedVaults.any((e) => e.id == vaultId);
+
+  void _savePinnedVaults(List<PinnedVaultEntry> list) {
+    PreferencesService.instance.setString(
+      PreferencesService.prefPinnedVaults,
+      jsonEncode(list.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  void setAlwaysVisible({
+    required String vaultId,
+    required String name,
+    required bool alwaysVisible,
+  }) {
+    final current = pinnedVaults.toList();
+    final idx = current.indexWhere((e) => e.id == vaultId);
+    if (alwaysVisible) {
+      final next = PinnedVaultEntry(id: vaultId, name: name);
+      if (idx >= 0) {
+        if (current[idx] == next) return;
+        current[idx] = next;
+      } else {
+        current.add(next);
+      }
+    } else {
+      if (idx < 0) return;
+      current.removeAt(idx);
+    }
+    _savePinnedVaults(current);
+    notifyListeners();
+  }
+
+  void unpinVault(String vaultId) {
+    final current = pinnedVaults.toList();
+    final before = current.length;
+    current.removeWhere((e) => e.id == vaultId);
+    if (current.length == before) return;
+    _savePinnedVaults(current);
+    notifyListeners();
+  }
+
+  void _syncPinnedNameIfPresent(String vaultId, String newName) {
+    final current = pinnedVaults.toList();
+    final idx = current.indexWhere((e) => e.id == vaultId);
+    if (idx < 0 || current[idx].name == newName) return;
+    current[idx] = PinnedVaultEntry(id: vaultId, name: newName);
+    _savePinnedVaults(current);
+  }
 
   Duration? get autoLockTimeout {
     final sec = PreferencesService.instance.vaultAutoLockTimeoutSec;
@@ -253,6 +365,7 @@ class VaultService extends ChangeNotifier {
     required String authMode,
     String? password,
     required String systemAuthReason,
+    bool alwaysVisible = false,
   }) async {
     if (authMode == 'system') {
       final supported = await canUseSystemAuth();
@@ -289,6 +402,13 @@ class VaultService extends ChangeNotifier {
     }
 
     await _excludeFromBackup(created.vault.dirPath);
+    if (alwaysVisible) {
+      setAlwaysVisible(
+        vaultId: created.vault.id,
+        name: created.vault.name,
+        alwaysVisible: true,
+      );
+    }
     _refreshUnlocked();
     notifyListeners();
     return created.vault;
@@ -326,6 +446,7 @@ class VaultService extends ChangeNotifier {
       );
     }
 
+    _syncPinnedNameIfPresent(unlocked.id, unlocked.name);
     _refreshUnlocked();
     notifyListeners();
     return unlocked;
@@ -612,6 +733,7 @@ class VaultService extends ChangeNotifier {
     required String newName,
   }) async {
     final updated = await vaultRename(vaultId: vaultId, newName: newName);
+    _syncPinnedNameIfPresent(updated.id, updated.name);
     _refreshUnlocked();
     notifyListeners();
     return updated;
@@ -624,6 +746,7 @@ class VaultService extends ChangeNotifier {
     }
     await vaultDelete(vaultId: vaultId);
     await _deleteSystemDek(vaultId);
+    unpinVault(vaultId);
     for (final cb in _lockCleanups) {
       try {
         cb(vaultId);

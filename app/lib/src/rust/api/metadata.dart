@@ -8,7 +8,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `copy_dir_recursive`, `move_path`, `open_db`, `remove_stored`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 Future<void> addBookmark({
   required String dbPath,
@@ -80,6 +80,53 @@ Future<void> deleteTrashItem({required String dbPath, required String id}) =>
 Future<void> clearTrash({required String dbPath}) =>
     RustLib.instance.api.crateApiMetadataClearTrash(dbPath: dbPath);
 
+/// List all remote files pinned for offline access.
+List<PinnedFileDto> listPinnedFiles({required String dbPath}) =>
+    RustLib.instance.api.crateApiMetadataListPinnedFiles(dbPath: dbPath);
+
+/// Download/sync a remote file into the managed offline cache and record it as
+/// pinned. Optionally enforces an LRU size budget (`max_cache_bytes`).
+Future<PinnedFileDto> pinRemoteFile({
+  required String dbPath,
+  required String remoteRoot,
+  required String remotePath,
+  BigInt? maxCacheBytes,
+}) => RustLib.instance.api.crateApiMetadataPinRemoteFile(
+  dbPath: dbPath,
+  remoteRoot: remoteRoot,
+  remotePath: remotePath,
+  maxCacheBytes: maxCacheBytes,
+);
+
+/// Remove a file from offline pins and delete its local cached copy.
+bool unpinRemoteFile({
+  required String dbPath,
+  required String remoteRoot,
+  required String remotePath,
+}) => RustLib.instance.api.crateApiMetadataUnpinRemoteFile(
+  dbPath: dbPath,
+  remoteRoot: remoteRoot,
+  remotePath: remotePath,
+);
+
+/// Touch a pinned file (updating LRU timestamp) and return its local path if cached.
+String? getPinnedLocalPath({
+  required String dbPath,
+  required String remoteRoot,
+  required String remotePath,
+}) => RustLib.instance.api.crateApiMetadataGetPinnedLocalPath(
+  dbPath: dbPath,
+  remoteRoot: remoteRoot,
+  remotePath: remotePath,
+);
+
+/// Evict least-recently-used offline pinned files until total size <= `max_bytes`.
+int evictPinnedCache({required String dbPath, required BigInt maxBytes}) =>
+    RustLib.instance.api.crateApiMetadataEvictPinnedCache(
+      dbPath: dbPath,
+      maxBytes: maxBytes,
+    );
+
 class BookmarkDto {
   final String id;
   final String name;
@@ -134,6 +181,61 @@ class HistoryDto {
           root == other.root &&
           path == other.path &&
           visitedMillis == other.visitedMillis;
+}
+
+class PinnedFileDto {
+  final PlatformInt64 id;
+  final String remoteRoot;
+  final String remotePath;
+  final String displayName;
+  final String localCachePath;
+  final BigInt size;
+  final PlatformInt64? modifiedMillis;
+  final PlatformInt64 pinnedAt;
+  final PlatformInt64 lastAccessedAt;
+  final bool localExists;
+
+  const PinnedFileDto({
+    required this.id,
+    required this.remoteRoot,
+    required this.remotePath,
+    required this.displayName,
+    required this.localCachePath,
+    required this.size,
+    this.modifiedMillis,
+    required this.pinnedAt,
+    required this.lastAccessedAt,
+    required this.localExists,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      remoteRoot.hashCode ^
+      remotePath.hashCode ^
+      displayName.hashCode ^
+      localCachePath.hashCode ^
+      size.hashCode ^
+      modifiedMillis.hashCode ^
+      pinnedAt.hashCode ^
+      lastAccessedAt.hashCode ^
+      localExists.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PinnedFileDto &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          remoteRoot == other.remoteRoot &&
+          remotePath == other.remotePath &&
+          displayName == other.displayName &&
+          localCachePath == other.localCachePath &&
+          size == other.size &&
+          modifiedMillis == other.modifiedMillis &&
+          pinnedAt == other.pinnedAt &&
+          lastAccessedAt == other.lastAccessedAt &&
+          localExists == other.localExists;
 }
 
 class TrashItemDto {

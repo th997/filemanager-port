@@ -1,3 +1,4 @@
+use crate::registry::VfsRegistry;
 use fm_core::{LocationId, VfsPath};
 use fm_index::{Bookmark, Database, HistoryEntry, RecycleItem};
 use std::path::{Path, PathBuf};
@@ -349,4 +350,180 @@ pub async fn clear_trash(db_path: String) -> Result<(), String> {
             failures.join("; ")
         ))
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct PinnedFileDto {
+    pub id: i64,
+    pub remote_root: String,
+    pub remote_path: String,
+    pub display_name: String,
+    pub local_cache_path: String,
+    pub size: u64,
+    pub modified_millis: Option<i64>,
+    pub pinned_at: i64,
+    pub last_accessed_at: i64,
+    pub local_exists: bool,
+}
+
+impl From<fm_index::PinnedFileRecord> for PinnedFileDto {
+    fn from(r: fm_index::PinnedFileRecord) -> Self {
+        let local_exists = Path::new(&r.local_cache_path).is_file();
+        Self {
+            id: r.id,
+            remote_root: r.remote_root,
+            remote_path: r.remote_path,
+            display_name: r.display_name,
+            local_cache_path: r.local_cache_path,
+            size: r.size,
+            modified_millis: r.modified_millis,
+            pinned_at: r.pinned_at,
+            last_accessed_at: r.last_accessed_at,
+            local_exists,
+        }
+    }
+}
+
+/// List all remote files pinned for offline access.
+#[flutter_rust_bridge::frb(sync)]
+pub fn list_pinned_files(db_path: String) -> Result<Vec<PinnedFileDto>, String> {
+    let db = open_db(&db_path)?;
+    let list = db.list_pinned_files().map_err(|e| e.to_string())?;
+    Ok(list.into_iter().map(PinnedFileDto::from).collect())
+}
+
+/// Download/sync a remote file into the managed offline cache and record it as
+/// pinned. Optionally enforces an LRU size budget (`max_cache_bytes`).
+pub async fn pin_remote_file(
+    db_path: String,
+    remote_root: String,
+    remote_path: String,
+    max_cache_bytes: Option<u64>,
+) -> Result<PinnedFileDto, String> {
+    let db = open_db(&db_path)?;
+    let backend = VfsRegistry::global().get_or_create(&remote_root).await?;
+    let vfs_path = VfsPath::from_slash_path(&remote_path);
+    let stat = backend.stat(&vfs_path).await.map_err(|e| e.to_string())?;
+    let display_name = stat.name.clone();
+    let modified_millis = stat
+        .modified
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+
+    // Deterministic hashed filename inside offline_cache/ preserving extension.
+    let cache_dir = db.offline_cache_dir();
+    let mut hasher = sha2::Sha256::new();
+    use sha2::Digest as _;
+    hasher.update(remote_root.as_bytes());
+    hasher.update(b"::");
+    hasher.update(remote_path.as_bytes());
+    let key = hex::encode(&hasher.finalize()[..12]);
+    let ext = Path::new(&display_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| e.len() <= 12 && e.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map(|e| format!(".{e}"))
+        .unwrap_or_default();
+    let local_path = cache_dir.join(format!("{key}{ext}"));
+    let tmp_path = cache_dir.join(format!(".{key}.part"));
+
+    let mut reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
+    let mut out = tokio::fs::File::create(&tmp_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let copied = tokio::io::copy(&mut reader, &mut out)
+        .await
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            e.to_string()
+        })?;
+    tokio::io::AsyncWriteExt::flush(&mut out)
+        .await
+        .map_err(|e| e.to_string())?;
+    drop(out);
+    tokio::fs::rename(&tmp_path, &local_path)
+        .await
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            e.to_string()
+        })?;
+
+    let local_str = local_path.to_string_lossy().to_string();
+    db.upsert_pinned_file(
+        &remote_root,
+        &remote_path,
+        &display_name,
+        &local_str,
+        copied,
+        modified_millis,
+    )
+    .map_err(|e| e.to_string())?;
+
+    if let Some(limit) = max_cache_bytes {
+        if limit > 0 {
+            if let Ok(evicted) = db.evict_pinned_lru(limit) {
+                for p in evicted {
+                    if p != local_str {
+                        let _ = std::fs::remove_file(p);
+                    }
+                }
+            }
+        }
+    }
+
+    let record = db
+        .touch_pinned_file(&remote_root, &remote_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "failed to read back pinned file".to_string())?;
+    Ok(PinnedFileDto::from(record))
+}
+
+/// Remove a file from offline pins and delete its local cached copy.
+#[flutter_rust_bridge::frb(sync)]
+pub fn unpin_remote_file(
+    db_path: String,
+    remote_root: String,
+    remote_path: String,
+) -> Result<bool, String> {
+    let db = open_db(&db_path)?;
+    if let Some(local_path) = db
+        .remove_pinned_file(&remote_root, &remote_path)
+        .map_err(|e| e.to_string())?
+    {
+        let _ = std::fs::remove_file(local_path);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Touch a pinned file (updating LRU timestamp) and return its local path if cached.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_pinned_local_path(
+    db_path: String,
+    remote_root: String,
+    remote_path: String,
+) -> Result<Option<String>, String> {
+    let db = open_db(&db_path)?;
+    if let Some(rec) = db
+        .touch_pinned_file(&remote_root, &remote_path)
+        .map_err(|e| e.to_string())?
+    {
+        if Path::new(&rec.local_cache_path).is_file() {
+            return Ok(Some(rec.local_cache_path));
+        }
+    }
+    Ok(None)
+}
+
+/// Evict least-recently-used offline pinned files until total size <= `max_bytes`.
+#[flutter_rust_bridge::frb(sync)]
+pub fn evict_pinned_cache(db_path: String, max_bytes: u64) -> Result<u32, String> {
+    let db = open_db(&db_path)?;
+    let evicted = db.evict_pinned_lru(max_bytes).map_err(|e| e.to_string())?;
+    let count = evicted.len() as u32;
+    for path in evicted {
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(count)
 }

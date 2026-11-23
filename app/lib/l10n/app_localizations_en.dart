@@ -3100,4 +3100,517 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get deleteVaultPermanentWarning =>
       'This will permanently delete the selected items from the privacy folder without moving them to the Recycle Bin.';
+
+  @override
+  String get showQrCode => 'Show QR Code';
+
+  @override
+  String get scanQrToConnect => 'Scan with your phone to open in browser';
+
+  @override
+  String get newTab => 'New Tab';
+
+  @override
+  String get closeTab => 'Close Tab';
+
+  @override
+  String get openInNewTab => 'Open in New Tab';
+
+  @override
+  String get copyToOtherPane => 'Copy to Other Pane';
+
+  @override
+  String get moveToOtherPane => 'Move to Other Pane';
+
+  @override
+  String get pdfViewerTitle => 'PDF Viewer';
+
+  @override
+  String pdfPageOf(int current, int total) {
+    return 'Page $current / $total';
+  }
+
+  @override
+  String get pdfSearchHint => 'Search text in PDF…';
+
+  @override
+  String get pdfJumpToPage => 'Jump to page';
+
+  @override
+  String get pdfOutline => 'Table of Contents';
+
+  @override
+  String get pdfNoOutline => 'No outline in this document';
+
+  @override
+  String get pdfZeroDiskBadge => 'In-Memory · Zero Disk';
+
+  @override
+  String get scanLanDevices => 'Scan LAN Devices';
+
+  @override
+  String get scanningLan => 'Scanning local network…';
+
+  @override
+  String get noLanDevicesFound =>
+      'No SMB / SFTP / WebDAV / FTP devices found on LAN';
+
+  @override
+  String get storageAnalyzer => 'Storage Analyzer';
+
+  @override
+  String get storageAnalyzerSubtitle =>
+      'Folder size ranking, file types & largest files';
+
+  @override
+  String get topFolders => 'Largest Folders';
+
+  @override
+  String get topFiles => 'Largest Files';
+
+  @override
+  String get fileTypesBreakdown => 'By File Type';
+
+  @override
+  String storageUsedOf(String used, String total, String free) {
+    return '$used used of $total ($free free)';
+  }
+
+  @override
+  String get duplicateFinder => 'Duplicate Finder';
+
+  @override
+  String get duplicateFinderSubtitle =>
+      '3-stage SHA-256 duplicate scan & cleanup';
+
+  @override
+  String get keepNewest => 'Keep Newest';
+
+  @override
+  String get keepOldest => 'Keep Oldest';
+
+  @override
+  String get keepShortestPath => 'Keep Shortest Path';
+
+  @override
+  String cleanSelectedDuplicates(int count) {
+    return 'Clean Selected ($count)';
+  }
+
+  @override
+  String wastedSpace(String size) {
+    return 'Reclaimable: $size';
+  }
+
+  @override
+  String get noDuplicatesFound => 'No duplicate files found';
+
+  @override
+  String get categoryDocuments => 'Documents';
+
+  @override
+  String get categoryVideos => 'Videos';
+
+  @override
+  String get categoryAudio => 'Audio';
+
+  @override
+  String get categoryArchives => 'Archives';
+
+  @override
+  String get categoryDownloads => 'Downloads';
+
+  @override
+  String get categoryApks => 'Installers';
+
+  @override
+  String get globalSearchHint => 'Search files, bookmarks & recent…';
+
+  @override
+  String get advancedSearch => 'Advanced Search';
+
+  @override
+  String get grepContentSearch => 'Content Search (Grep)';
+
+  @override
+  String get matchContains => 'Contains';
+
+  @override
+  String get matchWildcard => 'Wildcard (* ?)';
+
+  @override
+  String get matchRegex => 'Regex';
+
+  @override
+  String get minSizeMb => 'Min size (MB)';
+
+  @override
+  String get maxSizeMb => 'Max size (MB)';
+
+  @override
+  String get modifiedDaysAgo => 'Modified within (days)';
+
+  @override
+  String get pauseTask => 'Pause';
+
+  @override
+  String get resumeTask => 'Resume';
+
+  @override
+  String retryFailedItems(int count) {
+    return 'Retry Failed ($count)';
+  }
+
+  @override
+  String get taskPaused => 'Paused';
+
+  @override
+  String get rateLimitLabel => 'Speed Limit';
+
+  @override
+  String get rateLimitUnlimited => 'Unlimited';
+
+  @override
+  String get encryptWithPassword => 'Encrypt with password (AES-256)';
+
+  @override
+  String get archivePasswordRequired => 'Archive Password Required';
+
+  @override
+  String get archivePasswordHint => 'Enter archive password';
+
+  @override
+  String get archiveWrongPassword => 'Incorrect archive password';
+
+  @override
+  String get subtitles => 'Subtitles';
+
+  @override
+  String get subtitleOff => 'Off';
+
+  @override
+  String get loadExternalSubtitle => 'Load Subtitle from Files…';
+
+  @override
+  String subtitleAutoLoaded(String name) {
+    return 'Loaded subtitle: $name';
+  }
+
+  @override
+  String get pictureInPicture => 'Picture in Picture';
+
+  @override
+  String get directorySync => 'Directory Sync & Backup';
+
+  @override
+  String get directorySyncSubtitle =>
+      'Incremental, mirror or two-way sync across local & remote';
+
+  @override
+  String get syncModeIncremental => 'Incremental (Copy new & updated)';
+
+  @override
+  String get syncModeMirror => 'Mirror (Exact copy, deletes extra files)';
+
+  @override
+  String get syncModeBidirectional => 'Two-Way Sync';
+
+  @override
+  String get syncPreviewChanges => 'Preview Changes';
+
+  @override
+  String get syncStart => 'Start Sync';
+
+  @override
+  String get syncNoChanges => 'Directories are already in sync';
+
+  @override
+  String get offlinePinned => 'Offline Pinned Files';
+
+  @override
+  String get offlinePinnedSubtitle => 'Managed offline copies of remote files';
+
+  @override
+  String get pinOffline => 'Pin for Offline';
+
+  @override
+  String get unpinOffline => 'Remove Offline Pin';
+
+  @override
+  String pinnedOfflineNotice(String name) {
+    return 'Pinned \"$name\" for offline access';
+  }
+
+  @override
+  String get checksumsTitle => 'Checksums (MD5 / SHA-1 / SHA-256)';
+
+  @override
+  String get computeChecksums => 'Compute Checksums';
+
+  @override
+  String get expectedHashHint => 'Paste expected hash to verify…';
+
+  @override
+  String get hashMatches => 'Checksum matches';
+
+  @override
+  String get hashMismatch => 'Checksum does NOT match';
+
+  @override
+  String get structuredView => 'Structured View';
+
+  @override
+  String get rawTextView => 'Raw Text';
+
+  @override
+  String get copyJsonPath => 'Copy Path';
+
+  @override
+  String get compareDiff => 'Compare Diff';
+
+  @override
+  String get diffUnified => 'Unified';
+
+  @override
+  String get diffSideBySide => 'Side-by-Side';
+
+  @override
+  String get diffOnlyInLeft => 'Only in Left';
+
+  @override
+  String get diffOnlyInRight => 'Only in Right';
+
+  @override
+  String get diffModified => 'Modified';
+
+  @override
+  String get diffIdentical => 'Identical';
+
+  @override
+  String get unixPermissions => 'Unix Permissions (chmod)';
+
+  @override
+  String get permOwner => 'Owner';
+
+  @override
+  String get permGroup => 'Group';
+
+  @override
+  String get permOther => 'Other';
+
+  @override
+  String get applyPermissions => 'Apply Permissions';
+
+  @override
+  String permissionsUpdated(String mode) {
+    return 'Permissions updated to $mode';
+  }
+
+  @override
+  String get lockVaultNow => 'Lock Now';
+
+  @override
+  String get deleteOriginalAfterImport =>
+      'Delete original file after importing to vault';
+
+  @override
+  String get vaultExternalOpenNotice =>
+      'Opening this file in an external app writes a temporary plaintext copy. Locking the privacy folder automatically deletes all temporary plaintext copies.';
+
+  @override
+  String get shareViaLan => 'Share via LAN';
+
+  @override
+  String get calculateDirSize => 'Calculate';
+
+  @override
+  String activeTasksBanner(int count) {
+    return '$count active transfer(s)';
+  }
+
+  @override
+  String get jsonFormattedPreview => 'Formatted';
+
+  @override
+  String get jsonTreeView => 'Tree';
+
+  @override
+  String jsonIndentSpaces(int count) {
+    return '$count spaces';
+  }
+
+  @override
+  String get jsonSortKeys => 'Sort keys';
+
+  @override
+  String get jsonCopyFormatted => 'Copy formatted JSON';
+
+  @override
+  String get jsonCopyMinified => 'Copy minified JSON';
+
+  @override
+  String get jsonCopiedFormatted => 'Formatted JSON copied';
+
+  @override
+  String get jsonCopiedMinified => 'Minified JSON copied';
+
+  @override
+  String get jsonInvalidFormat => 'Invalid JSON format';
+
+  @override
+  String get jsonExpandAll => 'Expand all';
+
+  @override
+  String get jsonCollapseAll => 'Collapse all';
+
+  @override
+  String get jsonFormatInEditor => 'Format JSON';
+
+  @override
+  String jsonLinesCount(int count) {
+    return '$count lines';
+  }
+
+  @override
+  String jsonMatchesCount(int current, int total) {
+    return '$current/$total matches';
+  }
+
+  @override
+  String get vaultAlwaysVisibleTitle => 'Always Show';
+
+  @override
+  String get vaultAlwaysVisibleDesc =>
+      'Keep this privacy folder visible when locked. Opening it still requires authentication and respects auto-lock timeout.';
+
+  @override
+  String get lockedBadge => 'Locked';
+
+  @override
+  String get vaultUnlockToOpen => 'Unlock & Open';
+
+  @override
+  String get vaultUnpinAlwaysVisible => 'Stop Always Showing';
+
+  @override
+  String vaultPinnedNotice(String name) {
+    return 'Privacy folder \"$name\" set to always show';
+  }
+
+  @override
+  String vaultUnpinnedNotice(String name) {
+    return 'Privacy folder \"$name\" will hide when locked';
+  }
+
+  @override
+  String vaultLockedKeepVisibleNotice(String name) {
+    return 'Privacy folder \"$name\" locked';
+  }
+
+  @override
+  String get searchCategoryAll => 'All Types';
+
+  @override
+  String get searchCategoryCode => 'Code';
+
+  @override
+  String get searchCategoryFolders => 'Folders';
+
+  @override
+  String get searchFilesAndFolders => 'Files & Folders';
+
+  @override
+  String get searchEnterQueryHint =>
+      'Type to search files, folders, bookmarks, remotes & history';
+
+  @override
+  String get searchingFilesProgress => 'Searching files…';
+
+  @override
+  String get collapseSidebar => 'Collapse sidebar';
+
+  @override
+  String get expandSidebar => 'Expand sidebar';
+
+  @override
+  String get categoryAllFilter => 'All';
+
+  @override
+  String categorySummary(int count, String size) {
+    return '$count items · $size';
+  }
+
+  @override
+  String categoryScanning(String category) {
+    return 'Scanning $category…';
+  }
+
+  @override
+  String categoryEmptyTitle(String category) {
+    return 'No $category found';
+  }
+
+  @override
+  String get categoryEmptySubtitle =>
+      'Files in this category will appear here automatically.';
+
+  @override
+  String get locateInFolder => 'Locate in folder';
+
+  @override
+  String get clearFilters => 'Clear filters';
+
+  @override
+  String filterCategoryHint(String category) {
+    return 'Filter in $category…';
+  }
+
+  @override
+  String get historyRetentionTitle => 'History retention';
+
+  @override
+  String get historyRetentionDesc =>
+      'Entries older than this are automatically removed. Set to 0 to disable history.';
+
+  @override
+  String historyRetentionDaysLabel(int days) {
+    return 'Keep for $days days';
+  }
+
+  @override
+  String historyRetentionDaysShort(int days) {
+    return '${days}d';
+  }
+
+  @override
+  String get historyRetentionDisabled => 'Do not retain (0 days)';
+
+  @override
+  String get historyRetentionDisabledShort => 'Off';
+
+  @override
+  String get historyRetentionInputLabel => 'Retention days (0 = do not retain)';
+
+  @override
+  String get historyRetentionInvalidInput =>
+      'Enter a non-negative whole number';
+
+  @override
+  String historyRetentionUpdatedDays(int days) {
+    return 'History retention set to $days days';
+  }
+
+  @override
+  String get historyRetentionUpdatedOff =>
+      'History retention disabled and existing history cleared';
+
+  @override
+  String get historyDisabledTitle => 'History is disabled';
+
+  @override
+  String get historyDisabledSubtitle =>
+      'Retention is set to 0 days, so visited folders are not saved.';
+
+  @override
+  String get historyRetentionChange => 'Change retention';
 }

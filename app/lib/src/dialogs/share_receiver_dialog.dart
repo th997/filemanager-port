@@ -11,6 +11,7 @@ import '../rust/api/remotes.dart';
 import '../rust/api/vault.dart';
 import '../services/external_file_service.dart';
 import '../services/path_utils.dart';
+import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
@@ -31,7 +32,12 @@ enum ShareReceiverAction {
 class ShareReceiverResult {
   final ShareReceiverAction action;
   final String? customName;
-  const ShareReceiverResult(this.action, [this.customName]);
+  final bool deleteOriginal;
+  const ShareReceiverResult(
+    this.action, [
+    this.customName,
+    this.deleteOriginal = false,
+  ]);
 }
 
 /// Returns candidate paths for `<baseDir>/<subDir>`, including the
@@ -105,7 +111,7 @@ Future<void> showShareReceiverDialog({
               child: ShareReceiverContent(
                 filePaths: validPaths,
                 onAction: (a) => Navigator.of(ctx).pop(ShareReceiverResult(a)),
-                onActionWithName: (a, name) => Navigator.of(ctx).pop(ShareReceiverResult(a, name)),
+                onResult: (r) => Navigator.of(ctx).pop(r),
                 onCancel: () => Navigator.of(ctx).pop(null),
               ),
             ),
@@ -126,7 +132,7 @@ Future<void> showShareReceiverDialog({
               child: ShareReceiverContent(
                 filePaths: validPaths,
                 onAction: (a) => Navigator.of(ctx).pop(ShareReceiverResult(a)),
-                onActionWithName: (a, name) => Navigator.of(ctx).pop(ShareReceiverResult(a, name)),
+                onResult: (r) => Navigator.of(ctx).pop(r),
                 onCancel: () => Navigator.of(ctx).pop(null),
               ),
             ),
@@ -148,7 +154,12 @@ Future<void> showShareReceiverDialog({
       await _handleSaveToRemote(activeContext, validPaths, customName: result.customName);
       break;
     case ShareReceiverAction.saveVault:
-      await _handleSaveToVault(activeContext, validPaths, customName: result.customName);
+      await _handleSaveToVault(
+        activeContext,
+        validPaths,
+        customName: result.customName,
+        deleteOriginal: result.deleteOriginal,
+      );
       break;
     case ShareReceiverAction.openDirectly:
       ExternalFileService.instance.openFiles(validPaths);
@@ -261,7 +272,12 @@ Future<void> _handleSaveToRemote(
       ? navCtx5
       : (curCtx.mounted ? curCtx : null);
   if (finalCtx == null || !finalCtx.mounted) return;
-  await _executeCopy(finalCtx, filePaths, dest, customName: customName);
+  await _executeCopy(
+    finalCtx,
+    filePaths,
+    dest,
+    customName: customName,
+  );
 }
 
 Future<RemoteConfigDto?> _selectRemote(
@@ -313,6 +329,7 @@ Future<void> _handleSaveToVault(
   BuildContext context,
   List<String> filePaths, {
   String? customName,
+  bool deleteOriginal = false,
 }) async {
   final l10n = AppLocalizations.of(context);
   final vaults = VaultService.instance.unlockedVaults;
@@ -345,7 +362,13 @@ Future<void> _handleSaveToVault(
       ? navCtx2
       : (curCtx.mounted ? curCtx : null);
   if (finalCtx == null || !finalCtx.mounted) return;
-  await _executeCopy(finalCtx, filePaths, dest, customName: customName);
+  await _executeCopy(
+    finalCtx,
+    filePaths,
+    dest,
+    customName: customName,
+    deleteOriginal: deleteOriginal,
+  );
 }
 
 Future<UnlockedVaultDto?> _selectUnlockedVault(
@@ -398,6 +421,7 @@ Future<void> _executeCopy(
   List<String> paths,
   PickedFolder dest, {
   String? customName,
+  bool deleteOriginal = false,
 }) async {
   final l10n = AppLocalizations.of(context);
   final grouped = <String, List<String>>{};
@@ -476,10 +500,15 @@ Future<void> _executeCopy(
 
   for (final pth in paths) {
     try {
-      if (isPathInTemporaryInbox(pth, allowedInboxDirs)) {
+      if (deleteOriginal || isPathInTemporaryInbox(pth, allowedInboxDirs)) {
         final f = File(pth);
         if (f.existsSync()) {
           f.deleteSync();
+        } else {
+          final d = Directory(pth);
+          if (d.existsSync()) {
+            d.deleteSync(recursive: true);
+          }
         }
       }
     } catch (_) {}
@@ -518,6 +547,7 @@ class ShareReceiverContent extends StatefulWidget {
   final List<String> filePaths;
   final ValueChanged<ShareReceiverAction> onAction;
   final void Function(ShareReceiverAction action, String? customName)? onActionWithName;
+  final ValueChanged<ShareReceiverResult>? onResult;
   final VoidCallback onCancel;
   final List<UnlockedVaultDto>? unlockedVaultsOverride;
 
@@ -526,6 +556,7 @@ class ShareReceiverContent extends StatefulWidget {
     required this.filePaths,
     required this.onAction,
     this.onActionWithName,
+    this.onResult,
     required this.onCancel,
     this.unlockedVaultsOverride,
   });
@@ -538,6 +569,7 @@ class _ShareReceiverContentState extends State<ShareReceiverContent> {
   late final TextEditingController _nameController;
   bool _isEditingName = false;
   String? _nameError;
+  bool _deleteOriginalForVault = false;
 
   List<UnlockedVaultDto> get _unlockedVaults =>
       widget.unlockedVaultsOverride ?? VaultService.instance.unlockedVaults;
@@ -579,7 +611,15 @@ class _ShareReceiverContentState extends State<ShareReceiverContent> {
       }
       customName = trimmed.isNotEmpty ? trimmed : null;
     }
-    if (widget.onActionWithName != null) {
+    if (widget.onResult != null) {
+      widget.onResult!(
+        ShareReceiverResult(
+          action,
+          customName,
+          action == ShareReceiverAction.saveVault && _deleteOriginalForVault,
+        ),
+      );
+    } else if (widget.onActionWithName != null) {
       widget.onActionWithName!(action, customName);
     } else {
       widget.onAction(action);
@@ -830,7 +870,7 @@ class _ShareReceiverContentState extends State<ShareReceiverContent> {
             ),
 
             // Action 2b: Save to unlocked privacy folder (only shown when unlocked)
-            if (_unlockedVaults.isNotEmpty)
+            if (_unlockedVaults.isNotEmpty) ...[
               _buildActionCard(
                 context: context,
                 icon: Icons.enhanced_encryption_outlined,
@@ -842,6 +882,22 @@ class _ShareReceiverContentState extends State<ShareReceiverContent> {
                     : l10n.saveToPrivacyFolderSubtitle,
                 onTap: () => _triggerAction(ShareReceiverAction.saveVault),
               ),
+              if (PlatformCapabilities.supportsDeleteSharedOriginal)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _deleteOriginalForVault,
+                    title: Text(
+                      l10n.deleteOriginalAfterImport,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onChanged: (v) => setState(() => _deleteOriginalForVault = v ?? false),
+                  ),
+                ),
+            ],
 
             // Action 3: Open directly
             _buildActionCard(

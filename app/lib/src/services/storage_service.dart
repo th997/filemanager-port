@@ -6,6 +6,7 @@ import '../rust/api/metadata.dart' as meta_api;
 import '../rust/api/remotes.dart' as rem_api;
 import 'keychain_service.dart';
 import 'platform_paths.dart';
+import 'preferences_service.dart';
 
 class StorageService {
   static final StorageService instance = StorageService._();
@@ -311,9 +312,51 @@ class StorageService {
   }
 
   // History
+  static ({
+    List<meta_api.HistoryDto> kept,
+    List<meta_api.HistoryDto> expired,
+  }) partitionHistoryByRetention(
+    List<meta_api.HistoryDto> entries, {
+    required int retentionDays,
+    int? nowMillis,
+  }) {
+    if (retentionDays <= 0) {
+      return (kept: const [], expired: List<meta_api.HistoryDto>.of(entries));
+    }
+    final now = nowMillis ?? DateTime.now().millisecondsSinceEpoch;
+    final cutoff = now - retentionDays * Duration.millisecondsPerDay;
+    final kept = <meta_api.HistoryDto>[];
+    final expired = <meta_api.HistoryDto>[];
+    for (final entry in entries) {
+      if (entry.visitedMillis.toInt() >= cutoff) {
+        kept.add(entry);
+      } else {
+        expired.add(entry);
+      }
+    }
+    return (kept: kept, expired: expired);
+  }
+
   Future<List<meta_api.HistoryDto>> getHistory() async {
+    final retentionDays = PreferencesService.instance.historyRetentionDays;
     ensureInitialized();
-    return await meta_api.listHistory(dbPath: dbPath);
+    if (retentionDays <= 0) {
+      try {
+        await meta_api.clearHistory(dbPath: dbPath);
+      } catch (_) {}
+      return const [];
+    }
+    final entries = await meta_api.listHistory(dbPath: dbPath);
+    final split = partitionHistoryByRetention(
+      entries,
+      retentionDays: retentionDays,
+    );
+    for (final h in split.expired) {
+      try {
+        await meta_api.removeHistory(dbPath: dbPath, root: h.root, path: h.path);
+      } catch (_) {}
+    }
+    return split.kept;
   }
 
   Future<void> clearHistory() async {
@@ -327,9 +370,30 @@ class StorageService {
   }
 
   Future<void> recordHistory({required String root, required String path}) async {
+    if (PreferencesService.instance.historyRetentionDays <= 0) return;
     ensureInitialized();
     try {
       await meta_api.recordHistory(dbPath: dbPath, root: root, path: path);
+    } catch (_) {}
+  }
+
+  Future<void> applyHistoryRetention(int days) async {
+    final clamped = days < 0 ? 0 : days;
+    PreferencesService.instance.historyRetentionDays = clamped;
+    try {
+      ensureInitialized();
+      if (clamped == 0) {
+        await meta_api.clearHistory(dbPath: dbPath);
+      } else {
+        final entries = await meta_api.listHistory(dbPath: dbPath);
+        final split = partitionHistoryByRetention(
+          entries,
+          retentionDays: clamped,
+        );
+        for (final h in split.expired) {
+          await meta_api.removeHistory(dbPath: dbPath, root: h.root, path: h.path);
+        }
+      }
     } catch (_) {}
   }
 

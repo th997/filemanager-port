@@ -8,7 +8,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `stop_media_streams_for_vault`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 
 Future<ServerStatusDto> startLanHttpServer({
   required String rootDir,
@@ -21,6 +21,26 @@ Future<ServerStatusDto> startLanHttpServer({
   password: password,
   readOnly: readOnly,
 );
+
+Future<ServerStatusDto> startLanHttpServerWithLang({
+  required String rootDir,
+  int? port,
+  String? password,
+  required bool readOnly,
+  String? defaultLang,
+}) => RustLib.instance.api.crateApiServersStartLanHttpServerWithLang(
+  rootDir: rootDir,
+  port: port,
+  password: password,
+  readOnly: readOnly,
+  defaultLang: defaultLang,
+);
+
+/// Discover LAN file servers (SMB, SFTP, WebDAV, FTP) via mDNS and subnet scan.
+Future<List<LanServiceDto>> discoverLanServices({int? timeoutMs}) => RustLib
+    .instance
+    .api
+    .crateApiServersDiscoverLanServices(timeoutMs: timeoutMs);
 
 bool stopLanHttpServer() =>
     RustLib.instance.api.crateApiServersStopLanHttpServer();
@@ -37,6 +57,41 @@ Future<String> startMediaStream({required String root}) =>
 
 void stopMediaStreams() =>
     RustLib.instance.api.crateApiServersStopMediaStreams();
+
+class LanServiceDto {
+  final String name;
+  final String host;
+  final int port;
+  final String protocol;
+  final String source;
+
+  const LanServiceDto({
+    required this.name,
+    required this.host,
+    required this.port,
+    required this.protocol,
+    required this.source,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      host.hashCode ^
+      port.hashCode ^
+      protocol.hashCode ^
+      source.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LanServiceDto &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          host == other.host &&
+          port == other.port &&
+          protocol == other.protocol &&
+          source == other.source;
+}
 
 class ServerStatusDto {
   final bool running;

@@ -146,4 +146,10 @@ pub trait Vfs: Send + Sync {
     async fn remove(&self, path: &VfsPath) -> VfsResult<()>;
 
     async fn rename(&self, from: &VfsPath, to: &VfsPath) -> VfsResult<()>;
+
+    /// Update Unix permission bits (e.g. `0o755`) on backends that support chmod
+    /// (Unix local filesystem and SFTP).
+    async fn set_mode(&self, _path: &VfsPath, _mode: u32) -> VfsResult<()> {
+        Err(VfsError::Unsupported { operation: "chmod" })
+    }
 }

@@ -55,12 +55,14 @@ It pairs a high-concurrency Rust domain backend (`fm-*`) with a modern Flutter 3
 - **Axum 0.8 Web Server**: Built-in HTTP server sharing any local folder across the local network (Wi-Fi/LAN).
 - **Responsive Web UI**: Access, browse, and download files from any mobile or desktop web browser.
 - **Streaming & Range Requests**: Supports HTTP 206 Partial Content for in-browser video and audio scrubbing.
-- **Security**: Configurable port, optional password protection, read-only toggle, and automatic local IP enumeration.
+- **Security & Usability**: Configurable port, optional password protection, read-only toggle, automatic local IP enumeration, scannable QR code pairing, and trilingual Web UI (`en` / `zh` / `ja`).
 
 ### 8. Persistence & Security (`fm-index`)
 - **Embedded SQLite (`~/.filemanager/filemanager.db`)**: Stores remote profiles, bookmarks, LRU navigation history, and trash metadata.
 - **Recycle Bin**: Move files to local trash (`~/.filemanager/trash/`) with one-click restore and permanent purge.
 - **Keychain Integration**: Native iOS Keychain service (`com.github.th997.filemanager.keychain`) for encrypted credential storage.
+- **Privacy Vault (`fm-vault`)**: Encrypted hidden folders with password or biometric/system-key unlock, garbage collection, auto-lock, one-click lock, share-to-vault import (optional delete original), and encrypted backup/import.
+- **Desktop & Pro Workspace**: Persistent wide-screen sidebar with drag-and-drop targets, Multi-Tab browsing (`Cmd/Ctrl+T/W/Tab`), Dual-Pane Split View with cross-pane copy/move (`F5`/`F6`), built-in zero-disk PDF reader, CSV/JSON/XML structured viewer, text & directory Diff viewer, Storage Space Analyzer, 3-stage SHA-256 Duplicate Finder, Directory Sync & Mirror, Offline Pinned Remote Files (LRU), MD5/SHA-1/SHA-256 checksum verification, Unix `chmod` permissions, encrypted AES-256 Zip & password 7z support, LAN service auto-discovery (mDNS + subnet scan), external `.srt`/`.ass`/`.vtt` subtitles & iOS PiP, and pausable/retryable/throttled background transfers.
 
 ---
 
@@ -94,6 +96,7 @@ filemanager-port/
         ├── fm-index      # Embedded SQLite persistence (remotes, bookmarks, history)
         ├── fm-ops        # Asynchronous task engine and stream pipe
         ├── fm-server     # Axum LAN HTTP sharing server and IP discovery
+        ├── fm-vault      # Encrypted privacy folders, key management, and backup
         └── fm-ffi        # flutter_rust_bridge exported API and VfsRegistry
 ```
 

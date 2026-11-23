@@ -393,6 +393,7 @@ impl Vfs for SftpFs {
             is_symlink: bool,
             size: u64,
             modified: Option<std::time::SystemTime>,
+            mode: Option<u32>,
         }
         let mut raw_items = Vec::new();
         let mut link_paths: Vec<String> = Vec::new();
@@ -406,6 +407,7 @@ impl Vfs for SftpFs {
                 is_symlink: file_type.is_symlink(),
                 size: meta.len(),
                 modified: meta.modified().ok(),
+                mode: meta.permissions,
             };
             if raw.is_symlink {
                 link_paths.push(self.resolve_path(&dir.join(&name)));
@@ -463,7 +465,7 @@ impl Vfs for SftpFs {
                 kind: if is_dir { EntryKind::Dir } else { EntryKind::File },
                 size: if is_dir { None } else { Some(file_size) },
                 modified: raw.modified,
-                mode: None,
+                mode: raw.mode,
                 hidden: raw.name.starts_with('.'),
                 is_symlink: raw.is_symlink,
                 mime: None,
@@ -515,7 +517,7 @@ impl Vfs for SftpFs {
             kind: if is_dir { EntryKind::Dir } else { EntryKind::File },
             size: if is_dir { None } else { Some(meta.len()) },
             modified: meta.modified().ok(),
-            mode: None,
+            mode: meta.permissions,
             hidden: path.name().map(|n| n.starts_with('.')).unwrap_or(false),
             is_symlink,
             mime: None,
@@ -684,6 +686,26 @@ impl Vfs for SftpFs {
                     path: from.clone(),
                     source: std::io::Error::other(e.to_string()),
                 })
+            }
+        })
+        .await
+    }
+
+    async fn set_mode(&self, path: &VfsPath, mode: u32) -> VfsResult<()> {
+        let sftp_path = self.resolve_path(path);
+        self.run_once(|session| {
+            let sftp_path = sftp_path.clone();
+            async move {
+                let mut attrs = russh_sftp::protocol::FileAttributes::empty();
+                attrs.permissions = Some(mode & 0o7777);
+                session
+                    .sftp
+                    .set_metadata(&sftp_path, attrs)
+                    .await
+                    .map_err(|e| VfsError::Backend {
+                        path: path.clone(),
+                        source: std::io::Error::other(e.to_string()),
+                    })
             }
         })
         .await

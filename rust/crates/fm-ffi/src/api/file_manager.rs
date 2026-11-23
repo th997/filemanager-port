@@ -342,6 +342,7 @@ pub async fn list_dir_paged(
     })
 }
 
+#[cfg(test)]
 fn contains_ignore_case(haystack: &str, needle_lower: &str) -> bool {
     if needle_lower.is_empty() {
         return true;
@@ -372,50 +373,37 @@ pub async fn search_entries(
     query: String,
     max_results: u32,
 ) -> Result<Vec<EntryDto>, String> {
-    let backend = VfsRegistry::global().get_or_create(&root).await?;
-    let needle = query.trim().to_lowercase();
-    if needle.is_empty() {
-        return Ok(Vec::new());
-    }
-    let max_results = max_results.clamp(1, 1000) as usize;
-    const MAX_DIRS: usize = 5000;
-    const MAX_DEPTH: usize = 32;
+    crate::api::search::search_entries_impl(root, path, query, max_results).await
+}
 
-    let mut results: Vec<EntryDto> = Vec::new();
-    let mut visited = 0usize;
-    let mut first = true;
-    let mut stack: Vec<(VfsPath, usize)> = vec![(VfsPath::from_slash_path(&path), 0)];
-    while let Some((dir, depth)) = stack.pop() {
-        if results.len() >= max_results || visited >= MAX_DIRS {
-            break;
+/// Cache a session password for an encrypted archive root (`archive://...`)
+/// and invalidate any cached archive VFS handle so it re-opens with the password.
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_archive_password(archive_root: String, password: Option<String>) {
+    VfsRegistry::global().set_archive_password(&archive_root, password);
+    invalidate_dir_cache(&archive_root);
+}
+
+/// Inspect a local archive file and return whether it requires a password.
+pub async fn check_archive_encrypted(root: String, path: String) -> Result<bool, String> {
+    let full = if root.starts_with("remote://")
+        || root.starts_with("vault://")
+        || root.starts_with("archive://")
+    {
+        // For non-local archives, callers detect encryption on open/read error.
+        return Ok(false);
+    } else {
+        let base = std::path::PathBuf::from(&root);
+        let rel = path.trim_start_matches(['/', '\\']);
+        if rel.is_empty() {
+            base
+        } else {
+            base.join(rel)
         }
-        visited += 1;
-        let children = match backend.list(&dir).await {
-            Ok(c) => c,
-            Err(e) => {
-                if first {
-                    return Err(e.to_string());
-                }
-                continue;
-            }
-        };
-        first = false;
-        for child in children {
-            let descend =
-                child.kind == EntryKind::Dir && !child.is_symlink && depth < MAX_DEPTH;
-            let child_path = child.path.clone();
-            if contains_ignore_case(&child.name, &needle) {
-                results.push(EntryDto::from(child));
-                if results.len() >= max_results {
-                    break;
-                }
-            }
-            if descend {
-                stack.push((child_path, depth + 1));
-            }
-        }
-    }
-    Ok(results)
+    };
+    tokio::task::spawn_blocking(move || fm_archive::is_archive_encrypted(&full))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub async fn stat_entry(root: String, path: String) -> Result<EntryDto, String> {

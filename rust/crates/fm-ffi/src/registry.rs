@@ -16,6 +16,7 @@ pub struct VfsRegistry {
     db_path: RwLock<Option<String>>,
     dbs: Mutex<HashMap<PathBuf, Database>>,
     cached: RwLock<HashMap<String, Arc<dyn Vfs>>>,
+    archive_passwords: RwLock<HashMap<String, String>>,
 }
 
 static INSTANCE: OnceLock<VfsRegistry> = OnceLock::new();
@@ -36,7 +37,26 @@ impl VfsRegistry {
             db_path: RwLock::new(None),
             dbs: Mutex::new(HashMap::new()),
             cached: RwLock::new(HashMap::new()),
+            archive_passwords: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn set_archive_password(&self, archive_root: &str, password: Option<String>) {
+        let mut guard = self.archive_passwords.write();
+        match password.filter(|p| !p.is_empty()) {
+            Some(pw) => {
+                guard.insert(archive_root.to_string(), pw);
+            }
+            None => {
+                guard.remove(archive_root);
+            }
+        }
+        drop(guard);
+        self.invalidate(archive_root);
+    }
+
+    pub fn get_archive_password(&self, archive_root: &str) -> Option<String> {
+        self.archive_passwords.read().get(archive_root).cloned()
     }
 
     pub fn set_database_path(&self, path: String) {
@@ -137,10 +157,13 @@ impl VfsRegistry {
 
             // Opening an archive builds a full entry index (decompresses
             // tar.gz streams); keep that off the tokio worker threads.
-            let archive_fs = tokio::task::spawn_blocking(move || ArchiveFs::open(local_path))
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| e.to_string())?;
+            let password = self.get_archive_password(root);
+            let archive_fs = tokio::task::spawn_blocking(move || {
+                ArchiveFs::open_with_password(local_path, password)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
             Arc::new(archive_fs)
         } else if let Some(remote_id) = root.strip_prefix("remote://") {
             self.get_remote_vfs(remote_id)?
