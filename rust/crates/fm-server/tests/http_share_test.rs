@@ -30,12 +30,26 @@ fn raw_request(
     body_bytes: &[u8],
     content_type: Option<&str>,
 ) -> (u16, String, String) {
+    raw_request_with_headers(port, method, path, body_bytes, content_type, &[])
+}
+
+fn raw_request_with_headers(
+    port: u16,
+    method: &str,
+    path: &str,
+    body_bytes: &[u8],
+    content_type: Option<&str>,
+    extra_headers: &[(&str, &str)],
+) -> (u16, String, String) {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     let mut req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n"
     );
     if let Some(ct) = content_type {
         req.push_str(&format!("Content-Type: {ct}\r\n"));
+    }
+    for (k, v) in extra_headers {
+        req.push_str(&format!("{k}: {v}\r\n"));
     }
     req.push_str(&format!("Content-Length: {}\r\n\r\n", body_bytes.len()));
     stream.write_all(req.as_bytes()).expect("write");
@@ -129,10 +143,29 @@ async fn share_page_wires_token_into_every_api_call() {
     .await
     .expect("start http share");
 
-    // The browser only has the URL token; every endpoint the page calls must
-    // echo it back, otherwise browsing/downloading silently 401s.
-    let (status, _, body) = get_request(server.port, &with_token("/", &server.share_token));
-    assert_eq!(status, 200);
+    // First visit to `GET /?token=` mints an HttpOnly cookie and 302-redirects to `/`.
+    let (status, head, _) = get_request(server.port, &with_token("/", &server.share_token));
+    assert_eq!(status, 302);
+    assert!(head.to_lowercase().contains("location: /"));
+    let set_cookie = head
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
+        .expect("Set-Cookie header on redirect");
+    let cookie_pair = set_cookie
+        .split_once(':')
+        .unwrap()
+        .1
+        .trim()
+        .split(';')
+        .next()
+        .unwrap()
+        .trim()
+        .to_string();
+
+    // Following `/` with the minted HttpOnly cookie serves 200 OK without URL token.
+    let (page_status, _, body) =
+        raw_request_with_headers(server.port, "GET", "/", &[], None, &[("Cookie", &cookie_pair)]);
+    assert_eq!(page_status, 200);
     for endpoint in [
         "withToken('/api/list')",
         "withToken('/api/config')",
@@ -167,9 +200,25 @@ async fn test_http_share_endpoints() {
     let token = server.share_token.clone();
     assert_ne!(token, PASSWORD);
 
-    // Test 1: GET /
-    let (status, _, body) = get_request(port, &with_token("/", &token));
-    assert_eq!(status, 200);
+    // Test 1: GET /?token=... mints HttpOnly cookie and 302-redirects to `/`.
+    let (status, redir_head, _) = get_request(port, &with_token("/", &token));
+    assert_eq!(status, 302);
+    let cookie_pair = redir_head
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
+        .unwrap()
+        .split_once(':')
+        .unwrap()
+        .1
+        .trim()
+        .split(';')
+        .next()
+        .unwrap()
+        .trim()
+        .to_string();
+    let (page_status, _, body) =
+        raw_request_with_headers(port, "GET", "/", &[], None, &[("Cookie", &cookie_pair)]);
+    assert_eq!(page_status, 200);
     assert!(body.contains("LAN File Sharing"));
 
     // Test 2: GET /api/list/
@@ -311,21 +360,36 @@ async fn web_ui_honours_accept_language_and_app_default_lang() {
         ("en-US,en;q=0.9", "en"),
         ("fr-FR,fr;q=0.9", "en"),
     ] {
-        let mut stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
-        let req = format!(
-            "GET /?token={} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept-Language: {accept}\r\nConnection: close\r\n\r\n",
-            server.share_token
+        let (_, head, _) = get_request(server.port, &with_token("/", &server.share_token));
+        let cookie_pair = head
+            .lines()
+            .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
+            .unwrap()
+            .split_once(':')
+            .unwrap()
+            .1
+            .trim()
+            .split(';')
+            .next()
+            .unwrap()
+            .trim()
+            .to_string();
+        let (status, resp_head, body) = raw_request_with_headers(
+            server.port,
+            "GET",
+            "/",
+            &[],
+            None,
+            &[("Accept-Language", accept), ("Cookie", &cookie_pair)],
         );
-        stream.write_all(req.as_bytes()).unwrap();
-        let mut raw = Vec::new();
-        stream.read_to_end(&mut raw).unwrap();
-        let text = String::from_utf8_lossy(&raw);
+        assert_eq!(status, 200);
         assert!(
-            text.contains(&format!("data-server-lang=\"{expected_lang}\"")),
+            body.contains(&format!("data-server-lang=\"{expected_lang}\"")),
             "expected {expected_lang} for Accept-Language: {accept}"
         );
         assert!(
-            text.to_lowercase()
+            resp_head
+                .to_lowercase()
                 .contains(&format!("content-language: {expected_lang}")),
             "expected Content-Language: {expected_lang}"
         );
@@ -342,7 +406,28 @@ async fn web_ui_honours_accept_language_and_app_default_lang() {
     )
     .await
     .expect("start http share with default lang");
-    let (_, _, body) = get_request(server_ja.port, &with_token("/", &server_ja.share_token));
+    let (_, head_ja, _) = get_request(server_ja.port, &with_token("/", &server_ja.share_token));
+    let cookie_ja = head_ja
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
+        .unwrap()
+        .split_once(':')
+        .unwrap()
+        .1
+        .trim()
+        .split(';')
+        .next()
+        .unwrap()
+        .trim()
+        .to_string();
+    let (_, _, body) = raw_request_with_headers(
+        server_ja.port,
+        "GET",
+        "/",
+        &[],
+        None,
+        &[("Cookie", &cookie_ja)],
+    );
     assert!(body.contains("data-server-lang=\"ja\""));
     let _ = server_ja.shutdown_tx.send(());
 }

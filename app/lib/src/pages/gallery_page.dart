@@ -9,10 +9,12 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/entry_item.dart';
 import '../services/external_file_service.dart';
+import '../services/image_privacy_service.dart';
 import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
 import '../theme/app_ui_tokens.dart';
 import 'image_viewer_page.dart';
+import 'photo_backup_page.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 
 /// One picture shown by the gallery.
@@ -75,7 +77,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   AssetPathEntity? _albumPath;
   int _albumTotal = 0;
   bool _loadingMore = false;
-  bool _showScrollToTop = false;
+  final ValueNotifier<bool> _showScrollToTopNotifier = ValueNotifier<bool>(false);
   final ScrollController _scrollController = ScrollController();
 
   final Set<String> _selectedKeys = {};
@@ -96,8 +98,8 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   void _onScroll() {
     if (_scrollController.hasClients) {
       final shouldShow = _scrollController.position.pixels > 400;
-      if (shouldShow != _showScrollToTop) {
-        setState(() => _showScrollToTop = shouldShow);
+      if (shouldShow != _showScrollToTopNotifier.value) {
+        _showScrollToTopNotifier.value = shouldShow;
       }
       if (_scrollController.position.pixels >
           _scrollController.position.maxScrollExtent - 800) {
@@ -110,6 +112,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
+    _showScrollToTopNotifier.dispose();
     super.dispose();
   }
 
@@ -769,6 +772,34 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _batchStripExifSelected() async {
+    final selected = _selectedPhotos;
+    if (selected.isEmpty || _batchBusy) return;
+
+    setState(() => _batchBusy = true);
+    try {
+      final paths = <String>[];
+      for (final p in selected) {
+        final file = await p.resolve();
+        if (file != null) paths.add(file.path);
+      }
+      if (paths.isEmpty || !mounted) return;
+      final saved = await ImagePrivacyService.batchStripExif(paths);
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.stripExifBatchDone(saved))),
+      );
+      if (saved > 0) {
+        await _scan();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _batchBusy = false);
+      }
+    }
+  }
+
   Future<void> _confirmMultiPick() async {
     final selected = _selectedPhotos;
     if (selected.isEmpty || _batchBusy) return;
@@ -864,6 +895,17 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                             onPressed: () => _enterSelectionMode(),
                           ),
                         IconButton(
+                          icon: const Icon(Icons.backup_outlined),
+                          tooltip: l10n.photoBackupTitle,
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PhotoBackupPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.refresh),
                           tooltip: l10n.rescan,
                           onPressed: _scan,
@@ -872,20 +914,24 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                     ),
               body: _buildBody(),
               bottomNavigationBar: _isSelecting ? _buildBottomActionBar(l10n) : null,
-              floatingActionButton: _showScrollToTop
-                  ? FloatingActionButton.small(
-                      onPressed: () {
-                        HapticFeedback.lightImpact();
-                        _scrollController.animateTo(
-                          0,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        );
-                      },
-                      tooltip: l10n.scrollToTop,
-                      child: const Icon(Icons.arrow_upward),
-                    )
-                  : null,
+              floatingActionButton: ValueListenableBuilder<bool>(
+                valueListenable: _showScrollToTopNotifier,
+                builder: (ctx, show, _) {
+                  if (!show) return const SizedBox.shrink();
+                  return FloatingActionButton.small(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _scrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                      );
+                    },
+                    tooltip: AppLocalizations.of(ctx).scrollToTop,
+                    child: const Icon(Icons.arrow_upward),
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -965,6 +1011,13 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                           label: l10n.copyPath,
                           onTap:
                               hasSelection ? _batchCopyPathsSelected : null,
+                        ),
+                        actionItem(
+                          key: const ValueKey('gallery_batch_exif_btn'),
+                          icon: Icons.shield_outlined,
+                          label: l10n.stripExifBatchAction,
+                          onTap:
+                              hasSelection ? _batchStripExifSelected : null,
                         ),
                         actionItem(
                           key: const ValueKey('gallery_batch_delete_btn'),

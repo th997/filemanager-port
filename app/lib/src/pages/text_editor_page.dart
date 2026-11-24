@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:markdown/markdown.dart' as md;
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
@@ -19,10 +17,9 @@ import '../services/preferences_service.dart';
 import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../theme/markdown_themes.dart';
-import '../widgets/html_preview_widget.dart';
-import '../widgets/json_formatted_preview.dart';
-import '../widgets/markdown_callout_builder.dart';
-import '../widgets/markdown_code_builder.dart';
+import '../widgets/editor/editor_find_replace_bar.dart';
+import '../widgets/editor/editor_preview_pane.dart';
+import '../widgets/json_formatted_preview.dart' show JsonFormatter;
 
 enum TextFileMode { preview, code, edit }
 
@@ -207,8 +204,10 @@ class _TextEditorPageState extends State<TextEditorPage> {
     });
   }
 
-  int _cursorLine = 1;
-  int _cursorCol = 1;
+  final ValueNotifier<({int line, int col})> _cursorPosNotifier =
+      ValueNotifier<({int line, int col})>((line: 1, col: 1));
+  int get _cursorLine => _cursorPosNotifier.value.line;
+  int get _cursorCol => _cursorPosNotifier.value.col;
   WebViewController? _webViewController;
   String? _cachedStatsText;
   int _cachedLines = 1;
@@ -288,6 +287,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     _codeScrollController.dispose();
     _codeHorizontalScrollController.dispose();
     _editScrollController.dispose();
+    _cursorPosNotifier.dispose();
     super.dispose();
   }
 
@@ -296,10 +296,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     final text = _controller.text;
     if (!sel.isValid || sel.baseOffset < 0 || sel.baseOffset > text.length) {
       if (_cursorLine != 1 || _cursorCol != 1) {
-        setState(() {
-          _cursorLine = 1;
-          _cursorCol = 1;
-        });
+        _cursorPosNotifier.value = (line: 1, col: 1);
       }
       return;
     }
@@ -314,10 +311,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     final newCol = offset - lastNewline;
     if (_cursorLine != newLine || _cursorCol != newCol) {
-      setState(() {
-        _cursorLine = newLine;
-        _cursorCol = newCol;
-      });
+      _cursorPosNotifier.value = (line: newLine, col: newCol);
     }
   }
 
@@ -1844,121 +1838,41 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Widget _buildFindBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-          const Icon(Icons.search, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _findController,
-              focusNode: _findFocusNode,
-              decoration: InputDecoration(
-                hintText: AppLocalizations.of(context).findInFileHint,
-                isDense: true,
-                border: InputBorder.none,
-                suffixIcon: _findController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 16),
-                        tooltip: AppLocalizations.of(context).clear,
-                        onPressed: () {
-                          _findDebounce?.cancel();
-                          _findController.clear();
-                          _updateMatches(jumpToMatch: false);
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: _onFindChanged,
-              onSubmitted: (_) {
-                _findDebounce?.cancel();
-                if (_findController.text != _lastFindQuery) {
-                  _updateMatches(jumpToMatch: true, forceScroll: true);
-                } else {
-                  _nextMatch();
-                }
-              },
-            ),
-          ),
-          if (_findController.text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                _matchIndices.isEmpty
-                    ? '0/0'
-                    : '${_currentMatchIndex + 1}/${_matchIndices.length >= 10000 ? '10000+' : _matchIndices.length}',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.arrow_upward, size: 18),
-            tooltip: AppLocalizations.of(context).previousMatch,
-            onPressed: _matchIndices.isEmpty ? null : _prevMatch,
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_downward, size: 18),
-            tooltip: AppLocalizations.of(context).nextMatch,
-            onPressed: _matchIndices.isEmpty ? null : _nextMatch,
-          ),
-          if (!_readOnly)
-            IconButton(
-              icon: Icon(
-                _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
-                size: 18,
-              ),
-              tooltip: AppLocalizations.of(context).toggleReplaceShortcut,
-              onPressed: () {
-                setState(() => _showReplace = !_showReplace);
-                if (_showReplace) _replaceFocusNode.requestFocus();
-              },
-            ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            tooltip: AppLocalizations.of(context).closeFindShortcut,
-            onPressed: _closeFind,
-          ),
-            ],
-          ),
-          if (_showReplace && !_readOnly)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.arrow_right_alt, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _replaceController,
-                      focusNode: _replaceFocusNode,
-                      decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context).replaceWithHint,
-                        isDense: true,
-                        border: InputBorder.none,
-                      ),
-                      onSubmitted: (_) => _replaceCurrent(),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _matchIndices.isEmpty ? null : _replaceCurrent,
-                    child: Text(AppLocalizations.of(context).replace),
-                  ),
-                  TextButton(
-                    onPressed: _matchIndices.isEmpty ? null : _replaceAll,
-                    child: Text(AppLocalizations.of(context).replaceAll),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+    return EditorFindReplaceBar(
+      findController: _findController,
+      replaceController: _replaceController,
+      findFocusNode: _findFocusNode,
+      replaceFocusNode: _replaceFocusNode,
+      showReplace: _showReplace,
+      readOnly: _readOnly,
+      matchCount: _matchIndices.length,
+      currentMatchIndex: _currentMatchIndex,
+      matchCountCapped: _matchIndices.length >= 10000,
+      onQueryChanged: _onFindChanged,
+      onClearFind: () {
+        _findDebounce?.cancel();
+        _findController.clear();
+        _updateMatches(jumpToMatch: false);
+      },
+      onFindSubmitted: () {
+        _findDebounce?.cancel();
+        if (_findController.text != _lastFindQuery) {
+          _updateMatches(jumpToMatch: true, forceScroll: true);
+        } else {
+          _nextMatch();
+        }
+      },
+      onPreviousMatch: _prevMatch,
+      onNextMatch: _nextMatch,
+      onReplaceOne: _replaceCurrent,
+      onReplaceAll: _replaceAll,
+      onToggleReplace: () {
+        setState(() => _showReplace = !_showReplace);
+        if (_showReplace) _replaceFocusNode.requestFocus();
+      },
+      onClose: _closeFind,
     );
   }
-
   void _showDocumentStats() {
     HapticFeedback.mediumImpact();
     final text = _controller.text;
@@ -2049,168 +1963,84 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Widget _buildStatusBar() {
-    final text = _controller.text;
-    final chars = text.length;
-    if (_cachedStatsText != text) {
-      _cachedStatsText = text;
-      if (text.isEmpty) {
-        _cachedLines = 1;
-        _cachedWords = 0;
-      } else {
-        int lines = 1;
-        int words = 0;
-        bool inWord = false;
-        final countWords = chars <= 50000;
-        for (int i = 0; i < text.length; i++) {
-          final code = text.codeUnitAt(i);
-          if (code == 10) lines++;
-          if (countWords) {
-            final isSpace = code <= 32;
-            if (isSpace) {
-              inWord = false;
-            } else if (!inWord) {
-              inWord = true;
-              words++;
+    return ListenableBuilder(
+      listenable: Listenable.merge([_cursorPosNotifier, _controller]),
+      builder: (context, _) {
+        final text = _controller.text;
+        final chars = text.length;
+        if (_cachedStatsText != text) {
+          _cachedStatsText = text;
+          if (text.isEmpty) {
+            _cachedLines = 1;
+            _cachedWords = 0;
+          } else {
+            int lines = 1;
+            int words = 0;
+            bool inWord = false;
+            final countWords = chars <= 50000;
+            for (int i = 0; i < text.length; i++) {
+              final code = text.codeUnitAt(i);
+              if (code == 10) lines++;
+              if (countWords) {
+                final isSpace = code <= 32;
+                if (isSpace) {
+                  inWord = false;
+                } else if (!inWord) {
+                  inWord = true;
+                  words++;
+                }
+              }
             }
+            _cachedLines = lines;
+            _cachedWords = countWords ? words : null;
           }
         }
-        _cachedLines = lines;
-        _cachedWords = countWords ? words : null;
-      }
-    }
-    final lines = _cachedLines;
-    final words = _cachedWords;
-    final modeLabel = _readOnly
-        ? AppLocalizations.of(context).readOnlyLocation
-        : _mode == TextFileMode.preview
-            ? AppLocalizations.of(context).previewModeLabel
-            : (_mode == TextFileMode.code ? AppLocalizations.of(context).viewingSourceLabel : AppLocalizations.of(context).editingModeLabel);
+        final lines = _cachedLines;
+        final words = _cachedWords;
+        final modeLabel = _readOnly
+            ? AppLocalizations.of(context).readOnlyLocation
+            : _mode == TextFileMode.preview
+                ? AppLocalizations.of(context).previewModeLabel
+                : (_mode == TextFileMode.code
+                    ? AppLocalizations.of(context).viewingSourceLabel
+                    : AppLocalizations.of(context).editingModeLabel);
 
-    return InkWell(
-      onTap: _showDocumentStats,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        child: Row(
-          children: [
-            Text(
-              modeLabel,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-            if (_isDirty) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(AppLocalizations.of(context).modifiedLabel, style: const TextStyle(fontSize: 10, color: Colors.amber)),
-              ),
-            ],
-            const Spacer(),
-            Text(
-              '${AppLocalizations.of(context).editorStatusLine(_cursorLine, _cursorCol, lines)}'
-              '${words == null ? '' : AppLocalizations.of(context).editorStatusWords(words)}${AppLocalizations.of(context).editorStatusChars(chars)}'
-              '${_largeFileMode ? '  •  ${_chunkEncoding.toUpperCase()}  •  ' : ''}'
-              '${_fontSize.toInt()}pt${_wordWrap ? '  •  ${AppLocalizations.of(context).wrapIndicator}' : ''}',
-              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.info_outline,
-              size: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ],
-        ),
-      ),
+        return EditorStatusBar(
+          modeLabel: modeLabel,
+          isDirty: _isDirty,
+          cursorLine: _cursorLine,
+          cursorCol: _cursorCol,
+          lines: lines,
+          words: words,
+          chars: chars,
+          largeFileMode: _largeFileMode,
+          chunkEncoding: _chunkEncoding,
+          fontSize: _fontSize,
+          wordWrap: _wordWrap,
+          onTapStats: _showDocumentStats,
+        );
+      },
     );
   }
 
   Widget _buildContent() {
     switch (_mode) {
       case TextFileMode.preview:
-        if (_isMarkdown) {
-          final brightness = Theme.of(context).brightness;
-          final themeConfig = MarkdownThemeConfig.get(_markdownTheme, brightness);
-          if (_controller.text.isEmpty) {
-            return Container(
-              color: themeConfig.backgroundColor,
-              width: double.infinity,
-              height: double.infinity,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.description_outlined,
-                      size: 48,
-                      color: themeConfig.textColor.withValues(alpha: 0.35),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      AppLocalizations.of(context).documentIsEmpty,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: themeConfig.textColor.withValues(alpha: 0.6),
-                        fontFamilyFallback: MarkdownThemeConfig.fontFamilyFallback,
-                      ),
-                    ),
-                    if (!_readOnly) ...[
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.edit, size: 16),
-                        label: Text(AppLocalizations.of(context).editInSourceMode),
-                        onPressed: () => _setMode(TextFileMode.edit),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          }
-          return Container(
-            color: themeConfig.backgroundColor,
-            width: double.infinity,
-            height: double.infinity,
-            child: SelectionArea(
-              child: Markdown(
-                data: _controller.text,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                selectable: false,
-                extensionSet: md.ExtensionSet.gitHubFlavored,
-                styleSheet: themeConfig.toStyleSheet(context, fontSize: _fontSize),
-                builders: {
-                  'pre': HighlightCodeElementBuilder(
-                    themeConfig: themeConfig,
-                    fontSize: _fontSize,
-                  ),
-                  'blockquote': CalloutBlockquoteBuilder(
-                    themeConfig: themeConfig,
-                    fontSize: _fontSize,
-                  ),
-                },
-              ),
-            ),
-          );
-        }
-        if (_isJson) {
-          return JsonFormattedPreviewWidget(
-            rawText: _controller.text,
-            fontSize: _fontSize,
-            filterQuery: _showFind ? _findController.text : '',
-            onOpenRawEditor: () => _setMode(TextFileMode.code),
-          );
-        }
-        return HtmlPreviewWidget(
+        return EditorPreviewPane(
+          isMarkdown: _isMarkdown,
+          isJson: _isJson,
+          readOnly: _readOnly,
           root: _root,
           path: _path,
-          rawHtml: _controller.text,
+          text: _controller.text,
           isDirty: _isDirty,
           fontSize: _fontSize,
-          onControllerCreated: (controller) => _webViewController = controller,
-          onOpenInBrowser: _openInBrowser,
+          markdownTheme: _markdownTheme,
+          filterQuery: _showFind ? _findController.text : '',
+          onEditSource: () => _setMode(TextFileMode.edit),
+          onOpenRawCode: () => _setMode(TextFileMode.code),
+          onHtmlControllerCreated: (controller) => _webViewController = controller,
+          onOpenHtmlInBrowser: _openInBrowser,
         );
       case TextFileMode.code:
         return _buildCodeView();

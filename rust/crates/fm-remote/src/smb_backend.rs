@@ -150,17 +150,18 @@ impl SmbFs {
         session: &mut SmbSession,
         share: &str,
     ) -> Result<Tree, VfsError> {
-        if !session.trees.contains_key(share) {
-            let tree = session
-                .client
-                .connect_share(share)
-                .await
-                .map_err(|e| VfsError::Connection {
-                    message: format!("Failed to connect to SMB share '{share}': {e}"),
-                })?;
-            session.trees.insert(share.to_string(), tree);
+        if let Some(tree) = session.trees.get(share) {
+            return Ok(tree.clone());
         }
-        Ok(session.trees.get(share).unwrap().clone())
+        let tree = session
+            .client
+            .connect_share(share)
+            .await
+            .map_err(|e| VfsError::Connection {
+                message: format!("Failed to connect to SMB share '{share}': {e}"),
+            })?;
+        session.trees.insert(share.to_string(), tree.clone());
+        Ok(tree)
     }
 }
 
@@ -293,6 +294,119 @@ impl Vfs for SmbFs {
                     }
 
                     Ok(entries)
+                }
+            }
+        })
+    }
+
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let (entries, has_more, _) = self.list_paged_with_total(dir, page, page_size).await?;
+        Ok((entries, has_more))
+    }
+
+    async fn list_paged_with_total(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, Option<u32>)> {
+        let (share_opt, subpath) = self.split_path(dir);
+        let page = page.max(1) as usize;
+        let page_size = page_size.max(1) as usize;
+        let skip = (page - 1).saturating_mul(page_size);
+
+        run_smb!(self, session => async {
+            match &share_opt {
+                None => {
+                    let mut shares = session
+                        .client
+                        .list_shares()
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: dir.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
+                    shares.sort_unstable_by(|a, b| {
+                        fm_core::compare_dir_and_name(true, &a.name, true, &b.name, true)
+                    });
+                    let total = shares.len();
+                    let has_more = skip.saturating_add(page_size) < total;
+                    let entries = shares
+                        .into_iter()
+                        .skip(skip)
+                        .take(page_size)
+                        .map(|s| Entry {
+                            name: s.name.clone(),
+                            path: dir.join(&s.name),
+                            kind: EntryKind::Dir,
+                            size: None,
+                            modified: None,
+                            mode: None,
+                            hidden: s.name.ends_with('$'),
+                            is_symlink: false,
+                            mime: None,
+                        })
+                        .collect();
+                    Ok((entries, has_more, Some(total as u32)))
+                }
+                Some(share) => {
+                    let mut tree = Self::get_share_tree(session, share).await?;
+                    let list = session
+                        .client
+                        .list_directory(&mut tree, &subpath)
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: dir.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })?;
+                    let mut filtered: Vec<_> = list
+                        .into_iter()
+                        .filter(|item| item.name != "." && item.name != "..")
+                        .collect();
+                    filtered.sort_unstable_by(|a, b| {
+                        fm_core::compare_dir_and_name(
+                            a.is_directory,
+                            &a.name,
+                            b.is_directory,
+                            &b.name,
+                            true,
+                        )
+                    });
+                    let total = filtered.len();
+                    let has_more = skip.saturating_add(page_size) < total;
+                    let entries = filtered
+                        .into_iter()
+                        .skip(skip)
+                        .take(page_size)
+                        .map(|item| {
+                            let child_path = dir.join(&item.name);
+                            Entry {
+                                name: item.name.clone(),
+                                path: child_path,
+                                kind: if item.is_directory {
+                                    EntryKind::Dir
+                                } else {
+                                    EntryKind::File
+                                },
+                                size: if item.is_directory {
+                                    None
+                                } else {
+                                    Some(item.size)
+                                },
+                                modified: item.modified.to_system_time(),
+                                mode: None,
+                                hidden: item.name.starts_with('.'),
+                                is_symlink: false,
+                                mime: None,
+                            }
+                        })
+                        .collect();
+                    Ok((entries, has_more, Some(total as u32)))
                 }
             }
         })

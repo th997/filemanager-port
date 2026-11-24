@@ -1,7 +1,7 @@
 import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 
-/// Reusable Find / Replace / Go-to-Line toolbar widget extracted from [TextEditorPage].
+/// Reusable Find / Replace / Go-to-Line toolbar widget used by [TextEditorPage].
 class EditorFindReplaceBar extends StatelessWidget {
   final TextEditingController findController;
   final TextEditingController replaceController;
@@ -11,13 +11,16 @@ class EditorFindReplaceBar extends StatelessWidget {
   final bool readOnly;
   final int matchCount;
   final int currentMatchIndex;
+  final bool matchCountCapped;
   final ValueChanged<String> onQueryChanged;
+  final VoidCallback? onFindSubmitted;
+  final VoidCallback? onClearFind;
   final VoidCallback onPreviousMatch;
   final VoidCallback onNextMatch;
   final VoidCallback onReplaceOne;
   final VoidCallback onReplaceAll;
   final VoidCallback onToggleReplace;
-  final VoidCallback onGoToLine;
+  final VoidCallback? onGoToLine;
   final VoidCallback onClose;
 
   const EditorFindReplaceBar({
@@ -30,13 +33,16 @@ class EditorFindReplaceBar extends StatelessWidget {
     required this.readOnly,
     required this.matchCount,
     required this.currentMatchIndex,
+    this.matchCountCapped = false,
     required this.onQueryChanged,
+    this.onFindSubmitted,
+    this.onClearFind,
     required this.onPreviousMatch,
     required this.onNextMatch,
     required this.onReplaceOne,
     required this.onReplaceAll,
     required this.onToggleReplace,
-    required this.onGoToLine,
+    this.onGoToLine,
     required this.onClose,
   });
 
@@ -44,95 +50,110 @@ class EditorFindReplaceBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final hasQuery = findController.text.isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              if (!readOnly)
-                IconButton(
-                  icon: Icon(showReplace ? Icons.expand_more : Icons.chevron_right, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onToggleReplace,
-                ),
+              const Icon(Icons.search, size: 18),
+              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: findController,
                   focusNode: findFocusNode,
                   decoration: InputDecoration(
+                    hintText: l10n.findInFileHint,
                     isDense: true,
-                    hintText: l10n.findInFileTooltip,
-                    border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: InputBorder.none,
+                    suffixIcon: hasQuery
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            tooltip: l10n.clear,
+                            onPressed: onClearFind,
+                          )
+                        : null,
                   ),
                   onChanged: onQueryChanged,
-                  onSubmitted: (_) => onNextMatch(),
+                  onSubmitted: (_) => (onFindSubmitted ?? onNextMatch)(),
                 ),
               ),
-              const SizedBox(width: 6),
-              Text(
-                matchCount == 0 ? '0/0' : '${currentMatchIndex + 1}/$matchCount',
-                style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
-              ),
+              if (hasQuery)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    matchCount == 0
+                        ? '0/0'
+                        : '${currentMatchIndex + 1}/${matchCountCapped ? '10000+' : matchCount}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
               IconButton(
-                icon: const Icon(Icons.keyboard_arrow_up, size: 18),
-                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.arrow_upward, size: 18),
+                tooltip: l10n.previousMatch,
                 onPressed: matchCount > 0 ? onPreviousMatch : null,
               ),
               IconButton(
-                icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.arrow_downward, size: 18),
+                tooltip: l10n.nextMatch,
                 onPressed: matchCount > 0 ? onNextMatch : null,
               ),
-              IconButton(
-                icon: const Icon(Icons.format_list_numbered, size: 18),
-                tooltip: l10n.goToLine,
-                visualDensity: VisualDensity.compact,
-                onPressed: onGoToLine,
-              ),
+              if (onGoToLine != null)
+                IconButton(
+                  icon: const Icon(Icons.format_list_numbered, size: 18),
+                  tooltip: l10n.goToLine,
+                  onPressed: onGoToLine,
+                ),
+              if (!readOnly)
+                IconButton(
+                  icon: Icon(
+                    showReplace ? Icons.find_replace : Icons.find_replace_outlined,
+                    size: 18,
+                  ),
+                  tooltip: l10n.toggleReplaceShortcut,
+                  onPressed: onToggleReplace,
+                ),
               IconButton(
                 icon: const Icon(Icons.close, size: 18),
-                visualDensity: VisualDensity.compact,
+                tooltip: l10n.closeFindShortcut,
                 onPressed: onClose,
               ),
             ],
           ),
-          if (showReplace && !readOnly) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const SizedBox(width: 34),
-                Expanded(
-                  child: TextField(
-                    controller: replaceController,
-                    focusNode: replaceFocusNode,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: l10n.replace,
-                      border: const OutlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          if (showReplace && !readOnly)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.arrow_right_alt, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: replaceController,
+                      focusNode: replaceFocusNode,
+                      decoration: InputDecoration(
+                        hintText: l10n.replaceWithHint,
+                        isDense: true,
+                        border: InputBorder.none,
+                      ),
+                      onSubmitted: (_) => onReplaceOne(),
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                TextButton(
-                  onPressed: matchCount > 0 ? onReplaceOne : null,
-                  child: Text(l10n.replace, style: const TextStyle(fontSize: 12)),
-                ),
-                TextButton(
-                  onPressed: matchCount > 0 ? onReplaceAll : null,
-                  child: const Text('All', style: TextStyle(fontSize: 12)),
-                ),
-              ],
+                  TextButton(
+                    onPressed: matchCount > 0 ? onReplaceOne : null,
+                    child: Text(l10n.replace),
+                  ),
+                  TextButton(
+                    onPressed: matchCount > 0 ? onReplaceAll : null,
+                    child: Text(l10n.replaceAll),
+                  ),
+                ],
+              ),
             ),
-          ],
         ],
       ),
     );

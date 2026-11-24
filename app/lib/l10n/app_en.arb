@@ -2518,5 +2518,159 @@
   "historyRetentionUpdatedOff": "History retention disabled and existing history cleared",
   "historyDisabledTitle": "History is disabled",
   "historyDisabledSubtitle": "Retention is set to 0 days, so visited folders are not saved.",
-  "historyRetentionChange": "Change retention"
+  "historyRetentionChange": "Change retention",
+  "errorSftpHostKey": "SSH host key verification failed. Confirm the server identity or re-save the SFTP connection.\n({raw})",
+  "@errorSftpHostKey": {
+    "placeholders": {
+      "raw": { "type": "String" }
+    }
+  },
+  "errorObjectStorageConfig": "Object storage configuration error. Check the bucket name, endpoint, region, and access keys.\n({raw})",
+  "@errorObjectStorageConfig": {
+    "placeholders": {
+      "raw": { "type": "String" }
+    }
+  },
+  "errorSmbConnection": "SMB share connection failed. Verify the share name, username/password, and SMB port (445).\n({raw})",
+  "@errorSmbConnection": {
+    "placeholders": {
+      "raw": { "type": "String" }
+    }
+  },
+  "errorArchivePassword": "Archive password is missing or incorrect. Re-enter the password and try again.\n({raw})",
+  "@errorArchivePassword": {
+    "placeholders": {
+      "raw": { "type": "String" }
+    }
+  },
+  "errorDiskFull": "Not enough free storage space on the destination volume.\n({raw})",
+  "@errorDiskFull": {
+    "placeholders": {
+      "raw": { "type": "String" }
+    }
+  },
+  "recoveryGrantPermission": "Grant Access",
+  "recoveryEditConnection": "Edit Connection",
+  "recoveryEnterPassword": "Enter Password",
+  "recoveryFreeUpSpace": "Analyze Space",
+  "navDomainStorage": "Storage",
+  "navDomainDiscover": "Search & Library",
+  "navDomainTools": "Tools & Tasks",
+  "autoSyncIntervalLabel": "Auto-sync schedule",
+  "autoSyncOff": "Manual only",
+  "autoSyncEveryMinutes": "Every {minutes} min",
+  "@autoSyncEveryMinutes": {
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "offlineAutoSyncTitle": "Auto-check & push on resume",
+  "providerCrypt": "Encrypted Cloud Vault (Crypt)",
+  "cryptBackingRootLabel": "Backing Storage Root",
+  "cryptBackingRootHint": "remote://my_s3 or /local/folder",
+  "cryptBasePrefixLabel": "Encrypted Subfolder Prefix",
+  "cryptPasswordLabel": "Master Encryption Password",
+  "cryptPasswordRequired": "Encryption password is required",
+  "cryptSaltOptionalLabel": "Optional Salt / Passphrase",
+  "cryptSaltHint": "Optional salt for key derivation",
+  "cryptInfoBanner": "Filenames and 64 KiB file chunks are end-to-end encrypted locally before uploading to the backing remote or folder.",
+  "lanWebdavShareTitle": "LAN WebDAV Server",
+  "lanWebdavShareSubtitle": "Mount phone or remote storage from Finder, Explorer, or Infuse/Kodi",
+  "shareViaLanWebdav": "Share via LAN WebDAV",
+  "webdavUsernameOptional": "Username (Optional)",
+  "webdavUrlCopied": "WebDAV URL copied to clipboard",
+  "webdavServerRunning": "WebDAV server active at {url}",
+  "@webdavServerRunning": {
+    "placeholders": {
+      "url": { "type": "String" }
+    }
+  },
+  "lanPeerTransferTitle": "LAN Direct Drop",
+  "lanPeerTransferSubtitle": "Discover nearby FP File Manager devices and transfer files or clipboard text",
+  "peerReceiveMode": "Receive Mode (Discoverable)",
+  "peerDeviceName": "Device Name",
+  "peerScanDevices": "Scan LAN Devices",
+  "peerScanning": "Scanning nearby devices...",
+  "peerNoDevicesFound": "No FP File Manager receivers found on LAN",
+  "peerSendFiles": "Send Files",
+  "peerSendClipboard": "Send Clipboard Text",
+  "peerManualAddressHint": "http://192.168.1.x:port",
+  "peerIncomingOfferTitle": "Incoming transfer from {sender}",
+  "@peerIncomingOfferTitle": {
+    "placeholders": {
+      "sender": { "type": "String" }
+    }
+  },
+  "peerAccept": "Accept",
+  "peerReject": "Decline",
+  "peerSentSuccess": "Sent {count} file(s)",
+  "@peerSentSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "peerOfferSent": "Text sent to device",
+  "sendToLanDevice": "Send to LAN Device",
+  "fastIndexReady": "Fast index: {count} items",
+  "@fastIndexReady": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "fastIndexNotBuilt": "Fast index not built for this folder",
+  "fastIndexBuild": "Build Index",
+  "fastIndexRebuild": "Rebuild Index",
+  "fastIndexBuilding": "Indexing...",
+  "fastIndexClear": "Clear Index",
+  "fastIndexCleared": "Fast index cleared",
+  "readingModeSingle": "Single Page",
+  "readingModeWebtoon": "Webtoon Scroll",
+  "readingModeDouble": "Double Page",
+  "stripExifAction": "Strip EXIF & Save Copy",
+  "stripExifDone": "Saved privacy-clean copy: {path}",
+  "@stripExifDone": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "stripExifBatchAction": "Strip EXIF",
+  "stripExifBatchDone": "Saved EXIF-stripped copies for {count} image(s)",
+  "@stripExifBatchDone": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "openInTerminal": "Open in Terminal",
+  "openInEditor": "Open in Editor",
+  "copyFullPath": "Copy Full Path",
+  "copyVfsPath": "Copy VFS Path",
+  "photoBackupTitle": "Photo Auto Backup",
+  "photoBackupSubtitle": "Incrementally back up new photos to NAS, S3, WebDAV, or Privacy Vault",
+  "photoBackupEnable": "Enable Automatic Incremental Backup",
+  "photoBackupWifiOnly": "Back up on Wi-Fi only",
+  "photoBackupTargetLabel": "Backup Destination",
+  "photoBackupSelectTarget": "Select Destination",
+  "photoBackupNow": "Back Up Now",
+  "photoBackupRunning": "Backing up new photos...",
+  "photoBackupStats": "{count} photos backed up",
+  "@photoBackupStats": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "photoBackupNoTarget": "Please choose a backup destination first",
+  "photoBackupCompleted": "Backed up {count} new photo(s)",
+  "@photoBackupCompleted": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "pinToHomeScreen": "Pin to Home Screen",
+  "pinToHomeScreenSuccess": "Shortcut \"{name}\" pinned to Home Screen",
+  "@pinToHomeScreenSuccess": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "pinToHomeScreenUnsupported": "Home screen pinning is not supported on this platform"
 }

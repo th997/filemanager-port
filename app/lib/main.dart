@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,10 +10,13 @@ import 'l10n/app_localizations.dart';
 import 'src/pages/home_page.dart';
 import 'src/rust/frb_generated.dart';
 import 'src/services/app_route_observer.dart';
+import 'src/services/auto_sync_service.dart';
+import 'src/services/background_keepalive_service.dart';
 import 'src/services/external_file_service.dart';
 import 'src/services/global_playback_service.dart';
 import 'src/services/platform_paths.dart';
 import 'src/services/preferences_service.dart';
+import 'src/services/sharing_service.dart';
 import 'src/services/storage_service.dart';
 import 'src/services/vault_service.dart';
 import 'src/widgets/global_mini_player_bar.dart';
@@ -136,6 +140,7 @@ class _FileManagerAppState extends State<FileManagerApp>
       appNavigatorKey,
       initialArgs: widget.initialArgs,
     );
+    AutoSyncService.instance.start();
     final saved = PreferencesService.instance.getString(_themeKey);
     _themeMode = ThemeMode.values.firstWhere(
       (mode) => mode.name == saved,
@@ -147,6 +152,7 @@ class _FileManagerAppState extends State<FileManagerApp>
 
   @override
   void dispose() {
+    AutoSyncService.instance.stop();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -170,8 +176,12 @@ class _FileManagerAppState extends State<FileManagerApp>
     } else if (state == AppLifecycleState.resumed) {
       VaultService.instance.onAppResumed();
       ExternalFileService.instance.checkPendingRequests();
+      AutoSyncService.instance.onAppResumed();
     } else if (state == AppLifecycleState.detached) {
       VaultService.instance.lockAll();
+      SharingService.instance.stopHttp();
+      SharingService.instance.stopWebDav();
+      unawaited(BackgroundKeepAliveService.instance.releaseAll());
     }
   }
 

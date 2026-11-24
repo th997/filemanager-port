@@ -3540,4 +3540,274 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get historyRetentionChange => '保持日数を変更';
+
+  @override
+  String errorSftpHostKey(String raw) {
+    return 'SSH ホスト鍵の検証に失敗しました。サーバーの身元を確認するか、SFTP 接続を再保存してください。\n($raw)';
+  }
+
+  @override
+  String errorObjectStorageConfig(String raw) {
+    return 'オブジェクトストレージの設定エラーです。バケット名・エンドポイント・リージョン・アクセスキーを確認してください。\n($raw)';
+  }
+
+  @override
+  String errorSmbConnection(String raw) {
+    return 'SMB 共有への接続に失敗しました。共有名・認証情報・SMB ポート (445) を確認してください。\n($raw)';
+  }
+
+  @override
+  String errorArchivePassword(String raw) {
+    return 'アーカイブのパスワードが不足しているか誤っています。再入力してやり直してください。\n($raw)';
+  }
+
+  @override
+  String errorDiskFull(String raw) {
+    return '保存先ボリュームの空き容量が不足しています。\n($raw)';
+  }
+
+  @override
+  String get recoveryGrantPermission => '権限を許可';
+
+  @override
+  String get recoveryEditConnection => '接続設定を編集';
+
+  @override
+  String get recoveryEnterPassword => 'パスワードを入力';
+
+  @override
+  String get recoveryFreeUpSpace => '空き容量を確保';
+
+  @override
+  String get navDomainStorage => 'ストレージ';
+
+  @override
+  String get navDomainDiscover => '検索・ライブラリ';
+
+  @override
+  String get navDomainTools => 'ツール・タスク';
+
+  @override
+  String get autoSyncIntervalLabel => '自動同期スケジュール';
+
+  @override
+  String get autoSyncOff => '手動のみ';
+
+  @override
+  String autoSyncEveryMinutes(int minutes) {
+    return '$minutes 分ごと';
+  }
+
+  @override
+  String get offlineAutoSyncTitle => '復帰時に自動確認・同期';
+
+  @override
+  String get providerCrypt => 'ゼロ知識暗号化クラウド Vault (Crypt)';
+
+  @override
+  String get cryptBackingRootLabel => 'ベース保存先ルート';
+
+  @override
+  String get cryptBackingRootHint => 'remote://my_s3 またはローカルパス';
+
+  @override
+  String get cryptBasePrefixLabel => '暗号化サブフォルダ接頭辞';
+
+  @override
+  String get cryptPasswordLabel => 'マスター暗号化パスワード';
+
+  @override
+  String get cryptPasswordRequired => '暗号化パスワードを入力してください';
+
+  @override
+  String get cryptSaltOptionalLabel => '任意ソルト / パスフレーズ';
+
+  @override
+  String get cryptSaltHint => '鍵導出用の任意のソルト';
+
+  @override
+  String get cryptInfoBanner =>
+      'ファイル名と 64 KiB チャンクはアップロード前にローカルで AES-256-GCM エンドツーエンド暗号化されます。';
+
+  @override
+  String get lanWebdavShareTitle => 'LAN WebDAV サーバー';
+
+  @override
+  String get lanWebdavShareSubtitle => 'Finder・エクスプローラー・Infuse/Kodi から直接マウント';
+
+  @override
+  String get shareViaLanWebdav => 'LAN WebDAV で共有';
+
+  @override
+  String get webdavUsernameOptional => 'ユーザー名（任意）';
+
+  @override
+  String get webdavUrlCopied => 'WebDAV URL をクリップボードにコピーしました';
+
+  @override
+  String webdavServerRunning(String url) {
+    return 'WebDAV サーバー稼働中: $url';
+  }
+
+  @override
+  String get lanPeerTransferTitle => 'LAN ダイレクト転送';
+
+  @override
+  String get lanPeerTransferSubtitle =>
+      '近くの FP File Manager 端末を検出してファイルやテキストを直接送信';
+
+  @override
+  String get peerReceiveMode => '受信モード（検出可能）';
+
+  @override
+  String get peerDeviceName => 'デバイス名';
+
+  @override
+  String get peerScanDevices => 'LAN デバイスをスキャン';
+
+  @override
+  String get peerScanning => '近くのデバイスを検索中…';
+
+  @override
+  String get peerNoDevicesFound => 'LAN 内に受信可能なデバイスが見つかりません';
+
+  @override
+  String get peerSendFiles => 'ファイルを送信';
+
+  @override
+  String get peerSendClipboard => 'クリップボードテキストを送信';
+
+  @override
+  String get peerManualAddressHint => 'http://192.168.1.x:ポート';
+
+  @override
+  String peerIncomingOfferTitle(String sender) {
+    return '$sender からの受信リクエスト';
+  }
+
+  @override
+  String get peerAccept => '承認';
+
+  @override
+  String get peerReject => '拒否';
+
+  @override
+  String peerSentSuccess(int count) {
+    return '$count 件のファイルを送信しました';
+  }
+
+  @override
+  String get peerOfferSent => 'テキストを送信しました';
+
+  @override
+  String get sendToLanDevice => 'LAN デバイスへ送信';
+
+  @override
+  String fastIndexReady(int count) {
+    return '高速インデックス: $count 件';
+  }
+
+  @override
+  String get fastIndexNotBuilt => 'このフォルダの高速インデックスは未作成です';
+
+  @override
+  String get fastIndexBuild => 'インデックス作成';
+
+  @override
+  String get fastIndexRebuild => 'インデックス再構築';
+
+  @override
+  String get fastIndexBuilding => 'インデックス作成中…';
+
+  @override
+  String get fastIndexClear => 'インデックス削除';
+
+  @override
+  String get fastIndexCleared => '高速インデックスを削除しました';
+
+  @override
+  String get readingModeSingle => '単ページ';
+
+  @override
+  String get readingModeWebtoon => '縦スクロール (Webtoon)';
+
+  @override
+  String get readingModeDouble => '見開き 2 ページ';
+
+  @override
+  String get stripExifAction => 'EXIF 削除してコピー保存';
+
+  @override
+  String stripExifDone(String path) {
+    return 'メタデータ削除済みコピーを保存しました: $path';
+  }
+
+  @override
+  String get stripExifBatchAction => 'EXIF 削除';
+
+  @override
+  String stripExifBatchDone(int count) {
+    return '$count 枚の画像の EXIF 削除コピーを保存しました';
+  }
+
+  @override
+  String get openInTerminal => 'ターミナルで開く';
+
+  @override
+  String get openInEditor => 'エディタで開く';
+
+  @override
+  String get copyFullPath => '絶対パスをコピー';
+
+  @override
+  String get copyVfsPath => 'VFS パスをコピー';
+
+  @override
+  String get photoBackupTitle => '写真自動増分バックアップ';
+
+  @override
+  String get photoBackupSubtitle =>
+      '新しい写真や動画を NAS・S3・WebDAV・Privacy Vault へ増分バックアップ';
+
+  @override
+  String get photoBackupEnable => '自動増分バックアップを有効にする';
+
+  @override
+  String get photoBackupWifiOnly => 'Wi-Fi 接続時のみバックアップ';
+
+  @override
+  String get photoBackupTargetLabel => 'バックアップ保存先';
+
+  @override
+  String get photoBackupSelectTarget => '保存先を選択';
+
+  @override
+  String get photoBackupNow => '今すぐバックアップ';
+
+  @override
+  String get photoBackupRunning => '新しい写真をバックアップ中…';
+
+  @override
+  String photoBackupStats(int count) {
+    return '$count 件をバックアップ済み';
+  }
+
+  @override
+  String get photoBackupNoTarget => '先にバックアップ先を選択してください';
+
+  @override
+  String photoBackupCompleted(int count) {
+    return '$count 件の新規メディアをバックアップしました';
+  }
+
+  @override
+  String get pinToHomeScreen => 'ホーム画面に固定';
+
+  @override
+  String pinToHomeScreenSuccess(String name) {
+    return 'ショートカット「$name」をホーム画面に追加しました';
+  }
+
+  @override
+  String get pinToHomeScreenUnsupported => 'このプラットフォームではホーム画面への固定に対応していません';
 }

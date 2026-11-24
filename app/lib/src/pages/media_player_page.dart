@@ -18,6 +18,7 @@ import '../services/vault_service.dart';
 import '../widgets/app_swipe_back.dart';
 import '../widgets/media_player/media_player_controls.dart';
 import '../widgets/media_player/media_player_hud.dart';
+import '../widgets/media_player/media_player_shared.dart';
 import 'native_media_player_page.dart';
 
 /// Video and audio playback for local, remote, and archive files.
@@ -159,8 +160,6 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   double _volume = 100.0;
   double _lastNonZeroVolume = 100.0;
 
-  static const _prefSpeed = 'player.speed';
-  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
   double _playbackSpeed = 1.0;
   bool _isExplicitlyClosed = false;
   Timer? _speedHudTimer;
@@ -426,7 +425,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
     _isSpeedBoosting = false;
     _playbackSpeed = speed;
     _player.setRate(speed);
-    PreferencesService.instance.setString(_prefSpeed, speed.toString());
+    savePlaybackSpeed(speed);
     GlobalPlaybackService.instance.setPlaybackSpeed(speed);
     _showSpeedHud(speed);
     if (mounted) setState(() {});
@@ -447,15 +446,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   }
 
   void _cycleSpeed({required bool increase}) {
-    final currentIndex = _rates.indexOf(_playbackSpeed);
-    if (currentIndex == -1) {
-      _setSpeed(increase ? 1.25 : 0.75);
-      return;
-    }
-    final nextIndex = increase
-        ? (currentIndex + 1).clamp(0, _rates.length - 1)
-        : (currentIndex - 1).clamp(0, _rates.length - 1);
-    _setSpeed(_rates[nextIndex]);
+    _setSpeed(nextPlaybackSpeed(_playbackSpeed, increase: increase));
   }
 
   @override
@@ -503,10 +494,8 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
         WakelockPlus.disable().catchError((_) {});
       }
     });
-    final savedSpeed = double.tryParse(
-      PreferencesService.instance.getString(_prefSpeed) ?? '',
-    );
-    if (savedSpeed != null && _rates.contains(savedSpeed)) {
+    final savedSpeed = loadSavedPlaybackSpeed();
+    if (savedSpeed != 1.0) {
       _playbackSpeed = savedSpeed;
       _player.setRate(savedSpeed);
     }
@@ -618,39 +607,11 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   }
 
   void _showPlaylist() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.playlist.length,
-          itemBuilder: (_, i) {
-            final t = widget.playlist[i];
-            final current = i == _index;
-            return ListTile(
-              dense: true,
-              leading: Icon(
-                current
-                    ? Icons.play_circle_fill
-                    : (t.isAudio ? Icons.music_note : Icons.movie_outlined),
-                color: current ? Colors.blueAccent : null,
-              ),
-              title: Text(
-                t.fileName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: current ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                if (i != _index) _openTrack(i);
-              },
-            );
-          },
-        ),
-      ),
+    showMediaPlaylistSheet(
+      context,
+      playlist: widget.playlist,
+      currentIndex: _index,
+      onSelectTrack: _openTrack,
     );
   }
 
@@ -1452,22 +1413,13 @@ class _SpeedButton extends StatefulWidget {
 }
 
 class _SpeedButtonState extends State<_SpeedButton> {
-  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
-  static const _prefSpeed = 'player.speed';
-
   late double _rate;
   StreamSubscription<double>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _rate = widget.currentRate;
-    final saved = double.tryParse(
-      PreferencesService.instance.getString(_prefSpeed) ?? '',
-    );
-    if (saved != null && _rates.contains(saved)) {
-      _rate = saved;
-    }
+    _rate = loadSavedPlaybackSpeed(fallback: widget.currentRate);
     _sub = widget.player.stream.rate.listen((rate) {
       if (mounted && _rate != rate) setState(() => _rate = rate);
     });
@@ -1502,12 +1454,12 @@ class _SpeedButtonState extends State<_SpeedButton> {
       context: context,
       buttonContext: context,
       currentSpeed: _rate,
-      rates: _rates,
+      rates: kMediaPlaybackSpeeds,
       onSelected: (rate) async {
         if (mounted) setState(() => _rate = rate);
         onSelected?.call(rate);
         await player.setRate(rate);
-        PreferencesService.instance.setString(_prefSpeed, rate.toString());
+        savePlaybackSpeed(rate);
       },
     );
     if (selected != null && mounted) {

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:filemanager/l10n/app_localizations.dart';
@@ -5,12 +6,16 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../controllers/browser_pane_controller.dart';
 import '../services/browser_file_ops.dart';
 import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
+import '../services/preferences_service.dart';
+import '../services/vault_service.dart';
 import 'browser_page.dart';
 
-/// Descriptor for one open directory tab in [BrowserWorkspacePage].
+/// Descriptor for one open directory tab in [BrowserWorkspacePage], backed by
+/// a [BrowserPaneController] instead of an imperative `GlobalKey<BrowserPageState>`.
 class BrowserTabSpec {
   final String id;
   final String root;
@@ -18,7 +23,8 @@ class BrowserTabSpec {
   final String rootLabel;
   String title;
   String locationTooltip;
-  final GlobalKey<BrowserPageState> key;
+  final ValueKey<String> widgetKey;
+  final BrowserPaneController controller;
 
   BrowserTabSpec({
     required this.id,
@@ -28,7 +34,16 @@ class BrowserTabSpec {
     String? rootLabel,
   })  : rootLabel = rootLabel ?? title,
         locationTooltip = initialRelPath.isEmpty ? root : '$root/$initialRelPath',
-        key = GlobalKey<BrowserPageState>();
+        widgetKey = ValueKey<String>('browser_tab_$id'),
+        controller = BrowserPaneController(
+          root: root,
+          initialRelPath: initialRelPath,
+          title: title,
+        );
+
+  void dispose() {
+    controller.dispose();
+  }
 }
 
 /// Multi-Tab + Dual-Pane Split View workspace host.
@@ -90,22 +105,195 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
   BrowserTabSpec? _rightPane;
   bool _rightPaneActive = false;
 
+  static const String _prefWorkspaceSession = 'workspace.session_v1';
+
+  static bool _isPersistableRoot(String root) {
+    return !root.startsWith('vault://') && !root.startsWith('archive://vault://');
+  }
+
+  void _saveWorkspaceSession() {
+    if (!widget.embedded) return;
+    final serializedTabs = <Map<String, String>>[];
+    for (final tab in _tabs) {
+      final root = tab.controller.root;
+      final relPath = tab.controller.relPath;
+      if (!_isPersistableRoot(root)) continue;
+      serializedTabs.add({
+        'root': root,
+        'relPath': relPath,
+        'title': tab.title,
+      });
+    }
+    if (serializedTabs.isEmpty) return;
+
+    Map<String, String>? rightData;
+    if (_dualPane && _rightPane != null) {
+      final rRoot = _rightPane!.controller.root;
+      final rRel = _rightPane!.controller.relPath;
+      if (_isPersistableRoot(rRoot)) {
+        rightData = {
+          'root': rRoot,
+          'relPath': rRel,
+          'title': _rightPane!.title,
+        };
+      }
+    }
+
+    final payload = {
+      'activeIndex': _activeTabIndex.clamp(0, serializedTabs.length - 1),
+      'dualPane': _dualPane && rightData != null,
+      'tabs': serializedTabs,
+      'rightPane': ?rightData,
+    };
+    PreferencesService.instance.setString(
+      _prefWorkspaceSession,
+      jsonEncode(payload),
+    );
+  }
+
+  bool _restoreWorkspaceSession() {
+    if (!widget.embedded) return false;
+    final raw = PreferencesService.instance.getString(_prefWorkspaceSession);
+    if (raw == null || raw.isEmpty) return false;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return false;
+      final rawTabs = decoded['tabs'];
+      if (rawTabs is! List || rawTabs.isEmpty) return false;
+      for (final item in rawTabs) {
+        if (item is! Map) continue;
+        final root = item['root']?.toString() ?? '';
+        final relPath = item['relPath']?.toString() ?? '';
+        final title = item['title']?.toString() ?? '';
+        if (root.isEmpty || !_isPersistableRoot(root)) continue;
+        _tabs.add(_createTab(
+          root: root,
+          relPath: relPath,
+          title: title.isEmpty ? widget.initialTitle : title,
+        ));
+      }
+      if (_tabs.isEmpty) return false;
+      final idx = decoded['activeIndex'];
+      if (idx is int) {
+        _activeTabIndex = idx.clamp(0, _tabs.length - 1);
+      }
+      final savedDual = decoded['dualPane'] == true;
+      final rawRight = decoded['rightPane'];
+      if (savedDual && rawRight is Map) {
+        final rRoot = rawRight['root']?.toString() ?? '';
+        final rRel = rawRight['relPath']?.toString() ?? '';
+        final rTitle = rawRight['title']?.toString() ?? widget.initialTitle;
+        if (rRoot.isNotEmpty && _isPersistableRoot(rRoot)) {
+          _dualPane = true;
+          _rightPane = _createTab(
+            root: rRoot,
+            relPath: rRel,
+            title: rTitle,
+          );
+        }
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    VaultService.instance.registerLockCleanup(_onVaultLocked);
     _dualPane = widget.initialDualPane;
-    _tabs.add(_createTab(
-      root: widget.initialRoot,
-      relPath: widget.initialRelPath,
-      title: widget.initialTitle,
-    ));
-    if (_dualPane) {
-      _rightPane = _createTab(
+    if (!_restoreWorkspaceSession()) {
+      _tabs.add(_createTab(
         root: widget.initialRoot,
         relPath: widget.initialRelPath,
         title: widget.initialTitle,
-      );
+      ));
+      if (_dualPane) {
+        _rightPane = _createTab(
+          root: widget.initialRoot,
+          relPath: widget.initialRelPath,
+          title: widget.initialTitle,
+        );
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    VaultService.instance.unregisterLockCleanup(_onVaultLocked);
+    for (final tab in _tabs) {
+      tab.dispose();
+    }
+    _rightPane?.dispose();
+    super.dispose();
+  }
+
+  static bool matchesLockedVault(String root, String? vaultId) {
+    if (vaultId == null) {
+      return root.startsWith('vault://') || root.startsWith('archive://vault://');
+    }
+    return root == 'vault://$vaultId' ||
+        root.startsWith('vault://$vaultId/') ||
+        root == 'archive://vault://$vaultId' ||
+        root.startsWith('archive://vault://$vaultId/') ||
+        root.startsWith('archive://vault://$vaultId|');
+  }
+
+  void _onVaultLocked(String? vaultId) {
+    if (!mounted) return;
+    var changed = false;
+    final remaining = <BrowserTabSpec>[];
+    final removed = <BrowserTabSpec>[];
+    for (final tab in _tabs) {
+      final root = tab.controller.root;
+      if (matchesLockedVault(root, vaultId)) {
+        changed = true;
+        removed.add(tab);
+      } else {
+        remaining.add(tab);
+      }
+    }
+    var rightChanged = false;
+    if (_rightPane != null) {
+      final rRoot = _rightPane!.controller.root;
+      if (matchesLockedVault(rRoot, vaultId)) {
+        rightChanged = true;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    final oldRight = rightChanged ? _rightPane : null;
+    setState(() {
+      _tabs
+        ..clear()
+        ..addAll(remaining);
+      if (_tabs.isEmpty) {
+        final fallbackRoot = PlatformPaths.defaultRoot();
+        _tabs.add(_createTab(
+          root: fallbackRoot,
+          relPath: '',
+          title: BrowserWorkspacePage.deriveTabTitle(
+            fallbackRoot,
+            '',
+            widget.initialTitle,
+          ),
+        ));
+      }
+      _activeTabIndex = _activeTabIndex.clamp(0, _tabs.length - 1);
+      if (rightChanged) {
+        _rightPane = null;
+        _dualPane = false;
+        _rightPaneActive = false;
+      }
+    });
+    for (final t in removed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => t.dispose());
+    }
+    if (oldRight != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => oldRight.dispose());
+    }
+    _saveWorkspaceSession();
   }
 
   BrowserTabSpec _createTab({
@@ -136,6 +324,7 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
         _rightPaneActive = false;
       }
     });
+    _saveWorkspaceSession();
   }
 
   /// Active pane or tab location `(root, relPath)` for context-aware actions.
@@ -143,10 +332,9 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
     final spec = (_dualPane && _rightPaneActive && _rightPane != null)
         ? _rightPane!
         : _tabs[_activeTabIndex];
-    final state = spec.key.currentState;
     return (
-      root: state?.currentRoot ?? spec.root,
-      relPath: state?.currentRelPath ?? spec.initialRelPath,
+      root: spec.controller.root,
+      relPath: spec.controller.relPath,
     );
   }
 
@@ -157,22 +345,28 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
     required String title,
   }) {
     if (_dualPane && _rightPaneActive && _rightPane != null) {
+      final old = _rightPane;
       setState(() {
         _rightPane = _createTab(root: root, relPath: relPath, title: title);
       });
+      if (old != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      }
     } else {
+      final old = _tabs[_activeTabIndex];
       setState(() {
         _tabs[_activeTabIndex] = _createTab(root: root, relPath: relPath, title: title);
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
     }
+    _saveWorkspaceSession();
   }
 
   void _newTabFromCurrent() {
     final active = _tabs[_activeTabIndex];
-    final state = active.key.currentState;
     openTab(
-      root: state?.currentRoot ?? active.root,
-      relPath: state?.currentRelPath ?? active.initialRelPath,
+      root: active.controller.root,
+      relPath: active.controller.relPath,
       title: active.title,
     );
   }
@@ -182,12 +376,15 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
       if (!widget.embedded) Navigator.of(context).maybePop();
       return;
     }
+    final removed = _tabs[index];
     setState(() {
       _tabs.removeAt(index);
       if (_activeTabIndex >= _tabs.length) {
         _activeTabIndex = _tabs.length - 1;
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
+    _saveWorkspaceSession();
   }
 
   void _cycleTab(int delta) {
@@ -196,6 +393,7 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
       _activeTabIndex = (_activeTabIndex + delta) % _tabs.length;
       if (_activeTabIndex < 0) _activeTabIndex += _tabs.length;
     });
+    _saveWorkspaceSession();
   }
 
   void _toggleDualPane() {
@@ -203,10 +401,11 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
       _dualPane = !_dualPane;
       if (_dualPane && _rightPane == null) {
         final active = _tabs[_activeTabIndex];
-        final state = active.key.currentState;
         _rightPane = _createTab(
-          root: state?.currentRoot ?? PlatformPaths.defaultRoot(),
-          relPath: state?.currentRelPath ?? '',
+          root: active.controller.root.isNotEmpty
+              ? active.controller.root
+              : PlatformPaths.defaultRoot(),
+          relPath: active.controller.relPath,
           title: active.title,
         );
       }
@@ -214,30 +413,30 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
         _rightPaneActive = false;
       }
     });
+    _saveWorkspaceSession();
   }
 
   Future<void> _transferToOppositePane({required bool isMove}) async {
     if (!_dualPane || _rightPane == null) return;
-    final leftState = _tabs[_activeTabIndex].key.currentState;
-    final rightState = _rightPane!.key.currentState;
-    if (leftState == null || rightState == null) return;
+    final leftCtrl = _tabs[_activeTabIndex].controller;
+    final rightCtrl = _rightPane!.controller;
 
-    final srcState = _rightPaneActive ? rightState : leftState;
-    final dstState = _rightPaneActive ? leftState : rightState;
-    final selected = srcState.selectedPathsSnapshot;
+    final srcCtrl = _rightPaneActive ? rightCtrl : leftCtrl;
+    final dstCtrl = _rightPaneActive ? leftCtrl : rightCtrl;
+    final selected = srcCtrl.selectedPaths.toList(growable: false);
     if (selected.isEmpty) return;
 
     final ok = await BrowserFileOps.transferToOtherPane(
       context,
-      srcRoot: srcState.currentRoot,
+      srcRoot: srcCtrl.root,
       srcPaths: selected,
-      dstRoot: dstState.currentRoot,
-      dstRelPath: dstState.currentRelPath,
+      dstRoot: dstCtrl.root,
+      dstRelPath: dstCtrl.relPath,
       isMove: isMove,
     );
     if (ok && mounted) {
-      srcState.refreshEntries();
-      dstState.refreshEntries();
+      srcCtrl.requestRefresh();
+      dstCtrl.requestRefresh();
     }
   }
 
@@ -408,7 +607,8 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
                           children: _tabs
                               .map(
                                 (tab) => BrowserPage(
-                                  key: tab.key,
+                                  key: tab.widgetKey,
+                                  paneController: tab.controller,
                                   initialRoot: tab.root,
                                   initialPath: tab.initialRelPath,
                                   embedded: true,
@@ -430,6 +630,7 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
                                           tab.title = nextTitle;
                                           tab.locationTooltip = nextTooltip;
                                         });
+                                        _saveWorkspaceSession();
                                       });
                                     }
                                   },
@@ -457,13 +658,30 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
                                 )
                               : const BoxDecoration(),
                           child: BrowserPage(
-                            key: _rightPane!.key,
+                            key: _rightPane!.widgetKey,
+                            paneController: _rightPane!.controller,
                             initialRoot: _rightPane!.root,
                             initialPath: _rightPane!.initialRelPath,
                             embedded: true,
                             onOpenInNewTab: (r, p, t) =>
                                 openTab(root: r, relPath: p, title: t),
                             onToggleSplitView: _toggleDualPane,
+                            onLocationChanged: (r, p) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted || _rightPane == null) return;
+                                final nextTitle = BrowserWorkspacePage.deriveTabTitle(
+                                  r,
+                                  p,
+                                  widget.initialTitle,
+                                );
+                                final nextTooltip = r.startsWith('vault://')
+                                    ? ''
+                                    : (p.isEmpty ? r : '$r/$p');
+                                _rightPane!.title = nextTitle;
+                                _rightPane!.locationTooltip = nextTooltip;
+                                _saveWorkspaceSession();
+                              });
+                            },
                           ),
                         ),
                       ),

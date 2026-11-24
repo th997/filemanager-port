@@ -133,7 +133,7 @@
 
 ### 1. Flutter 前端核心拆分
 
-- [x] **拆解 `app/lib/src/pages/browser_page.dart`（当前 5,556 行）— 最高优先级**
+- [ ] **拆解 `app/lib/src/pages/browser_page.dart`（进行中：`BrowserWorkspacePage` 的 `BrowserTabSpec` 已切换为持有 `BrowserPaneController` 并移除 `GlobalKey<BrowserPageState>`，地址解析等已迁入控制器，待继续迁移单体余下内部状态）— 最高优先级**
 
   * **痛点**：单文件耦合了目录加载与分页、剪贴板（`ClipboardState`）、搜索状态、全部文件 CRUD/上传/下载/压缩/解压流程、隐私保险箱管理、外部拖拽、文件选择器模式以及列表/网格渲染，直接阻碍多标签页和双栏分屏落地。
 
@@ -151,7 +151,7 @@
 
     * `browser_pane.dart`：纯可复用浏览面板组件，供单栏、多标签和双栏分屏直接复用。
 
-- [x] **统一双引擎媒体播放器壳层（`media_player_page.dart` 1,477 行 + `native_media_player_page.dart` 1,636 行）**
+- [ ] **统一双引擎媒体播放器壳层（进行中：已抽取 `media_player_shared.dart` 共享速率持久化、时长格式化、横向拖拽定位与播放列表弹窗，待将 `MediaPlayerPage` 与 `NativeMediaPlayerPage` 合并至单一 UI 壳层）**
 
   * **痛点**：两套播放器合计超过 3,100 行，播放列表调度、进度记忆、倍速控制、手势调节亮度/音量/进度、全屏旋转、快捷键与 HUD 逻辑高度重复，导致新功能（如字幕、PiP）需要在两端分别维护。
 

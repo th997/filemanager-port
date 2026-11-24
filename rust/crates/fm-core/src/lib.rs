@@ -5,6 +5,8 @@
 //! backend-native form ([`VfsPath`]) and are never re-parsed from a display
 //! string.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::SystemTime;
@@ -31,6 +33,7 @@ pub enum LocationKind {
     WebDav,
     S3,
     Oss,
+    Crypt,
 }
 
 /// A browsable root. `root` is the backend-native path of the location root.
@@ -213,6 +216,105 @@ impl Capabilities {
         serve_http: false,
         serve_ftp: false,
     };
+}
+
+/// Case-insensitive natural sort comparator that orders embedded digit runs
+/// numerically with zero heap allocations.
+pub fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
+    fn next_chunk<'a>(s: &mut &'a str) -> Option<(&'a str, bool)> {
+        if s.is_empty() {
+            return None;
+        }
+        if s.is_ascii() {
+            let bytes = s.as_bytes();
+            let is_digit = bytes[0].is_ascii_digit();
+            let end = bytes
+                .iter()
+                .position(|&b| b.is_ascii_digit() != is_digit)
+                .unwrap_or(bytes.len());
+            let chunk = &s[..end];
+            *s = &s[end..];
+            Some((chunk, is_digit))
+        } else {
+            let first = s.chars().next()?;
+            let is_digit = first.is_ascii_digit();
+            let end = s
+                .char_indices()
+                .find(|&(_, ch)| ch.is_ascii_digit() != is_digit)
+                .map(|(idx, _)| idx)
+                .unwrap_or(s.len());
+            let chunk = &s[..end];
+            *s = &s[end..];
+            Some((chunk, is_digit))
+        }
+    }
+
+    let mut first_numeric_tie_break = std::cmp::Ordering::Equal;
+
+    loop {
+        match (next_chunk(&mut a), next_chunk(&mut b)) {
+            (Some((pa, true)), Some((pb, true))) => {
+                let na: Option<u128> = pa.parse().ok();
+                let nb: Option<u128> = pb.parse().ok();
+                let cmp = match (na, nb) {
+                    (Some(x), Some(y)) => x.cmp(&y),
+                    _ => pa.cmp(pb),
+                };
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+                if first_numeric_tie_break == std::cmp::Ordering::Equal && pa != pb {
+                    first_numeric_tie_break = pa.len().cmp(&pb.len()).then_with(|| pa.cmp(pb));
+                }
+            }
+            (Some((pa, _)), Some((pb, _))) => {
+                let cmp = if pa.is_ascii() && pb.is_ascii() {
+                    if pa.eq_ignore_ascii_case(pb) {
+                        std::cmp::Ordering::Equal
+                    } else {
+                        pa.as_bytes()
+                            .iter()
+                            .map(u8::to_ascii_lowercase)
+                            .cmp(pb.as_bytes().iter().map(u8::to_ascii_lowercase))
+                    }
+                } else {
+                    pa.chars()
+                        .map(|c| c.to_ascii_lowercase())
+                        .cmp(pb.chars().map(|c| c.to_ascii_lowercase()))
+                };
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+            }
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (None, None) => return first_numeric_tie_break,
+        }
+    }
+}
+
+/// Standard directory-first natural name comparator shared across VFS backends
+/// and the FFI layer.
+pub fn compare_dir_and_name(
+    a_is_dir: bool,
+    a_name: &str,
+    b_is_dir: bool,
+    b_name: &str,
+    ascending: bool,
+) -> std::cmp::Ordering {
+    if a_is_dir != b_is_dir {
+        return if a_is_dir {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        };
+    }
+    let cmp = natural_compare(a_name, b_name).then_with(|| a_name.cmp(b_name));
+    if ascending {
+        cmp
+    } else {
+        cmp.reverse()
+    }
 }
 
 #[cfg(test)]

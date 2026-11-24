@@ -30,6 +30,69 @@ pub struct PinnedFileRecord {
     pub last_accessed_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndexedFileRecord {
+    pub root: String,
+    pub path: String,
+    pub name: String,
+    pub ext: String,
+    pub category: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified_millis: Option<i64>,
+    pub hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndexStatsRecord {
+    pub root: String,
+    pub entry_count: u64,
+    pub updated_at_millis: i64,
+}
+
+fn current_epoch_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Convert raw query text into an FTS5 `MATCH` expression of quoted prefix tokens.
+/// Returns `None` if no searchable alphanumeric tokens exist.
+fn build_fts5_match_expr(query: &str) -> Option<String> {
+    let mut parts = Vec::new();
+    for token in query.split(|c: char| !c.is_alphanumeric()) {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let escaped = trimmed.replace('"', "\"\"");
+        parts.push(format!("\"{escaped}\"*"));
+        if parts.len() >= 16 {
+            break;
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" AND "))
+    }
+}
+
+fn escape_sql_like(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '\\' | '%' | '_' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Serialize a path for the bookmarks/history tables.
 ///
 /// The segments are stored as a JSON array. The previous format — the
@@ -197,6 +260,25 @@ impl Database {
                         CREATE INDEX IF NOT EXISTS idx_bookmarks_loc_path ON bookmarks(location, path);
                         CREATE INDEX IF NOT EXISTS idx_recycle_bin_deleted ON recycle_bin(deleted_at);
                         CREATE INDEX IF NOT EXISTS idx_pinned_lru ON pinned_files(last_accessed_at);
+
+                        CREATE TABLE IF NOT EXISTS indexed_roots (
+                            root TEXT PRIMARY KEY,
+                            entry_count INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL
+                        );
+
+                        CREATE VIRTUAL TABLE IF NOT EXISTS file_index_fts USING fts5(
+                            root UNINDEXED,
+                            path,
+                            name,
+                            ext UNINDEXED,
+                            category UNINDEXED,
+                            is_dir UNINDEXED,
+                            size UNINDEXED,
+                            modified_millis UNINDEXED,
+                            hidden UNINDEXED,
+                            tokenize='unicode61'
+                        );
                         ",
                     );
                 }
@@ -500,6 +582,7 @@ impl Database {
                 local_cache_path = excluded.local_cache_path,
                 size = excluded.size,
                 modified_millis = excluded.modified_millis,
+                pinned_at = excluded.pinned_at,
                 last_accessed_at = excluded.last_accessed_at",
             params![
                 remote_root,
@@ -626,5 +709,233 @@ impl Database {
             evicted_paths.push(local_path);
         }
         Ok(evicted_paths)
+    }
+
+    // -------------------------------------------------------------------------
+    // Full-text (FTS5) file index CRUD
+    // -------------------------------------------------------------------------
+
+    /// Atomically replace the indexed entries for `root` inside one SQLite transaction.
+    pub fn replace_root_index(
+        &self,
+        root: &str,
+        records: &[IndexedFileRecord],
+    ) -> Result<IndexStatsRecord, rusqlite::Error> {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM file_index_fts WHERE root = ?1", params![root])?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO file_index_fts (root, path, name, ext, category, is_dir, size, modified_millis, hidden)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?;
+            for rec in records {
+                stmt.execute(params![
+                    root,
+                    rec.path,
+                    rec.name,
+                    rec.ext,
+                    rec.category,
+                    if rec.is_dir { 1i64 } else { 0i64 },
+                    rec.size.min(i64::MAX as u64) as i64,
+                    rec.modified_millis,
+                    if rec.hidden { 1i64 } else { 0i64 },
+                ])?;
+            }
+        }
+        let updated_at_millis = current_epoch_millis();
+        let entry_count = records.len() as u64;
+        tx.execute(
+            "INSERT OR REPLACE INTO indexed_roots (root, entry_count, updated_at)
+             VALUES (?1, ?2, ?3)",
+            params![root, entry_count as i64, updated_at_millis],
+        )?;
+        tx.commit()?;
+        Ok(IndexStatsRecord {
+            root: root.to_string(),
+            entry_count,
+            updated_at_millis,
+        })
+    }
+
+    pub fn clear_root_index(&self, root: &str) -> Result<bool, rusqlite::Error> {
+        let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let tx = conn.transaction()?;
+        let deleted = tx.execute("DELETE FROM indexed_roots WHERE root = ?1", params![root])?;
+        tx.execute("DELETE FROM file_index_fts WHERE root = ?1", params![root])?;
+        tx.commit()?;
+        Ok(deleted > 0)
+    }
+
+    pub fn get_index_stats(&self, root: Option<&str>) -> Result<Vec<IndexStatsRecord>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut out = Vec::new();
+        if let Some(r) = root.filter(|s| !s.is_empty()) {
+            let mut stmt = conn.prepare(
+                "SELECT root, entry_count, updated_at FROM indexed_roots WHERE root = ?1",
+            )?;
+            let rows = stmt.query_map(params![r], |row| {
+                Ok(IndexStatsRecord {
+                    root: row.get(0)?,
+                    entry_count: row.get::<_, i64>(1)?.max(0) as u64,
+                    updated_at_millis: row.get(2)?,
+                })
+            })?;
+            for item in rows {
+                out.push(item?);
+            }
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT root, entry_count, updated_at FROM indexed_roots ORDER BY updated_at DESC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(IndexStatsRecord {
+                    root: row.get(0)?,
+                    entry_count: row.get::<_, i64>(1)?.max(0) as u64,
+                    updated_at_millis: row.get(2)?,
+                })
+            })?;
+            for item in rows {
+                out.push(item?);
+            }
+        }
+        Ok(out)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn query_fts_index(
+        &self,
+        root: Option<&str>,
+        query: &str,
+        category: Option<&str>,
+        min_size: Option<u64>,
+        max_size: Option<u64>,
+        modified_after_millis: Option<i64>,
+        modified_before_millis: Option<i64>,
+        include_hidden: bool,
+        limit: u32,
+    ) -> Result<Vec<IndexedFileRecord>, rusqlite::Error> {
+        let limit = limit.clamp(1, 2000) as i64;
+        let raw_trimmed = query.trim();
+        let fts_expr = build_fts5_match_expr(raw_trimmed);
+        let hits = if raw_trimmed.is_empty() || fts_expr.is_some() {
+            self.run_fts_query_internal(
+                root,
+                fts_expr.as_deref(),
+                None,
+                category,
+                min_size,
+                max_size,
+                modified_after_millis,
+                modified_before_millis,
+                include_hidden,
+                limit,
+            )?
+        } else {
+            Vec::new()
+        };
+        if hits.is_empty() && !raw_trimmed.is_empty() {
+            let like_pattern = format!("%{}%", escape_sql_like(&raw_trimmed.to_lowercase()));
+            return self.run_fts_query_internal(
+                root,
+                None,
+                Some(&like_pattern),
+                category,
+                min_size,
+                max_size,
+                modified_after_millis,
+                modified_before_millis,
+                include_hidden,
+                limit,
+            );
+        }
+        Ok(hits)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_fts_query_internal(
+        &self,
+        root: Option<&str>,
+        fts_match: Option<&str>,
+        like_lower_pattern: Option<&str>,
+        category: Option<&str>,
+        min_size: Option<u64>,
+        max_size: Option<u64>,
+        modified_after_millis: Option<i64>,
+        modified_before_millis: Option<i64>,
+        include_hidden: bool,
+        limit: i64,
+    ) -> Result<Vec<IndexedFileRecord>, rusqlite::Error> {
+        use rusqlite::types::Value;
+
+        let mut sql = String::from(
+            "SELECT root, path, name, ext, category, is_dir, size, modified_millis, hidden
+             FROM file_index_fts WHERE 1=1",
+        );
+        let mut bind_values: Vec<Value> = Vec::new();
+
+        if let Some(expr) = fts_match {
+            sql.push_str(" AND file_index_fts MATCH ?");
+            bind_values.push(Value::Text(expr.to_string()));
+        }
+        if let Some(pat) = like_lower_pattern {
+            sql.push_str(" AND (LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(path) LIKE ? ESCAPE '\\')");
+            bind_values.push(Value::Text(pat.to_string()));
+            bind_values.push(Value::Text(pat.to_string()));
+        }
+        if let Some(r) = root.filter(|s| !s.is_empty()) {
+            sql.push_str(" AND root = ?");
+            bind_values.push(Value::Text(r.to_string()));
+        }
+        if let Some(cat) = category
+            .map(|c| c.trim().to_ascii_lowercase())
+            .filter(|c| !c.is_empty() && c != "all")
+        {
+            sql.push_str(" AND category = ?");
+            bind_values.push(Value::Text(cat));
+        }
+        if !include_hidden {
+            sql.push_str(" AND hidden = 0");
+        }
+        if let Some(min_sz) = min_size {
+            sql.push_str(" AND is_dir = 0 AND size >= ?");
+            bind_values.push(Value::Integer(min_sz.min(i64::MAX as u64) as i64));
+        }
+        if let Some(max_sz) = max_size {
+            sql.push_str(" AND is_dir = 0 AND size <= ?");
+            bind_values.push(Value::Integer(max_sz.min(i64::MAX as u64) as i64));
+        }
+        if let Some(after) = modified_after_millis {
+            sql.push_str(" AND modified_millis IS NOT NULL AND modified_millis >= ?");
+            bind_values.push(Value::Integer(after));
+        }
+        if let Some(before) = modified_before_millis {
+            sql.push_str(" AND modified_millis IS NOT NULL AND modified_millis <= ?");
+            bind_values.push(Value::Integer(before));
+        }
+
+        if fts_match.is_some() {
+            sql.push_str(" ORDER BY bm25(file_index_fts), name COLLATE NOCASE LIMIT ?");
+        } else {
+            sql.push_str(" ORDER BY is_dir DESC, name COLLATE NOCASE LIMIT ?");
+        }
+        bind_values.push(Value::Integer(limit));
+
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bind_values), |row| {
+            Ok(IndexedFileRecord {
+                root: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                ext: row.get(3)?,
+                category: row.get(4)?,
+                is_dir: row.get::<_, i64>(5)? != 0,
+                size: row.get::<_, i64>(6)?.max(0) as u64,
+                modified_millis: row.get(7)?,
+                hidden: row.get::<_, i64>(8)? != 0,
+            })
+        })?;
+        rows.collect()
     }
 }

@@ -1,10 +1,12 @@
 //! Persistent metadata: bookmarks, history, search index, recycle bin.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 pub mod db;
 pub mod secret;
 
 use fm_core::{LocationId, VfsPath};
-pub use db::{Database, PinnedFileRecord, RemoteRecord};
+pub use db::{Database, IndexStatsRecord, IndexedFileRecord, PinnedFileRecord, RemoteRecord};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bookmark {
@@ -108,5 +110,87 @@ mod tests {
 
         let db = Database::open(&db_file, &trash_dir).unwrap();
         assert_eq!(db.list_remotes().unwrap().len(), threads);
+    }
+
+    #[test]
+    fn fts5_search_index_crud_and_query() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = Database::in_memory(temp_dir.path()).unwrap();
+
+        let entries = vec![
+            IndexedFileRecord {
+                root: "/data".into(),
+                path: "/Docs/Annual_Report_2026.pdf".into(),
+                name: "Annual_Report_2026.pdf".into(),
+                ext: "pdf".into(),
+                category: "document".into(),
+                is_dir: false,
+                size: 2048,
+                modified_millis: Some(1_700_000_000_000),
+                hidden: false,
+            },
+            IndexedFileRecord {
+                root: "/data".into(),
+                path: "/Photos/sunset_beach.jpg".into(),
+                name: "sunset_beach.jpg".into(),
+                ext: "jpg".into(),
+                category: "image".into(),
+                is_dir: false,
+                size: 4096,
+                modified_millis: Some(1_700_000_100_000),
+                hidden: false,
+            },
+            IndexedFileRecord {
+                root: "/data".into(),
+                path: "/.hidden_secret.txt".into(),
+                name: ".hidden_secret.txt".into(),
+                ext: "txt".into(),
+                category: "document".into(),
+                is_dir: false,
+                size: 128,
+                modified_millis: Some(1_700_000_200_000),
+                hidden: true,
+            },
+        ];
+
+        let stats = db.replace_root_index("/data", &entries).unwrap();
+        assert_eq!(stats.entry_count, 3);
+        assert_eq!(db.get_index_stats(Some("/data")).unwrap().len(), 1);
+
+        // Prefix FTS5 match + category filter
+        let hits = db
+            .query_fts_index(
+                Some("/data"),
+                "annual report",
+                Some("document"),
+                None,
+                None,
+                None,
+                None,
+                false,
+                20,
+            )
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "Annual_Report_2026.pdf");
+
+        // Infix LIKE fallback when FTS5 prefix doesn't match mid-word
+        let infix_hits = db
+            .query_fts_index(Some("/data"), "nual", None, None, None, None, None, false, 20)
+            .unwrap();
+        assert_eq!(infix_hits.len(), 1);
+
+        // Hidden entry exclusion & inclusion
+        let hidden_excl = db
+            .query_fts_index(Some("/data"), "secret", None, None, None, None, None, false, 20)
+            .unwrap();
+        assert!(hidden_excl.is_empty());
+        let hidden_incl = db
+            .query_fts_index(Some("/data"), "secret", None, None, None, None, None, true, 20)
+            .unwrap();
+        assert_eq!(hidden_incl.len(), 1);
+
+        assert!(db.clear_root_index("/data").unwrap());
+        assert!(db.get_index_stats(Some("/data")).unwrap().is_empty());
     }
 }

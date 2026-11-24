@@ -8,8 +8,8 @@ import 'file_manager.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `contains_ignore_case`, `file_category_of`, `is_searchable_text_file`, `search_entries_impl`, `wildcard_to_regex`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `contains_ignore_case`, `extension_of`, `file_category_of`, `is_noisy_dir`, `is_searchable_text_file`, `open_registry_db`, `search_entries_impl`, `wildcard_to_regex`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Multi-dimensional recursive search supporting category, size range, modified
 /// time range, regex, and wildcard matching.
@@ -41,6 +41,44 @@ Future<List<GrepMatchDto>> grepTextFiles({
   includeHidden: includeHidden,
   maxMatches: maxMatches,
 );
+
+/// Walk `root` breadth-first and atomically populate its SQLite FTS5 index.
+Future<SearchIndexStatsDto> rebuildSearchIndex({
+  required String root,
+  int? maxEntries,
+}) => RustLib.instance.api.crateApiSearchRebuildSearchIndex(
+  root: root,
+  maxEntries: maxEntries,
+);
+
+/// Query the SQLite FTS5 index across one root or all indexed roots.
+Future<List<IndexedSearchHitDto>> querySearchIndex({
+  String? root,
+  required String query,
+  String? category,
+  BigInt? minSize,
+  BigInt? maxSize,
+  PlatformInt64? modifiedAfterMillis,
+  PlatformInt64? modifiedBeforeMillis,
+  required bool includeHidden,
+  required int maxResults,
+}) => RustLib.instance.api.crateApiSearchQuerySearchIndex(
+  root: root,
+  query: query,
+  category: category,
+  minSize: minSize,
+  maxSize: maxSize,
+  modifiedAfterMillis: modifiedAfterMillis,
+  modifiedBeforeMillis: modifiedBeforeMillis,
+  includeHidden: includeHidden,
+  maxResults: maxResults,
+);
+
+bool clearSearchIndex({required String root}) =>
+    RustLib.instance.api.crateApiSearchClearSearchIndex(root: root);
+
+List<SearchIndexStatsDto> getSearchIndexStats({String? root}) =>
+    RustLib.instance.api.crateApiSearchGetSearchIndexStats(root: root);
 
 /// Multi-dimensional search options for [`search_entries_advanced`].
 class AdvancedSearchQueryDto {
@@ -140,4 +178,78 @@ class GrepMatchDto {
           lineText == other.lineText &&
           matchStart == other.matchStart &&
           matchEnd == other.matchEnd;
+}
+
+/// Fast full-text index hit returned by [`query_search_index`].
+class IndexedSearchHitDto {
+  final String root;
+  final String path;
+  final String name;
+  final String category;
+  final bool isDir;
+  final BigInt size;
+  final PlatformInt64? modifiedMillis;
+  final bool hidden;
+
+  const IndexedSearchHitDto({
+    required this.root,
+    required this.path,
+    required this.name,
+    required this.category,
+    required this.isDir,
+    required this.size,
+    this.modifiedMillis,
+    required this.hidden,
+  });
+
+  @override
+  int get hashCode =>
+      root.hashCode ^
+      path.hashCode ^
+      name.hashCode ^
+      category.hashCode ^
+      isDir.hashCode ^
+      size.hashCode ^
+      modifiedMillis.hashCode ^
+      hidden.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IndexedSearchHitDto &&
+          runtimeType == other.runtimeType &&
+          root == other.root &&
+          path == other.path &&
+          name == other.name &&
+          category == other.category &&
+          isDir == other.isDir &&
+          size == other.size &&
+          modifiedMillis == other.modifiedMillis &&
+          hidden == other.hidden;
+}
+
+/// Summary statistics for an indexed root in SQLite FTS5.
+class SearchIndexStatsDto {
+  final String root;
+  final BigInt entryCount;
+  final PlatformInt64 updatedAtMillis;
+
+  const SearchIndexStatsDto({
+    required this.root,
+    required this.entryCount,
+    required this.updatedAtMillis,
+  });
+
+  @override
+  int get hashCode =>
+      root.hashCode ^ entryCount.hashCode ^ updatedAtMillis.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchIndexStatsDto &&
+          runtimeType == other.runtimeType &&
+          root == other.root &&
+          entryCount == other.entryCount &&
+          updatedAtMillis == other.updatedAtMillis;
 }

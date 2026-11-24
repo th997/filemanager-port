@@ -475,6 +475,194 @@ impl Vfs for SftpFs {
         Ok(entries)
     }
 
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let (entries, has_more, _) = self.list_paged_with_total(dir, page, page_size).await?;
+        Ok((entries, has_more))
+    }
+
+    async fn list_paged_with_total(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, Option<u32>)> {
+        let sftp_path = self.resolve_path(dir);
+        let read_dir = self
+            .run(|session| {
+                let sftp_path = sftp_path.clone();
+                async move {
+                    session
+                        .sftp
+                        .read_dir(&sftp_path)
+                        .await
+                        .map_err(|e| VfsError::Backend {
+                            path: dir.clone(),
+                            source: std::io::Error::other(e.to_string()),
+                        })
+                }
+            })
+            .await?;
+
+        struct RawItem {
+            name: String,
+            is_dir: bool,
+            is_symlink: bool,
+            size: u64,
+            modified: Option<std::time::SystemTime>,
+            mode: Option<u32>,
+        }
+        let mut raw_items = Vec::new();
+        let mut symlink_count = 0usize;
+        for item in read_dir {
+            let name = item.file_name();
+            let file_type = item.file_type();
+            let meta = item.metadata();
+            let is_symlink = file_type.is_symlink();
+            if is_symlink {
+                symlink_count += 1;
+            }
+            raw_items.push(RawItem {
+                name,
+                is_dir: file_type.is_dir(),
+                is_symlink,
+                size: meta.len(),
+                modified: meta.modified().ok(),
+                mode: meta.permissions,
+            });
+        }
+
+        let total = raw_items.len();
+        let page = page.max(1) as usize;
+        let page_size = page_size.max(1) as usize;
+        let skip = (page - 1).saturating_mul(page_size);
+        let has_more = skip.saturating_add(page_size) < total;
+
+        // If symlinks are few (<= 64), resolve before sorting so directory symlinks
+        // sort with directories; on massive symlink directories (> 64), sort first
+        // and STAT only symlinks falling inside the requested page slice.
+        let resolve_all_symlinks = symlink_count > 0 && symlink_count <= 64;
+        let mut link_targets: std::collections::HashMap<String, (bool, Option<u64>)> =
+            std::collections::HashMap::new();
+
+        if resolve_all_symlinks {
+            let paths: Vec<String> = raw_items
+                .iter()
+                .filter(|r| r.is_symlink)
+                .map(|r| self.resolve_path(&dir.join(&r.name)))
+                .collect();
+            let resolved = self
+                .run(|session| {
+                    let paths = paths.clone();
+                    async move {
+                        use futures_util::stream::{self, StreamExt};
+                        let out: Vec<(String, (bool, Option<u64>))> = stream::iter(paths)
+                            .map(|path| {
+                                let session = Arc::clone(&session);
+                                async move {
+                                    let info = session
+                                        .sftp
+                                        .metadata(&path)
+                                        .await
+                                        .map(|m| (m.is_dir(), Some(m.len())))
+                                        .unwrap_or((false, None));
+                                    (path, info)
+                                }
+                            })
+                            .buffer_unordered(32)
+                            .collect()
+                            .await;
+                        Ok(out)
+                    }
+                })
+                .await?;
+            link_targets = resolved.into_iter().collect();
+        }
+
+        raw_items.sort_unstable_by(|a, b| {
+            let a_dir = a.is_dir
+                || (a.is_symlink
+                    && link_targets
+                        .get(&self.resolve_path(&dir.join(&a.name)))
+                        .map(|(d, _)| *d)
+                        .unwrap_or(false));
+            let b_dir = b.is_dir
+                || (b.is_symlink
+                    && link_targets
+                        .get(&self.resolve_path(&dir.join(&b.name)))
+                        .map(|(d, _)| *d)
+                        .unwrap_or(false));
+            fm_core::compare_dir_and_name(a_dir, &a.name, b_dir, &b.name, true)
+        });
+
+        let slice: Vec<RawItem> = raw_items.into_iter().skip(skip).take(page_size).collect();
+        if !resolve_all_symlinks && symlink_count > 0 {
+            let page_links: Vec<String> = slice
+                .iter()
+                .filter(|r| r.is_symlink)
+                .map(|r| self.resolve_path(&dir.join(&r.name)))
+                .collect();
+            if !page_links.is_empty() {
+                let resolved = self
+                    .run(|session| {
+                        let paths = page_links.clone();
+                        async move {
+                            use futures_util::stream::{self, StreamExt};
+                            let out: Vec<(String, (bool, Option<u64>))> = stream::iter(paths)
+                                .map(|path| {
+                                    let session = Arc::clone(&session);
+                                    async move {
+                                        let info = session
+                                            .sftp
+                                            .metadata(&path)
+                                            .await
+                                            .map(|m| (m.is_dir(), Some(m.len())))
+                                            .unwrap_or((false, None));
+                                        (path, info)
+                                    }
+                                })
+                                .buffer_unordered(32)
+                                .collect()
+                                .await;
+                            Ok(out)
+                        }
+                    })
+                    .await?;
+                link_targets = resolved.into_iter().collect();
+            }
+        }
+
+        let mut entries = Vec::with_capacity(slice.len());
+        for raw in slice {
+            let child_path = dir.join(&raw.name);
+            let target_info = if raw.is_symlink {
+                link_targets.get(&self.resolve_path(&child_path)).copied()
+            } else {
+                None
+            };
+            let target_is_dir = target_info.map(|(d, _)| d).unwrap_or(false);
+            let is_dir = raw.is_dir || target_is_dir;
+            let file_size = target_info.and_then(|(_, sz)| sz).unwrap_or(raw.size);
+            entries.push(Entry {
+                name: raw.name.clone(),
+                path: child_path,
+                kind: if is_dir { EntryKind::Dir } else { EntryKind::File },
+                size: if is_dir { None } else { Some(file_size) },
+                modified: raw.modified,
+                mode: raw.mode,
+                hidden: raw.name.starts_with('.'),
+                is_symlink: raw.is_symlink,
+                mime: None,
+            });
+        }
+
+        Ok((entries, has_more, Some(total as u32)))
+    }
+
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         let sftp_path = self.resolve_path(path);
 

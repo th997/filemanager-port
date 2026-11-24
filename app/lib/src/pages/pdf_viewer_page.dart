@@ -160,6 +160,44 @@ class PdfDocumentInspector {
         objects[id] = body;
       }
     }
+    // Unpack PDF 1.5+ compressed Object Streams (`/Type /ObjStm`) so page trees,
+    // `/Outlines` bookmarks, and content/CMap references inside compressed objects
+    // remain searchable without native PDFium FFI.
+    final objStmRe = RegExp(r'/Type\s*/ObjStm\b');
+    final firstRe = RegExp(r'/First\s+(\d+)');
+    final nRe = RegExp(r'/N\s+(\d+)');
+    final intRe = RegExp(r'\d+');
+    for (final body in objects.values.toList(growable: false)) {
+      if (!objStmRe.hasMatch(body)) continue;
+      final firstOffset =
+          int.tryParse(firstRe.firstMatch(body)?.group(1) ?? '');
+      final n = int.tryParse(nRe.firstMatch(body)?.group(1) ?? '');
+      if (firstOffset == null || firstOffset <= 0 || n == null || n <= 0) {
+        continue;
+      }
+      final streamBytes = _extractStreamBytes(body);
+      if (streamBytes == null || streamBytes.length <= firstOffset) continue;
+      final text = String.fromCharCodes(streamBytes);
+      final header = text.substring(0, firstOffset);
+      final nums = intRe
+          .allMatches(header)
+          .map((m) => int.tryParse(m.group(0) ?? ''))
+          .whereType<int>()
+          .toList();
+      final pairs = <({int id, int offset})>[];
+      for (int i = 0; i + 1 < nums.length && pairs.length < n; i += 2) {
+        pairs.add((id: nums[i], offset: nums[i + 1]));
+      }
+      for (int i = 0; i < pairs.length; i++) {
+        final start = (firstOffset + pairs[i].offset).clamp(0, text.length);
+        final nextOffset = (i + 1 < pairs.length)
+            ? (firstOffset + pairs[i + 1].offset).clamp(start, text.length)
+            : text.length;
+        if (start < nextOffset) {
+          objects.putIfAbsent(pairs[i].id, () => text.substring(start, nextOffset));
+        }
+      }
+    }
     return objects;
   }
 
@@ -177,7 +215,7 @@ class PdfDocumentInspector {
           final kidId = int.tryParse(r.group(1) ?? '');
           if (kidId != null) walkPagesNode(kidId);
         }
-      } else {
+      } else if (!RegExp(r'/Type\s*/Pages\b').hasMatch(body)) {
         pages.add(nodeId);
       }
     }
@@ -647,8 +685,32 @@ class PdfDocumentInspector {
     return items;
   }
 
+  /// Returns `true` if the PDF trailer/xref declares a `/Encrypt` dictionary.
+  static bool isEncrypted(Uint8List bytes) {
+    final latin = String.fromCharCodes(bytes);
+    return RegExp(r'/Encrypt(?:\s+\d+\s+\d+\s+R|\s*<<)').hasMatch(latin);
+  }
+
   static int estimatePageCount(Uint8List bytes) {
     final latin = String.fromCharCodes(bytes);
+    final objects = _parseIndirectObjects(latin);
+    final pageIds = _collectPageObjIds(objects);
+    if (pageIds.isNotEmpty) {
+      return pageIds.length;
+    }
+    var maxPagesCount = 0;
+    final pagesDictRe = RegExp(r'/Type\s*/Pages\b');
+    final countRe = RegExp(r'/Count\s+(\d+)');
+    for (final body in objects.values) {
+      if (!pagesDictRe.hasMatch(body)) continue;
+      final c = int.tryParse(countRe.firstMatch(body)?.group(1) ?? '');
+      if (c != null && c > maxPagesCount) {
+        maxPagesCount = c;
+      }
+    }
+    if (maxPagesCount > 0) {
+      return maxPagesCount;
+    }
     final count = _pageTypeRe.allMatches(latin).length;
     return count > 0 ? count : 1;
   }
@@ -743,21 +805,9 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
           );
       if (!mounted) return;
       _pdfBytes = bytes;
-      // Count pages & render the first page via native rasterizer.
-      int pageCount = 0;
-      try {
-        await for (final page in Printing.raster(bytes, dpi: 72)) {
-          if (pageCount == 0 && mounted) {
-            final img = await page.toImage();
-            _renderedPages[0] = img;
-          }
-          pageCount++;
-        }
-      } catch (_) {
-        pageCount = PdfDocumentInspector.estimatePageCount(bytes);
-      }
-      if (!mounted) return;
-      final total = pageCount > 0 ? pageCount : 1;
+      // Estimate page count from PDF structure without rasterizing the entire
+      // document upfront, then lazily rasterize visible pages on demand.
+      final total = PdfDocumentInspector.estimatePageCount(bytes);
       _outline = PdfDocumentInspector.extractOutline(bytes, total);
       _pageTexts = PdfDocumentInspector.extractPageTexts(bytes);
       setState(() {
@@ -765,7 +815,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         _currentPage = 0;
         _loading = false;
       });
-      // Re-render page 0 at crisp DPI and prefetch page 1.
       unawaited(_ensurePageRendered(0, force: true));
       if (total > 1) unawaited(_ensurePageRendered(1));
     } catch (e) {
@@ -795,22 +844,98 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         final old = _renderedPages[pageIndex];
         _renderedPages[pageIndex] = img;
         old?.dispose();
-        // Evict distant pages to keep memory bounded on large PDFs.
-        if (_renderedPages.length > 8) {
-          final distant = _renderedPages.keys
-              .where((k) => (k - _currentPage).abs() > 3)
-              .toList();
-          for (final k in distant) {
+        // Evict distant pages to keep memory bounded on large PDFs (max 6 cached).
+        if (_renderedPages.length > 6) {
+          final keysByDistance = _renderedPages.keys
+              .where((k) => k != pageIndex && k != _currentPage)
+              .toList()
+            ..sort(
+              (a, b) => (b - _currentPage).abs().compareTo((a - _currentPage).abs()),
+            );
+          for (final k in keysByDistance) {
+            if (_renderedPages.length <= 6) break;
             _renderedPages.remove(k)?.dispose();
           }
         }
         if (mounted) setState(() {});
       }
     } catch (_) {
-      // Ignore single-page raster errors; fallback icon stays visible.
+      if (mounted &&
+          pageIndex == 0 &&
+          _renderedPages.isEmpty &&
+          PdfDocumentInspector.isEncrypted(bytes)) {
+        setState(() {
+          _error =
+              'This PDF is encrypted or password-protected and cannot be opened with the built-in viewer.';
+        });
+      }
     } finally {
       _renderingPages.remove(pageIndex);
     }
+  }
+
+  void _showPageTextSheet() {
+    final text = (_currentPage >= 0 && _currentPage < _pageTexts.length)
+        ? _pageTexts[_currentPage].trim()
+        : '';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.65,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Page ${_currentPage + 1} Text',
+                        style: Theme.of(ctx).textTheme.titleMedium,
+                      ),
+                    ),
+                    if (text.isNotEmpty)
+                      FilledButton.tonalIcon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: text));
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Page text copied to clipboard.'),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.copy, size: 16),
+                        label: const Text('Copy'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      text.isNotEmpty
+                          ? text
+                          : 'No selectable text detected on this page (scanned or image-only PDF).',
+                      style: const TextStyle(height: 1.45),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _goToPage(int index) {
@@ -1002,6 +1127,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
               ],
             ),
             actions: [
+              IconButton(
+                key: const ValueKey('pdf_copy_text_btn'),
+                icon: const Icon(Icons.content_copy_outlined),
+                tooltip: 'Select / Copy Page Text',
+                onPressed:
+                    (!_loading && _error == null) ? _showPageTextSheet : null,
+              ),
               IconButton(
                 icon: const Icon(Icons.search),
                 tooltip: l10n.pdfSearchHint,

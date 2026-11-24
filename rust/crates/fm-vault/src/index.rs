@@ -637,6 +637,33 @@ impl DirIndexCache {
             .collect())
     }
 
+    pub fn list_paged(
+        &mut self,
+        dir: &VfsPath,
+        dek: &[u8; 32],
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, u32)> {
+        let dir_id = self.resolve_dir_id(dir, dek)?;
+        let df = self.load_dir_vfs(&dir_id, dir, dek)?;
+        let mut refs: Vec<_> = df.children.values().collect();
+        refs.sort_unstable_by(|a, b| {
+            fm_core::compare_dir_and_name(a.is_dir, &a.name, b.is_dir, &b.name, true)
+        });
+        let total = refs.len();
+        let page = page.max(1) as usize;
+        let page_size = page_size.max(1) as usize;
+        let skip = (page - 1).saturating_mul(page_size);
+        let has_more = skip.saturating_add(page_size) < total;
+        let entries = refs
+            .into_iter()
+            .skip(skip)
+            .take(page_size)
+            .map(|c| c.to_entry(dir.join(&c.name)))
+            .collect();
+        Ok((entries, has_more, total as u32))
+    }
+
     pub fn stat(&mut self, path: &VfsPath, dek: &[u8; 32]) -> VfsResult<Entry> {
         validate_segments(path)?;
         if path.is_root() {

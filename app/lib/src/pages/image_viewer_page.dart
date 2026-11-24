@@ -10,6 +10,7 @@ import '../rust/api/servers.dart';
 import '../services/exif_service.dart';
 import '../services/file_open_service.dart';
 import '../services/global_playback_service.dart';
+import '../services/image_privacy_service.dart';
 import '../services/path_utils.dart';
 import '../services/platform_capabilities.dart';
 import '../services/task_service.dart';
@@ -52,6 +53,10 @@ class ImageViewerEntry {
       (root != null && remotePath != null);
 }
 
+/// Reading layout for [ImageViewerPage]: classic swipe (`single`), vertical
+/// continuous comic/webtoon scroll (`webtoon`), or 2-page spread (`doublePage`).
+enum ImageReadingMode { single, webtoon, doublePage }
+
 class ImageViewerPage extends StatefulWidget {
   final String filePath;
   final String fileName;
@@ -77,8 +82,11 @@ class ImageViewerPage extends StatefulWidget {
 class _ImageViewerPageState extends State<ImageViewerPage> {
   final TransformationController _transformationController = TransformationController();
   late final PageController _pageController;
+  late final PageController _spreadController;
+  late final ScrollController _webtoonController;
   late List<ImageViewerEntry> _entries;
   late int _index;
+  ImageReadingMode _readingMode = ImageReadingMode.single;
   int _quarterTurns = 0;
   bool _zoomed = false;
   bool _showChrome = true;
@@ -191,6 +199,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     }
 
     _pageController = PageController(initialPage: _index);
+    _spreadController = PageController(initialPage: _index ~/ 2);
+    _webtoonController = ScrollController();
     _transformationController.addListener(_onTransformChanged);
     VaultService.instance.addListener(_onVaultChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -209,10 +219,74 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
     _pageController.dispose();
+    _spreadController.dispose();
+    _webtoonController.dispose();
     super.dispose();
   }
 
   ImageViewerEntry get _current => _entries[_index];
+
+  void _cycleReadingMode() {
+    final next = switch (_readingMode) {
+      ImageReadingMode.single => ImageReadingMode.webtoon,
+      ImageReadingMode.webtoon => ImageReadingMode.doublePage,
+      ImageReadingMode.doublePage => ImageReadingMode.single,
+    };
+    setState(() {
+      _readingMode = next;
+      _zoomed = false;
+      _transformationController.value = Matrix4.identity();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (next == ImageReadingMode.doublePage && _spreadController.hasClients) {
+        _spreadController.jumpToPage(_index ~/ 2);
+      } else if (next == ImageReadingMode.single && _pageController.hasClients) {
+        _pageController.jumpToPage(_index);
+      }
+    });
+  }
+
+  bool get _canStripExifCurrent {
+    if (_isVaultEntry(_current)) return false;
+    final lp = _current.localPath;
+    if (lp == null || lp.isEmpty) return false;
+    final lower = _current.name.toLowerCase();
+    return lower.endsWith('.jpg') || lower.endsWith('.jpeg');
+  }
+
+  String _readingModeTooltip(AppLocalizations l10n) => switch (_readingMode) {
+        ImageReadingMode.single => l10n.readingModeSingle,
+        ImageReadingMode.webtoon => l10n.readingModeWebtoon,
+        ImageReadingMode.doublePage => l10n.readingModeDouble,
+      };
+
+  IconData _readingModeIcon() => switch (_readingMode) {
+        ImageReadingMode.single => Icons.crop_original_outlined,
+        ImageReadingMode.webtoon => Icons.view_day_outlined,
+        ImageReadingMode.doublePage => Icons.menu_book_outlined,
+      };
+
+  Future<void> _stripExifCurrent() async {
+    if (_isVaultEntry(_current)) return;
+    final l10n = AppLocalizations.of(context);
+    try {
+      final native = await _localPathFor(_index);
+      final savedPath = await ImagePrivacyService.stripExifAndSaveCopy(native);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.stripExifDone(savedPath))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
 
   void _onTransformChanged() {
     final zoomed = _transformationController.value.getMaxScaleOnAxis() > 1.02;
@@ -234,11 +308,25 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     if (_zoomed) {
       _resetView();
     }
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-    );
+    if (_readingMode == ImageReadingMode.single) {
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    } else if (_readingMode == ImageReadingMode.doublePage) {
+      if (_spreadController.hasClients) {
+        _spreadController.animateToPage(
+          index ~/ 2,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    } else {
+      setState(() => _index = index);
+    }
   }
 
   void _onPageChanged(int index) {
@@ -1015,7 +1103,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       } else {
         final newIndex = _index.clamp(0, _entries.length - 1);
         _index = newIndex;
-        _pageController.jumpToPage(newIndex);
+        if (_readingMode == ImageReadingMode.single && _pageController.hasClients) {
+          _pageController.jumpToPage(newIndex);
+        } else if (_readingMode == ImageReadingMode.doublePage &&
+            _spreadController.hasClients) {
+          _spreadController.jumpToPage(newIndex ~/ 2);
+        }
         setState(() {});
       }
     } catch (e) {
@@ -1273,6 +1366,12 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             ),
             actions: [
               IconButton(
+                key: const ValueKey('image_reading_mode_btn'),
+                icon: Icon(_readingModeIcon()),
+                tooltip: _readingModeTooltip(AppLocalizations.of(context)),
+                onPressed: _cycleReadingMode,
+              ),
+              IconButton(
                 icon: const Icon(Icons.rotate_right),
                 tooltip: AppLocalizations.of(context).rotate90Shortcut,
                 onPressed: () => setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
@@ -1307,6 +1406,9 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     case 'copy_path':
                       _copyCurrentPath();
                       break;
+                    case 'strip_exif':
+                      _stripExifCurrent();
+                      break;
                     case 'details':
                       _showImageDetails();
                       break;
@@ -1334,6 +1436,17 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                           Icon(Icons.copy_all_outlined, size: 20),
                           SizedBox(width: 10),
                           Text(AppLocalizations.of(context).copyPath),
+                        ],
+                      ),
+                    ),
+                  if (_canStripExifCurrent)
+                    PopupMenuItem(
+                      value: 'strip_exif',
+                      child: Row(
+                        children: [
+                          Icon(Icons.shield_outlined, size: 20),
+                          SizedBox(width: 10),
+                          Text(AppLocalizations.of(context).stripExifAction),
                         ],
                       ),
                     ),
@@ -1388,7 +1501,87 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         : null,
           body: Stack(
             children: [
-              PageView.builder(
+              if (_readingMode == ImageReadingMode.webtoon)
+                InteractiveViewer(
+                  transformationController: _transformationController,
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: ListView.builder(
+                    key: const ValueKey('image_webtoon_list'),
+                    controller: _webtoonController,
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+                      bottom: 24,
+                    ),
+                    itemCount: _entries.length,
+                    itemBuilder: (ctx, i) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _showChrome = !_showChrome),
+                          child: RotatedBox(
+                            quarterTurns: _quarterTurns,
+                            child: _buildImageAt(i, interactive: false),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              else if (_readingMode == ImageReadingMode.doublePage)
+                PageView.builder(
+                  key: const ValueKey('image_double_page_view'),
+                  controller: _spreadController,
+                  physics: _zoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(),
+                  itemCount: (_entries.length + 1) ~/ 2,
+                  onPageChanged: (spreadIdx) {
+                    final next = (spreadIdx * 2).clamp(0, _entries.length - 1);
+                    _onPageChanged(next);
+                  },
+                  itemBuilder: (ctx, spreadIdx) {
+                    final leftIdx = spreadIdx * 2;
+                    final rightIdx = leftIdx + 1;
+                    final isCurrentSpread = spreadIdx == _index ~/ 2;
+                    final spreadContent = Row(
+                      children: [
+                        Expanded(
+                          child: Center(
+                            child: RotatedBox(
+                              quarterTurns: _quarterTurns,
+                              child: _buildImageAt(leftIdx, interactive: isCurrentSpread),
+                            ),
+                          ),
+                        ),
+                        if (rightIdx < _entries.length)
+                          Expanded(
+                            child: Center(
+                              child: RotatedBox(
+                                quarterTurns: _quarterTurns,
+                                child: _buildImageAt(rightIdx, interactive: isCurrentSpread),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                    if (!isCurrentSpread) {
+                      return spreadContent;
+                    }
+                    return GestureDetector(
+                      onTap: () => setState(() => _showChrome = !_showChrome),
+                      child: InteractiveViewer(
+                        transformationController: _transformationController,
+                        minScale: 0.2,
+                        maxScale: 6.0,
+                        panEnabled: _zoomed,
+                        child: spreadContent,
+                      ),
+                    );
+                  },
+                )
+              else
+                PageView.builder(
                 controller: _pageController,
                 physics: _zoomed
                     ? const NeverScrollableScrollPhysics()
@@ -1445,7 +1638,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                 },
               ),
               // Bottom navigation pill with Previous / Position / Next
-              if (multiple && !_zoomed && _showChrome)
+              if (multiple && !_zoomed && _showChrome && _readingMode == ImageReadingMode.single)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1507,7 +1700,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     ),
                   ),
                 ),
-              if (multiple && !_zoomed && _showChrome) ...[
+              if (multiple && !_zoomed && _showChrome && _readingMode != ImageReadingMode.webtoon) ...[
                 Positioned(
                   left: 12,
                   top: 0,
@@ -1519,9 +1712,13 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                       clipBehavior: Clip.antiAlias,
                       child: IconButton(
                         icon: const Icon(Icons.chevron_left, size: 30),
-                        color: _index > 0 ? Colors.white : Colors.white24,
+                        color: (_readingMode == ImageReadingMode.doublePage ? _index >= 2 : _index > 0)
+                            ? Colors.white
+                            : Colors.white24,
                         tooltip: AppLocalizations.of(context).previousImage,
-                        onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
+                        onPressed: (_readingMode == ImageReadingMode.doublePage ? _index >= 2 : _index > 0)
+                            ? () => _goTo(_index - (_readingMode == ImageReadingMode.doublePage ? 2 : 1))
+                            : null,
                       ),
                     ),
                   ),
@@ -1537,9 +1734,21 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                       clipBehavior: Clip.antiAlias,
                       child: IconButton(
                         icon: const Icon(Icons.chevron_right, size: 30),
-                        color: _index < _entries.length - 1 ? Colors.white : Colors.white24,
+                        color: (_readingMode == ImageReadingMode.doublePage
+                                ? (_index ~/ 2 + 1) * 2 < _entries.length
+                                : _index < _entries.length - 1)
+                            ? Colors.white
+                            : Colors.white24,
                         tooltip: AppLocalizations.of(context).nextImage,
-                        onPressed: _index < _entries.length - 1 ? () => _goTo(_index + 1) : null,
+                        onPressed: (_readingMode == ImageReadingMode.doublePage
+                                ? (_index ~/ 2 + 1) * 2 < _entries.length
+                                : _index < _entries.length - 1)
+                            ? () => _goTo(
+                                  _readingMode == ImageReadingMode.doublePage
+                                      ? ((_index ~/ 2) + 1) * 2
+                                      : _index + 1,
+                                )
+                            : null,
                       ),
                     ),
                   ),

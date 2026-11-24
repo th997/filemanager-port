@@ -3,7 +3,11 @@ package com.github.th997.filemanager
 import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
@@ -29,9 +33,16 @@ class MainActivity : FlutterFragmentActivity() {
         private const val ACTION_OI_PICK_FILE = "org.openintents.action.PICK_FILE"
         private const val VAULT_KEYSTORE_ALIAS = "fp_filemanager_vault_dek_key"
         private const val VAULT_KEYSTORE_PREFS = "fm_vault_keystore"
+        private const val EXTRA_SHORTCUT_ID = "fm_shortcut_id"
+        private const val EXTRA_SHORTCUT_LABEL = "fm_shortcut_label"
+        private const val EXTRA_SHORTCUT_TARGET_TYPE = "fm_shortcut_target_type"
+        private const val EXTRA_SHORTCUT_ROOT = "fm_shortcut_root"
+        private const val EXTRA_SHORTCUT_PATH = "fm_shortcut_path"
     }
 
     private var openFileChannel: MethodChannel? = null
+    private var shortcutsChannel: MethodChannel? = null
+    private var pendingShortcut: Map<String, Any?>? = null
     private var pendingFilePath: String? = null
     private var pendingPickRequest: Map<String, Any?>? = null
     private var pendingPickAction: String? = null
@@ -134,6 +145,102 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.github.th997.filemanager/background_keepalive"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val title = call.argument<String>("title")
+                    val detail = call.argument<String>("detail")
+                    val intent = Intent(this, TransferForegroundService::class.java).apply {
+                        action = TransferForegroundService.ACTION_START
+                        if (title != null) putExtra(TransferForegroundService.EXTRA_TITLE, title)
+                        if (detail != null) putExtra(TransferForegroundService.EXTRA_DETAIL, detail)
+                    }
+                    try {
+                        androidx.core.content.ContextCompat.startForegroundService(this, intent)
+                        result.success(true)
+                    } catch (_: Throwable) {
+                        result.success(false)
+                    }
+                }
+                "stop" -> {
+                    try {
+                        stopService(Intent(this, TransferForegroundService::class.java))
+                        result.success(true)
+                    } catch (_: Throwable) {
+                        result.success(false)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        val scChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.github.th997.filemanager/shortcuts"
+        )
+        shortcutsChannel = scChannel
+        scChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isSupported" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val mgr = getSystemService(ShortcutManager::class.java)
+                        result.success(mgr?.isRequestPinShortcutSupported == true)
+                    } else {
+                        result.success(false)
+                    }
+                }
+                "pinShortcut" -> {
+                    pinHomeScreenShortcut(call, result)
+                }
+                "getInitialShortcut" -> {
+                    val sc = pendingShortcut
+                    pendingShortcut = null
+                    result.success(sc)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun pinHomeScreenShortcut(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            result.success(false)
+            return
+        }
+        val mgr = getSystemService(ShortcutManager::class.java)
+        if (mgr == null || !mgr.isRequestPinShortcutSupported) {
+            result.success(false)
+            return
+        }
+        val id = call.argument<String>("id")?.takeIf { it.isNotEmpty() } ?: "fp_shortcut"
+        val label = call.argument<String>("label")?.takeIf { it.isNotEmpty() } ?: "FP Files"
+        val targetType = call.argument<String>("targetType") ?: "folder"
+        val root = call.argument<String>("root") ?: ""
+        val path = call.argument<String>("path") ?: ""
+
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(EXTRA_SHORTCUT_ID, id)
+            putExtra(EXTRA_SHORTCUT_LABEL, label)
+            putExtra(EXTRA_SHORTCUT_TARGET_TYPE, targetType)
+            putExtra(EXTRA_SHORTCUT_ROOT, root)
+            putExtra(EXTRA_SHORTCUT_PATH, path)
+        }
+
+        val info = ShortcutInfo.Builder(this, id)
+            .setShortLabel(label)
+            .setLongLabel(label)
+            .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(launchIntent)
+            .build()
+
+        val accepted = mgr.requestPinShortcut(info, null)
+        result.success(accepted)
     }
 
     private fun getOrCreateVaultSecretKey(): SecretKey {
@@ -197,6 +304,29 @@ class MainActivity : FlutterFragmentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         val action = intent.action
+
+        val shortcutType = intent.getStringExtra(EXTRA_SHORTCUT_TARGET_TYPE)
+        if (!shortcutType.isNullOrEmpty()) {
+            val payload = mapOf<String, Any?>(
+                "id" to (intent.getStringExtra(EXTRA_SHORTCUT_ID) ?: ""),
+                "label" to (intent.getStringExtra(EXTRA_SHORTCUT_LABEL) ?: ""),
+                "targetType" to shortcutType,
+                "root" to (intent.getStringExtra(EXTRA_SHORTCUT_ROOT) ?: ""),
+                "path" to (intent.getStringExtra(EXTRA_SHORTCUT_PATH) ?: ""),
+            )
+            pendingShortcut = payload
+            shortcutsChannel?.invokeMethod("onShortcutOpened", payload, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    if (result == true && pendingShortcut == payload) {
+                        pendingShortcut = null
+                    }
+                }
+
+                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {}
+                override fun notImplemented() {}
+            })
+            return
+        }
 
         // External file picker requests (ACTION_GET_CONTENT / ACTION_PICK /
         // ACTION_OPEN_DOCUMENT / OI PICK_FILE)

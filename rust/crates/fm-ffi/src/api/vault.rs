@@ -256,6 +256,7 @@ pub async fn vault_unlock_with_system_key(
 }
 
 fn cleanup_vault_runtime(vault_id: &str) {
+    crate::api::servers::stop_webdav_for_vault(vault_id);
     stop_media_streams_for_vault(vault_id);
     invalidate_dir_cache_for_vault(vault_id);
     VfsRegistry::global().invalidate_vault(vault_id);

@@ -400,6 +400,9 @@ pub async fn pin_remote_file(
     remote_path: String,
     max_cache_bytes: Option<u64>,
 ) -> Result<PinnedFileDto, String> {
+    if remote_root.starts_with("vault://") || remote_root.starts_with("archive://vault://") {
+        return Err("privacy vault files cannot be cached plaintext for offline pin".to_string());
+    }
     let db = open_db(&db_path)?;
     let backend = VfsRegistry::global().get_or_create(&remote_root).await?;
     let vfs_path = VfsPath::from_slash_path(&remote_path);
@@ -425,7 +428,7 @@ pub async fn pin_remote_file(
         .map(|e| format!(".{e}"))
         .unwrap_or_default();
     let local_path = cache_dir.join(format!("{key}{ext}"));
-    let tmp_path = cache_dir.join(format!(".{key}.part"));
+    let tmp_path = cache_dir.join(format!(".{key}.{}.part", uuid::Uuid::new_v4()));
 
     let mut reader = backend.open_read(&vfs_path).await.map_err(|e| e.to_string())?;
     let mut out = tokio::fs::File::create(&tmp_path)
@@ -441,6 +444,9 @@ pub async fn pin_remote_file(
         .await
         .map_err(|e| e.to_string())?;
     drop(out);
+    if tokio::fs::try_exists(&local_path).await.unwrap_or(false) {
+        let _ = tokio::fs::remove_file(&local_path).await;
+    }
     tokio::fs::rename(&tmp_path, &local_path)
         .await
         .map_err(|e| {
@@ -449,6 +455,19 @@ pub async fn pin_remote_file(
         })?;
 
     let local_str = local_path.to_string_lossy().to_string();
+    if let Some(limit) = max_cache_bytes {
+        if limit > 0 {
+            let budget_for_existing = limit.saturating_sub(copied);
+            if let Ok(evicted) = db.evict_pinned_lru(budget_for_existing) {
+                for p in evicted {
+                    if p != local_str {
+                        let _ = std::fs::remove_file(p);
+                    }
+                }
+            }
+        }
+    }
+
     db.upsert_pinned_file(
         &remote_root,
         &remote_path,
@@ -458,18 +477,6 @@ pub async fn pin_remote_file(
         modified_millis,
     )
     .map_err(|e| e.to_string())?;
-
-    if let Some(limit) = max_cache_bytes {
-        if limit > 0 {
-            if let Ok(evicted) = db.evict_pinned_lru(limit) {
-                for p in evicted {
-                    if p != local_str {
-                        let _ = std::fs::remove_file(p);
-                    }
-                }
-            }
-        }
-    }
 
     let record = db
         .touch_pinned_file(&remote_root, &remote_path)
@@ -526,4 +533,240 @@ pub fn evict_pinned_cache(db_path: String, max_bytes: u64) -> Result<u32, String
         let _ = std::fs::remove_file(path);
     }
     Ok(count)
+}
+
+/// Reports whether at-rest credential encryption in SQLite (`fm-index`) is backed
+/// by an active keyring or persisted master key rather than plaintext fallback.
+#[flutter_rust_bridge::frb(sync)]
+pub fn is_secret_encryption_active(db_path: String) -> bool {
+    let data_dir = Path::new(&db_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    fm_index::secret::is_encryption_active_for_dir(data_dir)
+}
+
+#[derive(Debug, Clone)]
+pub struct PinnedSyncStatusDto {
+    /// `"synced"`, `"remote_newer"`, `"local_modified"`, `"conflict"`,
+    /// `"missing_local"`, or `"remote_error"`.
+    pub status: String,
+    pub remote_size: Option<u64>,
+    pub remote_modified_millis: Option<i64>,
+    pub local_size: Option<u64>,
+    pub local_modified_millis: Option<i64>,
+    pub detail: Option<String>,
+}
+
+/// Compare an offline-pinned file's local cached copy against its remote source.
+pub async fn check_pinned_file_status(
+    db_path: String,
+    remote_root: String,
+    remote_path: String,
+) -> Result<PinnedSyncStatusDto, String> {
+    let db = open_db(&db_path)?;
+    let rec = db
+        .list_pinned_files()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|r| r.remote_root == remote_root && r.remote_path == remote_path)
+        .ok_or_else(|| "pinned record not found".to_string())?;
+
+    let local_meta = tokio::fs::metadata(&rec.local_cache_path).await.ok();
+    let Some(local_meta) = local_meta else {
+        return Ok(PinnedSyncStatusDto {
+            status: "missing_local".to_string(),
+            remote_size: Some(rec.size),
+            remote_modified_millis: rec.modified_millis,
+            local_size: None,
+            local_modified_millis: None,
+            detail: None,
+        });
+    };
+
+    let local_size = local_meta.len();
+    let local_mtime = local_meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+    let local_changed = local_size != rec.size
+        || local_mtime
+            .map(|m| m > rec.pinned_at.saturating_add(2000))
+            .unwrap_or(false);
+
+    let backend = match VfsRegistry::global().get_or_create(&remote_root).await {
+        Ok(b) => b,
+        Err(e) => {
+            return Ok(PinnedSyncStatusDto {
+                status: "remote_error".to_string(),
+                remote_size: Some(rec.size),
+                remote_modified_millis: rec.modified_millis,
+                local_size: Some(local_size),
+                local_modified_millis: local_mtime,
+                detail: Some(e),
+            });
+        }
+    };
+    let vfs_path = VfsPath::from_slash_path(&remote_path);
+    let remote_stat = match backend.stat(&vfs_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(PinnedSyncStatusDto {
+                status: "remote_error".to_string(),
+                remote_size: Some(rec.size),
+                remote_modified_millis: rec.modified_millis,
+                local_size: Some(local_size),
+                local_modified_millis: local_mtime,
+                detail: Some(e.to_string()),
+            });
+        }
+    };
+
+    let remote_size = remote_stat.size;
+    let remote_mtime = remote_stat
+        .modified
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+    let remote_changed = remote_size.map(|sz| sz != rec.size).unwrap_or(false)
+        || match (remote_mtime, rec.modified_millis) {
+            (Some(rm), Some(pinned_rm)) => (rm - pinned_rm).abs() > 2000,
+            _ => false,
+        };
+
+    let status = match (local_changed, remote_changed) {
+        (true, true) => "conflict",
+        (true, false) => "local_modified",
+        (false, true) => "remote_newer",
+        (false, false) => "synced",
+    };
+
+    Ok(PinnedSyncStatusDto {
+        status: status.to_string(),
+        remote_size,
+        remote_modified_millis: remote_mtime,
+        local_size: Some(local_size),
+        local_modified_millis: local_mtime,
+        detail: None,
+    })
+}
+
+/// Write a locally edited offline-pinned copy back to the remote location and
+/// refresh the pinned baseline metadata.
+pub async fn push_pinned_file(
+    db_path: String,
+    remote_root: String,
+    remote_path: String,
+) -> Result<PinnedFileDto, String> {
+    let db = open_db(&db_path)?;
+    let rec = db
+        .list_pinned_files()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|r| r.remote_root == remote_root && r.remote_path == remote_path)
+        .ok_or_else(|| "pinned record not found".to_string())?;
+
+    let backend = VfsRegistry::global().get_or_create(&remote_root).await?;
+    let vfs_path = VfsPath::from_slash_path(&remote_path);
+    let mut reader = tokio::fs::File::open(&rec.local_cache_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut writer = backend
+        .open_write(&vfs_path, fm_core::WriteMode::Truncate)
+        .await
+        .map_err(|e| e.to_string())?;
+    let written = tokio::io::copy(&mut reader, &mut writer)
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::io::AsyncWriteExt::shutdown(&mut writer)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let remote_mtime = backend
+        .stat(&vfs_path)
+        .await
+        .ok()
+        .and_then(|s| s.modified)
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+
+    db.upsert_pinned_file(
+        &remote_root,
+        &remote_path,
+        &rec.display_name,
+        &rec.local_cache_path,
+        written,
+        remote_mtime,
+    )
+    .map_err(|e| e.to_string())?;
+
+    crate::api::file_manager::invalidate_dir_cache(&remote_root);
+    let updated = db
+        .touch_pinned_file(&remote_root, &remote_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "failed to read back pushed pinned file".to_string())?;
+    Ok(PinnedFileDto::from(updated))
+}
+
+/// Encrypt a cross-device migration JSON bundle (remote connections, bookmarks,
+/// preferences) with Argon2id + AES-256-GCM.
+#[flutter_rust_bridge::frb(sync)]
+pub fn encrypt_migration_bundle(plaintext_json: String, password: String) -> Result<String, String> {
+    let (salt_b64, nonce_b64, ct_b64) =
+        fm_vault::crypto::encrypt_portable_secret(plaintext_json.as_bytes(), &password)
+            .map_err(|e| e.to_string())?;
+    let envelope = serde_json::json!({
+        "format": "fp-migration-v1",
+        "salt": salt_b64,
+        "nonce": nonce_b64,
+        "ciphertext": ct_b64,
+    });
+    serde_json::to_string_pretty(&envelope).map_err(|e| e.to_string())
+}
+
+/// Decrypt an encrypted cross-device migration bundle produced by
+/// [`encrypt_migration_bundle`].
+#[flutter_rust_bridge::frb(sync)]
+pub fn decrypt_migration_bundle(envelope_json: String, password: String) -> Result<String, String> {
+    let val: serde_json::Value =
+        serde_json::from_str(&envelope_json).map_err(|e| format!("invalid migration JSON: {e}"))?;
+    let fmt = val.get("format").and_then(|v| v.as_str()).unwrap_or("");
+    if fmt != "fp-migration-v1" {
+        return Err("unsupported migration bundle format".to_string());
+    }
+    let salt_b64 = val
+        .get("salt")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing migration salt".to_string())?;
+    let nonce_b64 = val
+        .get("nonce")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing migration nonce".to_string())?;
+    let ct_b64 = val
+        .get("ciphertext")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing migration ciphertext".to_string())?;
+    let pt = fm_vault::crypto::decrypt_portable_secret(salt_b64, nonce_b64, ct_b64, &password)
+        .map_err(|_| "incorrect password or corrupted migration bundle".to_string())?;
+    String::from_utf8(pt).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_bundle_encrypts_decrypts_and_rejects_wrong_password() {
+        let payload = r#"{"version":2,"remotes":[{"id":"r1","password":"secret"}],"bookmarks":[]}"#;
+        let envelope = encrypt_migration_bundle(payload.to_string(), "correct-horse-99".into())
+            .expect("encrypt migration bundle");
+        assert!(!envelope.contains("secret"));
+        assert!(envelope.contains("fp-migration-v1"));
+
+        let decrypted =
+            decrypt_migration_bundle(envelope.clone(), "correct-horse-99".into()).expect("decrypt");
+        assert_eq!(decrypted, payload);
+
+        let err = decrypt_migration_bundle(envelope, "wrong-password".into()).unwrap_err();
+        assert!(err.contains("incorrect password"), "{err}");
+    }
 }

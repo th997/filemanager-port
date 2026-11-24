@@ -434,6 +434,79 @@ impl Vfs for FtpFs {
         Ok(entries)
     }
 
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let (entries, has_more, _) = self.list_paged_with_total(dir, page, page_size).await?;
+        Ok((entries, has_more))
+    }
+
+    async fn list_paged_with_total(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, Option<u32>)> {
+        let mut guard = self.client.lock().await;
+        if guard.is_none() {
+            *guard = Some(Self::connect_client(&self.config).await?);
+        }
+
+        let ftp_path = self.resolve_path(dir);
+        let lines = cached_op!(guard, &self.config, ftp => ftp.list(Some(&ftp_path)))
+            .map_err(|e| Self::ftp_error(dir, e))?;
+
+        let mut parsed = Vec::new();
+        for line in lines {
+            if let Ok(f) = ListParser::parse_posix(&line).or_else(|_| ListParser::parse_dos(&line))
+            {
+                let name = f.name();
+                if name == "." || name == ".." {
+                    continue;
+                }
+                parsed.push((
+                    f.is_directory(),
+                    name.to_string(),
+                    f.size() as u64,
+                    f.modified(),
+                ));
+            }
+        }
+        parsed.sort_unstable_by(|a, b| {
+            fm_core::compare_dir_and_name(a.0, &a.1, b.0, &b.1, true)
+        });
+
+        let total = parsed.len();
+        let page = page.max(1) as usize;
+        let page_size = page_size.max(1) as usize;
+        let skip = (page - 1).saturating_mul(page_size);
+        let has_more = skip.saturating_add(page_size) < total;
+        let entries = parsed
+            .into_iter()
+            .skip(skip)
+            .take(page_size)
+            .map(|(is_dir, name, sz, modified)| {
+                let child_path = dir.join(&name);
+                Entry {
+                    hidden: name.starts_with('.'),
+                    name,
+                    path: child_path,
+                    kind: if is_dir { EntryKind::Dir } else { EntryKind::File },
+                    size: if is_dir { None } else { Some(sz) },
+                    modified: Some(modified),
+                    mode: None,
+                    is_symlink: false,
+                    mime: None,
+                }
+            })
+            .collect();
+
+        Ok((entries, has_more, Some(total as u32)))
+    }
+
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         let mut guard = self.client.lock().await;
         if guard.is_none() {

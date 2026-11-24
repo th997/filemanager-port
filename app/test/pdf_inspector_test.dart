@@ -152,5 +152,50 @@ endcmap
       expect(rangePages.length, 1);
       expect(rangePages[0], contains('AB'));
     });
+
+    test('unpacks /ObjStm compressed objects for outline, page count, and text, and detects /Encrypt', () {
+      const obj10 = '<< /Type /Page /Parent 2 0 R /Contents 11 0 R >>';
+      const obj11 = '<< /Type /Catalog /Pages 2 0 R /Outlines 12 0 R >>';
+      const obj12 = '<< /Type /Outlines /First 13 0 R /Last 13 0 R >>';
+      const obj13 = '<< /Title (Compressed Chapter) /Parent 12 0 R /Dest [10 0 R /Fit] >>';
+      final bodyBuf = StringBuffer();
+      final offsets = <(int, int)>[];
+      for (final item in [(10, obj10), (11, obj11), (12, obj12), (13, obj13)]) {
+        offsets.add((item.$1, bodyBuf.length));
+        bodyBuf.write(item.$2);
+      }
+      final header = '${offsets.map((e) => '${e.$1} ${e.$2}').join(' ')} ';
+      final first = header.length;
+      final objStmCompressed = zlib.encode(latin1.encode('$header$bodyBuf'));
+
+      final pdf = _buildSyntheticPdf([
+        (id: 2, body: latin1.encode('<< /Type /Pages /Kids [10 0 R] /Count 1 >>')),
+        (
+          id: 9,
+          body: [
+            ...latin1.encode(
+              '<< /Type /ObjStm /N 4 /First $first /Length ${objStmCompressed.length} /Filter /FlateDecode >>\nstream\n',
+            ),
+            ...objStmCompressed,
+            ...latin1.encode('\nendstream'),
+          ],
+        ),
+      ]);
+
+      expect(PdfDocumentInspector.isEncrypted(pdf), isFalse);
+      expect(PdfDocumentInspector.estimatePageCount(pdf), 1);
+      final outline = PdfDocumentInspector.extractOutline(pdf, 1);
+      expect(outline.length, 1);
+      expect(outline.first.title, 'Compressed Chapter');
+      expect(outline.first.pageIndex, 0);
+
+      final encryptedPdf = _buildSyntheticPdf([
+        (id: 1, body: latin1.encode('<< /Type /Catalog /Pages 2 0 R >>')),
+        (id: 2, body: latin1.encode('<< /Type /Pages /Count 3 >>')),
+        (id: 99, body: latin1.encode('<< /Filter /Standard /V 2 /R 3 /Encrypt << /O <00> >> >>')),
+      ]);
+      expect(PdfDocumentInspector.isEncrypted(encryptedPdf), isTrue);
+      expect(PdfDocumentInspector.estimatePageCount(encryptedPdf), 3);
+    });
   });
 }

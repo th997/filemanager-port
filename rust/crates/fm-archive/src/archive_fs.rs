@@ -5,8 +5,9 @@ use fm_core::{Capabilities, Entry, EntryKind, VfsPath, WriteMode};
 use fm_vfs::{Vfs, VfsError, VfsResult};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::io::SyncIoBridge;
 
@@ -34,8 +35,70 @@ fn normalize_archive_path(raw: &str) -> Option<VfsPath> {
     Some(VfsPath::from_slash_path(&parts.join("/")))
 }
 
+#[derive(Clone)]
+struct SharedBytes(Arc<Vec<u8>>);
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+#[derive(Clone)]
+enum ArchiveSource {
+    File(PathBuf),
+    Memory(SharedBytes),
+}
+
+enum ArchiveReader {
+    File(std::io::BufReader<File>),
+    Memory(std::io::Cursor<SharedBytes>),
+}
+
+impl Read for ArchiveReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::File(r) => r.read(buf),
+            Self::Memory(c) => c.read(buf),
+        }
+    }
+}
+
+impl Seek for ArchiveReader {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        match self {
+            Self::File(r) => r.seek(pos),
+            Self::Memory(c) => c.seek(pos),
+        }
+    }
+}
+
+impl ArchiveSource {
+    fn open_reader(&self) -> std::io::Result<(ArchiveReader, u64)> {
+        match self {
+            Self::File(path) => {
+                let file = File::open(path)?;
+                let len = file.metadata()?.len();
+                Ok((ArchiveReader::File(std::io::BufReader::with_capacity(128 * 1024, file)), len))
+            }
+            Self::Memory(bytes) => {
+                let len = bytes.0.len() as u64;
+                Ok((ArchiveReader::Memory(std::io::Cursor::new(bytes.clone())), len))
+            }
+        }
+    }
+
+    fn byte_len(&self) -> u64 {
+        match self {
+            Self::File(path) => std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+            Self::Memory(bytes) => bytes.0.len() as u64,
+        }
+    }
+}
+
 pub struct ArchiveFs {
-    archive_path: PathBuf,
+    archive_name: String,
+    source: ArchiveSource,
     format: ArchiveFormat,
     password: Option<String>,
     dir_entries: HashMap<VfsPath, Vec<Entry>>,
@@ -99,15 +162,42 @@ impl ArchiveFs {
         let name = archive_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("");
-        let format = ArchiveFormat::from_name(name).ok_or(VfsError::Unsupported {
+            .unwrap_or("")
+            .to_string();
+        let format = ArchiveFormat::from_name(&name).ok_or(VfsError::Unsupported {
             operation: "unsupported archive format",
         })?;
 
         let password = password.filter(|p| !p.is_empty());
 
         let mut fs = Self {
-            archive_path,
+            archive_name: name,
+            source: ArchiveSource::File(archive_path),
+            format,
+            password,
+            dir_entries: HashMap::new(),
+            file_map: HashMap::new(),
+        };
+
+        fs.build_index()?;
+        Ok(fs)
+    }
+
+    /// Open an archive directly from an in-memory buffer so sensitive archives
+    /// (e.g. inside encrypted privacy vaults) never touch temporary disk storage.
+    pub fn open_bytes_with_password(
+        name: &str,
+        data: Vec<u8>,
+        password: Option<String>,
+    ) -> VfsResult<Self> {
+        let format = ArchiveFormat::from_name(name).ok_or(VfsError::Unsupported {
+            operation: "unsupported archive format",
+        })?;
+        let password = password.filter(|p| !p.is_empty());
+
+        let mut fs = Self {
+            archive_name: name.to_string(),
+            source: ArchiveSource::Memory(SharedBytes(Arc::new(data))),
             format,
             password,
             dir_entries: HashMap::new(),
@@ -128,12 +218,11 @@ impl ArchiveFs {
     }
 
     fn build_zip_index(&mut self) -> VfsResult<()> {
-        let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+        let (reader, _) = self.source.open_reader().map_err(|e| VfsError::Backend {
             path: VfsPath::root(),
             source: e,
         })?;
-        let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
-        let mut zip = zip::ZipArchive::new(buffered).map_err(|e| VfsError::Backend {
+        let mut zip = zip::ZipArchive::new(reader).map_err(|e| VfsError::Backend {
             path: VfsPath::root(),
             source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
         })?;
@@ -226,20 +315,19 @@ impl ArchiveFs {
     }
 
     fn build_tar_index(&mut self, is_gz: bool) -> VfsResult<()> {
-        let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+        let (reader, _) = self.source.open_reader().map_err(|e| VfsError::Backend {
             path: VfsPath::root(),
             source: e,
         })?;
-        let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
 
         // Read errors must propagate: swallowing them here made a truncated
         // or corrupt tar open successfully as an "empty" archive.
         let entries_found = if is_gz {
-            let gz = flate2::read::GzDecoder::new(buffered);
+            let gz = flate2::read::GzDecoder::new(reader);
             let mut archive = tar::Archive::new(gz);
             Self::collect_tar_entries(&mut archive)?
         } else {
-            let mut archive = tar::Archive::new(buffered);
+            let mut archive = tar::Archive::new(reader);
             Self::collect_tar_entries(&mut archive)?
         };
 
@@ -290,7 +378,11 @@ impl ArchiveFs {
             Some(p) => sevenz_rust::Password::from(p.as_str()),
             None => sevenz_rust::Password::empty(),
         };
-        let archive = sevenz_rust::Archive::open_with_password(&self.archive_path, &password)
+        let (mut reader, len) = self.source.open_reader().map_err(|e| VfsError::Backend {
+            path: VfsPath::root(),
+            source: e,
+        })?;
+        let archive = sevenz_rust::Archive::read(&mut reader, len, password.as_ref())
             .map_err(|e| {
                 let msg = match e {
                     sevenz_rust::Error::PasswordRequired => {
@@ -423,7 +515,7 @@ impl ArchiveFs {
             .ok_or_else(|| VfsError::NotFound { path: path.clone() })?;
         let index = info.index;
         let format = self.format;
-        let archive_path = self.archive_path.clone();
+        let source = self.source.clone();
         let password = self.password.clone();
         let target_name = path.to_slash_string().trim_start_matches('/').to_string();
 
@@ -434,7 +526,7 @@ impl ArchiveFs {
             let mut bridge = SyncIoBridge::new_with_handle(writer, handle);
             let res = pump_entry(
                 format,
-                &archive_path,
+                &source,
                 password.as_deref(),
                 index,
                 &target_name,
@@ -462,12 +554,11 @@ impl ArchiveFs {
 
         match self.format {
             ArchiveFormat::Zip | ArchiveFormat::Epub => {
-                let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+                let (reader, _) = self.source.open_reader().map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
                 })?;
-                let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
-                let mut zip = zip::ZipArchive::new(buffered).map_err(|e| VfsError::Backend {
+                let mut zip = zip::ZipArchive::new(reader).map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
                 })?;
@@ -480,12 +571,11 @@ impl ArchiveFs {
                 Ok(buf)
             }
             ArchiveFormat::Tar => {
-                let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+                let (reader, _) = self.source.open_reader().map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
                 })?;
-                let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
-                let mut archive = tar::Archive::new(buffered);
+                let mut archive = tar::Archive::new(reader);
                 let mut entries = archive.entries().map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
@@ -502,12 +592,11 @@ impl ArchiveFs {
                 }
             }
             ArchiveFormat::TarGz => {
-                let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+                let (reader, _) = self.source.open_reader().map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
                 })?;
-                let buffered = std::io::BufReader::with_capacity(128 * 1024, file);
-                let gz = flate2::read::GzDecoder::new(buffered);
+                let gz = flate2::read::GzDecoder::new(reader);
                 let mut archive = tar::Archive::new(gz);
                 let mut entries = archive.entries().map_err(|e| VfsError::Backend {
                     path: path.clone(),
@@ -529,14 +618,12 @@ impl ArchiveFs {
                 let target_name = path.to_slash_string().trim_start_matches('/').to_string();
                 // Untrusted headers can declare a bomb entry; cap the bytes
                 // actually inflated for this read the same way extraction does.
-                let archive_len = std::fs::metadata(&self.archive_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let archive_len = self.source.byte_len();
                 let limit = archive_len
                     .saturating_mul(200)
                     .saturating_add(64 * 1024 * 1024)
                     .min(32 * 1024 * 1024 * 1024);
-                let file = File::open(&self.archive_path).map_err(|e| VfsError::Backend {
+                let (reader, _) = self.source.open_reader().map_err(|e| VfsError::Backend {
                     path: path.clone(),
                     source: e,
                 })?;
@@ -545,7 +632,7 @@ impl ArchiveFs {
                     None => sevenz_rust::Password::empty(),
                 };
                 sevenz_rust::decompress_with_extract_fn_and_password(
-                    file,
+                    reader,
                     "",
                     pw,
                     |entry, reader, _dest| {
@@ -678,7 +765,7 @@ fn map_7z_error(path: &VfsPath, err: sevenz_rust::Error) -> VfsError {
 #[allow(clippy::too_many_arguments)]
 fn pump_entry(
     format: ArchiveFormat,
-    archive_path: &std::path::Path,
+    source: &ArchiveSource,
     password: Option<&str>,
     index: usize,
     target_name: &str,
@@ -717,8 +804,8 @@ fn pump_entry(
 
     match format {
         ArchiveFormat::Zip | ArchiveFormat::Epub => {
-            let file = File::open(archive_path).map_err(open_err)?;
-            let mut zip = zip::ZipArchive::new(file).map_err(|e| VfsError::Backend {
+            let (reader, _) = source.open_reader().map_err(open_err)?;
+            let mut zip = zip::ZipArchive::new(reader).map_err(|e| VfsError::Backend {
                 path: VfsPath::root(),
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
             })?;
@@ -726,9 +813,9 @@ fn pump_entry(
             copy_from(&mut entry, sink).map_err(open_err)?;
         }
         ArchiveFormat::Tar | ArchiveFormat::TarGz => {
-            let file = File::open(archive_path).map_err(open_err)?;
+            let (reader, _) = source.open_reader().map_err(open_err)?;
             if format == ArchiveFormat::TarGz {
-                let gz = flate2::read::GzDecoder::new(file);
+                let gz = flate2::read::GzDecoder::new(reader);
                 let mut archive = tar::Archive::new(gz);
                 let mut entries = archive.entries().map_err(open_err)?;
                 match entries.nth(index) {
@@ -737,7 +824,7 @@ fn pump_entry(
                     None => return Err(VfsError::NotFound { path: VfsPath::root() }),
                 }
             } else {
-                let mut archive = tar::Archive::new(file);
+                let mut archive = tar::Archive::new(reader);
                 let mut entries = archive.entries().map_err(open_err)?;
                 match entries.nth(index) {
                     Some(Ok(mut entry)) => copy_from(&mut entry, sink).map_err(open_err)?,
@@ -749,13 +836,13 @@ fn pump_entry(
         ArchiveFormat::SevenZip => {
             // Solid archives must be decompressed from the start; the callback
             // skips the prefix of the wanted entry and then stops the scan.
-            let file = File::open(archive_path).map_err(open_err)?;
+            let (reader, _) = source.open_reader().map_err(open_err)?;
             let pw = match password {
                 Some(p) if !p.is_empty() => sevenz_rust::Password::from(p),
                 _ => sevenz_rust::Password::empty(),
             };
             sevenz_rust::decompress_with_extract_fn_and_password(
-                file,
+                reader,
                 "",
                 pw,
                 |entry, reader, _dest| {
@@ -791,12 +878,7 @@ impl Vfs for ArchiveFs {
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         if path.is_root() {
             return Ok(Entry {
-                name: self
-                    .archive_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string(),
+                name: self.archive_name.clone(),
                 path: VfsPath::root(),
                 kind: EntryKind::Dir,
                 size: None,

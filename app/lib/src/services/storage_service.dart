@@ -210,7 +210,124 @@ class StorageService {
     return count;
   }
 
+  /// Exports bookmarks, preferences, and (optionally) remote connections as an
+  /// Argon2id + AES-256-GCM encrypted JSON envelope (`.fmbak`) for device
+  /// migration. Vault master keys are intentionally excluded.
+  Future<String> exportEncryptedMigrationBundle(
+    String password, {
+    bool includeRemotes = true,
+  }) async {
+    ensureInitialized();
+    if (password.isEmpty) {
+      throw ArgumentError('Migration backup password must not be empty.');
+    }
+    final bookmarks = await getBookmarks();
+    final preferences = PreferencesService.instance.exportPreferencesMap();
+    final remotes = includeRemotes ? await getRemotes() : const <rem_api.RemoteConfigDto>[];
+    final payload = <String, dynamic>{
+      'version': 2,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'remotes': remotes.map(_remoteConfigToMap).toList(),
+      'bookmarks': bookmarks.map(_bookmarkToMap).toList(),
+      'preferences': preferences,
+    };
+    return meta_api.encryptMigrationBundle(
+      plaintextJson: jsonEncode(payload),
+      password: password,
+    );
+  }
+
+  /// Decrypts and imports a `.fmbak` migration bundle created by
+  /// [exportEncryptedMigrationBundle], restoring remote connections,
+  /// bookmarks, and portable preferences.
+  Future<({int remotes, int bookmarks, int preferences})>
+      importEncryptedMigrationBundle(
+    String envelopeJson,
+    String password,
+  ) async {
+    ensureInitialized();
+    if (password.isEmpty) {
+      throw ArgumentError('Migration backup password must not be empty.');
+    }
+    final plaintext = meta_api.decryptMigrationBundle(
+      envelopeJson: envelopeJson,
+      password: password,
+    );
+    final decoded = jsonDecode(plaintext);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid migration backup payload.');
+    }
+    final remotesRaw = decoded['remotes'];
+    var remotesCount = 0;
+    if (remotesRaw is List && remotesRaw.isNotEmpty) {
+      remotesCount = await importRemotesJson(jsonEncode(remotesRaw));
+    } else {
+      lastImportFailures = [];
+    }
+    final baseResult = await importAppConfigBundleJson(
+      jsonEncode(<String, dynamic>{
+        'bookmarks': decoded['bookmarks'] ?? const <dynamic>[],
+        'preferences': decoded['preferences'] ?? const <String, dynamic>{},
+      }),
+    );
+    return (
+      remotes: remotesCount,
+      bookmarks: baseResult.bookmarks,
+      preferences: baseResult.preferences,
+    );
+  }
+
   // Bookmarks
+  /// Exports bookmarks and portable app preferences as a single JSON bundle
+  /// for cross-device migration (excludes vault secrets and window bounds).
+  Future<String> exportAppConfigBundleJson() async {
+    final bookmarks = await getBookmarks();
+    final bundle = {
+      'version': 1,
+      'bookmarks': bookmarks
+          .map((b) => {
+                'name': b.name,
+                'root': b.root,
+                'path': b.path,
+              })
+          .toList(),
+      'preferences': PreferencesService.instance.exportPreferencesMap(),
+    };
+    return const JsonEncoder.withIndent('  ').convert(bundle);
+  }
+
+  /// Imports bookmarks and portable preferences from a JSON bundle produced by
+  /// [exportAppConfigBundleJson]. Returns `(bookmarksImported, prefsImported)`.
+  Future<({int bookmarks, int preferences})> importAppConfigBundleJson(
+    String jsonStr,
+  ) async {
+    final decoded = jsonDecode(jsonStr);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid configuration bundle JSON');
+    }
+    int bmCount = 0;
+    final rawBookmarks = decoded['bookmarks'];
+    if (rawBookmarks is List) {
+      for (final item in rawBookmarks) {
+        if (item is! Map) continue;
+        final name = item['name']?.toString() ?? '';
+        final root = item['root']?.toString() ?? '';
+        final path = item['path']?.toString() ?? '';
+        if (name.isEmpty || root.isEmpty) continue;
+        try {
+          await addBookmark(name: name, root: root, path: path);
+          bmCount++;
+        } catch (_) {}
+      }
+    }
+    int prefCount = 0;
+    final rawPrefs = decoded['preferences'];
+    if (rawPrefs is Map<String, dynamic>) {
+      prefCount = PreferencesService.instance.importPreferencesMap(rawPrefs);
+    }
+    return (bookmarks: bmCount, preferences: prefCount);
+  }
+
   Future<List<meta_api.BookmarkDto>> getBookmarks() async {
     ensureInitialized();
     var bms = await meta_api.listBookmarks(dbPath: dbPath);

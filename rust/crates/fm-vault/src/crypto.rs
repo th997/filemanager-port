@@ -409,13 +409,15 @@ impl Fpv1Header {
         if !cipher.is_encrypted() {
             return Err(VaultError::Crypto("FPV1 header cannot have none cipher".to_string()));
         }
-        let chunk_size = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        let chunk_size = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
         if chunk_size == 0 || chunk_size > 16 * 1024 * 1024 {
             return Err(VaultError::Crypto(format!(
                 "invalid FPV1 chunk size {chunk_size}"
             )));
         }
-        let plaintext_len = u64::from_le_bytes(buf[12..20].try_into().unwrap());
+        let plaintext_len = u64::from_le_bytes([
+            buf[12], buf[13], buf[14], buf[15], buf[16], buf[17], buf[18], buf[19],
+        ]);
         let mut file_salt = [0u8; 16];
         file_salt.copy_from_slice(&buf[20..36]);
         let mut nonce_prefix = [0u8; 4];
@@ -801,5 +803,67 @@ pub fn open_fpv1_range_stream(
     });
 
     Box::new(ChannelAsyncReader { rx, current: None })
+}
+
+/// Encrypts a portable configuration/migration JSON payload with Argon2id + AES-256-GCM.
+/// Returns base64-encoded `(salt, nonce, ciphertext)` strings.
+pub fn encrypt_portable_secret(
+    plaintext: &[u8],
+    password: &str,
+) -> VaultResult<(String, String, String)> {
+    if password.is_empty() {
+        return Err(VaultError::InvalidPassword(
+            "migration password cannot be empty".to_string(),
+        ));
+    }
+    let salt: [u8; 16] = random_bytes();
+    let nonce: [u8; 12] = random_bytes();
+    let key = derive_kek_argon2id_with_params(password, &salt, KdfParams::default())?;
+    let ct = encrypt_aead(
+        VaultCipher::Aes256Gcm,
+        &key,
+        nonce,
+        b"fp-migration-v1",
+        plaintext,
+    )?;
+    Ok((
+        STANDARD.encode(salt),
+        STANDARD.encode(nonce),
+        STANDARD.encode(ct),
+    ))
+}
+
+/// Decrypts a portable payload created by [`encrypt_portable_secret`].
+pub fn decrypt_portable_secret(
+    salt_b64: &str,
+    nonce_b64: &str,
+    ciphertext_b64: &str,
+    password: &str,
+) -> VaultResult<Vec<u8>> {
+    if password.is_empty() {
+        return Err(VaultError::InvalidPassword(
+            "migration password cannot be empty".to_string(),
+        ));
+    }
+    let salt = STANDARD
+        .decode(salt_b64.trim())
+        .map_err(|_| VaultError::Crypto("invalid migration salt".to_string()))?;
+    let nonce_vec = STANDARD
+        .decode(nonce_b64.trim())
+        .map_err(|_| VaultError::Crypto("invalid migration nonce".to_string()))?;
+    let nonce: [u8; 12] = nonce_vec
+        .try_into()
+        .map_err(|_| VaultError::Crypto("invalid migration nonce length".to_string()))?;
+    let ct = STANDARD
+        .decode(ciphertext_b64.trim())
+        .map_err(|_| VaultError::Crypto("invalid migration ciphertext".to_string()))?;
+    let key = derive_kek_argon2id_with_params(password, &salt, KdfParams::default())?;
+    decrypt_aead(
+        VaultCipher::Aes256Gcm,
+        &key,
+        nonce,
+        b"fp-migration-v1",
+        &ct,
+    )
 }
 

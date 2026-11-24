@@ -58,6 +58,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RemoteConfigDto dco_decode_box_autoadd_remote_config_dto(dynamic raw);
 
   @protected
+  ServerStatusDto dco_decode_box_autoadd_server_status_dto(dynamic raw);
+
+  @protected
   TaskProgressDto dco_decode_box_autoadd_task_progress_dto(dynamic raw);
 
   @protected
@@ -118,6 +121,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  IndexedSearchHitDto dco_decode_indexed_search_hit_dto(dynamic raw);
+
+  @protected
   LanServiceDto dco_decode_lan_service_dto(dynamic raw);
 
   @protected
@@ -147,7 +153,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HistoryDto> dco_decode_list_history_dto(dynamic raw);
 
   @protected
+  List<IndexedSearchHitDto> dco_decode_list_indexed_search_hit_dto(dynamic raw);
+
+  @protected
   List<LanServiceDto> dco_decode_list_lan_service_dto(dynamic raw);
+
+  @protected
+  List<PeerInfoDto> dco_decode_list_peer_info_dto(dynamic raw);
+
+  @protected
+  List<PeerOfferDto> dco_decode_list_peer_offer_dto(dynamic raw);
 
   @protected
   List<PinnedFileDto> dco_decode_list_pinned_file_dto(dynamic raw);
@@ -160,6 +175,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RemoteConfigDto> dco_decode_list_remote_config_dto(dynamic raw);
+
+  @protected
+  List<SearchIndexStatsDto> dco_decode_list_search_index_stats_dto(dynamic raw);
 
   @protected
   List<StorageCategoryDto> dco_decode_list_storage_category_dto(dynamic raw);
@@ -194,6 +212,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
+  ServerStatusDto? dco_decode_opt_box_autoadd_server_status_dto(dynamic raw);
+
+  @protected
   TaskProgressDto? dco_decode_opt_box_autoadd_task_progress_dto(dynamic raw);
 
   @protected
@@ -224,10 +245,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PagedEntriesDto dco_decode_paged_entries_dto(dynamic raw);
 
   @protected
+  PeerInfoDto dco_decode_peer_info_dto(dynamic raw);
+
+  @protected
+  PeerOfferDto dco_decode_peer_offer_dto(dynamic raw);
+
+  @protected
   PinnedFileDto dco_decode_pinned_file_dto(dynamic raw);
 
   @protected
+  PinnedSyncStatusDto dco_decode_pinned_sync_status_dto(dynamic raw);
+
+  @protected
   RemoteConfigDto dco_decode_remote_config_dto(dynamic raw);
+
+  @protected
+  SearchIndexStatsDto dco_decode_search_index_stats_dto(dynamic raw);
 
   @protected
   ServerStatusDto dco_decode_server_status_dto(dynamic raw);
@@ -331,6 +364,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ServerStatusDto sse_decode_box_autoadd_server_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TaskProgressDto sse_decode_box_autoadd_task_progress_dto(
     SseDeserializer deserializer,
   );
@@ -405,6 +443,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  IndexedSearchHitDto sse_decode_indexed_search_hit_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LanServiceDto sse_decode_lan_service_dto(SseDeserializer deserializer);
 
   @protected
@@ -440,7 +483,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HistoryDto> sse_decode_list_history_dto(SseDeserializer deserializer);
 
   @protected
+  List<IndexedSearchHitDto> sse_decode_list_indexed_search_hit_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<LanServiceDto> sse_decode_list_lan_service_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PeerInfoDto> sse_decode_list_peer_info_dto(SseDeserializer deserializer);
+
+  @protected
+  List<PeerOfferDto> sse_decode_list_peer_offer_dto(
     SseDeserializer deserializer,
   );
 
@@ -457,6 +513,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RemoteConfigDto> sse_decode_list_remote_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SearchIndexStatsDto> sse_decode_list_search_index_stats_dto(
     SseDeserializer deserializer,
   );
 
@@ -505,6 +566,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  ServerStatusDto? sse_decode_opt_box_autoadd_server_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TaskProgressDto? sse_decode_opt_box_autoadd_task_progress_dto(
     SseDeserializer deserializer,
   );
@@ -539,10 +605,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PagedEntriesDto sse_decode_paged_entries_dto(SseDeserializer deserializer);
 
   @protected
+  PeerInfoDto sse_decode_peer_info_dto(SseDeserializer deserializer);
+
+  @protected
+  PeerOfferDto sse_decode_peer_offer_dto(SseDeserializer deserializer);
+
+  @protected
   PinnedFileDto sse_decode_pinned_file_dto(SseDeserializer deserializer);
 
   @protected
+  PinnedSyncStatusDto sse_decode_pinned_sync_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RemoteConfigDto sse_decode_remote_config_dto(SseDeserializer deserializer);
+
+  @protected
+  SearchIndexStatsDto sse_decode_search_index_stats_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ServerStatusDto sse_decode_server_status_dto(SseDeserializer deserializer);
@@ -669,6 +751,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_server_status_dto(
+    ServerStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_task_progress_dto(
     TaskProgressDto self,
     SseSerializer serializer,
@@ -753,6 +841,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_indexed_search_hit_dto(
+    IndexedSearchHitDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_lan_service_dto(LanServiceDto self, SseSerializer serializer);
 
   @protected
@@ -798,8 +892,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_indexed_search_hit_dto(
+    List<IndexedSearchHitDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_lan_service_dto(
     List<LanServiceDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_peer_info_dto(
+    List<PeerInfoDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_peer_offer_dto(
+    List<PeerOfferDto> self,
     SseSerializer serializer,
   );
 
@@ -821,6 +933,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_remote_config_dto(
     List<RemoteConfigDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_search_index_stats_dto(
+    List<SearchIndexStatsDto> self,
     SseSerializer serializer,
   );
 
@@ -879,6 +997,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_server_status_dto(
+    ServerStatusDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_task_progress_dto(
     TaskProgressDto? self,
     SseSerializer serializer,
@@ -921,11 +1045,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_peer_info_dto(PeerInfoDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_peer_offer_dto(PeerOfferDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_pinned_file_dto(PinnedFileDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pinned_sync_status_dto(
+    PinnedSyncStatusDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_remote_config_dto(
     RemoteConfigDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_search_index_stats_dto(
+    SearchIndexStatsDto self,
     SseSerializer serializer,
   );
 

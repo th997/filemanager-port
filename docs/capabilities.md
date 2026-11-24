@@ -23,7 +23,7 @@ Target platforms and minimum versions follow Flutter 3.47:
 | Encrypted Privacy Vault (`fm-vault`) | Rust | Rust | Rust | Rust | Rust |
 | Recycle bin | in-app | in-app | in-app | in-app | in-app |
 | APK install / backup | yes | no | no | no | no |
-| Background tasks | WorkManager / foreground service | BGTaskScheduler | n/a | n/a | n/a |
+| Background tasks | `TransferForegroundService` (`dataSync` + wake lock) during transfers & LAN HTTP sharing | `beginBackgroundTask` + `BGTaskScheduler` (`com.github.th997.filemanager.transfer`) during active transfers | n/a | n/a | n/a |
 | Share to other apps | system share | system share | system share | system share | system share |
 
 ## Platform notes

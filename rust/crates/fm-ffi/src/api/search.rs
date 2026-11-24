@@ -36,6 +36,27 @@ pub struct AdvancedSearchQueryDto {
     pub max_results: u32,
 }
 
+/// Fast full-text index hit returned by [`query_search_index`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedSearchHitDto {
+    pub root: String,
+    pub path: String,
+    pub name: String,
+    pub category: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified_millis: Option<i64>,
+    pub hidden: bool,
+}
+
+/// Summary statistics for an indexed root in SQLite FTS5.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchIndexStatsDto {
+    pub root: String,
+    pub entry_count: u64,
+    pub updated_at_millis: i64,
+}
+
 pub(crate) fn file_category_of(name: &str, is_dir: bool) -> &'static str {
     if is_dir {
         return "folder";
@@ -477,13 +498,14 @@ pub async fn grep_text_files(
                     } else {
                         line.to_string()
                     };
+                    let max_byte = trimmed.len();
                     matches.push(GrepMatchDto {
                         path: slash_path.clone(),
                         name: child.name.clone(),
                         line_number: (idx + 1) as u32,
                         line_text: trimmed,
-                        match_start: m.start() as u32,
-                        match_end: m.end() as u32,
+                        match_start: m.start().min(max_byte) as u32,
+                        match_end: m.end().min(max_byte) as u32,
                     });
                     if matches.len() >= max_matches {
                         break;
@@ -494,6 +516,202 @@ pub async fn grep_text_files(
     }
 
     Ok(matches)
+}
+
+fn open_registry_db() -> Result<fm_index::Database, String> {
+    let db_path = VfsRegistry::global()
+        .get_database_path()
+        .ok_or_else(|| "database path not initialized".to_string())?;
+    VfsRegistry::global().open_database(&db_path)
+}
+
+fn extension_of(name: &str) -> String {
+    match name.rfind('.') {
+        Some(idx) if idx + 1 < name.len() => name[idx + 1..].to_ascii_lowercase(),
+        _ => String::new(),
+    }
+}
+
+fn is_vault_protected_root(root: &str) -> bool {
+    root.starts_with("vault://") || root.starts_with("archive://vault://")
+}
+
+fn normalize_index_root(raw: &str) -> String {
+    let mut s = raw.trim().to_string();
+    while s.len() > 1 && s.ends_with('/') {
+        if s.starts_with("remote://") && s == "remote://" {
+            break;
+        }
+        // Keep bare Windows drive root like C:/ or C:\ intact.
+        if s.len() == 3 && s.as_bytes()[1] == b':' {
+            break;
+        }
+        s.pop();
+    }
+    s
+}
+
+/// Walk `root` breadth-first and atomically populate its SQLite FTS5 index.
+pub async fn rebuild_search_index(
+    root: String,
+    max_entries: Option<u32>,
+) -> Result<SearchIndexStatsDto, String> {
+    let root = normalize_index_root(&root);
+    if is_vault_protected_root(&root) {
+        return Err("privacy vault roots cannot be persisted to the plaintext search index".to_string());
+    }
+    let db = open_registry_db()?;
+    let backend = VfsRegistry::global().get_or_create(&root).await?;
+    let limit = max_entries.unwrap_or(100_000).clamp(1, 500_000) as usize;
+    const MAX_DIRS: usize = 30_000;
+    const MAX_DEPTH: usize = 32;
+
+    let mut records = Vec::new();
+    let mut visited_dirs = 0usize;
+    let mut first = true;
+    let mut primary_queue = VecDeque::from([(VfsPath::root(), 0usize)]);
+    let mut deferred_queue = VecDeque::new();
+
+    while let Some((dir, depth)) = primary_queue
+        .pop_front()
+        .or_else(|| deferred_queue.pop_front())
+    {
+        if records.len() >= limit || visited_dirs >= MAX_DIRS {
+            break;
+        }
+        visited_dirs += 1;
+        let children = match backend.list(&dir).await {
+            Ok(c) => c,
+            Err(e) => {
+                if first {
+                    return Err(e.to_string());
+                }
+                continue;
+            }
+        };
+        first = false;
+
+        for child in children {
+            if records.len() >= limit {
+                break;
+            }
+            let is_dir = child.kind == EntryKind::Dir;
+            let descend = is_dir && !child.is_symlink && depth < MAX_DEPTH;
+            let child_path = child.path.clone();
+            let defer = is_noisy_dir(&child.name);
+            let mtime = child
+                .modified
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64);
+
+            records.push(fm_index::IndexedFileRecord {
+                root: root.clone(),
+                path: child_path.to_slash_string(),
+                name: child.name.clone(),
+                ext: if is_dir {
+                    String::new()
+                } else {
+                    extension_of(&child.name)
+                },
+                category: file_category_of(&child.name, is_dir).to_string(),
+                is_dir,
+                size: child.size.unwrap_or(0),
+                modified_millis: mtime,
+                hidden: child.hidden,
+            });
+
+            if descend {
+                if defer {
+                    deferred_queue.push_back((child_path, depth + 1));
+                } else {
+                    primary_queue.push_back((child_path, depth + 1));
+                }
+            }
+        }
+    }
+
+    let stats = tokio::task::spawn_blocking(move || {
+        db.replace_root_index(&root, &records)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(SearchIndexStatsDto {
+        root: stats.root,
+        entry_count: stats.entry_count,
+        updated_at_millis: stats.updated_at_millis,
+    })
+}
+
+/// Query the SQLite FTS5 index across one root or all indexed roots.
+pub async fn query_search_index(
+    root: Option<String>,
+    query: String,
+    category: Option<String>,
+    min_size: Option<u64>,
+    max_size: Option<u64>,
+    modified_after_millis: Option<i64>,
+    modified_before_millis: Option<i64>,
+    include_hidden: bool,
+    max_results: u32,
+) -> Result<Vec<IndexedSearchHitDto>, String> {
+    let root = root.map(|r| normalize_index_root(&r));
+    let db = open_registry_db()?;
+    let rows = tokio::task::spawn_blocking(move || {
+        db.query_fts_index(
+            root.as_deref(),
+            &query,
+            category.as_deref(),
+            min_size,
+            max_size,
+            modified_after_millis,
+            modified_before_millis,
+            include_hidden,
+            max_results,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| IndexedSearchHitDto {
+            root: r.root,
+            path: r.path,
+            name: r.name,
+            category: r.category,
+            is_dir: r.is_dir,
+            size: r.size,
+            modified_millis: r.modified_millis,
+            hidden: r.hidden,
+        })
+        .collect())
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn clear_search_index(root: String) -> Result<bool, String> {
+    let root = normalize_index_root(&root);
+    let db = open_registry_db()?;
+    db.clear_root_index(&root).map_err(|e| e.to_string())
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_search_index_stats(root: Option<String>) -> Result<Vec<SearchIndexStatsDto>, String> {
+    let root = root.map(|r| normalize_index_root(&r));
+    let db = open_registry_db()?;
+    let list = db
+        .get_index_stats(root.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(list
+        .into_iter()
+        .map(|s| SearchIndexStatsDto {
+            root: s.root,
+            entry_count: s.entry_count,
+            updated_at_millis: s.updated_at_millis,
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -673,5 +891,66 @@ mod tests {
         .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name, "todo.md");
+    }
+
+    #[tokio::test]
+    async fn fts5_rebuild_and_query_search_index_end_to_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_file = db_dir.path().join("_meta.db");
+        VfsRegistry::global().set_database_path(db_file.to_string_lossy().to_string());
+
+        std::fs::create_dir_all(dir.path().join("Docs")).unwrap();
+        std::fs::write(dir.path().join("Docs/quarterly_budget.pdf"), b"pdf").unwrap();
+        std::fs::write(dir.path().join("vacation_photo.png"), b"png").unwrap();
+
+        let root = dir.path().to_string_lossy().to_string();
+        let stats = rebuild_search_index(root.clone(), None).await.unwrap();
+        assert!(stats.entry_count >= 3);
+
+        let all_stats = get_search_index_stats(Some(root.clone())).unwrap();
+        assert_eq!(all_stats.len(), 1);
+        assert_eq!(all_stats[0].entry_count, stats.entry_count);
+
+        let hits = query_search_index(
+            Some(root.clone()),
+            "quarterly".into(),
+            Some("document".into()),
+            None,
+            None,
+            None,
+            None,
+            false,
+            50,
+        )
+        .await
+        .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "quarterly_budget.pdf");
+
+        assert!(clear_search_index(root.clone()).unwrap());
+        assert!(get_search_index_stats(Some(root.clone())).unwrap().is_empty());
+
+        // Vault roots must never be written to plaintext FTS5 index.
+        let vault_err = rebuild_search_index("vault://secret1".into(), None).await;
+        assert!(vault_err.is_err());
+
+        // Re-index and confirm punctuation-only queries don't dump unrelated entries.
+        std::fs::write(dir.path().join("alpha.txt"), b"ok").unwrap();
+        rebuild_search_index(root.clone(), None).await.unwrap();
+        let punct = query_search_index(
+            Some(root),
+            "---".into(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            50,
+        )
+        .await
+        .unwrap();
+        assert!(punct.is_empty());
     }
 }

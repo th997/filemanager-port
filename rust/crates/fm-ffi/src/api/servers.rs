@@ -1,13 +1,21 @@
 use crate::registry::VfsRegistry;
+use fm_core::VfsPath;
 use fm_server::{
+    discover_lan_peers as discover_lan_peers_impl,
     discover_lan_services as discover_lan_services_impl, get_lan_ip_addresses,
-    start_http_share_with_lang, start_stream_server_with_options, RunningServer, StreamServer,
+    send_peer_files as send_peer_files_impl, send_peer_text as send_peer_text_impl,
+    start_http_share_with_lang, start_peer_receiver as start_peer_receiver_impl,
+    start_stream_server_with_options, start_webdav_server, PeerTransferOffer, RunningPeerReceiver,
+    RunningServer, RunningWebDavServer, StreamServer,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 static HTTP_RUNNING: Mutex<Option<RunningServer>> = Mutex::new(None);
+static WEBDAV_RUNNING: Mutex<Option<(RunningWebDavServer, ServerStatusDto, String)>> =
+    Mutex::new(None);
+static PEER_RECEIVER: Mutex<Option<(RunningPeerReceiver, ServerStatusDto)>> = Mutex::new(None);
 static STREAMS: Mutex<Option<HashMap<String, StreamServer>>> = Mutex::new(None);
 
 #[derive(Debug, Clone)]
@@ -179,4 +187,262 @@ pub(crate) fn stop_media_streams_for_vault(vault_id: &str) {
     for server in removed {
         server.shutdown();
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct PeerInfoDto {
+    pub device_id: String,
+    pub device_name: String,
+    pub platform: String,
+    pub host: String,
+    pub port: u16,
+    pub url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PeerOfferDto {
+    pub offer_id: String,
+    pub sender_name: String,
+    pub kind: String,
+    pub items: Vec<String>,
+    pub total_bytes: u64,
+    pub text_preview: Option<String>,
+    pub text_payload: Option<String>,
+    pub status: String,
+    pub save_dir: Option<String>,
+    pub received_files: u32,
+}
+
+impl From<PeerTransferOffer> for PeerOfferDto {
+    fn from(o: PeerTransferOffer) -> Self {
+        Self {
+            offer_id: o.offer_id,
+            sender_name: o.sender_name,
+            kind: o.kind,
+            items: o.items,
+            total_bytes: o.total_bytes,
+            text_preview: o.text_preview,
+            text_payload: o.text_payload,
+            status: o.status,
+            save_dir: o.save_dir,
+            received_files: o.received_files,
+        }
+    }
+}
+
+/// Start a LAN WebDAV server exposing any VFS root (local, remote, or unlocked
+/// vault) over HTTP so TV media players and desktop file managers can mount it.
+pub async fn start_lan_webdav_server(
+    root: String,
+    rel_path: String,
+    port: Option<u16>,
+    username: Option<String>,
+    password: Option<String>,
+    read_only: bool,
+) -> Result<ServerStatusDto, String> {
+    let existing = {
+        let mut guard = WEBDAV_RUNNING.lock();
+        guard.take()
+    };
+    if let Some((srv, _, _)) = existing {
+        let _ = srv.shutdown_tx.send(());
+    }
+
+    let vfs = VfsRegistry::global().get_or_create(&root).await?;
+    let base_prefix = VfsPath::from_slash_path(&rel_path);
+    let server = start_webdav_server(vfs, base_prefix, port, username, password, read_only).await?;
+    let actual_port = server.port;
+    let addresses = get_lan_ip_addresses();
+    let primary_ip = addresses
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let status = ServerStatusDto {
+        running: true,
+        port: actual_port,
+        addresses,
+        url: format!("http://{primary_ip}:{actual_port}/"),
+    };
+
+    {
+        let mut guard = WEBDAV_RUNNING.lock();
+        *guard = Some((server, status.clone(), root));
+    }
+    Ok(status)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn stop_lan_webdav_server() -> bool {
+    let mut guard = WEBDAV_RUNNING.lock();
+    if let Some((server, _, _)) = guard.take() {
+        let _ = server.shutdown_tx.send(());
+        true
+    } else {
+        false
+    }
+}
+
+pub(crate) fn stop_webdav_for_vault(vault_id: &str) {
+    let direct_prefix = format!("vault://{vault_id}");
+    let archive_prefix = format!("archive://vault://{vault_id}");
+    let mut guard = WEBDAV_RUNNING.lock();
+    let matches = guard
+        .as_ref()
+        .map(|(_, _, root)| {
+            root == &direct_prefix
+                || root.starts_with(&format!("{direct_prefix}/"))
+                || root == &archive_prefix
+                || root.starts_with(&format!("{archive_prefix}/"))
+        })
+        .unwrap_or(false);
+    if matches {
+        if let Some((server, _, _)) = guard.take() {
+            let _ = server.shutdown_tx.send(());
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn lan_webdav_status() -> Option<ServerStatusDto> {
+    WEBDAV_RUNNING.lock().as_ref().map(|(_, st, _)| st.clone())
+}
+
+/// Start the LAN direct peer transfer receiver (HTTP server + UDP beacon).
+pub async fn start_peer_receiver(
+    device_name: String,
+    save_dir: String,
+    port: Option<u16>,
+) -> Result<ServerStatusDto, String> {
+    let existing = {
+        let mut guard = PEER_RECEIVER.lock();
+        guard.take()
+    };
+    if let Some((old, _)) = existing {
+        old.shutdown();
+    }
+
+    let receiver = start_peer_receiver_impl(device_name, PathBuf::from(save_dir), port).await?;
+    let actual_port = receiver.port;
+    let addresses = get_lan_ip_addresses();
+    let primary_ip = addresses
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let status = ServerStatusDto {
+        running: true,
+        port: actual_port,
+        addresses,
+        url: format!("http://{primary_ip}:{actual_port}"),
+    };
+    {
+        let mut guard = PEER_RECEIVER.lock();
+        *guard = Some((receiver, status.clone()));
+    }
+    Ok(status)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn stop_peer_receiver() -> bool {
+    let mut guard = PEER_RECEIVER.lock();
+    if let Some((receiver, _)) = guard.take() {
+        receiver.shutdown();
+        true
+    } else {
+        false
+    }
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn peer_receiver_status() -> Option<ServerStatusDto> {
+    PEER_RECEIVER.lock().as_ref().map(|(_, st)| st.clone())
+}
+
+pub async fn discover_lan_peers(timeout_ms: Option<u32>) -> Vec<PeerInfoDto> {
+    let self_id = PEER_RECEIVER
+        .lock()
+        .as_ref()
+        .map(|(r, _)| r.device_id.clone());
+    discover_lan_peers_impl(timeout_ms.unwrap_or(1800), self_id.as_deref())
+        .await
+        .into_iter()
+        .map(|p| {
+            let url = format!("http://{}:{}", p.host, p.port);
+            PeerInfoDto {
+                device_id: p.device_id,
+                device_name: p.device_name,
+                platform: p.platform,
+                host: p.host,
+                port: p.port,
+                url,
+            }
+        })
+        .collect()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn poll_peer_offers() -> Vec<PeerOfferDto> {
+    PEER_RECEIVER
+        .lock()
+        .as_ref()
+        .map(|(r, _)| r.list_offers().into_iter().map(PeerOfferDto::from).collect())
+        .unwrap_or_default()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn respond_peer_offer(offer_id: String, accept: bool, save_dir: Option<String>) -> bool {
+    PEER_RECEIVER
+        .lock()
+        .as_ref()
+        .map(|(r, _)| r.respond_offer(&offer_id, accept, save_dir.as_deref()))
+        .unwrap_or(false)
+}
+
+fn unique_send_filename(used: &mut std::collections::HashSet<String>, base: &str) -> String {
+    if used.insert(base.to_string()) {
+        return base.to_string();
+    }
+    let (stem, ext) = match base.rfind('.') {
+        Some(idx) if idx > 0 => (&base[..idx], &base[idx..]),
+        _ => (base, ""),
+    };
+    for i in 2u32..10000 {
+        let cand = format!("{stem} ({i}){ext}");
+        if used.insert(cand.clone()) {
+            return cand;
+        }
+    }
+    format!("{stem}_{}{ext}", uuid::Uuid::new_v4())
+}
+
+pub async fn send_peer_files(
+    peer_url: String,
+    sender_name: String,
+    src_root: String,
+    src_paths: Vec<String>,
+) -> Result<u32, String> {
+    let vfs = VfsRegistry::global().get_or_create(&src_root).await?;
+    let mut mapped = Vec::with_capacity(src_paths.len());
+    let mut used_names = std::collections::HashSet::new();
+    for raw in src_paths {
+        let vp = VfsPath::from_slash_path(&raw);
+        let st = vfs.stat(&vp).await.map_err(|e| e.to_string())?;
+        if st.kind == fm_core::EntryKind::Dir {
+            continue;
+        }
+        let base_name = vp.name().unwrap_or("file.bin");
+        let rel_name = unique_send_filename(&mut used_names, base_name);
+        mapped.push((vp, rel_name));
+    }
+    if mapped.is_empty() {
+        return Err("no regular files selected to send".to_string());
+    }
+    send_peer_files_impl(&peer_url, &sender_name, vfs, mapped).await
+}
+
+pub async fn send_peer_text(
+    peer_url: String,
+    sender_name: String,
+    text: String,
+) -> Result<(), String> {
+    send_peer_text_impl(&peer_url, &sender_name, &text).await
 }

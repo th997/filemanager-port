@@ -13,6 +13,7 @@ import 'keychain_service.dart';
 import 'path_utils.dart';
 import 'platform_paths.dart';
 import 'preferences_service.dart';
+import 'sharing_service.dart';
 
 enum PasswordValidationError { none, tooShort, tooLong }
 
@@ -177,6 +178,18 @@ class VaultService extends ChangeNotifier {
   void registerLockCleanup(void Function(String? vaultId) callback) {
     if (!_lockCleanups.contains(callback)) {
       _lockCleanups.add(callback);
+    }
+  }
+
+  void unregisterLockCleanup(void Function(String? vaultId) callback) {
+    _lockCleanups.remove(callback);
+  }
+
+  /// Test-only helper to dispatch registered lock cleanup callbacks without
+  /// invoking native FFI bindings.
+  void dispatchLockCleanupsForTest(String? vaultId) {
+    for (final cb in List<void Function(String? vaultId)>.from(_lockCleanups)) {
+      cb(vaultId);
     }
   }
 
@@ -453,12 +466,18 @@ class VaultService extends ChangeNotifier {
   }
 
   void lockVault(String vaultId) {
+    final matched = _unlocked.where((v) => v.id == vaultId).toList();
+    final vaultDirPath = matched.isNotEmpty ? matched.first.dirPath : null;
     final activeRoot = GlobalPlaybackService.instance.currentRoot;
     if (activeRoot != null && vaultIdFromRoot(activeRoot) == vaultId) {
       GlobalPlaybackService.instance.stop();
     }
     vaultLock(vaultId: vaultId);
-    for (final cb in _lockCleanups) {
+    SharingService.instance.stopSharesForVault(
+      vaultId,
+      vaultDirPath: vaultDirPath,
+    );
+    for (final cb in List<void Function(String? vaultId)>.from(_lockCleanups)) {
       try {
         cb(vaultId);
       } catch (_) {}
@@ -476,12 +495,20 @@ class VaultService extends ChangeNotifier {
     _backgroundLockTimer = null;
     _backgroundedAt = null;
 
+    final previousUnlocked = List<UnlockedVaultDto>.from(_unlocked);
     final activeRoot = GlobalPlaybackService.instance.currentRoot;
     if (activeRoot != null && vaultIdFromRoot(activeRoot) != null) {
       GlobalPlaybackService.instance.stop();
     }
     vaultLockAll();
-    for (final cb in _lockCleanups) {
+    for (final v in previousUnlocked) {
+      SharingService.instance.stopSharesForVault(
+        v.id,
+        vaultDirPath: v.dirPath,
+      );
+    }
+    SharingService.instance.stopSharesForVault(null);
+    for (final cb in List<void Function(String? vaultId)>.from(_lockCleanups)) {
       try {
         cb(null);
       } catch (_) {}
@@ -740,6 +767,8 @@ class VaultService extends ChangeNotifier {
   }
 
   Future<void> deleteVault(String vaultId) async {
+    final matched = _unlocked.where((v) => v.id == vaultId).toList();
+    final vaultDirPath = matched.isNotEmpty ? matched.first.dirPath : null;
     final activeRoot = GlobalPlaybackService.instance.currentRoot;
     if (activeRoot != null && vaultIdFromRoot(activeRoot) == vaultId) {
       GlobalPlaybackService.instance.stop();
@@ -747,7 +776,11 @@ class VaultService extends ChangeNotifier {
     await vaultDelete(vaultId: vaultId);
     await _deleteSystemDek(vaultId);
     unpinVault(vaultId);
-    for (final cb in _lockCleanups) {
+    SharingService.instance.stopSharesForVault(
+      vaultId,
+      vaultDirPath: vaultDirPath,
+    );
+    for (final cb in List<void Function(String? vaultId)>.from(_lockCleanups)) {
       try {
         cb(vaultId);
       } catch (_) {}

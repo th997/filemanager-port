@@ -830,7 +830,13 @@ pub fn import_vault_backup_with_progress(
         meta.backup_plain_name = None;
         meta.update_name_fields(&effective_name, &dek)?;
         let effective_local_pwd = if target_auth_mode == VaultAuthMode::Password {
-            Some(new_local_password.or(backup_password).unwrap())
+            Some(
+                new_local_password
+                    .or(backup_password)
+                    .ok_or_else(|| {
+                        VaultError::Backup("password required for Password auth mode".to_string())
+                    })?,
+            )
         } else {
             None
         };

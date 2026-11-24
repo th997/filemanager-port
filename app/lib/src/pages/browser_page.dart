@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../controllers/browser_pane_controller.dart';
 import '../dialogs/advanced_search_dialog.dart';
 import '../dialogs/archive_password_dialog.dart';
 import '../dialogs/batch_rename_dialog.dart';
@@ -25,6 +26,7 @@ import '../services/app_route_observer.dart';
 import '../services/browser_clipboard_service.dart';
 import '../services/browser_file_ops.dart';
 import '../services/browser_vault_actions.dart';
+import '../services/desktop_dev_actions.dart';
 import '../services/error_text.dart';
 import '../services/external_file_service.dart';
 import '../services/file_open_service.dart';
@@ -34,6 +36,8 @@ import '../services/permission_service.dart';
 import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
 import '../services/preferences_service.dart';
+import '../services/sharing_service.dart';
+import '../services/shortcut_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
 import '../services/vault_service.dart';
@@ -43,12 +47,14 @@ import '../widgets/browser/browser_list_header.dart';
 import '../widgets/browser/browser_pane.dart';
 import '../widgets/browser/browser_toolbar.dart';
 import '../widgets/entry_thumbnail.dart';
+import '../widgets/error_recovery_action.dart';
 import 'browser_workspace_page.dart';
 import 'diff_viewer_page.dart';
 import 'duplicate_finder_page.dart';
 import 'image_viewer_page.dart';
 import 'media_player_page.dart';
 import 'pdf_viewer_page.dart';
+import 'peer_transfer_page.dart';
 import 'storage_analyzer_page.dart';
 import 'structured_viewer_page.dart';
 import 'sync_page.dart';
@@ -107,6 +113,10 @@ class BrowserPage extends StatefulWidget {
   /// result is popped as a list of local paths.
   final ExternalPickRequest? pickRequest;
 
+  /// Optional controller binding owned by [BrowserWorkspacePage] for multi-tab
+  /// and split-pane coordination without `GlobalKey<BrowserPageState>`.
+  final BrowserPaneController? paneController;
+
   const BrowserPage({
     super.key,
     required this.initialRoot,
@@ -116,6 +126,7 @@ class BrowserPage extends StatefulWidget {
     this.onOpenInNewTab,
     this.onToggleSplitView,
     this.pickRequest,
+    this.paneController,
   });
 
   @override
@@ -286,7 +297,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   /// Rubber-band (lasso) selection state: mouse drag on grid or list
   /// background selects every item the rectangle covers.
   Offset? _lassoStart;
-  Rect? _lassoRect;
+  final ValueNotifier<Rect?> _lassoRectNotifier = ValueNotifier<Rect?>(null);
   Set<String> _lassoBase = {};
   double _gridWidth = 0;
   double _listRowHeight = 36.0;
@@ -474,11 +485,18 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     super.initState();
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
+    widget.paneController?.attachHost(
+      root: _root,
+      relPath: _relPath,
+      onRefresh: refreshEntries,
+      onSelectedPathsGetter: () => selectedPathsSnapshot,
+    );
     _applyMimeFilter = widget.pickRequest?.hasTypeFilter ?? false;
     if (_pickMode) _clearPickCache();
     _loadViewPreferences();
     _scrollController.addListener(_onScroll);
     PreferencesService.toolbarAtBottom.addListener(_onToolbarPositionChanged);
+    _lastHasMiniPlayer = _hasVisibleMiniPlayer;
     GlobalPlaybackService.instance.addListener(_onPlaybackChanged);
     VaultService.instance.addListener(_onVaultChanged);
     _syncSecureScreen();
@@ -494,6 +512,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   void _onPlaybackChanged() {
+    final hasMini = _hasVisibleMiniPlayer;
+    if (hasMini == _lastHasMiniPlayer) return;
+    _lastHasMiniPlayer = hasMini;
     if (mounted) setState(() {});
   }
 
@@ -534,16 +555,34 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     GlobalPlaybackService.instance.setBottomBarInset(totalBottom);
   }
 
-  double get _scrollBottomPadding {
+  bool _lastHasMiniPlayer = false;
+
+  bool get _hasVisibleMiniPlayer {
     final service = GlobalPlaybackService.instance;
-    final hasMiniPlayer = service.hasActiveSession &&
+    return service.hasActiveSession &&
         !service.isFullScreen &&
         !service.isMiniPlayerCollapsed;
-    return hasMiniPlayer ? 76.0 : 16.0;
+  }
+
+  double get _scrollBottomPadding => _hasVisibleMiniPlayer ? 76.0 : 16.0;
+
+  @override
+  void didUpdateWidget(covariant BrowserPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.paneController != widget.paneController) {
+      oldWidget.paneController?.detachHost();
+      widget.paneController?.attachHost(
+        root: _root,
+        relPath: _relPath,
+        onRefresh: refreshEntries,
+        onSelectedPathsGetter: () => selectedPathsSnapshot,
+      );
+    }
   }
 
   @override
   void dispose() {
+    widget.paneController?.detachHost();
     appRouteObserver.unsubscribe(this);
     VaultService.instance.removeListener(_onVaultChanged);
     if (_secureScreenHeld) {
@@ -558,14 +597,16 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _addressController.dispose();
+    _showScrollToTopNotifier.dispose();
+    _lassoRectNotifier.dispose();
     super.dispose();
   }
 
   void _onScroll() {
     if (_scrollController.hasClients) {
       final shouldShow = _scrollController.position.pixels > 350;
-      if (shouldShow != _showScrollToTop) {
-        setState(() => _showScrollToTop = shouldShow);
+      if (shouldShow != _showScrollToTopNotifier.value) {
+        _showScrollToTopNotifier.value = shouldShow;
       }
       if (_scrollController.position.pixels >=
               _scrollController.position.maxScrollExtent - 250 &&
@@ -577,7 +618,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
   }
 
-  bool _showScrollToTop = false;
+  final ValueNotifier<bool> _showScrollToTopNotifier = ValueNotifier<bool>(false);
 
   /// Directory the in-flight load belongs to. A load started for one folder
   /// must not fill the list after the user has navigated elsewhere.
@@ -778,61 +819,23 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final path = input.trim();
     if (path.isEmpty) return;
     setState(() => _isEditingAddress = false);
-
-    if (path.startsWith('remote://')) {
-      final withoutPrefix = path.substring('remote://'.length);
-      final slashIdx = withoutPrefix.indexOf('/');
-      if (slashIdx != -1) {
-        final target = withoutPrefix.substring(0, slashIdx);
-        final rel = withoutPrefix.substring(slashIdx + 1).replaceAll(RegExp(r'^/+'), '');
-        final remote = _findRemote(target);
-        final resolvedId = remote != null ? remote.id : target;
-        navigateTo('remote://$resolvedId', rel);
-      } else {
-        final remote = _findRemote(withoutPrefix);
-        final resolvedId = remote != null ? remote.id : withoutPrefix;
-        navigateTo('remote://$resolvedId', '');
-      }
-    } else if (path.startsWith('vault://')) {
-      final withoutPrefix = path.substring('vault://'.length);
-      final slashIdx = withoutPrefix.indexOf('/');
-      final target = slashIdx != -1 ? withoutPrefix.substring(0, slashIdx) : withoutPrefix;
-      final rel = slashIdx != -1
-          ? withoutPrefix.substring(slashIdx + 1).replaceAll(RegExp(r'^/+'), '')
-          : '';
-      final unlocked = VaultService.instance.unlockedVaults;
-      final lowerTarget = target.toLowerCase();
-      for (final v in unlocked) {
-        if (v.id == target || v.name.toLowerCase() == lowerTarget) {
-          navigateTo('vault://${v.id}', rel);
-          return;
+    final resolved = BrowserPaneController.parseJumpAddress(
+      path,
+      currentRoot: _root,
+      currentRelPath: _relPath,
+      resolveRemoteId: (target) => _findRemote(target)?.id,
+      resolveUnlockedVaultId: (target) {
+        final lowerTarget = target.toLowerCase();
+        for (final v in VaultService.instance.unlockedVaults) {
+          if (v.id == target || v.name.toLowerCase() == lowerTarget) {
+            return v.id;
+          }
         }
-      }
-    } else if (path.startsWith('archive://')) {
-      final withoutPrefix = path.substring('archive://'.length);
-      final match = RegExp(r'(\.(zip|apk|jar|tar\.gz|tgz|tar|7z))([/\\]|$)', caseSensitive: false).firstMatch(withoutPrefix);
-      if (match != null) {
-        final archivePath = withoutPrefix.substring(0, match.start + match.group(1)!.length);
-        final rel = withoutPrefix.substring(match.end).replaceAll(RegExp(r'^[/\\]+'), '').replaceAll('\\', '/');
-        navigateTo('archive://$archivePath', rel);
-      } else {
-        navigateTo('archive://$withoutPrefix', '');
-      }
-    } else if (path.startsWith('/')) {
-      final normalized = path == '/' ? '/' : path.replaceAll(RegExp(r'/+'), '/');
-      if (normalized == '/') {
-        navigateTo('/', '');
-      } else {
-        final rel = normalized.substring(1);
-        navigateTo('/', rel);
-      }
-    } else if (RegExp(r'^[a-zA-Z]:').hasMatch(path)) {
-      final drive = path.substring(0, 2);
-      final rel = path.substring(2).replaceAll(RegExp(r'^[/\\]+'), '').replaceAll('\\', '/');
-      navigateTo('$drive/', rel);
-    } else {
-      final nextRel = _relPath.isEmpty ? path : '$_relPath/$path';
-      navigateTo(_root, nextRel);
+        return null;
+      },
+    );
+    if (resolved != null) {
+      navigateTo(resolved.root, resolved.relPath);
     }
   }
 
@@ -840,6 +843,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   /// reload does not throw the user back to the top of a long folder.
   Future<void> _load({bool refresh = false}) async {
     if (!mounted) return;
+    widget.paneController?.syncHostLocation(_root, _relPath);
     widget.onLocationChanged?.call(_root, _relPath);
     final loadingFor = '$_root\u0000$_relPath';
     _loadingFor = loadingFor;
@@ -2183,7 +2187,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       return;
     }
     _lassoStart = e.localPosition;
-    _lassoRect = null;
+    _lassoRectNotifier.value = null;
     final kb = HardwareKeyboard.instance;
     _lassoBase = (kb.isControlPressed || kb.isMetaPressed)
         ? {..._selectedPaths}
@@ -2194,14 +2198,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     final start = _lassoStart;
     if (start == null || _itemDragActive) return;
     final rect = Rect.fromPoints(start, e.localPosition);
-    if (_lassoRect == null && rect.longestSide < 8) return;
-    setState(() => _lassoRect = rect);
+    if (_lassoRectNotifier.value == null && rect.longestSide < 8) return;
+    _lassoRectNotifier.value = rect;
     _applyLasso(rect);
   }
 
   void _lassoEnd() {
     _lassoStart = null;
-    if (_lassoRect != null) setState(() => _lassoRect = null);
+    if (_lassoRectNotifier.value != null) _lassoRectNotifier.value = null;
   }
 
   /// Maps the lasso rectangle (viewport coordinates) through either the grid
@@ -2260,16 +2264,23 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       }
     }
 
+    final nextSelected = <String>{..._lassoBase, ...picked};
+    final nextSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
+      isDesktop: PlatformCapabilities.isDesktop,
+      alreadyInMultiSelectBar: _isSelecting,
+      hasSelection: nextSelected.isNotEmpty,
+    );
+    if (nextSelecting == _isSelecting &&
+        nextSelected.length == _selectedPaths.length &&
+        nextSelected.containsAll(_selectedPaths)) {
+      return;
+    }
+
     setState(() {
       _selectedPaths
         ..clear()
-        ..addAll(_lassoBase)
-        ..addAll(picked);
-      _isSelecting = BrowserSelectionRules.nextMultiSelectUiMode(
-        isDesktop: PlatformCapabilities.isDesktop,
-        alreadyInMultiSelectBar: _isSelecting,
-        hasSelection: _selectedPaths.isNotEmpty,
-      );
+        ..addAll(nextSelected);
+      _isSelecting = nextSelecting;
       _syncBottomBarInset();
     });
   }
@@ -4191,21 +4202,25 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             : null,
       ),
       bottomNavigationBar: _buildScaffoldBottomBar(segments),
-      floatingActionButton: _showScrollToTop
-          ? FloatingActionButton.small(
-              heroTag: 'browser_scroll_to_top',
-              onPressed: () {
-                HapticFeedback.lightImpact();
-                _scrollController.animateTo(
-                  0,
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOut,
-                );
-              },
-              tooltip: AppLocalizations.of(context).backToTop,
-              child: const Icon(Icons.arrow_upward, size: 18),
-            )
-          : null,
+      floatingActionButton: ValueListenableBuilder<bool>(
+        valueListenable: _showScrollToTopNotifier,
+        builder: (ctx, show, _) {
+          if (!show) return const SizedBox.shrink();
+          return FloatingActionButton.small(
+            heroTag: 'browser_scroll_to_top',
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOut,
+              );
+            },
+            tooltip: AppLocalizations.of(ctx).backToTop,
+            child: const Icon(Icons.arrow_upward, size: 18),
+          );
+        },
+      ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onHorizontalDragDown: (details) {
@@ -4567,6 +4582,61 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 ),
               ),
             );
+          } else if (val == 'share_webdav') {
+            _startWebDavForCurrentFolder();
+          } else if (val == 'send_lan_peer') {
+            final paths = _selectedPaths.isNotEmpty
+                ? _selectedPaths.toList()
+                : <String>[];
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PeerTransferPage(
+                  initialSrcRoot: _root,
+                  initialSrcPaths: paths,
+                ),
+              ),
+            );
+          } else if (val == 'open_terminal') {
+            final l10n = AppLocalizations.of(context);
+            final errorColor = Theme.of(context).colorScheme.error;
+            DesktopDevActions.openTerminalAt(joinNative(_root, _relPath)).then((ok) {
+              if (!ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(l10n.failedToOpenFile(l10n.openInTerminal)),
+                    backgroundColor: errorColor,
+                  ),
+                );
+              }
+            });
+          } else if (val == 'open_editor') {
+            final l10n = AppLocalizations.of(context);
+            final errorColor = Theme.of(context).colorScheme.error;
+            DesktopDevActions.openInCodeEditor(joinNative(_root, _relPath)).then((ok) {
+              if (!ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(l10n.failedToOpenFile(l10n.openInEditor)),
+                    backgroundColor: errorColor,
+                  ),
+                );
+              }
+            });
+          } else if (val == 'copy_full_path') {
+            Clipboard.setData(
+              ClipboardData(text: joinNative(_root, _relPath)),
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
+            );
+          } else if (val == 'copy_vfs_path') {
+            final vfsUri = _relPath.isEmpty ? _root : '$_root/$_relPath';
+            Clipboard.setData(ClipboardData(text: vfsUri));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
+            );
+          } else if (val == 'pin_home_shortcut') {
+            _pinCurrentFolderShortcut();
           } else if (val == 'vault_always_visible') {
             _toggleCurrentVaultAlwaysVisible();
           } else if (val == 'vault_info') {
@@ -4719,6 +4789,84 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
               ],
             ),
           ),
+          if (!_isInVault) ...[
+            PopupMenuItem<String>(
+              value: 'share_webdav',
+              child: Row(
+                children: [
+                  const Icon(Icons.dns_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).shareViaLanWebdav),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'send_lan_peer',
+              child: Row(
+                children: [
+                  const Icon(Icons.swap_horiz, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).sendToLanDevice),
+                ],
+              ),
+            ),
+          ],
+          if (PlatformCapabilities.isDesktop) ...[
+            const PopupMenuDivider(),
+            if (isNativeRoot(_root)) ...[
+              PopupMenuItem<String>(
+                value: 'open_terminal',
+                child: Row(
+                  children: [
+                    const Icon(Icons.terminal, size: 18),
+                    const SizedBox(width: 8),
+                    Text(AppLocalizations.of(context).openInTerminal),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'open_editor',
+                child: Row(
+                  children: [
+                    const Icon(Icons.code, size: 18),
+                    const SizedBox(width: 8),
+                    Text(AppLocalizations.of(context).openInEditor),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'copy_full_path',
+                child: Row(
+                  children: [
+                    const Icon(Icons.content_copy, size: 18),
+                    const SizedBox(width: 8),
+                    Text(AppLocalizations.of(context).copyFullPath),
+                  ],
+                ),
+              ),
+            ],
+            PopupMenuItem<String>(
+              value: 'copy_vfs_path',
+              child: Row(
+                children: [
+                  const Icon(Icons.link, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).copyVfsPath),
+                ],
+              ),
+            ),
+          ] else if (!_isInVault) ...[
+            PopupMenuItem<String>(
+              value: 'pin_home_shortcut',
+              child: Row(
+                children: [
+                  const Icon(Icons.add_to_home_screen, size: 18),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context).pinToHomeScreen),
+                ],
+              ),
+            ),
+          ],
           CheckedPopupMenuItem<String>(
             value: 'toggle_hidden',
             checked: _showHidden,
@@ -4782,6 +4930,92 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         ],
       ),
     ];
+  }
+
+  Future<void> _startWebDavForCurrentFolder() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final status = await SharingService.instance.startWebDav(
+        root: _root,
+        relPath: _relPath,
+        readOnly: true,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.lanWebdavShareTitle),
+          content: SelectableText(l10n.webdavServerRunning(status.url)),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                SharingService.instance.stopWebDav();
+                Navigator.of(ctx).pop();
+              },
+              icon: const Icon(Icons.stop_circle_outlined, size: 16),
+              label: Text(l10n.stopped),
+            ),
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: status.url));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(l10n.webdavUrlCopied)),
+                );
+              },
+              child: Text(l10n.copyUrl),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(l10n.close),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  static String _fnv1aHex(String input) {
+    var hash = 0x811c9dc5;
+    for (final unit in input.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  Future<void> _pinCurrentFolderShortcut() async {
+    if (_isInVault) return;
+    final l10n = AppLocalizations.of(context);
+    final label = _relPath.isNotEmpty
+        ? _relPath.split('/').where((s) => s.isNotEmpty).last
+        : _displayFullPath;
+    final ok = await ShortcutService.instance.pinShortcut(
+      ShortcutTarget(
+        type: 'folder',
+        id: 'folder_${_fnv1aHex('$_root/$_relPath')}',
+        label: label,
+        root: _root,
+        path: _relPath,
+      ),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? l10n.pinToHomeScreenSuccess(label)
+              : l10n.pinToHomeScreenUnsupported,
+        ),
+      ),
+    );
   }
 
   Widget? _buildScaffoldBottomBar(List<String> segments) {
@@ -5463,9 +5697,16 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                       const SizedBox(height: 16),
                       Wrap(
                         spacing: 8,
+                        runSpacing: 8,
                         alignment: WrapAlignment.center,
                         children: [
                           FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: Text(AppLocalizations.of(context).retry)),
+                          ErrorRecoveryActionButton(
+                            rawError: _error!,
+                            root: _root,
+                            includeNetworkRetry: false,
+                            onRetry: () => _load(refresh: true),
+                          ),
                           if (_canNavigateUp)
                             OutlinedButton.icon(
                               onPressed: _navigateUp,
@@ -5693,11 +5934,13 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             if (item.isImage || item.isVideo)
-                              EntryThumbnail(
-                                root: _root,
-                                relPath: _fullEntryPath(item),
-                                item: item,
-                                size: PlatformCapabilities.isDesktop ? 68 : 56,
+                              RepaintBoundary(
+                                child: EntryThumbnail(
+                                  root: _root,
+                                  relPath: _fullEntryPath(item),
+                                  item: item,
+                                  size: PlatformCapabilities.isDesktop ? 68 : 56,
+                                ),
                               )
                             else
                               Icon(
@@ -5765,17 +6008,24 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                       child: const SizedBox.expand(),
                     ),
                   ),
-                  if (_lassoRect != null)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          painter: _LassoPainter(
-                            _lassoRect!,
-                            Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ValueListenableBuilder<Rect?>(
+                        valueListenable: _lassoRectNotifier,
+                        builder: (ctx, rect, _) {
+                          if (rect == null) return const SizedBox.shrink();
+                          return RepaintBoundary(
+                            child: CustomPaint(
+                              painter: _LassoPainter(
+                                rect,
+                                Theme.of(ctx).colorScheme.primary,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
+                  ),
                 ],
               );
             },
@@ -5883,11 +6133,13 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                           SizedBox(
                             width: 26,
                             child: (item.isImage || item.isVideo)
-                                ? EntryThumbnail(
-                                    root: _root,
-                                    relPath: path,
-                                    item: item,
-                                    size: 22,
+                                ? RepaintBoundary(
+                                    child: EntryThumbnail(
+                                      root: _root,
+                                      relPath: path,
+                                      item: item,
+                                      size: 22,
+                                    ),
                                   )
                                 : Icon(
                                     item.icon,
@@ -6081,14 +6333,24 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                     child: const SizedBox.expand(),
                   ),
                 ),
-                if (_lassoRect != null)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: _LassoPainter(_lassoRect!, scheme.primary),
-                      ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ValueListenableBuilder<Rect?>(
+                      valueListenable: _lassoRectNotifier,
+                      builder: (ctx, rect, _) {
+                        if (rect == null) return const SizedBox.shrink();
+                        return RepaintBoundary(
+                          child: CustomPaint(
+                            painter: _LassoPainter(
+                              rect,
+                              Theme.of(ctx).colorScheme.primary,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
+                ),
               ],
             ),
           ),

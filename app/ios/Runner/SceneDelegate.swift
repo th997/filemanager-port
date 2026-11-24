@@ -17,9 +17,21 @@ class SceneDelegate: FlutterSceneDelegate {
     if !connectionOptions.urlContexts.isEmpty {
       AppDelegate.handleIncomingURLContexts(connectionOptions.urlContexts)
     }
+    if let shortcutItem = connectionOptions.shortcutItem {
+      AppDelegate.deliverShortcutItem(shortcutItem)
+    }
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     setupChannels(from: scene)
     AppDelegate.deliverPendingRequestsIfNeeded()
+  }
+
+  override func windowScene(
+    _ windowScene: UIWindowScene,
+    performActionFor shortcutItem: UIApplicationShortcutItem,
+    completionHandler: @escaping (Bool) -> Void
+  ) {
+    AppDelegate.deliverShortcutItem(shortcutItem)
+    completionHandler(true)
   }
 
   override func sceneDidBecomeActive(_ scene: UIScene) {

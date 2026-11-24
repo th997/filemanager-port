@@ -5,11 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
+import '../rust/api/metadata.dart' show isSecretEncryptionActive;
 import '../rust/api/remotes.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
+import '../widgets/error_recovery_action.dart';
 import '../services/platform_capabilities.dart';
+import '../services/shortcut_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
@@ -34,11 +37,48 @@ class _RemotesPageState extends State<RemotesPage> {
   bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _secretEncryptionActive = true;
+  bool _shortcutsSupported = false;
 
   @override
   void initState() {
     super.initState();
     _loadRemotes();
+    _initShortcutSupport();
+    try {
+      _secretEncryptionActive = isSecretEncryptionActive(
+        dbPath: StorageService.instance.dbPath,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _initShortcutSupport() async {
+    final supported = await ShortcutService.instance.isSupported();
+    if (mounted && supported) {
+      setState(() => _shortcutsSupported = true);
+    }
+  }
+
+  Future<void> _pinRemoteShortcut(RemoteConfigDto r) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await ShortcutService.instance.pinShortcut(
+      ShortcutTarget(
+        type: 'remote',
+        id: 'remote_${r.id}',
+        label: r.name,
+        root: 'remote://${r.id}',
+      ),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? l10n.pinToHomeScreenSuccess(r.name)
+              : l10n.pinToHomeScreenUnsupported,
+        ),
+      ),
+    );
   }
 
   @override
@@ -339,6 +379,14 @@ class _RemotesPageState extends State<RemotesPage> {
           ok ? AppLocalizations.of(context).connectedToRemote(remote.name) : '${AppLocalizations.of(context).cannotReachRemote(remote.name)}${error == null ? '' : ': $error'}',
         ),
         backgroundColor: ok ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.error,
+        action: (!ok && error != null)
+            ? ErrorRecoveryActionButton.buildSnackBarAction(
+                context,
+                rawError: error,
+                remoteOverride: remote,
+                onRetry: () => _testRemote(remote),
+              )
+            : null,
       ),
     );
   }
@@ -357,6 +405,8 @@ class _RemotesPageState extends State<RemotesPage> {
         return (Icons.folder_shared, Colors.blueGrey);
       case 'smb':
         return (Icons.lan, Colors.purple);
+      case 'crypt':
+        return (Icons.enhanced_encryption, Colors.deepPurple);
       default:
         return (Icons.cloud, Colors.blue);
     }
@@ -615,6 +665,29 @@ class _RemotesPageState extends State<RemotesPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                if (!_secretEncryptionActive)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'OS keyring & key-file persistence failed; saved remote credentials are stored unencrypted locally.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (_showSearch)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -750,6 +823,9 @@ class _RemotesPageState extends State<RemotesPage> {
                                                 case 'copy':
                                                   _copyRemoteUri(r);
                                                   break;
+                                                case 'pin_shortcut':
+                                                  _pinRemoteShortcut(r);
+                                                  break;
                                                 case 'edit':
                                                   _editRemote(r);
                                                   break;
@@ -779,6 +855,17 @@ class _RemotesPageState extends State<RemotesPage> {
                                                   ],
                                                 ),
                                               ),
+                                              if (_shortcutsSupported)
+                                                PopupMenuItem(
+                                                  value: 'pin_shortcut',
+                                                  child: Row(
+                                                    children: [
+                                                      const Icon(Icons.add_to_home_screen, size: 18),
+                                                      const SizedBox(width: 8),
+                                                      Text(AppLocalizations.of(context).pinToHomeScreen),
+                                                    ],
+                                                  ),
+                                                ),
                                               PopupMenuItem(
                                                 value: 'edit',
                                                 child: Row(

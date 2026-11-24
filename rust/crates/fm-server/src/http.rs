@@ -162,23 +162,33 @@ pub async fn start_http_share_with_lang(
     })
 }
 
-fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bool {
-    let check_eq = |candidate: &str, secret: &str| -> bool {
-        if candidate.len() != secret.len() {
-            return false;
-        }
-        let mut diff = 0u8;
-        for (a, b) in candidate.as_bytes().iter().zip(secret.as_bytes()) {
-            diff |= a ^ b;
-        }
-        diff == 0
-    };
+fn check_eq(candidate: &str, secret: &str) -> bool {
+    if candidate.len() != secret.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in candidate.as_bytes().iter().zip(secret.as_bytes()) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
 
-    // 1. The URL token is a random session token minted at startup.
-    // Anyone accessing with the valid token is authenticated immediately.
+fn check_auth(headers: &HeaderMap, query: &AuthQuery, state: &ServerState) -> bool {
+
+    // 1. The URL token (or HttpOnly session cookie minted from it) is a random
+    // session token generated at startup.
     if let Some(token) = &query.token {
         if check_eq(token, &state.share_token) {
             return true;
+        }
+    }
+    if let Some(cookie_hdr) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+        for part in cookie_hdr.split(';') {
+            if let Some((k, v)) = part.trim().split_once('=') {
+                if k.trim() == "fm_share_token" && check_eq(v.trim(), &state.share_token) {
+                    return true;
+                }
+            }
         }
     }
 
@@ -272,11 +282,58 @@ async fn require_auth(
             let mut failures = state.auth_failures.lock().unwrap_or_else(|e| e.into_inner());
             failures.remove(&peer_ip);
         }
-        next.run(request).await
+        // When a browser hits `GET /?token=...`, issue the HttpOnly session
+        // cookie and 302-redirect to `/` so `?token=` is stripped immediately.
+        if request.method() == axum::http::Method::GET
+            && request.uri().path() == "/"
+            && query
+                .token
+                .as_deref()
+                .map(|t| check_eq(t, state.share_token.as_str()))
+                .unwrap_or(false)
+        {
+            let cookie_val = format!(
+                "fm_share_token={}; HttpOnly; SameSite=Lax; Path=/",
+                state.share_token
+            );
+            let mut redirect = Response::new(Body::empty());
+            *redirect.status_mut() = StatusCode::FOUND;
+            redirect.headers_mut().insert(
+                header::LOCATION,
+                header::HeaderValue::from_static("/"),
+            );
+            if let Ok(hv) = header::HeaderValue::from_str(&cookie_val) {
+                redirect.headers_mut().append(header::SET_COOKIE, hv);
+            }
+            return redirect;
+        }
+        let mut resp = next.run(request).await;
+        if query
+            .token
+            .as_deref()
+            .map(|t| check_eq(t, state.share_token.as_str()))
+            .unwrap_or(false)
+        {
+            let cookie_val = format!(
+                "fm_share_token={}; HttpOnly; SameSite=Lax; Path=/",
+                state.share_token
+            );
+            if let Ok(hv) = header::HeaderValue::from_str(&cookie_val) {
+                resp.headers_mut().append(header::SET_COOKIE, hv);
+            }
+        }
+        resp
     } else {
         let mut failures = state.auth_failures.lock().unwrap_or_else(|e| e.into_inner());
-        if failures.len() > 1024 {
-            failures.retain(|_, (_, last)| now.duration_since(*last) < std::time::Duration::from_secs(3600));
+        failures.retain(|_, (_, last)| now.duration_since(*last) < std::time::Duration::from_secs(600));
+        if failures.len() >= 1024 {
+            if let Some(oldest_ip) = failures
+                .iter()
+                .min_by_key(|(_, (_, last))| *last)
+                .map(|(ip, _)| *ip)
+            {
+                failures.remove(&oldest_ip);
+            }
         }
         let entry = failures.entry(peer_ip).or_insert((0, now));
         entry.0 = entry.0.saturating_add(1);

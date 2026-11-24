@@ -1,5 +1,7 @@
 //! Archive backend.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 pub mod archive_fs;
 pub mod ops;
 
@@ -163,5 +165,27 @@ mod tests {
             std::fs::read(out_dir.join("secret.txt")).unwrap(),
             b"top secret vault-grade payload"
         );
+    }
+
+    #[test]
+    fn in_memory_archive_lists_and_reads_without_disk_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src_file = temp_dir.path().join("vault_doc.txt");
+        std::fs::write(&src_file, b"zero-spill in-memory vault archive").unwrap();
+        let zip_file = temp_dir.path().join("mem.zip");
+        create_zip(&[src_file], &zip_file).unwrap();
+        let zip_bytes = std::fs::read(&zip_file).unwrap();
+        drop(temp_dir);
+
+        let fs = ArchiveFs::open_bytes_with_password("mem.zip", zip_bytes, None).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let entries = runtime
+            .block_on(fs.list(&fm_core::VfsPath::root()))
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "vault_doc.txt");
+
+        let read_back = fs.read_entry_bytes(&entries[0].path).unwrap();
+        assert_eq!(read_back, b"zero-spill in-memory vault archive");
     }
 }

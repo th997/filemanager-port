@@ -8,7 +8,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `copy_dir_recursive`, `move_path`, `open_db`, `remove_stored`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 Future<void> addBookmark({
   required String dbPath,
@@ -127,6 +127,54 @@ int evictPinnedCache({required String dbPath, required BigInt maxBytes}) =>
       maxBytes: maxBytes,
     );
 
+/// Reports whether at-rest credential encryption in SQLite (`fm-index`) is backed
+/// by an active keyring or persisted master key rather than plaintext fallback.
+bool isSecretEncryptionActive({required String dbPath}) => RustLib.instance.api
+    .crateApiMetadataIsSecretEncryptionActive(dbPath: dbPath);
+
+/// Compare an offline-pinned file's local cached copy against its remote source.
+Future<PinnedSyncStatusDto> checkPinnedFileStatus({
+  required String dbPath,
+  required String remoteRoot,
+  required String remotePath,
+}) => RustLib.instance.api.crateApiMetadataCheckPinnedFileStatus(
+  dbPath: dbPath,
+  remoteRoot: remoteRoot,
+  remotePath: remotePath,
+);
+
+/// Write a locally edited offline-pinned copy back to the remote location and
+/// refresh the pinned baseline metadata.
+Future<PinnedFileDto> pushPinnedFile({
+  required String dbPath,
+  required String remoteRoot,
+  required String remotePath,
+}) => RustLib.instance.api.crateApiMetadataPushPinnedFile(
+  dbPath: dbPath,
+  remoteRoot: remoteRoot,
+  remotePath: remotePath,
+);
+
+/// Encrypt a cross-device migration JSON bundle (remote connections, bookmarks,
+/// preferences) with Argon2id + AES-256-GCM.
+String encryptMigrationBundle({
+  required String plaintextJson,
+  required String password,
+}) => RustLib.instance.api.crateApiMetadataEncryptMigrationBundle(
+  plaintextJson: plaintextJson,
+  password: password,
+);
+
+/// Decrypt an encrypted cross-device migration bundle produced by
+/// [`encrypt_migration_bundle`].
+String decryptMigrationBundle({
+  required String envelopeJson,
+  required String password,
+}) => RustLib.instance.api.crateApiMetadataDecryptMigrationBundle(
+  envelopeJson: envelopeJson,
+  password: password,
+);
+
 class BookmarkDto {
   final String id;
   final String name;
@@ -236,6 +284,47 @@ class PinnedFileDto {
           pinnedAt == other.pinnedAt &&
           lastAccessedAt == other.lastAccessedAt &&
           localExists == other.localExists;
+}
+
+class PinnedSyncStatusDto {
+  /// `"synced"`, `"remote_newer"`, `"local_modified"`, `"conflict"`,
+  /// `"missing_local"`, or `"remote_error"`.
+  final String status;
+  final BigInt? remoteSize;
+  final PlatformInt64? remoteModifiedMillis;
+  final BigInt? localSize;
+  final PlatformInt64? localModifiedMillis;
+  final String? detail;
+
+  const PinnedSyncStatusDto({
+    required this.status,
+    this.remoteSize,
+    this.remoteModifiedMillis,
+    this.localSize,
+    this.localModifiedMillis,
+    this.detail,
+  });
+
+  @override
+  int get hashCode =>
+      status.hashCode ^
+      remoteSize.hashCode ^
+      remoteModifiedMillis.hashCode ^
+      localSize.hashCode ^
+      localModifiedMillis.hashCode ^
+      detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PinnedSyncStatusDto &&
+          runtimeType == other.runtimeType &&
+          status == other.status &&
+          remoteSize == other.remoteSize &&
+          remoteModifiedMillis == other.remoteModifiedMillis &&
+          localSize == other.localSize &&
+          localModifiedMillis == other.localModifiedMillis &&
+          detail == other.detail;
 }
 
 class TrashItemDto {

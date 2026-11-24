@@ -19,6 +19,7 @@ import '../services/vault_service.dart';
 import '../widgets/app_swipe_back.dart';
 import '../widgets/media_player/media_player_controls.dart';
 import '../widgets/media_player/media_player_hud.dart';
+import '../widgets/media_player/media_player_shared.dart';
 import 'media_player_page.dart';
 
 /// iOS-native video and audio playback using AVPlayer via [VideoPlayerController].
@@ -68,9 +69,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   static const _prefVolume = 'player.volume';
   static const _prefLoop = 'player.loop';
   static const _prefAutoNext = 'player.auto_next';
-  static const _prefSpeed = 'player.speed';
   static const _prefResumePrefix = 'player.resume.';
-  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 8.0];
 
   late int _index;
   bool _switching = false;
@@ -106,6 +105,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   // Speed change HUD state
   Timer? _speedHudTimer;
   double? _hudSpeed;
+
+  bool? _lastWakelockPlaying;
+  bool _lastUiPlaying = false;
+  bool _lastUiBuffering = false;
+  bool _lastUiInitialized = false;
+  int _lastUiTickMs = 0;
 
   BoxFit _videoFit = BoxFit.contain;
 
@@ -218,12 +223,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _isLooping = PreferencesService.instance.getBool(_prefLoop) ?? false;
     _autoNext = PreferencesService.instance.getBool(_prefAutoNext) ?? true;
 
-    final savedSpeed = double.tryParse(
-      PreferencesService.instance.getString(_prefSpeed) ?? '',
-    );
-    if (savedSpeed != null) {
-      _playbackSpeed = savedSpeed;
-    }
+    _playbackSpeed = loadSavedPlaybackSpeed();
 
     final savedVol = double.tryParse(
       PreferencesService.instance.getString(_prefVolume) ?? '',
@@ -506,10 +506,13 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       }
     }
 
-    if (val.isPlaying) {
-      WakelockPlus.enable().catchError((_) {});
-    } else {
-      WakelockPlus.disable().catchError((_) {});
+    if (_lastWakelockPlaying != val.isPlaying) {
+      _lastWakelockPlaying = val.isPlaying;
+      if (val.isPlaying) {
+        WakelockPlus.enable().catchError((_) {});
+      } else {
+        WakelockPlus.disable().catchError((_) {});
+      }
     }
 
     // Auto-recover if stream stalled in buffering state for >= 3s
@@ -539,7 +542,19 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       _updateNowPlaying();
     }
 
-    setState(() {});
+    final stateChanged = val.isPlaying != _lastUiPlaying ||
+        val.isBuffering != _lastUiBuffering ||
+        val.isInitialized != _lastUiInitialized;
+    final hasActiveOverlay =
+        _showControls || (_externalSubtitle != null && _subtitlesEnabled);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (stateChanged || (hasActiveOverlay && nowMs - _lastUiTickMs >= 200)) {
+      _lastUiPlaying = val.isPlaying;
+      _lastUiBuffering = val.isBuffering;
+      _lastUiInitialized = val.isInitialized;
+      _lastUiTickMs = nowMs;
+      setState(() {});
+    }
   }
 
   bool _shouldAutoFallbackToMediaKit(Object error) {
@@ -682,7 +697,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _isSpeedBoosting = false;
     _playbackSpeed = speed;
     _controller!.setPlaybackSpeed(speed);
-    PreferencesService.instance.setString(_prefSpeed, speed.toString());
+    savePlaybackSpeed(speed);
     GlobalPlaybackService.instance.setPlaybackSpeed(speed);
     _showSpeedHud(speed);
     _updateNowPlaying(force: true);
@@ -790,39 +805,11 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   }
 
   void _showPlaylist() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.playlist.length,
-          itemBuilder: (_, i) {
-            final t = widget.playlist[i];
-            final current = i == _index;
-            return ListTile(
-              dense: true,
-              leading: Icon(
-                current
-                    ? Icons.play_circle_fill
-                    : (t.isAudio ? Icons.music_note : Icons.movie_outlined),
-                color: current ? Colors.blueAccent : null,
-              ),
-              title: Text(
-                t.fileName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: current ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                if (i != _index) _openTrack(i);
-              },
-            );
-          },
-        ),
-      ),
+    showMediaPlaylistSheet(
+      context,
+      playlist: widget.playlist,
+      currentIndex: _index,
+      onSelectTrack: _openTrack,
     );
   }
 
@@ -849,17 +836,11 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
 
     final screenWidth = MediaQuery.of(context).size.width;
     final dur = _controller!.value.duration;
-    final double maxDragSeconds;
-    if (dur > const Duration(minutes: 30)) {
-      maxDragSeconds = 300.0;
-    } else if (dur > const Duration(minutes: 10)) {
-      maxDragSeconds = 180.0;
-    } else {
-      maxDragSeconds = 90.0;
-    }
-
-    final deltaSec =
-        (_dragSeekAccumulatedDx / screenWidth * maxDragSeconds).round();
+    final deltaSec = computeDragSeekDeltaSeconds(
+      accumulatedDx: _dragSeekAccumulatedDx,
+      screenWidth: screenWidth,
+      totalDuration: dur,
+    );
     final targetMs = (_dragSeekStartPos.inMilliseconds + deltaSec * 1000)
         .clamp(0, dur.inMilliseconds);
 
@@ -1033,6 +1014,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     _brightnessHudTimer?.cancel();
     _doubleTapHudTimer?.cancel();
     _speedHudTimer?.cancel();
+    _lastWakelockPlaying = null;
     ScreenBrightness.instance.resetApplicationScreenBrightness().catchError((_) {});
     WakelockPlus.disable().catchError((_) {});
     if (!_isExplicitlyClosed) {
@@ -1812,7 +1794,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                       context: context,
                       buttonContext: btnCtx,
                       currentSpeed: _playbackSpeed,
-                      rates: _rates,
+                      rates: kMediaPlaybackSpeeds,
                       onSelected: _setSpeed,
                     );
                   },

@@ -266,6 +266,11 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       } else {
         password = _passwordController.text.isEmpty ? null : _passwordController.text;
       }
+    } else if (_kind == 'crypt') {
+      password = _passwordController.text.isEmpty ? null : _passwordController.text;
+      passphrase = _passphraseController.text.trim().isEmpty
+          ? null
+          : _passphraseController.text.trim();
     } else {
       password = _passwordController.text.isEmpty ? null : _passwordController.text;
     }
@@ -416,15 +421,18 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 DropdownButtonFormField<String>(
+                  key: ValueKey('remote_kind_$_kind'),
                   initialValue: _kind,
+                  isExpanded: true,
                   decoration: InputDecoration(labelText: l10n.protocolProvider, border: const OutlineInputBorder()),
                   items: [
-                    DropdownMenuItem(value: 's3', child: Text(l10n.providerS3)),
-                    DropdownMenuItem(value: 'oss', child: Text(l10n.providerOss)),
-                    DropdownMenuItem(value: 'webdav', child: Text(l10n.providerWebdav)),
-                    DropdownMenuItem(value: 'sftp', child: Text(l10n.providerSftp)),
-                    DropdownMenuItem(value: 'ftp', child: Text(l10n.providerFtp)),
-                    DropdownMenuItem(value: 'smb', child: Text(l10n.providerSmb)),
+                    DropdownMenuItem(value: 's3', child: Text(l10n.providerS3, overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: 'oss', child: Text(l10n.providerOss, overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: 'webdav', child: Text(l10n.providerWebdav, overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: 'sftp', child: Text(l10n.providerSftp, overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: 'ftp', child: Text(l10n.providerFtp, overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: 'smb', child: Text(l10n.providerSmb, overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: 'crypt', child: Text(l10n.providerCrypt, overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (val) {
                     if (val != null) {
@@ -572,6 +580,97 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                     const SizedBox(height: 12),
                     _insecureWarning(l10n.webdavCleartextWarning),
                   ],
+                ] else if (_kind == 'crypt') ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primaryContainer
+                          .withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.enhanced_encryption,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l10n.cryptInfoBanner,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _endpointController,
+                    decoration: InputDecoration(
+                      labelText: l10n.cryptBackingRootLabel,
+                      hintText: l10n.cryptBackingRootHint,
+                      border: const OutlineInputBorder(),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? l10n.urlRequired
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _rootPathController,
+                    decoration: InputDecoration(
+                      labelText: l10n.cryptBasePrefixLabel,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: l10n.cryptPasswordLabel,
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        tooltip: _obscurePassword
+                            ? l10n.showPassword
+                            : l10n.hidePassword,
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
+                    obscureText: _obscurePassword,
+                    validator: (v) => (_kind == 'crypt' &&
+                            (v == null || v.isEmpty))
+                        ? l10n.cryptPasswordRequired
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _passphraseController,
+                    decoration: InputDecoration(
+                      labelText: l10n.cryptSaltOptionalLabel,
+                      hintText: l10n.cryptSaltHint,
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassphrase
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        tooltip: _obscurePassphrase
+                            ? l10n.showPassphrase
+                            : l10n.hidePassphrase,
+                        onPressed: () => setState(
+                            () => _obscurePassphrase = !_obscurePassphrase),
+                      ),
+                    ),
+                    obscureText: _obscurePassphrase,
+                  ),
                 ] else ...[
                   Row(
                     children: [

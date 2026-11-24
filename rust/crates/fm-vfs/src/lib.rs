@@ -1,35 +1,12 @@
-//! The backend contract and the granted-root model.
-//!
-//! Every platform that restricts filesystem access (iOS, macOS sandbox,
-//! Android SAF, Flatpak portals) grants access to a *root*, not to the whole
-//! filesystem. Backends expose that root explicitly so the same abstraction
-//! serves all of them.
+//! The backend VFS contract and error model shared across local, remote,
+//! archive, and encrypted privacy-vault implementations.
+
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use async_trait::async_trait;
-use fm_core::{Capabilities, Entry, LocationId, VfsPath, WriteMode};
+use fm_core::{Capabilities, Entry, VfsPath, WriteMode};
 use std::io;
 use thiserror::Error;
-
-/// A root the host has granted access to.
-///
-/// `grant` is opaque backend data: a security-scoped bookmark on Apple
-/// platforms, a persisted SAF URI on Android, or a plain path elsewhere. The
-/// backend, not the UI, interprets it.
-#[derive(Debug, Clone)]
-pub struct GrantedRoot {
-    pub location: LocationId,
-    pub grant: Grant,
-}
-
-#[derive(Debug, Clone)]
-pub enum Grant {
-    /// Unrestricted native path. Linux, Windows, and unsandboxed macOS.
-    NativePath(std::path::PathBuf),
-    /// Apple security-scoped bookmark bytes.
-    AppleBookmark(Vec<u8>),
-    /// Android SAF tree URI granted with persistable permission.
-    AndroidTreeUri(String),
-}
 
 /// Failure from a backend operation. `path` is retained so the UI can name the
 /// item that failed.
@@ -81,7 +58,16 @@ pub trait Vfs: Send + Sync {
         page: u32,
         page_size: u32,
     ) -> VfsResult<(Vec<Entry>, bool)> {
-        let all = self.list(dir).await?;
+        let mut all = self.list(dir).await?;
+        all.sort_unstable_by(|a, b| {
+            fm_core::compare_dir_and_name(
+                a.kind == fm_core::EntryKind::Dir,
+                &a.name,
+                b.kind == fm_core::EntryKind::Dir,
+                &b.name,
+                true,
+            )
+        });
         let page = page.max(1);
         let page_size = page_size.max(1);
         let skip = ((page - 1) as usize).saturating_mul(page_size as usize);
@@ -89,6 +75,18 @@ pub trait Vfs: Send + Sync {
         let has_more = skip + (page_size as usize) < total;
         let entries = all.into_iter().skip(skip).take(page_size as usize).collect();
         Ok((entries, has_more))
+    }
+
+    /// Paginated directory listing returning an optional exact total entry count
+    /// when the backend can determine it without per-entry network/stat I/O.
+    async fn list_paged_with_total(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, Option<u32>)> {
+        let (entries, has_more) = self.list_paged(dir, page, page_size).await?;
+        Ok((entries, has_more, None))
     }
 
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry>;

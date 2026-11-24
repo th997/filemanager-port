@@ -1,5 +1,7 @@
 //! Local filesystem backend rooted at a native path.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 use async_trait::async_trait;
 use fm_core::{Capabilities, Entry, EntryKind, VfsPath, WriteMode};
 use fm_vfs::{Vfs, VfsError, VfsResult};
@@ -264,6 +266,87 @@ impl Vfs for LocalFs {
                 b_dir.cmp(&a_dir).then_with(|| a.name.cmp(&b.name))
             });
             Ok(entries)
+        })
+        .await
+        .map_err(|join_err| VfsError::Backend {
+            path: dir.clone(),
+            source: std::io::Error::other(join_err.to_string()),
+        })?
+    }
+
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let (entries, has_more, _) = self.list_paged_with_total(dir, page, page_size).await?;
+        Ok((entries, has_more))
+    }
+
+    async fn list_paged_with_total(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, Option<u32>)> {
+        let native = self.resolve(dir)?;
+        let dir_clone = dir.clone();
+        let page = page.max(1);
+        let page_size = page_size.max(1) as usize;
+        let skip = ((page - 1) as usize).saturating_mul(page_size);
+
+        tokio::task::spawn_blocking(move || {
+            let read_dir = std::fs::read_dir(&native).map_err(|error| VfsError::Backend {
+                path: dir_clone.clone(),
+                source: error,
+            })?;
+
+            // Pass 1: collect lightweight (is_dir_hint, name, path, is_symlink) without
+            // calling full stat() on entries outside the requested page window.
+            let mut lightweight: Vec<(bool, String, std::path::PathBuf, bool)> = Vec::new();
+            for item_res in read_dir {
+                let item = match item_res {
+                    Ok(i) => i,
+                    Err(_) => continue,
+                };
+                let name = item.file_name().to_string_lossy().into_owned();
+                let path = item.path();
+                let file_type = item.file_type().ok();
+                let is_symlink = file_type.map(|ft| ft.is_symlink()).unwrap_or(false);
+                let is_dir = if is_symlink {
+                    std::fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false)
+                } else {
+                    file_type.map(|ft| ft.is_dir()).unwrap_or(false)
+                };
+                lightweight.push((is_dir, name, path, is_symlink));
+            }
+
+            lightweight.sort_unstable_by(|a, b| {
+                fm_core::compare_dir_and_name(a.0, &a.1, b.0, &b.1, true)
+            });
+
+            let total = lightweight.len();
+            let has_more = skip.saturating_add(page_size) < total;
+            let mut entries = Vec::with_capacity(page_size.min(total.saturating_sub(skip)));
+
+            // Pass 2: call metadata() only for entries in the requested page slice.
+            for (_, name, path, is_symlink) in lightweight.into_iter().skip(skip).take(page_size) {
+                let metadata = if is_symlink {
+                    std::fs::metadata(&path)
+                        .or_else(|_| std::fs::symlink_metadata(&path))
+                        .ok()
+                } else {
+                    std::fs::metadata(&path).ok()
+                };
+                let Some(meta) = metadata else {
+                    continue;
+                };
+                let child = dir_clone.join(name.clone());
+                entries.push(entry_from_metadata(child, name, &meta, is_symlink));
+            }
+
+            Ok((entries, has_more, Some(total as u32)))
         })
         .await
         .map_err(|join_err| VfsError::Backend {

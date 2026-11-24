@@ -960,6 +960,37 @@ impl Vfs for VaultFs {
         })?
     }
 
+    async fn list_paged(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool)> {
+        let (entries, has_more, _) = self.list_paged_with_total(dir, page, page_size).await?;
+        Ok((entries, has_more))
+    }
+
+    async fn list_paged_with_total(
+        &self,
+        dir: &VfsPath,
+        page: u32,
+        page_size: u32,
+    ) -> VfsResult<(Vec<Entry>, bool, Option<u32>)> {
+        let dek = self.state.current_dek(dir)?;
+        let dir_tree = self.state.dir_tree.clone();
+        let dir_clone = dir.clone();
+        let (entries, has_more, total) = tokio::task::spawn_blocking(move || {
+            let mut guard = dir_tree.lock();
+            guard.list_paged(&dir_clone, &dek, page, page_size)
+        })
+        .await
+        .map_err(|e| VfsError::Backend {
+            path: dir.clone(),
+            source: io::Error::other(e),
+        })??;
+        Ok((entries, has_more, Some(total)))
+    }
+
     async fn stat(&self, path: &VfsPath) -> VfsResult<Entry> {
         let dek = self.state.current_dek(path)?;
         let dir_tree = self.state.dir_tree.clone();

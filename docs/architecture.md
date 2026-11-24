@@ -10,7 +10,8 @@ app/ (Flutter)
                                                         ├─ fm-remote
                                                         ├─ fm-server
                                                         ├─ fm-index
-                                                        └─ fm-ops
+                                                        ├─ fm-ops
+                                                        └─ fm-vault
 ```
 
 ## Layering rules
@@ -34,18 +35,12 @@ app/ (Flutter)
   components are rejected rather than normalised, so a backend path can never
   escape its root.
 
-## Granted roots
+## Platform roots & sandboxing
 
-Restricted platforms grant access to a *root*, not the filesystem:
-
-| Platform | Grant |
-|---|---|
-| Linux / Windows / unsandboxed macOS | `Grant::NativePath` |
-| macOS App Sandbox, iOS | `Grant::AppleBookmark` (security-scoped) |
-| Android SAF | `Grant::AndroidTreeUri` (persistable permission) |
-
-Backends interpret their own grant. The UI asks `capabilities()` and hides
-actions that the backend cannot perform.
+Platform storage roots are resolved cleanly at the boundary:
+- **Linux / Windows / macOS / Android all-files / iOS sandbox**: `VfsRegistry` instantiates `LocalFs` directly from the platform path.
+- **Android SAF exposure**: `fm-ffi/src/saf_jni.rs` bridges content-provider queries for `FileManagerDocumentsProvider.kt`.
+- The UI queries `capabilities()` on each `Vfs` backend and hides actions that the backend cannot perform.
 
 ## Unknowns
 

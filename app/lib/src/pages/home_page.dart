@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/inspect.dart';
@@ -19,15 +21,22 @@ import 'package:filemanager/l10n/app_localizations.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
 import 'category_files_page.dart';
+import 'duplicate_finder_page.dart';
 import 'gallery_page.dart';
+import 'offline_pinned_page.dart';
+import 'peer_transfer_page.dart';
+import 'photo_backup_page.dart';
 import 'recent_page.dart';
 import 'remotes_page.dart';
 import 'settings_page.dart';
 import 'storage_analyzer_page.dart';
+import 'sync_page.dart';
 import 'tasks_page.dart';
+import 'trash_page.dart';
 import 'utilities_page.dart';
 import '../services/external_file_service.dart';
 import '../services/platform_capabilities.dart';
+import '../services/shortcut_service.dart';
 import '../services/vault_service.dart';
 
 class HomePage extends StatefulWidget {
@@ -64,8 +73,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _hasStorageAccess = true;
   bool _requestingAccess = false;
   bool _welcomeDismissed = false;
+  int _domainIndex = 0;
 
   static const _prefWelcomeDismissed = 'home.welcome_dismissed';
+  StreamSubscription<ShortcutTarget>? _shortcutSub;
 
   @override
   void initState() {
@@ -76,10 +87,42 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     VaultService.instance.addListener(_onVaultChanged);
     _loadMetadata();
     _checkStorageAccess();
+    _shortcutSub = ShortcutService.instance.onShortcutOpened.listen((target) {
+      if (mounted) _openShortcutTarget(target);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _consumePendingShortcut();
+    });
+  }
+
+  Future<void> _consumePendingShortcut() async {
+    final target = await ShortcutService.instance.consumeInitialShortcut();
+    if (target != null && mounted) {
+      _openShortcutTarget(target);
+    }
+  }
+
+  void _openShortcutTarget(ShortcutTarget target) {
+    if (target.type == 'sync') {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SyncPage()),
+      );
+      return;
+    }
+    if (target.root.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BrowserPage(
+          initialRoot: target.root,
+          initialPath: target.path,
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _shortcutSub?.cancel();
     VaultService.instance.removeListener(_onVaultChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -397,10 +440,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialRelPath: relPath,
           onNavigate: onNavigate,
         ),
+        topBanner: !_hasStorageAccess
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _buildPermissionBanner(),
+              )
+            : null,
       );
     }
 
     final l10n = AppLocalizations.of(context);
+    final effectiveDomain = _pickMode ? _domainIndex.clamp(0, 1) : _domainIndex.clamp(0, 2);
     return Scaffold(
       appBar: AppBar(
         leading: _pickMode
@@ -418,6 +468,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : l10n.appTitle,
         ),
         actions: [
+          if (!_pickMode)
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: l10n.globalSearchHint,
+              onPressed: () => _openGlobalSearch(),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: l10n.refresh,
@@ -433,34 +489,48 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: AppUiTokens.pagePadding,
-                children: [
-                  if (!_pickMode) ...[
-                    _buildGlobalSearchBar(l10n),
-                    const SizedBox(height: 8),
-                  ],
-                  if (!_hasStorageAccess) ...[
-                    _buildPermissionBanner(),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_showWelcome) ...[
-                    _buildWelcomeBanner(),
-                    const SizedBox(height: 8),
-                  ],
-                  _sectionHeader(l10n.localStorage),
-                  if (_diskSpace != null && _diskSpace!.totalBytes > BigInt.zero) ...[
-                    _buildDiskSpaceBar(l10n, _diskSpace!),
-                    const SizedBox(height: 8),
-                  ],
-                  _buildLocalStorageGrid(),
-                  const SizedBox(height: 12),
-                  _sectionHeader(l10n.cloudToolsSettings),
-                  _buildCategoriesGrid(),
-                  const SizedBox(height: 16),
-                ],
+                children: switch (effectiveDomain) {
+                  0 => _buildStorageDomainChildren(l10n),
+                  1 => _buildDiscoverDomainChildren(l10n),
+                  _ => _buildToolsDomainChildren(l10n),
+                },
               ),
             ),
           ),
           if (!_pickMode) const ActiveTasksBanner(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: effectiveDomain,
+        onDestinationSelected: (idx) => setState(() => _domainIndex = idx),
+        destinations: [
+          NavigationDestination(
+            key: const ValueKey('home_nav_storage'),
+            icon: const Icon(Icons.storage_outlined),
+            selectedIcon: const Icon(Icons.storage),
+            label: l10n.navDomainStorage,
+          ),
+          NavigationDestination(
+            key: const ValueKey('home_nav_discover'),
+            icon: const Icon(Icons.manage_search_outlined),
+            selectedIcon: const Icon(Icons.manage_search),
+            label: l10n.navDomainDiscover,
+          ),
+          if (!_pickMode)
+            NavigationDestination(
+              key: const ValueKey('home_nav_tools'),
+              icon: Badge(
+                isLabelVisible: _activeTaskCount > 0,
+                label: Text('$_activeTaskCount'),
+                child: const Icon(Icons.handyman_outlined),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: _activeTaskCount > 0,
+                label: Text('$_activeTaskCount'),
+                child: const Icon(Icons.handyman),
+              ),
+              label: l10n.navDomainTools,
+            ),
         ],
       ),
     );
@@ -689,133 +759,412 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildLocalStorageGrid() {
+  List<Widget> _buildStorageDomainChildren(AppLocalizations l10n) {
     final targets = PlatformPaths.quickTargets()
         .where((t) => !_pickMode || t.kind != 'inbox')
         .toList();
-    return _buildSectionGrid(
-      children: [
-        _buildGridCard(
-          icon: Icons.photo_library,
-          iconColor: const Color(0xFFD81B60),
-          title: AppLocalizations.of(context).gallery,
-          subtitle: AppLocalizations.of(context).allPhotos,
-          onTap: () async {
-            final picked = await Navigator.of(context).push<List<String>>(
-              MaterialPageRoute(builder: (_) => GalleryPage(pickRequest: widget.pickRequest)),
-            );
-            if (picked != null && picked.isNotEmpty && mounted) {
-              Navigator.of(context).pop(picked);
-            }
-          },
-        ),
-        if (!_pickMode &&
-            PlatformCapabilities.supportsHomeSmartCategories) ...[
-          _buildGridCard(
-            icon: Icons.description_outlined,
-            iconColor: const Color(0xFF1E88E5),
-            title: AppLocalizations.of(context).categoryDocuments,
-            subtitle: 'PDF · DOC · MD',
-            onTap: () => _openCategory('document'),
-          ),
-          _buildGridCard(
-            icon: Icons.movie_outlined,
-            iconColor: const Color(0xFFE53935),
-            title: AppLocalizations.of(context).categoryVideos,
-            subtitle: 'MP4 · MKV · MOV',
-            onTap: () => _openCategory('video'),
-          ),
-          _buildGridCard(
-            icon: Icons.audiotrack_outlined,
-            iconColor: const Color(0xFF8E24AA),
-            title: AppLocalizations.of(context).categoryAudio,
-            subtitle: 'MP3 · FLAC · WAV',
-            onTap: () => _openCategory('audio'),
-          ),
-          _buildGridCard(
-            icon: Icons.folder_zip_outlined,
-            iconColor: const Color(0xFFFB8C00),
-            title: AppLocalizations.of(context).categoryArchives,
-            subtitle: 'ZIP · 7Z · TAR',
-            onTap: () => _openCategory('archive'),
-          ),
-          if (PlatformCapabilities.supportsInstallersCategory)
+    final unlocked = VaultService.instance.unlockedVaults;
+    final lockedPinned = VaultService.instance.lockedPinnedVaults;
+
+    return [
+      if (!_hasStorageAccess) ...[
+        _buildPermissionBanner(),
+        const SizedBox(height: 8),
+      ],
+      if (_showWelcome) ...[
+        _buildWelcomeBanner(),
+        const SizedBox(height: 8),
+      ],
+      _sectionHeader(l10n.localStorage),
+      if (_diskSpace != null && _diskSpace!.totalBytes > BigInt.zero) ...[
+        _buildDiskSpaceBar(l10n, _diskSpace!),
+        const SizedBox(height: 8),
+      ],
+      _buildSectionGrid(
+        children: targets.map((t) {
+          IconData icon;
+          Color iconColor;
+          switch (t.kind) {
+            case 'download':
+            case 'downloads':
+              icon = Icons.download;
+              iconColor = Colors.teal;
+            case 'inbox':
+              icon = Icons.inbox_rounded;
+              iconColor = Colors.amber.shade700;
+            case 'dcim':
+            case 'pictures':
+              icon = Icons.photo_library;
+              iconColor = Colors.purple;
+            case 'documents':
+              icon = Icons.description;
+              iconColor = Colors.indigo;
+            case 'home':
+              icon = Icons.home;
+              iconColor = Colors.deepOrange;
+            default:
+              icon = Icons.storage;
+              iconColor = Colors.blueGrey;
+          }
+          return _buildGridCard(
+            icon: icon,
+            iconColor: iconColor,
+            title: t.displayName(l10n),
+            subtitle: t.kind == 'inbox' ? l10n.privateInboxSubtitle : t.path,
+            onTap: () => _openTarget(t.root, t.relPath),
+            onLongPress: () {
+              Clipboard.setData(ClipboardData(text: t.path));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(l10n.copiedPathValue(t.path))),
+              );
+            },
+          );
+        }).toList(),
+      ),
+      const SizedBox(height: 12),
+      _sectionHeader(l10n.remote),
+      _buildSectionGrid(
+        children: [
+          for (final r in _remotes)
             _buildGridCard(
-              icon: PlatformCapabilities.installerCategoryIcon,
-              iconColor: const Color(0xFF00ACC1),
-              title: AppLocalizations.of(context).categoryApks,
-              subtitle: PlatformCapabilities.installerCategorySubtitle,
-              onTap: () => _openCategory('apk'),
+              icon: Icons.cloud_done_outlined,
+              iconColor: const Color(0xFF1E88E5),
+              title: r.name,
+              subtitle: r.kind.toUpperCase(),
+              onTap: () => _openTarget('remote://${r.id}', ''),
+            ),
+          _buildGridCard(
+            icon: Icons.cloud,
+            iconColor: const Color(0xFF1E88E5),
+            title: l10n.remote,
+            subtitle: _remotes.isEmpty
+                ? l10n.remoteProtocolsSubtitle
+                : '${_remotes.length} connection${_remotes.length > 1 ? "s" : ""}',
+            onTap: () async {
+              final picked = await Navigator.of(context).push<List<String>>(
+                MaterialPageRoute(
+                  builder: (_) => RemotesPage(pickRequest: widget.pickRequest),
+                ),
+              );
+              if (picked != null && picked.isNotEmpty && mounted) {
+                Navigator.of(context).pop(picked);
+                return;
+              }
+              _loadMetadata();
+            },
+          ),
+        ],
+      ),
+      if (!_pickMode) ...[
+        const SizedBox(height: 12),
+        _sectionHeader(l10n.privacyFolders),
+        _buildSectionGrid(
+          children: [
+            for (final vault in unlocked)
+              _buildGridCard(
+                icon: Icons.lock_open_rounded,
+                iconColor: Colors.indigo,
+                title: vault.name,
+                subtitle: l10n.unlockedBadge,
+                onTap: () => _openTarget('vault://${vault.id}', ''),
+                onLongPress: () => _showUnlockedVaultActions(vault),
+              ),
+            for (final pinned in lockedPinned)
+              _buildGridCard(
+                icon: Icons.lock_outline,
+                iconColor: Colors.blueGrey,
+                title: pinned.name,
+                subtitle: l10n.lockedBadge,
+                onTap: () => _openLockedPinnedVault(pinned),
+                onLongPress: () => _showLockedPinnedVaultActions(pinned),
+              ),
+            _buildGridCard(
+              icon: Icons.enhanced_encryption_outlined,
+              iconColor: Colors.indigo,
+              title: l10n.openPrivacyFolder,
+              subtitle: l10n.privacyFoldersDesc,
+              onTap: () async {
+                final v = await OpenVaultDialog.show(context);
+                if (v != null && mounted) {
+                  _openTarget('vault://${v.id}', '');
+                }
+              },
+            ),
+            _buildGridCard(
+              icon: Icons.create_new_folder_outlined,
+              iconColor: Colors.teal,
+              title: l10n.createPrivacyFolder,
+              subtitle: l10n.privacyFolders,
+              onTap: () async {
+                final v = await CreateVaultDialog.show(context);
+                if (v != null && mounted) {
+                  _openTarget('vault://${v.id}', '');
+                }
+              },
+            ),
+          ],
+        ),
+      ],
+      const SizedBox(height: 16),
+    ];
+  }
+
+  List<Widget> _buildDiscoverDomainChildren(AppLocalizations l10n) {
+    return [
+      if (!_pickMode) ...[
+        _buildGlobalSearchBar(l10n),
+        const SizedBox(height: 12),
+      ],
+      _sectionHeader(l10n.navDomainDiscover),
+      _buildSectionGrid(
+        children: [
+          _buildGridCard(
+            icon: Icons.photo_library,
+            iconColor: const Color(0xFFD81B60),
+            title: l10n.gallery,
+            subtitle: l10n.allPhotos,
+            onTap: () async {
+              final picked = await Navigator.of(context).push<List<String>>(
+                MaterialPageRoute(
+                  builder: (_) => GalleryPage(pickRequest: widget.pickRequest),
+                ),
+              );
+              if (picked != null && picked.isNotEmpty && mounted) {
+                Navigator.of(context).pop(picked);
+              }
+            },
+          ),
+          if (!_pickMode &&
+              PlatformCapabilities.supportsHomeSmartCategories) ...[
+            _buildGridCard(
+              icon: Icons.description_outlined,
+              iconColor: const Color(0xFF1E88E5),
+              title: l10n.categoryDocuments,
+              subtitle: 'PDF · DOC · MD',
+              onTap: () => _openCategory('document'),
+            ),
+            _buildGridCard(
+              icon: Icons.movie_outlined,
+              iconColor: const Color(0xFFE53935),
+              title: l10n.categoryVideos,
+              subtitle: 'MP4 · MKV · MOV',
+              onTap: () => _openCategory('video'),
+            ),
+            _buildGridCard(
+              icon: Icons.audiotrack_outlined,
+              iconColor: const Color(0xFF8E24AA),
+              title: l10n.categoryAudio,
+              subtitle: 'MP3 · FLAC · WAV',
+              onTap: () => _openCategory('audio'),
+            ),
+            _buildGridCard(
+              icon: Icons.folder_zip_outlined,
+              iconColor: const Color(0xFFFB8C00),
+              title: l10n.categoryArchives,
+              subtitle: 'ZIP · 7Z · TAR',
+              onTap: () => _openCategory('archive'),
+            ),
+            if (PlatformCapabilities.supportsInstallersCategory)
+              _buildGridCard(
+                icon: PlatformCapabilities.installerCategoryIcon,
+                iconColor: const Color(0xFF00ACC1),
+                title: l10n.categoryApks,
+                subtitle: PlatformCapabilities.installerCategorySubtitle,
+                onTap: () => _openCategory('apk'),
+              ),
+          ],
+          _buildGridCard(
+            icon: Icons.bookmark,
+            iconColor: const Color(0xFFFB8C00),
+            title: l10n.bookmarks,
+            subtitle: _bookmarks.isEmpty
+                ? l10n.bookmarksDefaultSubtitle
+                : '${_bookmarks.length} bookmark${_bookmarks.length > 1 ? "s" : ""}',
+            onTap: () async {
+              final picked = await Navigator.of(context).push<List<String>>(
+                MaterialPageRoute(
+                  builder: (_) => BookmarksPage(pickRequest: widget.pickRequest),
+                ),
+              );
+              if (picked != null && picked.isNotEmpty && mounted) {
+                Navigator.of(context).pop(picked);
+                return;
+              }
+              _loadMetadata();
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.history,
+            iconColor: const Color(0xFF3949AB),
+            title: l10n.recent,
+            subtitle: _history.isEmpty
+                ? l10n.recentDefaultSubtitle
+                : '${_history.length} location${_history.length > 1 ? "s" : ""}',
+            onTap: () async {
+              final picked = await Navigator.of(context).push<List<String>>(
+                MaterialPageRoute(
+                  builder: (_) => RecentPage(pickRequest: widget.pickRequest),
+                ),
+              );
+              if (picked != null && picked.isNotEmpty && mounted) {
+                Navigator.of(context).pop(picked);
+                return;
+              }
+              _loadMetadata();
+            },
+          ),
+          if (!_pickMode)
+            _buildGridCard(
+              icon: Icons.offline_pin_outlined,
+              iconColor: Colors.indigo,
+              title: l10n.offlinePinned,
+              subtitle: l10n.offlinePinnedSubtitle,
+              onTap: () {
+                Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const OfflinePinnedPage()))
+                    .then((_) => _loadMetadata());
+              },
             ),
         ],
-        ...targets.map((t) {
-        IconData icon;
-        Color iconColor;
-        switch (t.kind) {
-          case 'download':
-          case 'downloads':
-            icon = Icons.download;
-            iconColor = Colors.teal;
-          case 'inbox':
-            icon = Icons.inbox_rounded;
-            iconColor = Colors.amber.shade700;
-          case 'dcim':
-          case 'pictures':
-            icon = Icons.photo_library;
-            iconColor = Colors.purple;
-          case 'documents':
-            icon = Icons.description;
-            iconColor = Colors.indigo;
-          case 'home':
-            icon = Icons.home;
-            iconColor = Colors.deepOrange;
-          default:
-            icon = Icons.storage;
-            iconColor = Colors.blueGrey;
-        }
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
 
-        return _buildGridCard(
-          icon: icon,
-          iconColor: iconColor,
-          title: t.displayName(AppLocalizations.of(context)),
-          subtitle: t.kind == 'inbox'
-              ? AppLocalizations.of(context).privateInboxSubtitle
-              : t.path,
-          onTap: () => _openTarget(t.root, t.relPath),
-          onLongPress: () {
-            Clipboard.setData(ClipboardData(text: t.path));
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context).copiedPathValue(t.path))),
-            );
-          },
-        );
-        }),
-        if (!_pickMode) ...[
-          ...VaultService.instance.unlockedVaults.map((vault) {
-            final l10n = AppLocalizations.of(context);
-            return _buildGridCard(
-              icon: Icons.lock_open_rounded,
-              iconColor: Colors.indigo,
-              title: vault.name,
-              subtitle: l10n.unlockedBadge,
-              onTap: () => _openTarget('vault://${vault.id}', ''),
-              onLongPress: () => _showUnlockedVaultActions(vault),
-            );
-          }),
-          ...VaultService.instance.lockedPinnedVaults.map((pinned) {
-            final l10n = AppLocalizations.of(context);
-            return _buildGridCard(
-              icon: Icons.lock_outline,
-              iconColor: Colors.blueGrey,
-              title: pinned.name,
-              subtitle: l10n.lockedBadge,
-              onTap: () => _openLockedPinnedVault(pinned),
-              onLongPress: () => _showLockedPinnedVaultActions(pinned),
-            );
-          }),
+  List<Widget> _buildToolsDomainChildren(AppLocalizations l10n) {
+    final defaultRoot = PlatformPaths.defaultRoot();
+    return [
+      _sectionHeader(l10n.navDomainTools),
+      _buildSectionGrid(
+        children: [
+          _buildGridCard(
+            icon: Icons.pie_chart_outline,
+            iconColor: Colors.teal,
+            title: l10n.storageAnalyzer,
+            subtitle: l10n.localStorage,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => StorageAnalyzerPage(
+                    root: defaultRoot,
+                    title: l10n.localStorage,
+                  ),
+                ),
+              );
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.file_copy_outlined,
+            iconColor: Colors.deepOrange,
+            title: l10n.duplicateFinder,
+            subtitle: l10n.localStorage,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DuplicateFinderPage(
+                    root: defaultRoot,
+                    title: l10n.localStorage,
+                  ),
+                ),
+              );
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.sync,
+            iconColor: Colors.blue,
+            title: l10n.directorySync,
+            subtitle: l10n.directorySyncSubtitle,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SyncPage()),
+              );
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.swap_horiz,
+            iconColor: Colors.indigo,
+            title: l10n.lanPeerTransferTitle,
+            subtitle: l10n.lanPeerTransferSubtitle,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PeerTransferPage()),
+              );
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.backup_outlined,
+            iconColor: Colors.green,
+            title: l10n.photoBackupTitle,
+            subtitle: l10n.photoBackupSubtitle,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PhotoBackupPage()),
+              );
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.build_outlined,
+            iconColor: const Color(0xFF5E35B1),
+            title: l10n.utilities,
+            subtitle: l10n.lanSharing,
+            onTap: () {
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const UtilitiesPage()))
+                  .then((_) => _loadMetadata());
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.task_alt,
+            iconColor: const Color(0xFF00897B),
+            title: l10n.tasks,
+            subtitle: _activeTaskCount > 0
+                ? '$_activeTaskCount running'
+                : l10n.tasksDefaultSubtitle,
+            onTap: () {
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const TasksPage()))
+                  .then((_) => _loadMetadata());
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.delete_outline,
+            iconColor: Colors.redAccent,
+            title: l10n.recycleBin,
+            subtitle: _trashCount > 0
+                ? l10n.utilitiesTrashSubtitle(_trashCount)
+                : l10n.recycleBin,
+            onTap: () {
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const TrashPage()))
+                  .then((_) => _loadMetadata());
+            },
+          ),
+          _buildGridCard(
+            icon: Icons.settings,
+            iconColor: const Color(0xFF546E7A),
+            title: l10n.settings,
+            subtitle: l10n.settingsCardSubtitle,
+            onTap: () {
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(
+                      builder: (_) => SettingsPage(
+                        currentThemeMode: widget.themeMode,
+                        onThemeModeChanged: widget.onThemeModeChanged ?? (_) {},
+                        localeCode: widget.localeCode ?? 'system',
+                        onLocaleChanged: widget.onLocaleChanged ?? (_) {},
+                        accentCode: widget.accentCode ?? 'dynamic',
+                        onAccentChanged: widget.onAccentChanged ?? (_) {},
+                      ),
+                    ),
+                  )
+                  .then((_) => _loadMetadata());
+            },
+          ),
         ],
-      ],
-    );
+      ),
+      const SizedBox(height: 16),
+    ];
   }
 
   Future<void> _openLockedPinnedVault(PinnedVaultEntry pinned) async {
@@ -984,124 +1333,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildCategoriesGrid() {
-    return _buildSectionGrid(
-      children: [
-        // 1. Remote (S3, OSS, SFTP, WebDAV secondary page)
-        _buildGridCard(
-          icon: Icons.cloud,
-          iconColor: const Color(0xFF1E88E5),
-          title: AppLocalizations.of(context).remote,
-          subtitle: _remotes.isEmpty
-              ? AppLocalizations.of(context).remoteProtocolsSubtitle
-              : '${_remotes.length} connection${_remotes.length > 1 ? "s" : ""}',
-          onTap: () async {
-            final picked = await Navigator.of(context).push<List<String>>(
-              MaterialPageRoute(builder: (_) => RemotesPage(pickRequest: widget.pickRequest)),
-            );
-            if (picked != null && picked.isNotEmpty && mounted) {
-              Navigator.of(context).pop(picked);
-              return;
-            }
-            _loadMetadata();
-          },
-        ),
-
-        // 2. Bookmarks (Saved favorite folders secondary page)
-        _buildGridCard(
-          icon: Icons.bookmark,
-          iconColor: const Color(0xFFFB8C00),
-          title: AppLocalizations.of(context).bookmarks,
-          subtitle: _bookmarks.isEmpty
-              ? AppLocalizations.of(context).bookmarksDefaultSubtitle
-              : '${_bookmarks.length} bookmark${_bookmarks.length > 1 ? "s" : ""}',
-          onTap: () async {
-            final picked = await Navigator.of(context).push<List<String>>(
-              MaterialPageRoute(builder: (_) => BookmarksPage(pickRequest: widget.pickRequest)),
-            );
-            if (picked != null && picked.isNotEmpty && mounted) {
-              Navigator.of(context).pop(picked);
-              return;
-            }
-            _loadMetadata();
-          },
-        ),
-
-        // 3. Recent (History secondary page)
-        _buildGridCard(
-          icon: Icons.history,
-          iconColor: const Color(0xFF3949AB),
-          title: AppLocalizations.of(context).recent,
-          subtitle: _history.isEmpty
-              ? AppLocalizations.of(context).recentDefaultSubtitle
-              : '${_history.length} location${_history.length > 1 ? "s" : ""}',
-          onTap: () async {
-            final picked = await Navigator.of(context).push<List<String>>(
-              MaterialPageRoute(builder: (_) => RecentPage(pickRequest: widget.pickRequest)),
-            );
-            if (picked != null && picked.isNotEmpty && mounted) {
-              Navigator.of(context).pop(picked);
-              return;
-            }
-            _loadMetadata();
-          },
-        ),
-
-        if (!_pickMode) ...[
-          // 4. Utilities (Recycle bin, Web sharing, Cache secondary page)
-          _buildGridCard(
-            icon: Icons.build_outlined,
-            iconColor: const Color(0xFF5E35B1),
-            title: AppLocalizations.of(context).utilities,
-            subtitle: _trashCount > 0 ? AppLocalizations.of(context).utilitiesTrashSubtitle(_trashCount) : AppLocalizations.of(context).utilitiesDefaultSubtitle,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const UtilitiesPage()),
-              ).then((_) => _loadMetadata());
-            },
-          ),
-
-          // 5. Tasks (background transfers & operations)
-          _buildGridCard(
-            icon: Icons.task_alt,
-            iconColor: const Color(0xFF00897B),
-            title: AppLocalizations.of(context).tasks,
-            subtitle: _activeTaskCount > 0
-                ? '$_activeTaskCount running'
-                : AppLocalizations.of(context).tasksDefaultSubtitle,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TasksPage()),
-              ).then((_) => _loadMetadata());
-            },
-          ),
-
-          // 6. Settings (Preferences secondary page)
-          _buildGridCard(
-            icon: Icons.settings,
-            iconColor: const Color(0xFF546E7A),
-            title: AppLocalizations.of(context).settings,
-            subtitle: AppLocalizations.of(context).settingsCardSubtitle,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SettingsPage(
-                    currentThemeMode: widget.themeMode,
-                    onThemeModeChanged: widget.onThemeModeChanged ?? (_) {},
-                    localeCode: widget.localeCode ?? 'system',
-                    onLocaleChanged: widget.onLocaleChanged ?? (_) {},
-                    accentCode: widget.accentCode ?? 'dynamic',
-                    onAccentChanged: widget.onAccentChanged ?? (_) {},
-                  ),
-                ),
-              ).then((_) => _loadMetadata());
-            },
-          ),
-        ],
-      ],
     );
   }
 }

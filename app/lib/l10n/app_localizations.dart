@@ -6291,6 +6291,480 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Change retention'**
   String get historyRetentionChange;
+
+  /// No description provided for @errorSftpHostKey.
+  ///
+  /// In en, this message translates to:
+  /// **'SSH host key verification failed. Confirm the server identity or re-save the SFTP connection.\n({raw})'**
+  String errorSftpHostKey(String raw);
+
+  /// No description provided for @errorObjectStorageConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Object storage configuration error. Check the bucket name, endpoint, region, and access keys.\n({raw})'**
+  String errorObjectStorageConfig(String raw);
+
+  /// No description provided for @errorSmbConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'SMB share connection failed. Verify the share name, username/password, and SMB port (445).\n({raw})'**
+  String errorSmbConnection(String raw);
+
+  /// No description provided for @errorArchivePassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive password is missing or incorrect. Re-enter the password and try again.\n({raw})'**
+  String errorArchivePassword(String raw);
+
+  /// No description provided for @errorDiskFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough free storage space on the destination volume.\n({raw})'**
+  String errorDiskFull(String raw);
+
+  /// No description provided for @recoveryGrantPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'Grant Access'**
+  String get recoveryGrantPermission;
+
+  /// No description provided for @recoveryEditConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Connection'**
+  String get recoveryEditConnection;
+
+  /// No description provided for @recoveryEnterPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Password'**
+  String get recoveryEnterPassword;
+
+  /// No description provided for @recoveryFreeUpSpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyze Space'**
+  String get recoveryFreeUpSpace;
+
+  /// No description provided for @navDomainStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage'**
+  String get navDomainStorage;
+
+  /// No description provided for @navDomainDiscover.
+  ///
+  /// In en, this message translates to:
+  /// **'Search & Library'**
+  String get navDomainDiscover;
+
+  /// No description provided for @navDomainTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools & Tasks'**
+  String get navDomainTools;
+
+  /// No description provided for @autoSyncIntervalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-sync schedule'**
+  String get autoSyncIntervalLabel;
+
+  /// No description provided for @autoSyncOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual only'**
+  String get autoSyncOff;
+
+  /// No description provided for @autoSyncEveryMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Every {minutes} min'**
+  String autoSyncEveryMinutes(int minutes);
+
+  /// No description provided for @offlineAutoSyncTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-check & push on resume'**
+  String get offlineAutoSyncTitle;
+
+  /// No description provided for @providerCrypt.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted Cloud Vault (Crypt)'**
+  String get providerCrypt;
+
+  /// No description provided for @cryptBackingRootLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Backing Storage Root'**
+  String get cryptBackingRootLabel;
+
+  /// No description provided for @cryptBackingRootHint.
+  ///
+  /// In en, this message translates to:
+  /// **'remote://my_s3 or /local/folder'**
+  String get cryptBackingRootHint;
+
+  /// No description provided for @cryptBasePrefixLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted Subfolder Prefix'**
+  String get cryptBasePrefixLabel;
+
+  /// No description provided for @cryptPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Master Encryption Password'**
+  String get cryptPasswordLabel;
+
+  /// No description provided for @cryptPasswordRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption password is required'**
+  String get cryptPasswordRequired;
+
+  /// No description provided for @cryptSaltOptionalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional Salt / Passphrase'**
+  String get cryptSaltOptionalLabel;
+
+  /// No description provided for @cryptSaltHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional salt for key derivation'**
+  String get cryptSaltHint;
+
+  /// No description provided for @cryptInfoBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Filenames and 64 KiB file chunks are end-to-end encrypted locally before uploading to the backing remote or folder.'**
+  String get cryptInfoBanner;
+
+  /// No description provided for @lanWebdavShareTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN WebDAV Server'**
+  String get lanWebdavShareTitle;
+
+  /// No description provided for @lanWebdavShareSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mount phone or remote storage from Finder, Explorer, or Infuse/Kodi'**
+  String get lanWebdavShareSubtitle;
+
+  /// No description provided for @shareViaLanWebdav.
+  ///
+  /// In en, this message translates to:
+  /// **'Share via LAN WebDAV'**
+  String get shareViaLanWebdav;
+
+  /// No description provided for @webdavUsernameOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Username (Optional)'**
+  String get webdavUsernameOptional;
+
+  /// No description provided for @webdavUrlCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'WebDAV URL copied to clipboard'**
+  String get webdavUrlCopied;
+
+  /// No description provided for @webdavServerRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'WebDAV server active at {url}'**
+  String webdavServerRunning(String url);
+
+  /// No description provided for @lanPeerTransferTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN Direct Drop'**
+  String get lanPeerTransferTitle;
+
+  /// No description provided for @lanPeerTransferSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover nearby FP File Manager devices and transfer files or clipboard text'**
+  String get lanPeerTransferSubtitle;
+
+  /// No description provided for @peerReceiveMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive Mode (Discoverable)'**
+  String get peerReceiveMode;
+
+  /// No description provided for @peerDeviceName.
+  ///
+  /// In en, this message translates to:
+  /// **'Device Name'**
+  String get peerDeviceName;
+
+  /// No description provided for @peerScanDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan LAN Devices'**
+  String get peerScanDevices;
+
+  /// No description provided for @peerScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning nearby devices...'**
+  String get peerScanning;
+
+  /// No description provided for @peerNoDevicesFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No FP File Manager receivers found on LAN'**
+  String get peerNoDevicesFound;
+
+  /// No description provided for @peerSendFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Send Files'**
+  String get peerSendFiles;
+
+  /// No description provided for @peerSendClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Send Clipboard Text'**
+  String get peerSendClipboard;
+
+  /// No description provided for @peerManualAddressHint.
+  ///
+  /// In en, this message translates to:
+  /// **'http://192.168.1.x:port'**
+  String get peerManualAddressHint;
+
+  /// No description provided for @peerIncomingOfferTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming transfer from {sender}'**
+  String peerIncomingOfferTitle(String sender);
+
+  /// No description provided for @peerAccept.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept'**
+  String get peerAccept;
+
+  /// No description provided for @peerReject.
+  ///
+  /// In en, this message translates to:
+  /// **'Decline'**
+  String get peerReject;
+
+  /// No description provided for @peerSentSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent {count} file(s)'**
+  String peerSentSuccess(int count);
+
+  /// No description provided for @peerOfferSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Text sent to device'**
+  String get peerOfferSent;
+
+  /// No description provided for @sendToLanDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Send to LAN Device'**
+  String get sendToLanDevice;
+
+  /// No description provided for @fastIndexReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast index: {count} items'**
+  String fastIndexReady(int count);
+
+  /// No description provided for @fastIndexNotBuilt.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast index not built for this folder'**
+  String get fastIndexNotBuilt;
+
+  /// No description provided for @fastIndexBuild.
+  ///
+  /// In en, this message translates to:
+  /// **'Build Index'**
+  String get fastIndexBuild;
+
+  /// No description provided for @fastIndexRebuild.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Index'**
+  String get fastIndexRebuild;
+
+  /// No description provided for @fastIndexBuilding.
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing...'**
+  String get fastIndexBuilding;
+
+  /// No description provided for @fastIndexClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear Index'**
+  String get fastIndexClear;
+
+  /// No description provided for @fastIndexCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast index cleared'**
+  String get fastIndexCleared;
+
+  /// No description provided for @readingModeSingle.
+  ///
+  /// In en, this message translates to:
+  /// **'Single Page'**
+  String get readingModeSingle;
+
+  /// No description provided for @readingModeWebtoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Webtoon Scroll'**
+  String get readingModeWebtoon;
+
+  /// No description provided for @readingModeDouble.
+  ///
+  /// In en, this message translates to:
+  /// **'Double Page'**
+  String get readingModeDouble;
+
+  /// No description provided for @stripExifAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Strip EXIF & Save Copy'**
+  String get stripExifAction;
+
+  /// No description provided for @stripExifDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved privacy-clean copy: {path}'**
+  String stripExifDone(String path);
+
+  /// No description provided for @stripExifBatchAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Strip EXIF'**
+  String get stripExifBatchAction;
+
+  /// No description provided for @stripExifBatchDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved EXIF-stripped copies for {count} image(s)'**
+  String stripExifBatchDone(int count);
+
+  /// No description provided for @openInTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in Terminal'**
+  String get openInTerminal;
+
+  /// No description provided for @openInEditor.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in Editor'**
+  String get openInEditor;
+
+  /// No description provided for @copyFullPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy Full Path'**
+  String get copyFullPath;
+
+  /// No description provided for @copyVfsPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy VFS Path'**
+  String get copyVfsPath;
+
+  /// No description provided for @photoBackupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo Auto Backup'**
+  String get photoBackupTitle;
+
+  /// No description provided for @photoBackupSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incrementally back up new photos to NAS, S3, WebDAV, or Privacy Vault'**
+  String get photoBackupSubtitle;
+
+  /// No description provided for @photoBackupEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Automatic Incremental Backup'**
+  String get photoBackupEnable;
+
+  /// No description provided for @photoBackupWifiOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up on Wi-Fi only'**
+  String get photoBackupWifiOnly;
+
+  /// No description provided for @photoBackupTargetLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup Destination'**
+  String get photoBackupTargetLabel;
+
+  /// No description provided for @photoBackupSelectTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Destination'**
+  String get photoBackupSelectTarget;
+
+  /// No description provided for @photoBackupNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Back Up Now'**
+  String get photoBackupNow;
+
+  /// No description provided for @photoBackupRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Backing up new photos...'**
+  String get photoBackupRunning;
+
+  /// No description provided for @photoBackupStats.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} photos backed up'**
+  String photoBackupStats(int count);
+
+  /// No description provided for @photoBackupNoTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Please choose a backup destination first'**
+  String get photoBackupNoTarget;
+
+  /// No description provided for @photoBackupCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Backed up {count} new photo(s)'**
+  String photoBackupCompleted(int count);
+
+  /// No description provided for @pinToHomeScreen.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin to Home Screen'**
+  String get pinToHomeScreen;
+
+  /// No description provided for @pinToHomeScreenSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Shortcut \"{name}\" pinned to Home Screen'**
+  String pinToHomeScreenSuccess(String name);
+
+  /// No description provided for @pinToHomeScreenUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Home screen pinning is not supported on this platform'**
+  String get pinToHomeScreenUnsupported;
 }
 
 class _AppLocalizationsDelegate

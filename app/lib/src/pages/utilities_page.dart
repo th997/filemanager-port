@@ -8,7 +8,6 @@ import '../dialogs/vault_dialogs.dart';
 import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/metadata.dart' as meta_api;
 import '../rust/api/servers.dart';
-import '../rust/api/vault.dart';
 import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
@@ -18,9 +17,9 @@ import '../services/storage_service.dart';
 import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../widgets/qr_code_widget.dart';
-import 'browser_page.dart';
 import 'duplicate_finder_page.dart';
-import 'offline_pinned_page.dart';
+import 'peer_transfer_page.dart';
+import 'photo_backup_page.dart';
 import 'storage_analyzer_page.dart';
 import 'sync_page.dart';
 import 'trash_page.dart';
@@ -49,6 +48,17 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   bool _readOnly = true;
   bool _obscurePwd = true;
 
+  bool _webdavRunning = false;
+  ServerStatusDto? _webdavStatus;
+  bool _startingWebdav = false;
+  late String _webdavRoot;
+  String _webdavRelPath = '';
+  final TextEditingController _webdavPortCtrl = TextEditingController(text: '8081');
+  final TextEditingController _webdavUserCtrl = TextEditingController();
+  final TextEditingController _webdavPwdCtrl = TextEditingController();
+  bool _webdavReadOnly = true;
+  bool _obscureWebdavPwd = true;
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +69,19 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     if (savedPwd != null) _pwdCtrl.text = savedPwd;
     _serverRunning = sharing.isRunning;
     _serverStatus = sharing.currentStatus;
+
+    _webdavRoot = sharing.webDavRoot ?? PlatformPaths.defaultRoot();
+    _webdavRelPath = sharing.webDavRelPath;
+    _webdavReadOnly = sharing.webDavReadOnly;
+    if (sharing.webDavUsername != null) {
+      _webdavUserCtrl.text = sharing.webDavUsername!;
+    }
+    if (sharing.webDavPassword != null) {
+      _webdavPwdCtrl.text = sharing.webDavPassword!;
+    }
+    _webdavRunning = sharing.isWebDavRunning;
+    _webdavStatus = sharing.webDavStatus;
+
     VaultService.instance.addListener(_onVaultChanged);
     _loadData();
   }
@@ -68,34 +91,14 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     VaultService.instance.removeListener(_onVaultChanged);
     _portCtrl.dispose();
     _pwdCtrl.dispose();
+    _webdavPortCtrl.dispose();
+    _webdavUserCtrl.dispose();
+    _webdavPwdCtrl.dispose();
     super.dispose();
   }
 
   void _onVaultChanged() {
     if (mounted) setState(() {});
-  }
-
-  Future<void> _openVaultBrowser(UnlockedVaultDto vault) async {
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BrowserPage(initialRoot: 'vault://${vault.id}'),
-      ),
-    );
-  }
-
-  Future<void> _createPrivacyFolder() async {
-    final created = await CreateVaultDialog.show(context);
-    if (created != null && mounted) {
-      await _openVaultBrowser(created);
-    }
-  }
-
-  Future<void> _openPrivacyFolder() async {
-    final unlocked = await OpenVaultDialog.show(context);
-    if (unlocked != null && mounted) {
-      await _openVaultBrowser(unlocked);
-    }
   }
 
   Future<void> _backupPrivacyFolder() async {
@@ -115,7 +118,6 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.importSuccessNotice(imported.name))),
       );
-      await _openVaultBrowser(imported);
     }
   }
 
@@ -268,6 +270,98 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       if (_isSameOrSubdir(root, v.dirPath)) return true;
     }
     return false;
+  }
+
+  String get _webdavDisplayPath => _webdavRelPath.isEmpty
+      ? _friendlyPath(_webdavRoot)
+      : '${_friendlyPath(_webdavRoot)}/$_webdavRelPath';
+
+  Future<void> _pickWebDavFolder() async {
+    final picked = await FolderPickerDialog.show(
+      context,
+      title: AppLocalizations.of(context).chooseSharedFolder,
+      initialRoot: _webdavRoot,
+      initialPath: _webdavRelPath,
+    );
+    if (picked != null && mounted) {
+      if (_isForbiddenShareRoot(picked.root)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).failedToStartServer(
+                AppLocalizations.of(context).privacyFolder,
+              ),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _webdavRoot = picked.root;
+        _webdavRelPath = picked.relPath;
+      });
+    }
+  }
+
+  Future<void> _toggleWebDavServer(bool start) async {
+    final l10n = AppLocalizations.of(context);
+    if (start) {
+      if (_isForbiddenShareRoot(_webdavRoot)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.failedToStartServer(l10n.privacyFolder)),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return;
+      }
+      final portText = _webdavPortCtrl.text.trim();
+      final port = int.tryParse(portText);
+      if (portText.isNotEmpty && (port == null || port < 1 || port > 65535)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.portValidationError(portText)),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return;
+      }
+      setState(() => _startingWebdav = true);
+      try {
+        final status = await SharingService.instance.startWebDav(
+          root: _webdavRoot,
+          relPath: _webdavRelPath,
+          port: port,
+          username: _webdavUserCtrl.text.trim(),
+          password: _webdavPwdCtrl.text.trim(),
+          readOnly: _webdavReadOnly,
+        );
+        if (!mounted) return;
+        setState(() {
+          _webdavRunning = true;
+          _webdavStatus = status;
+          _startingWebdav = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _startingWebdav = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.failedToStartServer('$e')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } else {
+      final stopped = SharingService.instance.stopWebDav();
+      if (mounted) {
+        setState(() {
+          _webdavRunning = !stopped;
+          _webdavStatus = stopped ? null : _webdavStatus;
+        });
+      }
+    }
   }
 
   Future<void> _toggleServer(bool start) async {
@@ -499,17 +593,34 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const AppCircleBadge(
-                    icon: Icons.offline_pin_outlined,
+                    icon: Icons.swap_horiz,
                     color: Colors.indigo,
                     size: 32,
                     iconSize: 18,
                   ),
-                  title: Text(l10n.offlinePinned, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  subtitle: Text(l10n.offlinePinnedSubtitle, style: const TextStyle(fontSize: 11)),
+                  title: Text(l10n.lanPeerTransferTitle, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text(l10n.lanPeerTransferSubtitle, style: const TextStyle(fontSize: 11)),
                   trailing: const Icon(Icons.chevron_right, size: 18),
                   onTap: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const OfflinePinnedPage()),
+                      MaterialPageRoute(builder: (_) => const PeerTransferPage()),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.backup_outlined,
+                    color: Colors.green,
+                    size: 32,
+                    iconSize: 18,
+                  ),
+                  title: Text(l10n.photoBackupTitle, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text(l10n.photoBackupSubtitle, style: const TextStyle(fontSize: 11)),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PhotoBackupPage()),
                     );
                   },
                 ),
@@ -873,6 +984,247 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
 
           const SizedBox(height: 12),
 
+          // 2b. LAN WebDAV Server Card
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: _webdavRunning
+                  ? BorderSide(color: Theme.of(context).colorScheme.success, width: 1.5)
+                  : BorderSide.none,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.dns_outlined,
+                              size: 22,
+                              color: _webdavRunning
+                                  ? Theme.of(context).colorScheme.success
+                                  : Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l10n.lanWebdavShareTitle,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  Text(
+                                    _webdavRunning
+                                        ? l10n.runningOnLan
+                                        : l10n.lanWebdavShareSubtitle,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _webdavRunning
+                                          ? Theme.of(context).colorScheme.success
+                                          : Theme.of(context).colorScheme.outline,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _startingWebdav
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Transform.scale(
+                              scale: 0.8,
+                              child: Switch(
+                                value: _webdavRunning,
+                                onChanged: _toggleWebDavServer,
+                              ),
+                            ),
+                    ],
+                  ),
+                  if (_webdavRunning && _webdavStatus != null) ...[
+                    const Divider(height: 12),
+                    Text(
+                      '${l10n.shared}: $_webdavDisplayPath',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (_webdavStatus!.addresses.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          l10n.noLanIpFound,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.warning,
+                          ),
+                        ),
+                      )
+                    else ...[
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .dividerColor
+                                  .withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: QrCodeWidget(
+                            data:
+                                'http://${_webdavStatus!.addresses.first}:${_webdavStatus!.port}/',
+                            size: 140,
+                          ),
+                        ),
+                      ),
+                      for (final ip in _webdavStatus!.addresses)
+                        Builder(
+                          builder: (ctx) {
+                            final davUrl = 'http://$ip:${_webdavStatus!.port}/';
+                            return Container(
+                              margin: const EdgeInsets.symmetric(vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Theme.of(ctx).colorScheme.success.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: SelectableText(
+                                      davUrl,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: Theme.of(ctx).colorScheme.success,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.qr_code_2, size: 18),
+                                    tooltip: l10n.showQrCode,
+                                    onPressed: () => _showLanQrDialog(davUrl),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.copy, size: 16),
+                                    tooltip: l10n.copyUrl,
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: davUrl));
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        SnackBar(content: Text(l10n.webdavUrlCopied)),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _webdavDisplayPath,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _webdavRunning ? null : _pickWebDavFolder,
+                          child: Text(l10n.change, style: const TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 90,
+                          child: TextField(
+                            controller: _webdavPortCtrl,
+                            keyboardType: TextInputType.number,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              labelText: l10n.port,
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _webdavUserCtrl,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              labelText: l10n.webdavUsernameOptional,
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _webdavPwdCtrl,
+                            obscureText: _obscureWebdavPwd,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              labelText: l10n.passwordFieldLabel,
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureWebdavPwd ? Icons.visibility_off : Icons.visibility,
+                                  size: 16,
+                                ),
+                                onPressed: () =>
+                                    setState(() => _obscureWebdavPwd = !_obscureWebdavPwd),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    CheckboxListTile(
+                      title: Text(l10n.readOnlyMode, style: const TextStyle(fontSize: 11)),
+                      value: _webdavReadOnly,
+                      onChanged: (v) => setState(() => _webdavReadOnly = v ?? true),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           // 3. Cache cleaner
           _buildSectionHeader(l10n.storageAndCache),
           Card(
@@ -931,9 +1283,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   }
 
   Widget _buildPrivacyFoldersSection(AppLocalizations l10n) {
-    final List<UnlockedVaultDto> unlocked = VaultService.instance.unlockedVaults;
-    final List<PinnedVaultEntry> lockedPinned =
-        VaultService.instance.lockedPinnedVaults;
+    final unlockedCount = VaultService.instance.unlockedVaults.length;
     final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -952,7 +1302,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                   l10n.privacyFoldersDesc,
                   style: const TextStyle(fontSize: 10),
                 ),
-                trailing: unlocked.isNotEmpty
+                trailing: unlockedCount > 0
                     ? TextButton.icon(
                         style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact,
@@ -964,166 +1314,11 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
                         },
                         icon: const Icon(Icons.lock_outline, size: 15),
                         label: Text(
-                          l10n.lockAllPrivacyFolders(unlocked.length),
+                          l10n.lockAllPrivacyFolders(unlockedCount),
                           style: const TextStyle(fontSize: 11),
                         ),
                       )
                     : null,
-              ),
-              if (unlocked.isNotEmpty || lockedPinned.isNotEmpty) ...[
-                const Divider(height: 1),
-                for (final vault in unlocked)
-                  Builder(
-                    builder: (_) {
-                      final isPinned =
-                          VaultService.instance.isAlwaysVisible(vault.id);
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(
-                          Icons.lock_open_rounded,
-                          size: 18,
-                          color: colorScheme.primary,
-                        ),
-                        title: Text(
-                          vault.name,
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          isPinned
-                              ? '${l10n.unlockedBadge} · ${l10n.vaultAlwaysVisibleTitle}'
-                              : l10n.unlockedBadge,
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AppIconButton(
-                              icon: isPinned
-                                  ? Icons.push_pin
-                                  : Icons.push_pin_outlined,
-                              size: 28,
-                              iconSize: 17,
-                              color: isPinned ? colorScheme.primary : null,
-                              tooltip: l10n.vaultAlwaysVisibleTitle,
-                              onPressed: () {
-                                VaultService.instance.setAlwaysVisible(
-                                  vaultId: vault.id,
-                                  name: vault.name,
-                                  alwaysVisible: !isPinned,
-                                );
-                              },
-                            ),
-                            AppIconButton(
-                              icon: Icons.drive_file_rename_outline,
-                              size: 28,
-                              iconSize: 17,
-                              tooltip: l10n.renamePrivacyFolder,
-                              onPressed: () async {
-                                final updated =
-                                    await RenameVaultDialog.show(context, vault);
-                                if (updated != null &&
-                                    updated.name != vault.name &&
-                                    mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        l10n.privacyFolderRenamedNotice(
-                                            updated.name),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
-                            AppIconButton(
-                              icon: Icons.lock_outline,
-                              size: 28,
-                              iconSize: 17,
-                              color: colorScheme.error,
-                              tooltip: l10n.lockAndHide,
-                              onPressed: () {
-                                final keepVisible = VaultService.instance
-                                    .isAlwaysVisible(vault.id);
-                                VaultService.instance.lockVault(vault.id);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      keepVisible
-                                          ? l10n.vaultLockedKeepVisibleNotice(
-                                              vault.name)
-                                          : l10n.vaultLockedNotice(vault.name),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                            const Icon(Icons.chevron_right, size: 16),
-                          ],
-                        ),
-                        onTap: () => _openVaultBrowser(vault),
-                      );
-                    },
-                  ),
-                for (final pinned in lockedPinned)
-                  ListTile(
-                    dense: true,
-                    leading: Icon(
-                      Icons.lock_outline,
-                      size: 18,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    title: Text(
-                      pinned.name,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      '${l10n.lockedBadge} · ${l10n.vaultAlwaysVisibleTitle}',
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppIconButton(
-                          icon: Icons.push_pin,
-                          size: 28,
-                          iconSize: 17,
-                          color: colorScheme.primary,
-                          tooltip: l10n.vaultUnpinAlwaysVisible,
-                          onPressed: () {
-                            VaultService.instance.unpinVault(pinned.id);
-                          },
-                        ),
-                        const Icon(Icons.chevron_right, size: 16),
-                      ],
-                    ),
-                    onTap: () async {
-                      final unlockedVault = await OpenVaultDialog.show(
-                        context,
-                        initialName: pinned.name,
-                      );
-                      if (unlockedVault != null && mounted) {
-                        await _openVaultBrowser(unlockedVault);
-                      }
-                    },
-                  ),
-              ],
-              const Divider(height: 1),
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.create_new_folder_outlined, size: 19),
-                title: Text(l10n.createPrivacyFolder, style: const TextStyle(fontSize: 13)),
-                trailing: const Icon(Icons.chevron_right, size: 16),
-                onTap: _createPrivacyFolder,
-              ),
-              const Divider(height: 1),
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.folder_open_outlined, size: 19),
-                title: Text(l10n.openPrivacyFolder, style: const TextStyle(fontSize: 13)),
-                trailing: const Icon(Icons.chevron_right, size: 16),
-                onTap: _openPrivacyFolder,
               ),
               const Divider(height: 1),
               ListTile(

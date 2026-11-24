@@ -31,6 +31,7 @@ fn parse_kind(s: &str) -> LocationKind {
         "ftp" => LocationKind::Ftp,
         "ftps" => LocationKind::Ftps,
         "smb" => LocationKind::Smb,
+        "crypt" => LocationKind::Crypt,
         _ => LocationKind::Local,
     }
 }
@@ -44,6 +45,7 @@ fn kind_to_str(k: LocationKind) -> String {
         LocationKind::Ftp => "ftp",
         LocationKind::Ftps => "ftps",
         LocationKind::Smb => "smb",
+        LocationKind::Crypt => "crypt",
         LocationKind::Archive => "archive",
         LocationKind::Local => "local",
     }
@@ -101,6 +103,24 @@ impl From<RemoteConfig> for RemoteConfigDto {
 
 pub async fn test_remote_connection(config: RemoteConfigDto) -> Result<bool, String> {
     let cfg: RemoteConfig = config.into();
+    if cfg.kind == LocationKind::Crypt {
+        let pw = cfg.password.as_deref().unwrap_or("");
+        if pw.is_empty() {
+            return Err("encryption password is required".to_string());
+        }
+        let target = cfg
+            .endpoint
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "backing storage path or remote://<id> is required".to_string())?;
+        let mut visited = std::collections::HashSet::from([cfg.id.clone()]);
+        let crypt = crate::registry::VfsRegistry::global().build_crypt_vfs(&cfg, target, &mut visited)?;
+        return match crypt.list(&fm_core::VfsPath::root()).await {
+            Ok(_) | Err(fm_vfs::VfsError::NotFound { .. }) => Ok(true),
+            Err(e) => Err(e.to_string()),
+        };
+    }
     cfg.test_connection().await
 }
 
@@ -169,10 +189,14 @@ pub async fn save_remote(db_path: String, config: RemoteConfigDto) -> Result<(),
         config_json: json,
         created_at: now,
     };
-    db.save_remote(&record).map_err(|e| e.to_string())
+    db.save_remote(&record).map_err(|e| e.to_string())?;
+    crate::registry::VfsRegistry::global().invalidate_remotes();
+    Ok(())
 }
 
 pub async fn delete_remote(db_path: String, id: String) -> Result<(), String> {
     let db = crate::registry::VfsRegistry::global().open_database(&db_path)?;
-    db.delete_remote(&id).map_err(|e| e.to_string())
+    db.delete_remote(&id).map_err(|e| e.to_string())?;
+    crate::registry::VfsRegistry::global().invalidate_remotes();
+    Ok(())
 }

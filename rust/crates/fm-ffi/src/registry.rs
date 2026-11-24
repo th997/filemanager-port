@@ -7,15 +7,49 @@ use fm_local::LocalFs;
 use fm_remote::RemoteConfig;
 use fm_vfs::Vfs;
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
+
+const MAX_CACHED_VFS: usize = 64;
+const IDLE_VFS_TTL: Duration = Duration::from_secs(600);
+
+fn monotonic_millis() -> u64 {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    let start = EPOCH.get_or_init(Instant::now);
+    Instant::now().saturating_duration_since(*start).as_millis() as u64
+}
+
+struct CachedVfsEntry {
+    vfs: Arc<dyn Vfs>,
+    last_used_ms: AtomicU64,
+}
+
+impl CachedVfsEntry {
+    fn new(vfs: Arc<dyn Vfs>) -> Self {
+        Self {
+            vfs,
+            last_used_ms: AtomicU64::new(monotonic_millis()),
+        }
+    }
+
+    fn touch(&self) {
+        self.last_used_ms
+            .store(monotonic_millis(), Ordering::Relaxed);
+    }
+
+    fn age_ms(&self, now_ms: u64) -> u64 {
+        now_ms.saturating_sub(self.last_used_ms.load(Ordering::Relaxed))
+    }
+}
 
 pub struct VfsRegistry {
     db_path: RwLock<Option<String>>,
     dbs: Mutex<HashMap<PathBuf, Database>>,
-    cached: RwLock<HashMap<String, Arc<dyn Vfs>>>,
+    cached: RwLock<HashMap<String, CachedVfsEntry>>,
     archive_passwords: RwLock<HashMap<String, String>>,
 }
 
@@ -62,6 +96,26 @@ impl VfsRegistry {
     pub fn set_database_path(&self, path: String) {
         *self.db_path.write() = Some(path.clone());
         let _ = self.open_database(&path);
+        // Clean up any leftover plaintext vault archive caches or half-written
+        // temp files that may have survived an abnormal crash or OS kill.
+        self.clear_all_vault_archive_caches();
+        Self::purge_stale_archive_temp_files();
+    }
+
+    fn purge_stale_archive_temp_files() {
+        let dir = std::env::temp_dir().join("fm_archive_cache");
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if entry
+                    .file_name()
+                    .to_str()
+                    .map(|n| n.ends_with(".tmp"))
+                    .unwrap_or(false)
+                {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
     }
 
     pub fn open_database(&self, db_path: &str) -> Result<Database, String> {
@@ -81,6 +135,21 @@ impl VfsRegistry {
     }
 
     pub fn get_remote_vfs(&self, remote_id: &str) -> Result<Arc<dyn Vfs>, String> {
+        let mut visited = HashSet::new();
+        self.get_remote_vfs_inner(remote_id, &mut visited)
+    }
+
+    fn get_remote_vfs_inner(
+        &self,
+        remote_id: &str,
+        visited: &mut HashSet<String>,
+    ) -> Result<Arc<dyn Vfs>, String> {
+        if !visited.insert(remote_id.to_string()) {
+            return Err(format!("cyclic encrypted remote reference detected at '{remote_id}'"));
+        }
+        if visited.len() > 4 {
+            return Err("encrypted remote nesting depth exceeds limit (4)".to_string());
+        }
         let db_p = self
             .db_path
             .read()
@@ -118,8 +187,48 @@ impl VfsRegistry {
             return Ok(fs as Arc<dyn Vfs>);
         }
 
+        if config.kind == fm_core::LocationKind::Crypt {
+            let target = config
+                .endpoint
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| "crypt remote missing backing endpoint".to_string())?;
+            return self.build_crypt_vfs(&config, target, visited);
+        }
+
         let boxed_vfs = config.create_vfs().map_err(|e| e.to_string())?;
         Ok(Arc::from(boxed_vfs))
+    }
+
+    /// Wraps either another saved `remote://<id>` or a native path with
+    /// [`fm_remote::CryptFs`] according to `config`.
+    pub fn build_crypt_vfs(
+        &self,
+        config: &RemoteConfig,
+        target: &str,
+        visited: &mut HashSet<String>,
+    ) -> Result<Arc<dyn Vfs>, String> {
+        let backing: Arc<dyn Vfs> = if let Some(inner_id) = target.strip_prefix("remote://") {
+            let clean_id = inner_id.trim_end_matches('/');
+            if clean_id == config.id {
+                return Err("encrypted remote cannot wrap itself".to_string());
+            }
+            self.get_remote_vfs_inner(clean_id, visited)?
+        } else if target.contains("://") {
+            return Err(format!("unsupported backing URI scheme for encrypted remote: {target}"));
+        } else {
+            Arc::new(LocalFs::new(target))
+        };
+        let password = config.password.as_deref().unwrap_or("");
+        let fs = fm_remote::CryptFs::new(
+            backing,
+            &config.root,
+            password,
+            config.passphrase.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(Arc::new(fs))
     }
 
     pub async fn get_or_create(&self, root: &str) -> Result<Arc<dyn Vfs>, String> {
@@ -129,19 +238,20 @@ impl VfsRegistry {
                 .map_err(|e| e.to_string());
         }
 
-        if let Some(vfs) = self.cached.read().get(root) {
-            return Ok(vfs.clone());
+        if let Some(entry) = self.cached.read().get(root) {
+            let now_ms = monotonic_millis();
+            if root.starts_with("vault://")
+                || entry.age_ms(now_ms) < IDLE_VFS_TTL.as_millis() as u64
+            {
+                entry.touch();
+                return Ok(entry.vfs.clone());
+            }
         }
+        self.evict_idle_cached(IDLE_VFS_TTL);
 
         let vfs: Arc<dyn Vfs> = if let Some(archive_path) = root.strip_prefix("archive://") {
-            let local_path = if let Some(remote_spec) = archive_path.strip_prefix("remote://") {
-                let (remote_id, rel_path) = match remote_spec.find('/') {
-                    Some(idx) => (&remote_spec[..idx], &remote_spec[idx + 1..]),
-                    None => return Err(format!("invalid remote archive path: {remote_spec}")),
-                };
-                let remote_vfs = self.get_remote_vfs(remote_id)?;
-                cache_vfs_archive(remote_vfs.as_ref(), "remote", remote_id, rel_path).await?
-            } else if let Some(vault_spec) = archive_path.strip_prefix("vault://") {
+            let password = self.get_archive_password(root);
+            if let Some(vault_spec) = archive_path.strip_prefix("vault://") {
                 let (vault_id, rel_path) = match vault_spec.find('/') {
                     Some(idx) => (&vault_spec[..idx], &vault_spec[idx + 1..]),
                     None => return Err(format!("invalid vault archive path: {vault_spec}")),
@@ -149,34 +259,109 @@ impl VfsRegistry {
                 let vault_vfs = fm_vault::VaultManager::global()
                     .get_vfs(vault_id)
                     .map_err(|e| e.to_string())?;
-                cache_vfs_archive(vault_vfs.as_ref(), &format!("vault_{vault_id}"), vault_id, rel_path)
-                    .await?
+                const IN_MEMORY_VAULT_ARCHIVE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+                let vfs_path = VfsPath::from_slash_path(rel_path);
+                let stat = vault_vfs.stat(&vfs_path).await.map_err(|e| e.to_string())?;
+                if stat.size.unwrap_or(u64::MAX) <= IN_MEMORY_VAULT_ARCHIVE_MAX_BYTES {
+                    let mut reader = vault_vfs
+                        .open_read(&vfs_path)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let mut bytes = Vec::with_capacity(stat.size.unwrap_or(0) as usize);
+                    tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let archive_name = vfs_path.name().unwrap_or(rel_path).to_string();
+                    let archive_fs = tokio::task::spawn_blocking(move || {
+                        ArchiveFs::open_bytes_with_password(&archive_name, bytes, password)
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                    Arc::new(archive_fs)
+                } else {
+                    let local_path = cache_vfs_archive(
+                        vault_vfs.as_ref(),
+                        &format!("vault_{vault_id}"),
+                        vault_id,
+                        rel_path,
+                    )
+                    .await?;
+                    let archive_fs = tokio::task::spawn_blocking(move || {
+                        ArchiveFs::open_with_password(local_path, password)
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                    Arc::new(archive_fs)
+                }
             } else {
-                PathBuf::from(archive_path)
-            };
+                let local_path = if let Some(remote_spec) = archive_path.strip_prefix("remote://") {
+                    let (remote_id, rel_path) = match remote_spec.find('/') {
+                        Some(idx) => (&remote_spec[..idx], &remote_spec[idx + 1..]),
+                        None => return Err(format!("invalid remote archive path: {remote_spec}")),
+                    };
+                    let remote_vfs = self.get_remote_vfs(remote_id)?;
+                    cache_vfs_archive(remote_vfs.as_ref(), "remote", remote_id, rel_path).await?
+                } else {
+                    PathBuf::from(archive_path)
+                };
 
-            // Opening an archive builds a full entry index (decompresses
-            // tar.gz streams); keep that off the tokio worker threads.
-            let password = self.get_archive_password(root);
-            let archive_fs = tokio::task::spawn_blocking(move || {
-                ArchiveFs::open_with_password(local_path, password)
-            })
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
-            Arc::new(archive_fs)
+                // Opening an archive builds a full entry index (decompresses
+                // tar.gz streams); keep that off the tokio worker threads.
+                let archive_fs = tokio::task::spawn_blocking(move || {
+                    ArchiveFs::open_with_password(local_path, password)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                Arc::new(archive_fs)
+            }
         } else if let Some(remote_id) = root.strip_prefix("remote://") {
             self.get_remote_vfs(remote_id)?
         } else {
             Arc::new(LocalFs::new(root))
         };
 
-        self.cached.write().insert(root.to_string(), vfs.clone());
+        {
+            let now_ms = monotonic_millis();
+            let ttl_ms = IDLE_VFS_TTL.as_millis() as u64;
+            let mut cache = self.cached.write();
+            cache.retain(|k, entry| k.starts_with("vault://") || entry.age_ms(now_ms) < ttl_ms);
+            if cache.len() >= MAX_CACHED_VFS && !cache.contains_key(root) {
+                // Evict the least-recently-used non-vault cached backend.
+                if let Some(evict_key) = cache
+                    .iter()
+                    .filter(|(k, _)| !k.starts_with("vault://"))
+                    .min_by_key(|(_, e)| e.last_used_ms.load(Ordering::Relaxed))
+                    .map(|(k, _)| k.clone())
+                {
+                    cache.remove(&evict_key);
+                }
+            }
+            cache.insert(root.to_string(), CachedVfsEntry::new(vfs.clone()));
+        }
         Ok(vfs)
+    }
+
+    /// Evicts cached non-vault VFS backends that have been idle for at least `ttl`.
+    pub fn evict_idle_cached(&self, ttl: Duration) -> usize {
+        let now_ms = monotonic_millis();
+        let ttl_ms = ttl.as_millis() as u64;
+        let mut cache = self.cached.write();
+        let before = cache.len();
+        cache.retain(|k, entry| k.starts_with("vault://") || entry.age_ms(now_ms) < ttl_ms);
+        before.saturating_sub(cache.len())
     }
 
     pub fn invalidate(&self, root: &str) {
         self.cached.write().remove(root);
+    }
+
+    pub fn invalidate_remotes(&self) {
+        self.cached
+            .write()
+            .retain(|root, _| !root.starts_with("remote://") && !root.starts_with("archive://remote://"));
     }
 
     pub fn invalidate_vault(&self, vault_id: &str) {
@@ -433,6 +618,41 @@ mod tests {
 
         let db = registry.open_database(&db_path).unwrap();
         assert_eq!(db.list_bookmarks().unwrap().len(), threads);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn cached_vfs_evicts_idle_and_lru_entries() {
+        let dir = std::env::temp_dir().join(format!("fm-ffi-idle-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let root_a = dir.join("a");
+        let root_b = dir.join("b");
+        std::fs::create_dir_all(&root_a).unwrap();
+        std::fs::create_dir_all(&root_b).unwrap();
+
+        let registry = VfsRegistry::new();
+        let a_str = root_a.to_string_lossy().into_owned();
+        let b_str = root_b.to_string_lossy().into_owned();
+        let _ = registry.get_or_create(&a_str).await.unwrap();
+        std::thread::sleep(Duration::from_millis(15));
+        let _ = registry.get_or_create(&b_str).await.unwrap();
+        assert_eq!(registry.cached.read().len(), 2);
+
+        // Make entry A appear older than 20ms and sweep with a 10ms TTL while B was just touched.
+        if let Some(entry_a) = registry.cached.read().get(&a_str) {
+            let now = monotonic_millis();
+            entry_a
+                .last_used_ms
+                .store(now.saturating_sub(50), Ordering::Relaxed);
+        }
+        if let Some(entry_b) = registry.cached.read().get(&b_str) {
+            entry_b.touch();
+        }
+        let evicted = registry.evict_idle_cached(Duration::from_millis(20));
+        assert_eq!(evicted, 1);
+        assert!(!registry.cached.read().contains_key(&a_str));
+        assert!(registry.cached.read().contains_key(&b_str));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

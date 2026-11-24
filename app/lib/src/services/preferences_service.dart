@@ -211,7 +211,41 @@ class PreferencesService {
 
   void setBool(String key, bool value) => setString(key, value.toString());
 
+  static bool _isDeviceLocalKey(String key) =>
+      key.startsWith('window.') ||
+      key == 'photo_backup.backed_up_ids_v1' ||
+      key == 'photo_backup.last_backup_ms' ||
+      key == 'vault.pinned_entries' ||
+      key == 'upload.recent_directories';
+
   /// Drops a key entirely, so a stale value cannot be read back as a default.
+  /// Returns a portable copy of user preferences (excluding transient window bounds).
+  Map<String, String> exportPreferencesMap() {
+    final result = <String, String>{};
+    for (final entry in _values.entries) {
+      if (_isDeviceLocalKey(entry.key)) continue;
+      result[entry.key] = entry.value;
+    }
+    return result;
+  }
+
+  /// Merges portable preferences from a backup map and persists them.
+  int importPreferencesMap(Map<String, dynamic> data) {
+    int count = 0;
+    for (final entry in data.entries) {
+      if (_isDeviceLocalKey(entry.key)) continue;
+      if (entry.value is String) {
+        _values[entry.key] = entry.value as String;
+        count++;
+      }
+    }
+    if (count > 0) {
+      _persist();
+      syncToolbarAtBottom();
+    }
+    return count;
+  }
+
   void remove(String key) {
     if (_values.remove(key) != null) _persist();
   }

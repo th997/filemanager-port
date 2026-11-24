@@ -4,6 +4,8 @@
 //! foreground command service. The equivalent here is a task model the FFI
 //! layer can drive and the UI can observe.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 use fm_core::VfsPath;
 use serde::{Deserialize, Serialize};
 use std::fmt;

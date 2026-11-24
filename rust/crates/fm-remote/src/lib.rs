@@ -1,5 +1,8 @@
 //! Remote protocol backends.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
+pub mod crypt_backend;
 pub mod ftp_backend;
 pub mod multi_bucket;
 pub mod opendal_backend;
@@ -11,6 +14,7 @@ use fm_core::LocationKind;
 use fm_vfs::{Vfs, VfsError, VfsResult};
 use serde::{Deserialize, Serialize};
 
+pub use crypt_backend::CryptFs;
 pub use ftp_backend::FtpFs;
 pub use multi_bucket::MultiBucketFs;
 pub use opendal_backend::OpendalFs;
@@ -114,7 +118,7 @@ impl RemoteConfig {
             LocationKind::Ftps => Some(990),
             LocationKind::Smb => Some(445),
             LocationKind::WebDav | LocationKind::S3 | LocationKind::Oss => Some(443),
-            LocationKind::Local | LocationKind::Archive => None,
+            LocationKind::Local | LocationKind::Archive | LocationKind::Crypt => None,
         }
     }
 

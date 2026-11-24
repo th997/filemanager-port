@@ -52,6 +52,8 @@ class BrowserPaneController extends ChangeNotifier {
   int _focusedIndex = -1;
 
   int _loadGeneration = 0;
+  VoidCallback? _hostRefreshCallback;
+  List<String> Function()? _hostSelectedPathsGetter;
 
   BrowserPaneController({
     required String root,
@@ -108,9 +110,129 @@ class BrowserPaneController extends ChangeNotifier {
   String get sortBy => _sortBy;
   bool get ascending => _ascending;
   bool get showHidden => _showHidden;
+  String get showFilter => _filter;
   String get filter => _filter;
-  Set<String> get selectedPaths => Set.unmodifiable(_selectedPaths);
-  bool get hasSelection => _selectedPaths.isNotEmpty;
+  Set<String> get selectedPaths {
+    final getter = _hostSelectedPathsGetter;
+    if (getter != null) {
+      return Set.unmodifiable(getter());
+    }
+    return Set.unmodifiable(_selectedPaths);
+  }
+  bool get hasSelection => selectedPaths.isNotEmpty;
+
+  /// Binds a live [BrowserPage] view state to this controller so workspace tabs
+  /// and split panes observe location/selection and trigger refreshes without
+  /// holding a `GlobalKey<BrowserPageState>`.
+  void attachHost({
+    required String root,
+    required String relPath,
+    required VoidCallback onRefresh,
+    required List<String> Function() onSelectedPathsGetter,
+  }) {
+    _root = root;
+    _relPath = relPath;
+    _hostRefreshCallback = onRefresh;
+    _hostSelectedPathsGetter = onSelectedPathsGetter;
+  }
+
+  void detachHost() {
+    _hostRefreshCallback = null;
+    _hostSelectedPathsGetter = null;
+  }
+
+  void syncHostLocation(String root, String relPath) {
+    if (_root == root && _relPath == relPath) return;
+    _root = root;
+    _relPath = relPath;
+    notifyListeners();
+  }
+
+  void requestRefresh() {
+    final cb = _hostRefreshCallback;
+    if (cb != null) {
+      cb();
+    } else {
+      unawaited(reload());
+    }
+  }
+
+  /// Resolves an omnibox / address bar string into a `(root, relPath)` pair.
+  static ({String root, String relPath})? parseJumpAddress(
+    String input, {
+    required String currentRoot,
+    required String currentRelPath,
+    String? Function(String idOrName)? resolveRemoteId,
+    String? Function(String idOrName)? resolveUnlockedVaultId,
+  }) {
+    final path = input.trim();
+    if (path.isEmpty) return null;
+
+    if (path.startsWith('remote://')) {
+      final withoutPrefix = path.substring('remote://'.length);
+      final slashIdx = withoutPrefix.indexOf('/');
+      if (slashIdx != -1) {
+        final target = withoutPrefix.substring(0, slashIdx);
+        final rel = withoutPrefix
+            .substring(slashIdx + 1)
+            .replaceAll(RegExp(r'^/+'), '');
+        final resolvedId = resolveRemoteId?.call(target) ?? target;
+        return (root: 'remote://$resolvedId', relPath: rel);
+      }
+      final resolvedId = resolveRemoteId?.call(withoutPrefix) ?? withoutPrefix;
+      return (root: 'remote://$resolvedId', relPath: '');
+    }
+
+    if (path.startsWith('vault://')) {
+      final withoutPrefix = path.substring('vault://'.length);
+      final slashIdx = withoutPrefix.indexOf('/');
+      final target = slashIdx != -1
+          ? withoutPrefix.substring(0, slashIdx)
+          : withoutPrefix;
+      final rel = slashIdx != -1
+          ? withoutPrefix.substring(slashIdx + 1).replaceAll(RegExp(r'^/+'), '')
+          : '';
+      final vaultId = resolveUnlockedVaultId?.call(target);
+      if (vaultId == null) return null;
+      return (root: 'vault://$vaultId', relPath: rel);
+    }
+
+    if (path.startsWith('archive://')) {
+      final withoutPrefix = path.substring('archive://'.length);
+      final match = RegExp(
+        r'(\.(zip|apk|jar|tar\.gz|tgz|tar|7z))([/\\]|$)',
+        caseSensitive: false,
+      ).firstMatch(withoutPrefix);
+      if (match != null) {
+        final archivePath =
+            withoutPrefix.substring(0, match.start + match.group(1)!.length);
+        final rel = withoutPrefix
+            .substring(match.end)
+            .replaceAll(RegExp(r'^[/\\]+'), '')
+            .replaceAll('\\', '/');
+        return (root: 'archive://$archivePath', relPath: rel);
+      }
+      return (root: 'archive://$withoutPrefix', relPath: '');
+    }
+
+    if (path.startsWith('/')) {
+      final normalized = path == '/' ? '/' : path.replaceAll(RegExp(r'/+'), '/');
+      if (normalized == '/') return (root: '/', relPath: '');
+      return (root: '/', relPath: normalized.substring(1));
+    }
+
+    if (RegExp(r'^[a-zA-Z]:').hasMatch(path)) {
+      final drive = path.substring(0, 2);
+      final rel = path
+          .substring(2)
+          .replaceAll(RegExp(r'^[/\\]+'), '')
+          .replaceAll('\\', '/');
+      return (root: '$drive/', relPath: rel);
+    }
+
+    final nextRel = currentRelPath.isEmpty ? path : '$currentRelPath/$path';
+    return (root: currentRoot, relPath: nextRel);
+  }
   int get focusedIndex => _focusedIndex;
   bool get canGoBack => _backStack.isNotEmpty;
   bool get canGoForward => _forwardStack.isNotEmpty;

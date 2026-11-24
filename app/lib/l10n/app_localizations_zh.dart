@@ -3523,4 +3523,272 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get historyRetentionChange => '设置保留天数';
+
+  @override
+  String errorSftpHostKey(String raw) {
+    return 'SSH 主机密钥验证失败，请确认服务器指纹或重新保存 SFTP 连接。\n($raw)';
+  }
+
+  @override
+  String errorObjectStorageConfig(String raw) {
+    return '对象存储配置错误，请检查存储桶名称、Endpoint、Region 与访问密钥。\n($raw)';
+  }
+
+  @override
+  String errorSmbConnection(String raw) {
+    return 'SMB 共享连接失败，请核对共享名、账号密码以及 SMB 端口（445）。\n($raw)';
+  }
+
+  @override
+  String errorArchivePassword(String raw) {
+    return '压缩包密码缺失或不正确，请重新输入后再试。\n($raw)';
+  }
+
+  @override
+  String errorDiskFull(String raw) {
+    return '目标存储卷剩余空间不足，请清理空间后重试。\n($raw)';
+  }
+
+  @override
+  String get recoveryGrantPermission => '前往授权';
+
+  @override
+  String get recoveryEditConnection => '修改连接配置';
+
+  @override
+  String get recoveryEnterPassword => '输入解压密码';
+
+  @override
+  String get recoveryFreeUpSpace => '清理存储空间';
+
+  @override
+  String get navDomainStorage => '存储空间';
+
+  @override
+  String get navDomainDiscover => '高效检索';
+
+  @override
+  String get navDomainTools => '工具与任务';
+
+  @override
+  String get autoSyncIntervalLabel => '定时自动同步';
+
+  @override
+  String get autoSyncOff => '仅手动';
+
+  @override
+  String autoSyncEveryMinutes(int minutes) {
+    return '每 $minutes 分钟';
+  }
+
+  @override
+  String get offlineAutoSyncTitle => '恢复前台时自动检查与回写';
+
+  @override
+  String get providerCrypt => '零信任加密云保险箱 (Crypt)';
+
+  @override
+  String get cryptBackingRootLabel => '底层存储位置';
+
+  @override
+  String get cryptBackingRootHint => 'remote://my_s3 或本地路径';
+
+  @override
+  String get cryptBasePrefixLabel => '加密根目录前缀';
+
+  @override
+  String get cryptPasswordLabel => '主加密密码';
+
+  @override
+  String get cryptPasswordRequired => '请输入加密密码';
+
+  @override
+  String get cryptSaltOptionalLabel => '可选盐值 / 附加密钥';
+
+  @override
+  String get cryptSaltHint => '用于增强密钥派生的可选盐值';
+
+  @override
+  String get cryptInfoBanner =>
+      '文件名与 64 KiB 文件分块均在本地完成端到端 AES-256-GCM 加密，再写入底层云存储或目录。';
+
+  @override
+  String get lanWebdavShareTitle => '局域网 WebDAV 共享';
+
+  @override
+  String get lanWebdavShareSubtitle => '让电脑访达 / 资源管理器或电视盒子（Infuse / Kodi）直接挂载';
+
+  @override
+  String get shareViaLanWebdav => '通过局域网 WebDAV 共享';
+
+  @override
+  String get webdavUsernameOptional => '用户名（可选）';
+
+  @override
+  String get webdavUrlCopied => 'WebDAV 地址已复制到剪贴板';
+
+  @override
+  String webdavServerRunning(String url) {
+    return 'WebDAV 服务运行中：$url';
+  }
+
+  @override
+  String get lanPeerTransferTitle => '局域网直传';
+
+  @override
+  String get lanPeerTransferSubtitle => '发现附近 FP File Manager 设备，一键直传文件或剪贴板文本';
+
+  @override
+  String get peerReceiveMode => '接收模式（可被发现）';
+
+  @override
+  String get peerDeviceName => '本机设备名称';
+
+  @override
+  String get peerScanDevices => '扫描局域网设备';
+
+  @override
+  String get peerScanning => '正在扫描附近设备…';
+
+  @override
+  String get peerNoDevicesFound => '未在局域网发现其他开启接收模式的设备';
+
+  @override
+  String get peerSendFiles => '发送文件';
+
+  @override
+  String get peerSendClipboard => '发送剪贴板文本';
+
+  @override
+  String get peerManualAddressHint => 'http://192.168.1.x:端口';
+
+  @override
+  String peerIncomingOfferTitle(String sender) {
+    return '来自 $sender 的传输请求';
+  }
+
+  @override
+  String get peerAccept => '接收';
+
+  @override
+  String get peerReject => '拒绝';
+
+  @override
+  String peerSentSuccess(int count) {
+    return '已成功发送 $count 个文件';
+  }
+
+  @override
+  String get peerOfferSent => '文本已发送到对方设备';
+
+  @override
+  String get sendToLanDevice => '发送到局域网设备';
+
+  @override
+  String fastIndexReady(int count) {
+    return '快速索引：$count 项';
+  }
+
+  @override
+  String get fastIndexNotBuilt => '当前目录尚未建立快速索引';
+
+  @override
+  String get fastIndexBuild => '建立索引';
+
+  @override
+  String get fastIndexRebuild => '重建索引';
+
+  @override
+  String get fastIndexBuilding => '正在索引…';
+
+  @override
+  String get fastIndexClear => '清除索引';
+
+  @override
+  String get fastIndexCleared => '快速索引已清除';
+
+  @override
+  String get readingModeSingle => '单页模式';
+
+  @override
+  String get readingModeWebtoon => '条漫连读';
+
+  @override
+  String get readingModeDouble => '双页模式';
+
+  @override
+  String get stripExifAction => '清除 EXIF 并另存副本';
+
+  @override
+  String stripExifDone(String path) {
+    return '已生成无隐私元数据副本：$path';
+  }
+
+  @override
+  String get stripExifBatchAction => '清除 EXIF';
+
+  @override
+  String stripExifBatchDone(int count) {
+    return '已为 $count 张照片保存无 EXIF 副本';
+  }
+
+  @override
+  String get openInTerminal => '在此处打开终端';
+
+  @override
+  String get openInEditor => '在外部编辑器打开';
+
+  @override
+  String get copyFullPath => '复制绝对路径';
+
+  @override
+  String get copyVfsPath => '复制 VFS 路径';
+
+  @override
+  String get photoBackupTitle => '相册自动增量备份';
+
+  @override
+  String get photoBackupSubtitle => '将新增照片/视频增量备份至 NAS、S3、WebDAV 或隐私保险箱';
+
+  @override
+  String get photoBackupEnable => '启用自动增量备份';
+
+  @override
+  String get photoBackupWifiOnly => '仅在 Wi-Fi 下备份';
+
+  @override
+  String get photoBackupTargetLabel => '备份目标位置';
+
+  @override
+  String get photoBackupSelectTarget => '选择备份目标';
+
+  @override
+  String get photoBackupNow => '立即备份';
+
+  @override
+  String get photoBackupRunning => '正在增量备份新增照片…';
+
+  @override
+  String photoBackupStats(int count) {
+    return '已累计备份 $count 项照片/视频';
+  }
+
+  @override
+  String get photoBackupNoTarget => '请先选择备份目标目录';
+
+  @override
+  String photoBackupCompleted(int count) {
+    return '本次成功备份 $count 项新增媒体';
+  }
+
+  @override
+  String get pinToHomeScreen => '固定到手机桌面';
+
+  @override
+  String pinToHomeScreenSuccess(String name) {
+    return '已将快捷方式“$name”添加到桌面';
+  }
+
+  @override
+  String get pinToHomeScreenUnsupported => '当前平台不支持桌面快捷方式';
 }

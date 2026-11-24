@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -7,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../dialogs/history_retention_dialog.dart';
 import '../rust/api/file_manager.dart' show clearArchiveCache, archiveCacheSize;
+import '../rust/api/metadata.dart' show isSecretEncryptionActive;
 import '../services/platform_capabilities.dart';
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
@@ -69,6 +72,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _platformLabel;
   int _cacheSizeBytes = 0;
   bool _clearingCache = false;
+  bool _secretEncryptionActive = true;
 
   @override
   void initState() {
@@ -81,8 +85,20 @@ class _SettingsPageState extends State<SettingsPage> {
     _buildTimeLabel = _getBuildTime();
     _platformLabel = _getPlatformLabel();
     _updateCacheSize();
+    _checkSecretEncryption();
     PreferencesService.historyRetentionDaysNotifier
         .addListener(_onHistoryRetentionChanged);
+  }
+
+  void _checkSecretEncryption() {
+    try {
+      final active = isSecretEncryptionActive(
+        dbPath: StorageService.instance.dbPath,
+      );
+      if (mounted && active != _secretEncryptionActive) {
+        setState(() => _secretEncryptionActive = active);
+      }
+    } catch (_) {}
   }
 
   void _onHistoryRetentionChanged() {
@@ -330,6 +346,272 @@ class _SettingsPageState extends State<SettingsPage> {
         return '日本語';
       default:
         return l10n.languageSystem;
+    }
+  }
+
+  Future<void> _exportAppConfig() async {
+    final passwordController = TextEditingController();
+    var includeRemotes = true;
+    var obscurePassword = true;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final hasPassword = passwordController.text.isNotEmpty;
+          return AlertDialog(
+            title: const Text('Export Device Migration Backup'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Set a password to save an encrypted .fmbak backup including remote connections, bookmarks, and preferences. Leave blank to export unencrypted bookmarks & preferences only.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Encryption Password',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () => setDialogState(
+                          () => obscurePassword = !obscurePassword,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: hasPassword && includeRemotes,
+                    onChanged: hasPassword
+                        ? (v) => setDialogState(() => includeRemotes = v ?? true)
+                        : null,
+                    title: const Text(
+                      'Include remote connections (S3 / SFTP / SMB / WebDAV)',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    subtitle: hasPassword
+                        ? null
+                        : const Text(
+                            'Requires an encryption password',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(AppLocalizations.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('clipboard'),
+                child: const Text('Copy JSON'),
+              ),
+              FilledButton(
+                onPressed: hasPassword
+                    ? () => Navigator.of(ctx).pop('file')
+                    : null,
+                child: const Text('Save .fmbak'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    final password = passwordController.text;
+    passwordController.dispose();
+    if (action == null || !mounted) return;
+    try {
+      final payload = password.isNotEmpty
+          ? await StorageService.instance.exportEncryptedMigrationBundle(
+              password,
+              includeRemotes: includeRemotes,
+            )
+          : await StorageService.instance.exportAppConfigBundleJson();
+      if (action == 'file') {
+        final loc = await getSaveLocation(
+          suggestedName: 'filemanager-migration.fmbak',
+          acceptedTypeGroups: const [
+            XTypeGroup(
+              label: 'FileManager Migration Backup',
+              extensions: ['fmbak', 'json'],
+            ),
+          ],
+        );
+        if (loc == null) return;
+        await File(loc.path).writeAsString(payload);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Encrypted migration backup saved to ${loc.path}.')),
+        );
+      } else {
+        await Clipboard.setData(ClipboardData(text: payload));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              password.isNotEmpty
+                  ? 'Encrypted migration backup copied to clipboard.'
+                  : 'Bookmarks & preferences backup copied to clipboard.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    }
+  }
+
+  bool _looksLikeEncryptedMigrationEnvelope(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> &&
+          decoded.containsKey('ciphertext') &&
+          decoded.containsKey('salt') &&
+          decoded.containsKey('nonce');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _importAppConfig() async {
+    final contentController = TextEditingController();
+    final passwordController = TextEditingController();
+    var obscurePassword = true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isEncrypted =
+              _looksLikeEncryptedMigrationEnvelope(contentController.text.trim());
+          return AlertDialog(
+            title: const Text('Import Device Configuration'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final file = await openFile(
+                        acceptedTypeGroups: const [
+                          XTypeGroup(
+                            label: 'FileManager Migration Backup',
+                            extensions: ['fmbak', 'json'],
+                          ),
+                        ],
+                      );
+                      if (file == null) return;
+                      final text = await File(file.path).readAsString();
+                      contentController.text = text;
+                      setDialogState(() {});
+                    },
+                    icon: const Icon(Icons.file_open_outlined),
+                    label: const Text('Choose .fmbak or .json File'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: contentController,
+                    maxLines: 6,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Or paste exported JSON / encrypted backup here...',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: isEncrypted
+                          ? 'Decryption Password (Required)'
+                          : 'Decryption Password (If .fmbak)',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () => setDialogState(
+                          () => obscurePassword = !obscurePassword,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(AppLocalizations.of(ctx).cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(AppLocalizations.of(ctx).ok),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    final raw = contentController.text.trim();
+    final password = passwordController.text;
+    contentController.dispose();
+    passwordController.dispose();
+    if (confirmed != true || raw.isEmpty || !mounted) return;
+    try {
+      if (_looksLikeEncryptedMigrationEnvelope(raw) || password.isNotEmpty) {
+        final res = await StorageService.instance.importEncryptedMigrationBundle(
+          raw,
+          password,
+        );
+        if (!mounted) return;
+        final failed = StorageService.instance.lastImportFailures;
+        final failNote =
+            failed.isEmpty ? '' : ' (${failed.length} remotes failed)';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Imported ${res.remotes} remotes, ${res.bookmarks} bookmarks, and ${res.preferences} preferences$failNote.',
+            ),
+          ),
+        );
+      } else {
+        final res = await StorageService.instance.importAppConfigBundleJson(raw);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Imported ${res.bookmarks} bookmarks and ${res.preferences} preferences.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
     }
   }
 
@@ -744,6 +1026,26 @@ class _SettingsPageState extends State<SettingsPage> {
           Card(
             child: Column(
               children: [
+                if (!_secretEncryptionActive) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    color: Colors.amber.withValues(alpha: 0.14),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'OS keyring & key-file persistence unavailable; remote credentials are currently stored unencrypted in SQLite.',
+                            style: TextStyle(fontSize: 11.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                ],
                 ListTile(
                   key: const ValueKey('settings_history_retention_tile'),
                   leading: const AppCircleBadge(
@@ -787,6 +1089,40 @@ class _SettingsPageState extends State<SettingsPage> {
                           onPressed: _cacheSizeBytes > 0 ? _clearCache : null,
                           child: Text(l10n.clear),
                         ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const AppCircleBadge(
+                    icon: Icons.import_export_rounded,
+                    color: Colors.teal,
+                  ),
+                  title: const Text('Backup & Restore Configuration'),
+                  subtitle: const Text(
+                    'Encrypted .fmbak device migration (remotes, bookmarks, preferences) or JSON export',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        onPressed: _exportAppConfig,
+                        child: const Text('Export'),
+                      ),
+                      const SizedBox(width: 6),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        onPressed: _importAppConfig,
+                        child: const Text('Import'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

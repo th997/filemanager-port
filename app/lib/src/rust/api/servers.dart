@@ -8,7 +8,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `stop_media_streams_for_vault`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 Future<ServerStatusDto> startLanHttpServer({
   required String rootDir,
@@ -58,6 +58,85 @@ Future<String> startMediaStream({required String root}) =>
 void stopMediaStreams() =>
     RustLib.instance.api.crateApiServersStopMediaStreams();
 
+/// Start a LAN WebDAV server exposing any VFS root (local, remote, or unlocked
+/// vault) over HTTP so TV media players and desktop file managers can mount it.
+Future<ServerStatusDto> startLanWebdavServer({
+  required String root,
+  required String relPath,
+  int? port,
+  String? username,
+  String? password,
+  required bool readOnly,
+}) => RustLib.instance.api.crateApiServersStartLanWebdavServer(
+  root: root,
+  relPath: relPath,
+  port: port,
+  username: username,
+  password: password,
+  readOnly: readOnly,
+);
+
+bool stopLanWebdavServer() =>
+    RustLib.instance.api.crateApiServersStopLanWebdavServer();
+
+ServerStatusDto? lanWebdavStatus() =>
+    RustLib.instance.api.crateApiServersLanWebdavStatus();
+
+/// Start the LAN direct peer transfer receiver (HTTP server + UDP beacon).
+Future<ServerStatusDto> startPeerReceiver({
+  required String deviceName,
+  required String saveDir,
+  int? port,
+}) => RustLib.instance.api.crateApiServersStartPeerReceiver(
+  deviceName: deviceName,
+  saveDir: saveDir,
+  port: port,
+);
+
+bool stopPeerReceiver() =>
+    RustLib.instance.api.crateApiServersStopPeerReceiver();
+
+ServerStatusDto? peerReceiverStatus() =>
+    RustLib.instance.api.crateApiServersPeerReceiverStatus();
+
+Future<List<PeerInfoDto>> discoverLanPeers({int? timeoutMs}) =>
+    RustLib.instance.api.crateApiServersDiscoverLanPeers(timeoutMs: timeoutMs);
+
+List<PeerOfferDto> pollPeerOffers() =>
+    RustLib.instance.api.crateApiServersPollPeerOffers();
+
+bool respondPeerOffer({
+  required String offerId,
+  required bool accept,
+  String? saveDir,
+}) => RustLib.instance.api.crateApiServersRespondPeerOffer(
+  offerId: offerId,
+  accept: accept,
+  saveDir: saveDir,
+);
+
+Future<int> sendPeerFiles({
+  required String peerUrl,
+  required String senderName,
+  required String srcRoot,
+  required List<String> srcPaths,
+}) => RustLib.instance.api.crateApiServersSendPeerFiles(
+  peerUrl: peerUrl,
+  senderName: senderName,
+  srcRoot: srcRoot,
+  srcPaths: srcPaths,
+);
+
+Future<void> sendPeerText({
+  required String peerUrl,
+  required String senderName,
+  required String text,
+}) => RustLib.instance.api.crateApiServersSendPeerText(
+  peerUrl: peerUrl,
+  senderName: senderName,
+  text: text,
+);
+
 class LanServiceDto {
   final String name;
   final String host;
@@ -91,6 +170,100 @@ class LanServiceDto {
           port == other.port &&
           protocol == other.protocol &&
           source == other.source;
+}
+
+class PeerInfoDto {
+  final String deviceId;
+  final String deviceName;
+  final String platform;
+  final String host;
+  final int port;
+  final String url;
+
+  const PeerInfoDto({
+    required this.deviceId,
+    required this.deviceName,
+    required this.platform,
+    required this.host,
+    required this.port,
+    required this.url,
+  });
+
+  @override
+  int get hashCode =>
+      deviceId.hashCode ^
+      deviceName.hashCode ^
+      platform.hashCode ^
+      host.hashCode ^
+      port.hashCode ^
+      url.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PeerInfoDto &&
+          runtimeType == other.runtimeType &&
+          deviceId == other.deviceId &&
+          deviceName == other.deviceName &&
+          platform == other.platform &&
+          host == other.host &&
+          port == other.port &&
+          url == other.url;
+}
+
+class PeerOfferDto {
+  final String offerId;
+  final String senderName;
+  final String kind;
+  final List<String> items;
+  final BigInt totalBytes;
+  final String? textPreview;
+  final String? textPayload;
+  final String status;
+  final String? saveDir;
+  final int receivedFiles;
+
+  const PeerOfferDto({
+    required this.offerId,
+    required this.senderName,
+    required this.kind,
+    required this.items,
+    required this.totalBytes,
+    this.textPreview,
+    this.textPayload,
+    required this.status,
+    this.saveDir,
+    required this.receivedFiles,
+  });
+
+  @override
+  int get hashCode =>
+      offerId.hashCode ^
+      senderName.hashCode ^
+      kind.hashCode ^
+      items.hashCode ^
+      totalBytes.hashCode ^
+      textPreview.hashCode ^
+      textPayload.hashCode ^
+      status.hashCode ^
+      saveDir.hashCode ^
+      receivedFiles.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PeerOfferDto &&
+          runtimeType == other.runtimeType &&
+          offerId == other.offerId &&
+          senderName == other.senderName &&
+          kind == other.kind &&
+          items == other.items &&
+          totalBytes == other.totalBytes &&
+          textPreview == other.textPreview &&
+          textPayload == other.textPayload &&
+          status == other.status &&
+          saveDir == other.saveDir &&
+          receivedFiles == other.receivedFiles;
 }
 
 class ServerStatusDto {

@@ -122,6 +122,14 @@
     let isReadOnly = false;
 
     const shareToken = new URLSearchParams(window.location.search).get('token');
+    // Scrub ?token= from the address bar/history once the server's HttpOnly cookie is set.
+    if (shareToken && window.history && typeof window.history.replaceState === 'function') {
+        try {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('token');
+            window.history.replaceState(null, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+        } catch (_) {}
+    }
     function withToken(url) {
         if (!shareToken) return url;
         return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(shareToken);

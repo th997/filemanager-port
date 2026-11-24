@@ -47,6 +47,9 @@ pub fn encrypt_config(plain: &str, data_dir: &Path) -> String {
     // the plaintext at least leaves the connection usable.
     let _ = master_key(data_dir);
     if !key_is_persisted() {
+        eprintln!(
+            "[fm-index] WARNING: master key could not be persisted to OS keyring or master.key;              remote credentials are stored in plaintext in SQLite."
+        );
         return plain.to_string();
     }
     let cipher = cipher(data_dir);
@@ -113,6 +116,17 @@ fn master_key(data_dir: &Path) -> &'static [u8; 32] {
 /// Whether the master key reached storage that survives a restart.
 fn key_is_persisted() -> bool {
     *KEY_PERSISTED.get().unwrap_or(&false)
+}
+
+/// Public diagnostic helper indicating whether at-rest credential encryption is active.
+pub fn is_encryption_active_for_dir(data_dir: &Path) -> bool {
+    let _ = master_key(data_dir);
+    key_is_persisted()
+}
+
+/// Public diagnostic helper indicating whether at-rest credential encryption is active.
+pub fn is_encryption_active() -> bool {
+    key_is_persisted()
 }
 
 fn decode_key(b64: &str) -> Option<[u8; 32]> {

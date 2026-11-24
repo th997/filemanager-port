@@ -6,6 +6,9 @@ import '../dialogs/vault_dialogs.dart';
 import '../pages/bookmarks_page.dart';
 import '../pages/browser_workspace_page.dart';
 import '../pages/gallery_page.dart';
+import '../pages/offline_pinned_page.dart';
+import '../pages/peer_transfer_page.dart';
+import '../pages/photo_backup_page.dart';
 import '../pages/recent_page.dart';
 import '../pages/remotes_page.dart';
 import '../pages/settings_page.dart';
@@ -29,6 +32,9 @@ enum _SidebarSection {
   remotes,
   bookmarks,
   recent,
+  offlinePinned,
+  peerTransfer,
+  photoBackup,
   utilities,
   tasks,
   trash,
@@ -61,6 +67,7 @@ class DesktopSidebarShell extends StatefulWidget {
 
   @visibleForTesting
   final Widget? workspaceOverride;
+  final Widget? topBanner;
 
   const DesktopSidebarShell({
     super.key,
@@ -79,6 +86,7 @@ class DesktopSidebarShell extends StatefulWidget {
     required this.onRefreshMetadata,
     required this.onOpenGlobalSearch,
     this.workspaceOverride,
+    this.topBanner,
   });
 
   @override
@@ -143,11 +151,30 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
     );
   }
 
+  void _selectSection(_SidebarSection section) {
+    final leavingMutable = _section == _SidebarSection.remotes ||
+        _section == _SidebarSection.bookmarks ||
+        _section == _SidebarSection.trash ||
+        _section == _SidebarSection.utilities;
+    final switching = _section != section;
+    setState(() => _section = section);
+    if (switching && leavingMutable) {
+      widget.onRefreshMetadata();
+    }
+  }
+
   void _navigateBrowser(String root, String relPath, String title, String key) {
+    final leavingMutable = _section == _SidebarSection.remotes ||
+        _section == _SidebarSection.bookmarks ||
+        _section == _SidebarSection.trash ||
+        _section == _SidebarSection.utilities;
     setState(() {
       _section = _SidebarSection.browser;
       _activeKey = key;
     });
+    if (leavingMutable) {
+      widget.onRefreshMetadata();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _workspaceKey.currentState?.navigateActivePane(
         root: root,
@@ -155,6 +182,32 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
         title: title,
       );
     });
+  }
+
+  Future<void> _openVaultViaDialog() async {
+    final unlocked = await OpenVaultDialog.show(context);
+    if (unlocked != null && mounted) {
+      _navigateBrowser(
+        'vault://${unlocked.id}',
+        '',
+        unlocked.name,
+        'vault:${unlocked.id}',
+      );
+      widget.onRefreshMetadata();
+    }
+  }
+
+  Future<void> _createVaultViaDialog() async {
+    final created = await CreateVaultDialog.show(context);
+    if (created != null && mounted) {
+      _navigateBrowser(
+        'vault://${created.id}',
+        '',
+        created.name,
+        'vault:${created.id}',
+      );
+      widget.onRefreshMetadata();
+    }
   }
 
   Future<void> _acceptSidebarDrop(
@@ -534,33 +587,62 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                     }
                   },
                 ),
+              if (vaults.isEmpty && lockedPinned.isEmpty)
+                _railItem(
+                  icon: Icons.enhanced_encryption_outlined,
+                  iconColor: Colors.indigo,
+                  tooltip: l10n.openPrivacyFolder,
+                  selected: false,
+                  onTap: _openVaultViaDialog,
+                ),
               _railItem(
                 icon: Icons.cloud_outlined,
                 iconColor: const Color(0xFF1E88E5),
                 tooltip: l10n.remote,
                 selected: _section == _SidebarSection.remotes,
-                onTap: () => setState(() => _section = _SidebarSection.remotes),
+                onTap: () => _selectSection(_SidebarSection.remotes),
               ),
               _railItem(
                 icon: Icons.bookmark_outline,
                 iconColor: const Color(0xFFFB8C00),
                 tooltip: l10n.bookmarks,
                 selected: _section == _SidebarSection.bookmarks,
-                onTap: () => setState(() => _section = _SidebarSection.bookmarks),
+                onTap: () => _selectSection(_SidebarSection.bookmarks),
               ),
               _railItem(
                 icon: Icons.history,
                 iconColor: const Color(0xFF3949AB),
                 tooltip: l10n.recent,
                 selected: _section == _SidebarSection.recent,
-                onTap: () => setState(() => _section = _SidebarSection.recent),
+                onTap: () => _selectSection(_SidebarSection.recent),
+              ),
+              _railItem(
+                icon: Icons.offline_pin_outlined,
+                iconColor: Colors.indigo,
+                tooltip: l10n.offlinePinned,
+                selected: _section == _SidebarSection.offlinePinned,
+                onTap: () => _selectSection(_SidebarSection.offlinePinned),
+              ),
+              _railItem(
+                icon: Icons.wifi_tethering,
+                iconColor: const Color(0xFF00897B),
+                tooltip: l10n.lanPeerTransferTitle,
+                selected: _section == _SidebarSection.peerTransfer,
+                onTap: () => _selectSection(_SidebarSection.peerTransfer),
+              ),
+              _railItem(
+                icon: Icons.add_photo_alternate_outlined,
+                iconColor: const Color(0xFF7B1FA2),
+                tooltip: l10n.photoBackupTitle,
+                selected: _section == _SidebarSection.photoBackup,
+                onTap: () => _selectSection(_SidebarSection.photoBackup),
               ),
               _railItem(
                 icon: Icons.build_outlined,
                 iconColor: const Color(0xFF5E35B1),
                 tooltip: l10n.utilities,
                 selected: _section == _SidebarSection.utilities,
-                onTap: () => setState(() => _section = _SidebarSection.utilities),
+                onTap: () => _selectSection(_SidebarSection.utilities),
               ),
               _railItem(
                 icon: Icons.task_alt,
@@ -568,7 +650,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                 tooltip: l10n.tasks,
                 badge: widget.activeTaskCount > 0 ? '${widget.activeTaskCount}' : null,
                 selected: _section == _SidebarSection.tasks,
-                onTap: () => setState(() => _section = _SidebarSection.tasks),
+                onTap: () => _selectSection(_SidebarSection.tasks),
               ),
               _railItem(
                 icon: Icons.delete_outline,
@@ -576,14 +658,14 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                 tooltip: l10n.recycleBin,
                 badge: widget.trashCount > 0 ? '${widget.trashCount}' : null,
                 selected: _section == _SidebarSection.trash,
-                onTap: () => setState(() => _section = _SidebarSection.trash),
+                onTap: () => _selectSection(_SidebarSection.trash),
               ),
               _railItem(
                 icon: Icons.settings_outlined,
                 iconColor: const Color(0xFF546E7A),
                 tooltip: l10n.settings,
                 selected: _section == _SidebarSection.settings,
-                onTap: () => setState(() => _section = _SidebarSection.settings),
+                onTap: () => _selectSection(_SidebarSection.settings),
               ),
             ],
           ),
@@ -673,7 +755,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
               _collapsibleSection(
                 groupId: 'local',
                 title: l10n.localStorage,
-                itemCount: targets.length + 1,
+                itemCount: targets.length,
                 children: [
                   for (final t in targets)
                     _sidebarItem(
@@ -695,72 +777,91 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                         'local:${t.root}:${t.relPath}',
                       ),
                     ),
+                ],
+              ),
+              _collapsibleSection(
+                groupId: 'vaults',
+                title: l10n.privacyFolders,
+                itemCount: vaults.length + lockedPinned.length,
+                trailing: IconButton(
+                  key: const ValueKey('sidebar_create_vault_btn'),
+                  icon: Icon(
+                    Icons.add,
+                    size: 16,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  tooltip: l10n.createPrivacyFolder,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: _createVaultViaDialog,
+                ),
+                children: [
+                  for (final v in vaults)
+                    _sidebarItem(
+                      icon: Icons.lock_open_rounded,
+                      iconColor: Colors.indigo,
+                      title: v.name,
+                      selected: _section == _SidebarSection.browser &&
+                          _activeKey == 'vault:${v.id}',
+                      dropDstRoot: 'vault://${v.id}',
+                      onTap: () => _navigateBrowser(
+                        'vault://${v.id}',
+                        '',
+                        v.name,
+                        'vault:${v.id}',
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.lock_outline, size: 15),
+                        tooltip: l10n.lockVaultNow,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => VaultService.instance.lockVault(v.id),
+                      ),
+                    ),
+                  for (final p in lockedPinned)
+                    _sidebarItem(
+                      icon: Icons.lock_outline,
+                      iconColor: scheme.onSurfaceVariant,
+                      title: p.name,
+                      badge: l10n.lockedBadge,
+                      selected: false,
+                      onTap: () async {
+                        final unlocked = await OpenVaultDialog.show(
+                          context,
+                          initialName: p.name,
+                        );
+                        if (unlocked != null && mounted) {
+                          _navigateBrowser(
+                            'vault://${unlocked.id}',
+                            '',
+                            unlocked.name,
+                            'vault:${unlocked.id}',
+                          );
+                        }
+                      },
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close, size: 14),
+                        tooltip: l10n.vaultUnpinAlwaysVisible,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => VaultService.instance.unpinVault(p.id),
+                      ),
+                    ),
                   _sidebarItem(
-                    icon: Icons.photo_library_outlined,
-                    iconColor: const Color(0xFFD81B60),
-                    title: l10n.gallery,
-                    selected: _section == _SidebarSection.gallery,
-                    onTap: () => setState(() => _section = _SidebarSection.gallery),
+                    icon: Icons.enhanced_encryption_outlined,
+                    iconColor: Colors.indigo,
+                    title: l10n.openPrivacyFolder,
+                    selected: false,
+                    onTap: _openVaultViaDialog,
+                  ),
+                  _sidebarItem(
+                    icon: Icons.create_new_folder_outlined,
+                    iconColor: Colors.teal,
+                    title: l10n.createPrivacyFolder,
+                    selected: false,
+                    onTap: _createVaultViaDialog,
                   ),
                 ],
               ),
-              if (vaults.isNotEmpty || lockedPinned.isNotEmpty)
-                _collapsibleSection(
-                  groupId: 'vaults',
-                  title: l10n.privacyFolders,
-                  itemCount: vaults.length + lockedPinned.length,
-                  children: [
-                    for (final v in vaults)
-                      _sidebarItem(
-                        icon: Icons.lock_open_rounded,
-                        iconColor: Colors.indigo,
-                        title: v.name,
-                        selected: _section == _SidebarSection.browser &&
-                            _activeKey == 'vault:${v.id}',
-                        dropDstRoot: 'vault://${v.id}',
-                        onTap: () => _navigateBrowser(
-                          'vault://${v.id}',
-                          '',
-                          v.name,
-                          'vault:${v.id}',
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.lock_outline, size: 15),
-                          tooltip: l10n.lockVaultNow,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => VaultService.instance.lockVault(v.id),
-                        ),
-                      ),
-                    for (final p in lockedPinned)
-                      _sidebarItem(
-                        icon: Icons.lock_outline,
-                        iconColor: scheme.onSurfaceVariant,
-                        title: p.name,
-                        badge: l10n.lockedBadge,
-                        selected: false,
-                        onTap: () async {
-                          final unlocked = await OpenVaultDialog.show(
-                            context,
-                            initialName: p.name,
-                          );
-                          if (unlocked != null && mounted) {
-                            _navigateBrowser(
-                              'vault://${unlocked.id}',
-                              '',
-                              unlocked.name,
-                              'vault:${unlocked.id}',
-                            );
-                          }
-                        },
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close, size: 14),
-                          tooltip: l10n.vaultUnpinAlwaysVisible,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => VaultService.instance.unpinVault(p.id),
-                        ),
-                      ),
-                  ],
-                ),
               _collapsibleSection(
                 groupId: 'remotes',
                 title: l10n.remote,
@@ -846,10 +947,17 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                   ],
                 ),
               _collapsibleSection(
-                groupId: 'tools',
-                title: l10n.cloudToolsSettings,
-                itemCount: widget.bookmarks.isEmpty ? 6 : 5,
+                groupId: 'discover',
+                title: l10n.navDomainDiscover,
+                itemCount: widget.bookmarks.isEmpty ? 4 : 3,
                 children: [
+                  _sidebarItem(
+                    icon: Icons.photo_library_outlined,
+                    iconColor: const Color(0xFFD81B60),
+                    title: l10n.gallery,
+                    selected: _section == _SidebarSection.gallery,
+                    onTap: () => setState(() => _section = _SidebarSection.gallery),
+                  ),
                   if (widget.bookmarks.isEmpty)
                     _sidebarItem(
                       icon: Icons.bookmark_border,
@@ -866,11 +974,39 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                     onTap: () => setState(() => _section = _SidebarSection.recent),
                   ),
                   _sidebarItem(
+                    icon: Icons.offline_pin_outlined,
+                    iconColor: Colors.indigo,
+                    title: l10n.offlinePinned,
+                    selected: _section == _SidebarSection.offlinePinned,
+                    onTap: () => setState(() => _section = _SidebarSection.offlinePinned),
+                  ),
+                ],
+              ),
+              _collapsibleSection(
+                groupId: 'tools',
+                title: l10n.navDomainTools,
+                itemCount: 6,
+                children: [
+                  _sidebarItem(
+                    icon: Icons.wifi_tethering,
+                    iconColor: const Color(0xFF00897B),
+                    title: l10n.lanPeerTransferTitle,
+                    selected: _section == _SidebarSection.peerTransfer,
+                    onTap: () => _selectSection(_SidebarSection.peerTransfer),
+                  ),
+                  _sidebarItem(
+                    icon: Icons.add_photo_alternate_outlined,
+                    iconColor: const Color(0xFF7B1FA2),
+                    title: l10n.photoBackupTitle,
+                    selected: _section == _SidebarSection.photoBackup,
+                    onTap: () => _selectSection(_SidebarSection.photoBackup),
+                  ),
+                  _sidebarItem(
                     icon: Icons.build_outlined,
                     iconColor: const Color(0xFF5E35B1),
                     title: l10n.utilities,
                     selected: _section == _SidebarSection.utilities,
-                    onTap: () => setState(() => _section = _SidebarSection.utilities),
+                    onTap: () => _selectSection(_SidebarSection.utilities),
                   ),
                   _sidebarItem(
                     icon: Icons.task_alt,
@@ -878,7 +1014,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                     title: l10n.tasks,
                     badge: widget.activeTaskCount > 0 ? '${widget.activeTaskCount}' : null,
                     selected: _section == _SidebarSection.tasks,
-                    onTap: () => setState(() => _section = _SidebarSection.tasks),
+                    onTap: () => _selectSection(_SidebarSection.tasks),
                   ),
                   _sidebarItem(
                     icon: Icons.delete_outline,
@@ -886,14 +1022,14 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                     title: l10n.recycleBin,
                     badge: widget.trashCount > 0 ? '${widget.trashCount}' : null,
                     selected: _section == _SidebarSection.trash,
-                    onTap: () => setState(() => _section = _SidebarSection.trash),
+                    onTap: () => _selectSection(_SidebarSection.trash),
                   ),
                   _sidebarItem(
                     icon: Icons.settings_outlined,
                     iconColor: const Color(0xFF546E7A),
                     title: l10n.settings,
                     selected: _section == _SidebarSection.settings,
-                    onTap: () => setState(() => _section = _SidebarSection.settings),
+                    onTap: () => _selectSection(_SidebarSection.settings),
                   ),
                 ],
               ),
@@ -979,6 +1115,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
             Expanded(
               child: Column(
                 children: [
+                  if (widget.topBanner != null) widget.topBanner!,
                   Expanded(
                     child: widget.workspaceOverride ??
                         IndexedStack(
@@ -1016,6 +1153,12 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
         return const BookmarksPage();
       case _SidebarSection.recent:
         return const RecentPage();
+      case _SidebarSection.offlinePinned:
+        return const OfflinePinnedPage();
+      case _SidebarSection.peerTransfer:
+        return const PeerTransferPage();
+      case _SidebarSection.photoBackup:
+        return const PhotoBackupPage();
       case _SidebarSection.utilities:
         return const UtilitiesPage();
       case _SidebarSection.tasks:

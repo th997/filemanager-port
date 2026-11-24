@@ -113,77 +113,8 @@ pub struct PagedEntriesDto {
 
 /// Natural (human) ordering: case-insensitive, digit runs compare
 /// numerically. Uses zero heap allocations by streaming sub-slices.
-fn natural_compare(mut a: &str, mut b: &str) -> std::cmp::Ordering {
-    fn next_chunk<'a>(s: &mut &'a str) -> Option<(&'a str, bool)> {
-        if s.is_empty() {
-            return None;
-        }
-        if s.is_ascii() {
-            let bytes = s.as_bytes();
-            let is_digit = bytes[0].is_ascii_digit();
-            let end = bytes
-                .iter()
-                .position(|&b| b.is_ascii_digit() != is_digit)
-                .unwrap_or(bytes.len());
-            let chunk = &s[..end];
-            *s = &s[end..];
-            Some((chunk, is_digit))
-        } else {
-            let first = s.chars().next()?;
-            let is_digit = first.is_ascii_digit();
-            let end = s
-                .char_indices()
-                .find(|&(_, ch)| ch.is_ascii_digit() != is_digit)
-                .map(|(idx, _)| idx)
-                .unwrap_or(s.len());
-            let chunk = &s[..end];
-            *s = &s[end..];
-            Some((chunk, is_digit))
-        }
-    }
-
-    let mut first_numeric_tie_break = std::cmp::Ordering::Equal;
-
-    loop {
-        match (next_chunk(&mut a), next_chunk(&mut b)) {
-            (Some((pa, true)), Some((pb, true))) => {
-                let na: Option<u128> = pa.parse().ok();
-                let nb: Option<u128> = pb.parse().ok();
-                let cmp = match (na, nb) {
-                    (Some(x), Some(y)) => x.cmp(&y),
-                    _ => pa.cmp(pb),
-                };
-                if cmp != std::cmp::Ordering::Equal {
-                    return cmp;
-                }
-                if first_numeric_tie_break == std::cmp::Ordering::Equal && pa != pb {
-                    first_numeric_tie_break = pa.len().cmp(&pb.len()).then_with(|| pa.cmp(pb));
-                }
-            }
-            (Some((pa, _)), Some((pb, _))) => {
-                let cmp = if pa.is_ascii() && pb.is_ascii() {
-                    if pa.eq_ignore_ascii_case(pb) {
-                        std::cmp::Ordering::Equal
-                    } else {
-                        pa.as_bytes()
-                            .iter()
-                            .map(u8::to_ascii_lowercase)
-                            .cmp(pb.as_bytes().iter().map(u8::to_ascii_lowercase))
-                    }
-                } else {
-                    pa.chars()
-                        .map(|c| c.to_ascii_lowercase())
-                        .cmp(pb.chars().map(|c| c.to_ascii_lowercase()))
-                };
-                if cmp != std::cmp::Ordering::Equal {
-                    return cmp;
-                }
-            }
-            (Some(_), None) => return std::cmp::Ordering::Greater,
-            (None, Some(_)) => return std::cmp::Ordering::Less,
-            (None, None) => return first_numeric_tie_break,
-        }
-    }
+fn natural_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    fm_core::natural_compare(a, b)
 }
 
 fn extension_of(e: &EntryDto) -> &str {
@@ -278,6 +209,42 @@ pub async fn list_dir_paged(
     sort_by: String,
     sort_ascending: bool,
 ) -> Result<PagedEntriesDto, String> {
+    let page = page.max(1);
+    let page_size = page_size.max(1);
+    let skip = ((page - 1) as usize).saturating_mul(page_size as usize);
+
+    // Fast path for default ascending name sort: delegate directly to backend
+    // `list_paged_with_total` so S3/WebDAV stream only up to `page * page_size`
+    // objects, LocalFs/SftpFs stat only the requested page window, and VaultFs
+    // materializes only the requested slice.
+    if sort_by == "name" && sort_ascending {
+        let backend = VfsRegistry::global().get_or_create(&root).await?;
+        let vfs_path = VfsPath::from_slash_path(&path);
+        let (raw_entries, has_more, exact_total) = backend
+            .list_paged_with_total(&vfs_path, page, page_size)
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut entries: Vec<EntryDto> = raw_entries.into_iter().map(EntryDto::from).collect();
+        sort_dtos(&mut entries, &sort_by, sort_ascending);
+        let total = exact_total.unwrap_or_else(|| {
+            let loaded = u32::try_from(skip)
+                .unwrap_or(u32::MAX)
+                .saturating_add(entries.len() as u32);
+            if has_more {
+                loaded.saturating_add(1)
+            } else {
+                loaded
+            }
+        });
+        return Ok(PagedEntriesDto {
+            entries,
+            page,
+            page_size,
+            has_more,
+            total,
+        });
+    }
+
     let cache_key = (root.clone(), path.clone(), sort_by.clone(), sort_ascending);
     let ttl = Duration::from_secs(5);
 
@@ -311,10 +278,22 @@ pub async fn list_dir_paged(
             sort_dtos(&mut dtos, &sort_by, sort_ascending);
 
             let mut cache = dir_cache().lock();
+            const MAX_DIR_CACHE_ENTRIES: usize = 64;
+            let now = Instant::now();
+            cache.retain(|_, entry| now.saturating_duration_since(entry.created_at) < ttl);
+            if cache.len() >= MAX_DIR_CACHE_ENTRIES && !cache.contains_key(&cache_key) {
+                if let Some(oldest_key) = cache
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.created_at)
+                    .map(|(k, _)| k.clone())
+                {
+                    cache.remove(&oldest_key);
+                }
+            }
             cache.insert(
                 cache_key,
                 DirCacheEntry {
-                    created_at: Instant::now(),
+                    created_at: now,
                     dtos: dtos.clone(),
                 },
             );
@@ -326,7 +305,7 @@ pub async fn list_dir_paged(
     let page = page.max(1);
     let page_size = page_size.max(1);
     let skip = ((page - 1) as usize).saturating_mul(page_size as usize);
-    let has_more = skip + (page_size as usize) < total as usize;
+    let has_more = skip.saturating_add(page_size as usize) < total as usize;
     let entries = dtos
         .into_iter()
         .skip(skip)
@@ -844,5 +823,33 @@ mod tests {
         assert_eq!(lead2, 2);
         assert_eq!(consumed2, bytes.len() - 4);
         assert_eq!(enc2, "utf-8");
+    }
+
+    #[tokio::test]
+    async fn list_dir_paged_fast_path_preserves_natural_order_and_exact_total() {
+        let dir = std::env::temp_dir().join(format!("fm-paged-fast-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("file10.txt"), b"10").unwrap();
+        std::fs::write(dir.join("file2.txt"), b"2").unwrap();
+        std::fs::write(dir.join("file1.txt"), b"1").unwrap();
+
+        let root = dir.to_string_lossy().into_owned();
+        let p1 = list_dir_paged(root.clone(), String::new(), 1, 2, "name".to_string(), true)
+            .await
+            .unwrap();
+        assert_eq!(p1.total, 4);
+        assert!(p1.has_more);
+        let p1_names: Vec<&str> = p1.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(p1_names, vec!["sub", "file1.txt"]);
+
+        let p2 = list_dir_paged(root, String::new(), 2, 2, "name".to_string(), true)
+            .await
+            .unwrap();
+        assert_eq!(p2.total, 4);
+        assert!(!p2.has_more);
+        let p2_names: Vec<&str> = p2.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(p2_names, vec!["file2.txt", "file10.txt"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

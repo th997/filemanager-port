@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/tasks.dart' as tasks_api;
+import 'background_keepalive_service.dart';
 
 /// Human-readable byte size (used across dialogs and task center).
 String formatBytes(BigInt bytes) {
@@ -191,13 +192,16 @@ class TaskService {
     String? dstName,
     String conflictPolicy = 'overwrite',
   }) async {
-    return await tasks_api.startCopyTask(
-      srcRoot: srcRoot,
-      srcPaths: srcPaths,
-      dstRoot: dstRoot,
-      dstDir: dstDir,
-      dstName: dstName,
-      conflictPolicy: conflictPolicy,
+    return _trackTask(
+      'Copy Files',
+      () => tasks_api.startCopyTask(
+        srcRoot: srcRoot,
+        srcPaths: srcPaths,
+        dstRoot: dstRoot,
+        dstDir: dstDir,
+        dstName: dstName,
+        conflictPolicy: conflictPolicy,
+      ),
     );
   }
 
@@ -208,12 +212,15 @@ class TaskService {
     required String dstDir,
     String conflictPolicy = 'overwrite',
   }) async {
-    return await tasks_api.startMoveTask(
-      srcRoot: srcRoot,
-      srcPaths: srcPaths,
-      dstRoot: dstRoot,
-      dstDir: dstDir,
-      conflictPolicy: conflictPolicy,
+    return _trackTask(
+      'Move Files',
+      () => tasks_api.startMoveTask(
+        srcRoot: srcRoot,
+        srcPaths: srcPaths,
+        dstRoot: dstRoot,
+        dstDir: dstDir,
+        conflictPolicy: conflictPolicy,
+      ),
     );
   }
 
@@ -221,9 +228,12 @@ class TaskService {
     required String root,
     required List<String> paths,
   }) async {
-    return await tasks_api.startDeleteTask(
-      root: root,
-      paths: paths,
+    return _trackTask(
+      'Delete Files',
+      () => tasks_api.startDeleteTask(
+        root: root,
+        paths: paths,
+      ),
     );
   }
 
@@ -232,10 +242,13 @@ class TaskService {
     required List<String> srcPaths,
     required String dstArchivePath,
   }) async {
-    return await tasks_api.startCompressTask(
-      srcRoot: srcRoot,
-      srcPaths: srcPaths,
-      dstArchivePath: dstArchivePath,
+    return _trackTask(
+      'Compress Archive',
+      () => tasks_api.startCompressTask(
+        srcRoot: srcRoot,
+        srcPaths: srcPaths,
+        dstArchivePath: dstArchivePath,
+      ),
     );
   }
 
@@ -243,18 +256,65 @@ class TaskService {
     required String archivePath,
     required String dstDir,
   }) async {
-    return await tasks_api.startExtractTask(
-      archivePath: archivePath,
-      dstDir: dstDir,
+    return _trackTask(
+      'Extract Archive',
+      () => tasks_api.startExtractTask(
+        archivePath: archivePath,
+        dstDir: dstDir,
+      ),
     );
   }
 
+  static bool _isTerminalState(String state) =>
+      state == 'completed' || state == 'failed' || state == 'cancelled';
+
+  void _syncKeepAlive(String taskId, tasks_api.TaskProgressDto? progress) {
+    final token = 'task:$taskId';
+    if (progress == null || _isTerminalState(progress.state)) {
+      unawaited(BackgroundKeepAliveService.instance.release(token));
+    } else {
+      unawaited(
+        BackgroundKeepAliveService.instance.acquire(
+          token,
+          title: progress.label?.trim().isNotEmpty == true
+              ? progress.label!
+              : 'File Transfer in Progress',
+          detail: progress.current ?? 'Transferring files...',
+        ),
+      );
+    }
+  }
+
+  Future<String> _trackTask(
+    String label,
+    Future<String> Function() startTask,
+  ) async {
+    final taskId = await startTask();
+    unawaited(
+      BackgroundKeepAliveService.instance.acquire(
+        'task:$taskId',
+        title: label,
+      ),
+    );
+    return taskId;
+  }
+
   tasks_api.TaskProgressDto? poll(String taskId) {
-    return tasks_api.pollTaskProgress(taskId: taskId);
+    final p = tasks_api.pollTaskProgress(taskId: taskId);
+    if (p != null) {
+      _syncKeepAlive(taskId, p);
+    } else {
+      unawaited(BackgroundKeepAliveService.instance.release('task:$taskId'));
+    }
+    return p;
   }
 
   bool cancel(String taskId) {
-    return tasks_api.cancelTask(taskId: taskId);
+    final ok = tasks_api.cancelTask(taskId: taskId);
+    if (ok) {
+      unawaited(BackgroundKeepAliveService.instance.release('task:$taskId'));
+    }
+    return ok;
   }
 
   bool pause(String taskId) {
@@ -270,16 +330,27 @@ class TaskService {
   }
 
   Future<String> retryFailed(String taskId) {
-    return tasks_api.retryFailedTaskItems(taskId: taskId);
+    return _trackTask(
+      'Retrying Failed Transfers',
+      () => tasks_api.retryFailedTaskItems(taskId: taskId),
+    );
   }
 
   /// All registered tasks, oldest first, finished ones included.
   List<tasks_api.TaskProgressDto> list() {
-    return tasks_api.listTasks();
+    final items = tasks_api.listTasks();
+    for (final p in items) {
+      _syncKeepAlive(p.id, p);
+    }
+    return items;
   }
 
   bool dismiss(String taskId) {
-    return tasks_api.dismissTask(taskId: taskId);
+    final ok = tasks_api.dismissTask(taskId: taskId);
+    if (ok) {
+      unawaited(BackgroundKeepAliveService.instance.release('task:$taskId'));
+    }
+    return ok;
   }
 
   Stream<tasks_api.TaskProgressDto> watch(String taskId, {Duration interval = const Duration(milliseconds: 200)}) async* {
@@ -287,18 +358,27 @@ class TaskService {
     // terminal event was seen, polling would otherwise spin forever and leave
     // the progress dialog open.
     var misses = 0;
-    while (true) {
-      final p = poll(taskId);
-      if (p != null) {
-        misses = 0;
-        yield p;
-        if (p.state == 'completed' || p.state == 'failed' || p.state == 'cancelled') {
+    var reachedEnd = false;
+    try {
+      while (true) {
+        final p = poll(taskId);
+        if (p != null) {
+          misses = 0;
+          yield p;
+          if (_isTerminalState(p.state)) {
+            reachedEnd = true;
+            break;
+          }
+        } else if (++misses >= 10) {
+          reachedEnd = true;
           break;
         }
-      } else if (++misses >= 10) {
-        break;
+        await Future.delayed(interval);
       }
-      await Future.delayed(interval);
+    } finally {
+      if (reachedEnd) {
+        unawaited(BackgroundKeepAliveService.instance.release('task:$taskId'));
+      }
     }
   }
 }

@@ -92,12 +92,16 @@ class SyncPlanDto {
   final List<SyncDiffItemDto> items;
   final BigInt unchangedCount;
   final BigInt transferBytes;
+  final bool truncated;
+  final BigInt scannedFiles;
 
   const SyncPlanDto({
     required this.mode,
     required this.items,
     required this.unchangedCount,
     required this.transferBytes,
+    required this.truncated,
+    required this.scannedFiles,
   });
 
   @override
@@ -105,7 +109,9 @@ class SyncPlanDto {
       mode.hashCode ^
       items.hashCode ^
       unchangedCount.hashCode ^
-      transferBytes.hashCode;
+      transferBytes.hashCode ^
+      truncated.hashCode ^
+      scannedFiles.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -115,5 +121,7 @@ class SyncPlanDto {
           mode == other.mode &&
           items == other.items &&
           unchangedCount == other.unchangedCount &&
-          transferBytes == other.transferBytes;
+          transferBytes == other.transferBytes &&
+          truncated == other.truncated &&
+          scannedFiles == other.scannedFiles;
 }

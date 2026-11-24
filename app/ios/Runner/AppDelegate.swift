@@ -3,6 +3,7 @@ import UIKit
 import Security
 import AVFoundation
 import AVKit
+import BackgroundTasks
 import MediaPlayer
 
 private var avPlayerSwizzled = false
@@ -563,11 +564,82 @@ private class NowPlayingManager {
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   static var pendingFilePath: String?
   static var pendingSharePaths: [String]?
+  static var pendingShortcut: [String: Any]?
   static var openFileChannel: FlutterMethodChannel?
+  static var shortcutsChannel: FlutterMethodChannel?
   private static weak var configuredMessenger: AnyObject?
   private static var recentIncomingURLs: [String: Date] = [:]
   private static var privacyMaskEnabled = false
   private static let privacyBlurTag = 948271
+  private static let bgTaskIdentifier = "com.github.th997.filemanager.transfer"
+  private static var bgTaskRegistered = false
+  private static var activeBgTaskId: UIBackgroundTaskIdentifier = .invalid
+
+  static func registerBackgroundTasksIfNeeded() {
+    guard #available(iOS 13.0, *), !bgTaskRegistered else { return }
+    bgTaskRegistered = BGTaskScheduler.shared.register(
+      forTaskWithIdentifier: bgTaskIdentifier,
+      using: nil
+    ) { task in
+      task.expirationHandler = {
+        DispatchQueue.main.async {
+          endKeepAliveTask()
+          task.setTaskCompleted(success: false)
+        }
+      }
+      DispatchQueue.main.async {
+        if activeBgTaskId == .invalid {
+          task.setTaskCompleted(success: true)
+        }
+      }
+    }
+  }
+
+  private static func beginKeepAliveTask() {
+    if activeBgTaskId == .invalid {
+      activeBgTaskId = UIApplication.shared.beginBackgroundTask(withName: "FileManagerTransferKeepAlive") {
+        endKeepAliveTask()
+      }
+    }
+    if #available(iOS 13.0, *), bgTaskRegistered {
+      let request = BGProcessingTaskRequest(identifier: bgTaskIdentifier)
+      request.requiresNetworkConnectivity = true
+      request.requiresExternalPower = false
+      try? BGTaskScheduler.shared.submit(request)
+    }
+  }
+
+  private static func endKeepAliveTask() {
+    if activeBgTaskId != .invalid {
+      let id = activeBgTaskId
+      activeBgTaskId = .invalid
+      UIApplication.shared.endBackgroundTask(id)
+    }
+    if #available(iOS 13.0, *) {
+      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: bgTaskIdentifier)
+    }
+  }
+
+  private static func setupBackgroundKeepAliveChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.github.th997.filemanager/background_keepalive",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { call, result in
+      DispatchQueue.main.async {
+        switch call.method {
+        case "start":
+          beginKeepAliveTask()
+          result(true)
+        case "stop":
+          endKeepAliveTask()
+          result(true)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
+  }
 
   static func setupChannelsIfNeeded(messenger: FlutterBinaryMessenger) {
     let messengerObj = messenger as AnyObject
@@ -577,6 +649,8 @@ private class NowPlayingManager {
       setupVaultNativeChannel(messenger: messenger)
       setupPipChannel(messenger: messenger)
       setupOpenFileChannel(messenger: messenger)
+      setupShortcutsChannel(messenger: messenger)
+      setupBackgroundKeepAliveChannel(messenger: messenger)
       NowPlayingManager.shared.setupChannel(messenger: messenger)
       NSLog("AppDelegate: all method channels configured")
     }
@@ -591,6 +665,89 @@ private class NowPlayingManager {
       if let path = pendingFilePath, !path.isEmpty {
         deliverOpenedFile(path)
       }
+      if let shortcut = pendingShortcut {
+        dispatchPendingShortcut(shortcut)
+      }
+    }
+  }
+
+  private static func dispatchPendingShortcut(_ payload: [String: Any]) {
+    guard let channel = shortcutsChannel else { return }
+    DispatchQueue.main.async {
+      channel.invokeMethod("onShortcutOpened", arguments: payload) { response in
+        if isChannelDeliverySuccess(response) {
+          pendingShortcut = nil
+        }
+      }
+    }
+  }
+
+  static func setupShortcutsChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.github.th997.filemanager/shortcuts",
+      binaryMessenger: messenger
+    )
+    shortcutsChannel = channel
+    channel.setMethodCallHandler { call, result in
+      DispatchQueue.main.async {
+        switch call.method {
+        case "isSupported":
+          result(true)
+        case "getInitialShortcut":
+          let sc = pendingShortcut
+          pendingShortcut = nil
+          result(sc)
+        case "pinShortcut":
+          guard let args = call.arguments as? [String: Any],
+                let id = args["id"] as? String, !id.isEmpty,
+                let label = args["label"] as? String, !label.isEmpty else {
+            result(false)
+            return
+          }
+          let targetType = (args["targetType"] as? String) ?? "folder"
+          let root = (args["root"] as? String) ?? ""
+          let path = (args["path"] as? String) ?? ""
+          let info: [String: NSSecureCoding] = [
+            "id": id as NSString,
+            "label": label as NSString,
+            "targetType": targetType as NSString,
+            "root": root as NSString,
+            "path": path as NSString,
+          ]
+          let item = UIApplicationShortcutItem(
+            type: id,
+            localizedTitle: label,
+            localizedSubtitle: root.isEmpty ? nil : root,
+            icon: UIApplicationShortcutIcon(type: .favorite),
+            userInfo: info
+          )
+          var existing = UIApplication.shared.shortcutItems ?? []
+          existing.removeAll { $0.type == id }
+          existing.insert(item, at: 0)
+          if existing.count > 4 {
+            existing = Array(existing.prefix(4))
+          }
+          UIApplication.shared.shortcutItems = existing
+          result(true)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
+  }
+
+  static func deliverShortcutItem(_ shortcutItem: UIApplicationShortcutItem) {
+    let ui = shortcutItem.userInfo ?? [:]
+    let payload: [String: Any] = [
+      "id": (ui["id"] as? String) ?? shortcutItem.type,
+      "label": (ui["label"] as? String) ?? shortcutItem.localizedTitle,
+      "targetType": (ui["targetType"] as? String) ?? "folder",
+      "root": (ui["root"] as? String) ?? "",
+      "path": (ui["path"] as? String) ?? "",
+    ]
+    DispatchQueue.main.async {
+      pendingShortcut = payload
+      dispatchPendingShortcut(payload)
     }
   }
 
@@ -1073,6 +1230,7 @@ private class NowPlayingManager {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     let launchResult = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    AppDelegate.registerBackgroundTasksIfNeeded()
 
     application.beginReceivingRemoteControlEvents()
 
@@ -1157,7 +1315,20 @@ private class NowPlayingManager {
       AppDelegate.setupChannelsIfNeeded(messenger: controller.binaryMessenger)
     }
 
+    if let shortcutItem = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {
+      AppDelegate.deliverShortcutItem(shortcutItem)
+    }
+
     return launchResult
+  }
+
+  override func application(
+    _ application: UIApplication,
+    performActionFor shortcutItem: UIApplicationShortcutItem,
+    completionHandler: @escaping (Bool) -> Void
+  ) {
+    AppDelegate.deliverShortcutItem(shortcutItem)
+    completionHandler(true)
   }
 
   override func application(

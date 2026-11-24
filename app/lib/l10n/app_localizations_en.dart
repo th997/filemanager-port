@@ -3613,4 +3613,276 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyRetentionChange => 'Change retention';
+
+  @override
+  String errorSftpHostKey(String raw) {
+    return 'SSH host key verification failed. Confirm the server identity or re-save the SFTP connection.\n($raw)';
+  }
+
+  @override
+  String errorObjectStorageConfig(String raw) {
+    return 'Object storage configuration error. Check the bucket name, endpoint, region, and access keys.\n($raw)';
+  }
+
+  @override
+  String errorSmbConnection(String raw) {
+    return 'SMB share connection failed. Verify the share name, username/password, and SMB port (445).\n($raw)';
+  }
+
+  @override
+  String errorArchivePassword(String raw) {
+    return 'Archive password is missing or incorrect. Re-enter the password and try again.\n($raw)';
+  }
+
+  @override
+  String errorDiskFull(String raw) {
+    return 'Not enough free storage space on the destination volume.\n($raw)';
+  }
+
+  @override
+  String get recoveryGrantPermission => 'Grant Access';
+
+  @override
+  String get recoveryEditConnection => 'Edit Connection';
+
+  @override
+  String get recoveryEnterPassword => 'Enter Password';
+
+  @override
+  String get recoveryFreeUpSpace => 'Analyze Space';
+
+  @override
+  String get navDomainStorage => 'Storage';
+
+  @override
+  String get navDomainDiscover => 'Search & Library';
+
+  @override
+  String get navDomainTools => 'Tools & Tasks';
+
+  @override
+  String get autoSyncIntervalLabel => 'Auto-sync schedule';
+
+  @override
+  String get autoSyncOff => 'Manual only';
+
+  @override
+  String autoSyncEveryMinutes(int minutes) {
+    return 'Every $minutes min';
+  }
+
+  @override
+  String get offlineAutoSyncTitle => 'Auto-check & push on resume';
+
+  @override
+  String get providerCrypt => 'Encrypted Cloud Vault (Crypt)';
+
+  @override
+  String get cryptBackingRootLabel => 'Backing Storage Root';
+
+  @override
+  String get cryptBackingRootHint => 'remote://my_s3 or /local/folder';
+
+  @override
+  String get cryptBasePrefixLabel => 'Encrypted Subfolder Prefix';
+
+  @override
+  String get cryptPasswordLabel => 'Master Encryption Password';
+
+  @override
+  String get cryptPasswordRequired => 'Encryption password is required';
+
+  @override
+  String get cryptSaltOptionalLabel => 'Optional Salt / Passphrase';
+
+  @override
+  String get cryptSaltHint => 'Optional salt for key derivation';
+
+  @override
+  String get cryptInfoBanner =>
+      'Filenames and 64 KiB file chunks are end-to-end encrypted locally before uploading to the backing remote or folder.';
+
+  @override
+  String get lanWebdavShareTitle => 'LAN WebDAV Server';
+
+  @override
+  String get lanWebdavShareSubtitle =>
+      'Mount phone or remote storage from Finder, Explorer, or Infuse/Kodi';
+
+  @override
+  String get shareViaLanWebdav => 'Share via LAN WebDAV';
+
+  @override
+  String get webdavUsernameOptional => 'Username (Optional)';
+
+  @override
+  String get webdavUrlCopied => 'WebDAV URL copied to clipboard';
+
+  @override
+  String webdavServerRunning(String url) {
+    return 'WebDAV server active at $url';
+  }
+
+  @override
+  String get lanPeerTransferTitle => 'LAN Direct Drop';
+
+  @override
+  String get lanPeerTransferSubtitle =>
+      'Discover nearby FP File Manager devices and transfer files or clipboard text';
+
+  @override
+  String get peerReceiveMode => 'Receive Mode (Discoverable)';
+
+  @override
+  String get peerDeviceName => 'Device Name';
+
+  @override
+  String get peerScanDevices => 'Scan LAN Devices';
+
+  @override
+  String get peerScanning => 'Scanning nearby devices...';
+
+  @override
+  String get peerNoDevicesFound => 'No FP File Manager receivers found on LAN';
+
+  @override
+  String get peerSendFiles => 'Send Files';
+
+  @override
+  String get peerSendClipboard => 'Send Clipboard Text';
+
+  @override
+  String get peerManualAddressHint => 'http://192.168.1.x:port';
+
+  @override
+  String peerIncomingOfferTitle(String sender) {
+    return 'Incoming transfer from $sender';
+  }
+
+  @override
+  String get peerAccept => 'Accept';
+
+  @override
+  String get peerReject => 'Decline';
+
+  @override
+  String peerSentSuccess(int count) {
+    return 'Sent $count file(s)';
+  }
+
+  @override
+  String get peerOfferSent => 'Text sent to device';
+
+  @override
+  String get sendToLanDevice => 'Send to LAN Device';
+
+  @override
+  String fastIndexReady(int count) {
+    return 'Fast index: $count items';
+  }
+
+  @override
+  String get fastIndexNotBuilt => 'Fast index not built for this folder';
+
+  @override
+  String get fastIndexBuild => 'Build Index';
+
+  @override
+  String get fastIndexRebuild => 'Rebuild Index';
+
+  @override
+  String get fastIndexBuilding => 'Indexing...';
+
+  @override
+  String get fastIndexClear => 'Clear Index';
+
+  @override
+  String get fastIndexCleared => 'Fast index cleared';
+
+  @override
+  String get readingModeSingle => 'Single Page';
+
+  @override
+  String get readingModeWebtoon => 'Webtoon Scroll';
+
+  @override
+  String get readingModeDouble => 'Double Page';
+
+  @override
+  String get stripExifAction => 'Strip EXIF & Save Copy';
+
+  @override
+  String stripExifDone(String path) {
+    return 'Saved privacy-clean copy: $path';
+  }
+
+  @override
+  String get stripExifBatchAction => 'Strip EXIF';
+
+  @override
+  String stripExifBatchDone(int count) {
+    return 'Saved EXIF-stripped copies for $count image(s)';
+  }
+
+  @override
+  String get openInTerminal => 'Open in Terminal';
+
+  @override
+  String get openInEditor => 'Open in Editor';
+
+  @override
+  String get copyFullPath => 'Copy Full Path';
+
+  @override
+  String get copyVfsPath => 'Copy VFS Path';
+
+  @override
+  String get photoBackupTitle => 'Photo Auto Backup';
+
+  @override
+  String get photoBackupSubtitle =>
+      'Incrementally back up new photos to NAS, S3, WebDAV, or Privacy Vault';
+
+  @override
+  String get photoBackupEnable => 'Enable Automatic Incremental Backup';
+
+  @override
+  String get photoBackupWifiOnly => 'Back up on Wi-Fi only';
+
+  @override
+  String get photoBackupTargetLabel => 'Backup Destination';
+
+  @override
+  String get photoBackupSelectTarget => 'Select Destination';
+
+  @override
+  String get photoBackupNow => 'Back Up Now';
+
+  @override
+  String get photoBackupRunning => 'Backing up new photos...';
+
+  @override
+  String photoBackupStats(int count) {
+    return '$count photos backed up';
+  }
+
+  @override
+  String get photoBackupNoTarget => 'Please choose a backup destination first';
+
+  @override
+  String photoBackupCompleted(int count) {
+    return 'Backed up $count new photo(s)';
+  }
+
+  @override
+  String get pinToHomeScreen => 'Pin to Home Screen';
+
+  @override
+  String pinToHomeScreenSuccess(String name) {
+    return 'Shortcut \"$name\" pinned to Home Screen';
+  }
+
+  @override
+  String get pinToHomeScreenUnsupported =>
+      'Home screen pinning is not supported on this platform';
 }

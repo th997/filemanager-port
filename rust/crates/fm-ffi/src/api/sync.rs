@@ -26,6 +26,8 @@ pub struct SyncPlanDto {
     pub items: Vec<SyncDiffItemDto>,
     pub unchanged_count: u64,
     pub transfer_bytes: u64,
+    pub truncated: bool,
+    pub scanned_files: u64,
 }
 
 struct FileMeta {
@@ -36,23 +38,25 @@ struct FileMeta {
 async fn collect_files(
     vfs: &dyn Vfs,
     base: &VfsPath,
-) -> Result<BTreeMap<String, FileMeta>, String> {
+) -> Result<(BTreeMap<String, FileMeta>, bool), fm_vfs::VfsError> {
     let mut map = BTreeMap::new();
-    let base_prefix = base.to_slash_string();
+    let base_seg_len = base.segments().len();
     let mut stack: Vec<(VfsPath, usize)> = vec![(base.clone(), 0)];
     let mut first = true;
-    const MAX_DEPTH: usize = 32;
-    const MAX_FILES: usize = 50_000;
+    let mut truncated = false;
+    const MAX_DEPTH: usize = 64;
+    const MAX_FILES: usize = 200_000;
 
     while let Some((dir, depth)) = stack.pop() {
         if map.len() >= MAX_FILES {
+            truncated = true;
             break;
         }
         let children = match vfs.list(&dir).await {
             Ok(c) => c,
             Err(e) => {
                 if first {
-                    return Err(e.to_string());
+                    return Err(e);
                 }
                 continue;
             }
@@ -65,15 +69,19 @@ async fn collect_files(
             if child.kind == EntryKind::Dir {
                 if depth < MAX_DEPTH {
                     stack.push((child.path, depth + 1));
+                } else {
+                    truncated = true;
                 }
             } else if child.kind == EntryKind::File {
-                let full = child.path.to_slash_string();
-                let rel = if base_prefix.is_empty() {
-                    full
+                if map.len() >= MAX_FILES {
+                    truncated = true;
+                    break;
+                }
+                let segs = child.path.segments();
+                let rel = if segs.len() > base_seg_len {
+                    segs[base_seg_len..].join("/")
                 } else {
-                    full.strip_prefix(&format!("{base_prefix}/"))
-                        .unwrap_or(&full)
-                        .to_string()
+                    child.name.clone()
                 };
                 let modified_millis = child
                     .modified
@@ -89,7 +97,7 @@ async fn collect_files(
             }
         }
     }
-    Ok(map)
+    Ok((map, truncated))
 }
 
 fn differs(a: &FileMeta, b: &FileMeta) -> bool {
@@ -118,11 +126,16 @@ pub async fn preview_directory_sync(
     let src_base = VfsPath::from_slash_path(&src_path);
     let dst_base = VfsPath::from_slash_path(&dst_path);
 
-    let src_files = collect_files(src_vfs.as_ref(), &src_base).await?;
-    let dst_files = match collect_files(dst_vfs.as_ref(), &dst_base).await {
-        Ok(m) => m,
-        Err(_) => BTreeMap::new(),
+    let (src_files, src_truncated) = collect_files(src_vfs.as_ref(), &src_base)
+        .await
+        .map_err(|e| e.to_string())?;
+    let (dst_files, dst_truncated) = match collect_files(dst_vfs.as_ref(), &dst_base).await {
+        Ok(res) => res,
+        Err(fm_vfs::VfsError::NotFound { .. }) => (BTreeMap::new(), false),
+        Err(e) => return Err(e.to_string()),
     };
+    let scanned_files = (src_files.len() + dst_files.len()) as u64;
+    let truncated = src_truncated || dst_truncated;
 
     let mode_norm = match mode.to_ascii_lowercase().as_str() {
         "mirror" => "mirror",
@@ -208,6 +221,8 @@ pub async fn preview_directory_sync(
         items,
         unchanged_count,
         transfer_bytes,
+        truncated,
+        scanned_files,
     })
 }
 
@@ -375,11 +390,15 @@ pub async fn start_directory_sync_task(
 
             if !failures.is_empty() {
                 let msg = format!("{} of {} sync items failed", failures.len(), items.len());
+                let only_copies = failures.iter().all(|f| f.dst_root != f.src_root || !f.error.is_empty())
+                    && items.iter().all(|it| it.action != "delete");
                 {
                     let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
                     p.failed_items = failures;
-                    p.retry_kind = Some("copy".to_string());
-                    p.conflict_policy = Some("overwrite".to_string());
+                    if only_copies {
+                        p.retry_kind = Some("copy".to_string());
+                        p.conflict_policy = Some("overwrite".to_string());
+                    }
                 }
                 return Err(msg);
             }
@@ -391,4 +410,31 @@ pub async fn start_directory_sync_task(
     });
 
     Ok(task_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn preview_sync_matches_root_and_subdir_paths_cleanly() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("same.txt"), b"hello").unwrap();
+        std::fs::create_dir_all(dst.path().join("sub")).unwrap();
+        std::fs::write(dst.path().join("sub/same.txt"), b"hello").unwrap();
+
+        let plan = preview_directory_sync(
+            src.path().to_string_lossy().to_string(),
+            "/".into(),
+            dst.path().to_string_lossy().to_string(),
+            "/sub".into(),
+            "mirror".into(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(plan.unchanged_count, 1);
+        assert!(plan.items.is_empty(), "expected zero diff items, got {:?}", plan.items.len());
+    }
 }

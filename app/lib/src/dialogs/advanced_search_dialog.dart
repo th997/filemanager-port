@@ -275,6 +275,29 @@ typedef GrepTextFilesFn = Future<List<GrepMatchDto>> Function({
   required int maxMatches,
 });
 
+typedef QuerySearchIndexFn = Future<List<IndexedSearchHitDto>> Function({
+  String? root,
+  required String query,
+  String? category,
+  BigInt? minSize,
+  BigInt? maxSize,
+  int? modifiedAfterMillis,
+  int? modifiedBeforeMillis,
+  required bool includeHidden,
+  required int maxResults,
+});
+
+typedef RebuildSearchIndexFn = Future<SearchIndexStatsDto> Function({
+  required String root,
+  int? maxEntries,
+});
+
+typedef GetSearchIndexStatsFn = List<SearchIndexStatsDto> Function({
+  String? root,
+});
+
+typedef ClearSearchIndexFn = bool Function({required String root});
+
 /// Multi-dimensional Search (files, folders, global bookmarks/remotes/history,
 /// category, size range, modified date, wildcard/regex) and Content Full-Text
 /// Search (Grep mode with direct jump to line number).
@@ -289,6 +312,10 @@ Future<AdvancedSearchSelection?> showAdvancedSearchDialog(
   List<({String root, String relPath})> extraSearchScopes = const [],
   SearchEntriesAdvancedFn? searchEntriesFn,
   GrepTextFilesFn? grepTextFilesFn,
+  QuerySearchIndexFn? queryIndexFn,
+  RebuildSearchIndexFn? rebuildIndexFn,
+  GetSearchIndexStatsFn? indexStatsFn,
+  ClearSearchIndexFn? clearIndexFn,
 }) {
   return showDialog<AdvancedSearchSelection>(
     context: context,
@@ -302,6 +329,10 @@ Future<AdvancedSearchSelection?> showAdvancedSearchDialog(
       extraSearchScopes: extraSearchScopes,
       searchEntriesFn: searchEntriesFn ?? searchEntriesAdvanced,
       grepTextFilesFn: grepTextFilesFn ?? grepTextFiles,
+      queryIndexFn: queryIndexFn,
+      rebuildIndexFn: rebuildIndexFn,
+      indexStatsFn: indexStatsFn,
+      clearIndexFn: clearIndexFn,
     ),
   );
 }
@@ -316,6 +347,10 @@ class _AdvancedSearchDialog extends StatefulWidget {
   final List<({String root, String relPath})> extraSearchScopes;
   final SearchEntriesAdvancedFn searchEntriesFn;
   final GrepTextFilesFn grepTextFilesFn;
+  final QuerySearchIndexFn? queryIndexFn;
+  final RebuildSearchIndexFn? rebuildIndexFn;
+  final GetSearchIndexStatsFn? indexStatsFn;
+  final ClearSearchIndexFn? clearIndexFn;
 
   const _AdvancedSearchDialog({
     required this.root,
@@ -327,6 +362,10 @@ class _AdvancedSearchDialog extends StatefulWidget {
     required this.extraSearchScopes,
     required this.searchEntriesFn,
     required this.grepTextFilesFn,
+    this.queryIndexFn,
+    this.rebuildIndexFn,
+    this.indexStatsFn,
+    this.clearIndexFn,
   });
 
   @override
@@ -351,6 +390,9 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
   bool _searching = false;
   String? _error;
 
+  SearchIndexStatsDto? _indexStats;
+  bool _indexing = false;
+
   GlobalSearchMatches _globalMatches = const GlobalSearchMatches();
   List<({EntryItem entry, String root})> _fileResults = const [];
   List<GrepMatchDto> _grepResults = const [];
@@ -363,6 +405,7 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
         ? 'all'
         : widget.initialCategory;
     _queryController = TextEditingController(text: widget.initialQuery);
+    _loadIndexStats();
     if (_category != 'all' || widget.initialQuery.trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -370,6 +413,56 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
         _runSearch();
       });
     }
+  }
+
+  void _loadIndexStats() {
+    if (widget.root.startsWith('vault://') ||
+        widget.root.startsWith('archive://vault://')) {
+      return;
+    }
+    try {
+      final statsFn = widget.indexStatsFn ?? getSearchIndexStats;
+      final list = statsFn(root: widget.root);
+      if (mounted) {
+        setState(() {
+          _indexStats = list.isNotEmpty ? list.first : null;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _rebuildIndex() async {
+    if (_indexing) return;
+    setState(() => _indexing = true);
+    try {
+      final rebuildFn = widget.rebuildIndexFn ?? rebuildSearchIndex;
+      final stats = await rebuildFn(root: widget.root);
+      if (!mounted) return;
+      setState(() {
+        _indexStats = stats;
+        _indexing = false;
+      });
+      if (_hasSearched || _hasAnyFilter) {
+        _runSearch();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _indexing = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  void _clearIndex() {
+    try {
+      final clearFn = widget.clearIndexFn ?? clearSearchIndex;
+      clearFn(root: widget.root);
+      setState(() => _indexStats = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).fastIndexCleared)),
+      );
+    } catch (_) {}
   }
 
   @override
@@ -521,8 +614,10 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
         return;
       }
 
-      final minMb = double.tryParse(_minMbController.text.trim());
-      final maxMb = double.tryParse(_maxMbController.text.trim());
+      final rawMinMb = double.tryParse(_minMbController.text.trim());
+      final rawMaxMb = double.tryParse(_maxMbController.text.trim());
+      final minMb = rawMinMb == null ? null : (rawMinMb < 0 ? 0.0 : rawMinMb);
+      final maxMb = rawMaxMb == null ? null : (rawMaxMb < 0 ? 0.0 : rawMaxMb);
       final days = int.tryParse(_daysController.text.trim());
       final modifiedAfter = days != null && days > 0
           ? DateTime.now()
@@ -548,10 +643,61 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
       final combined = <({EntryItem entry, String root})>[];
       final seenKeys = <String>{};
 
+      final relNorm = _normalizeSlash(widget.relPath).replaceFirst(RegExp(r'^/+'), '');
+      final canUseFastIndex = _indexStats != null &&
+          _matchMode == 'contains' &&
+          !_caseSensitive &&
+          relNorm.isEmpty &&
+          !widget.root.startsWith('vault://') &&
+          !widget.root.startsWith('archive://vault://');
+
       for (var i = 0; i < scopes.length; i++) {
         if (combined.length >= 500) break;
         final scope = scopes[i];
         try {
+          if (i == 0 && canUseFastIndex) {
+            final qFn = widget.queryIndexFn ?? querySearchIndex;
+            final hits = await qFn(
+              root: scope.root,
+              query: options.query,
+              category: options.category == 'all' ? null : options.category,
+              minSize: options.minSize,
+              maxSize: options.maxSize,
+              modifiedAfterMillis: options.modifiedAfterMillis,
+              modifiedBeforeMillis: options.modifiedBeforeMillis,
+              includeHidden: options.includeHidden,
+              maxResults: 500,
+            );
+            if (!mounted || seq != _searchSeq) return;
+            for (final hit in hits) {
+              if (relNorm.isNotEmpty) {
+                final hp = hit.path.replaceFirst(RegExp(r'^/+'), '');
+                if (hp != relNorm && !hp.startsWith('$relNorm/')) {
+                  continue;
+                }
+              }
+              final dto = EntryDto(
+                name: hit.name,
+                path: hit.path,
+                isDir: hit.isDir,
+                size: hit.isDir ? null : hit.size,
+                modifiedMillis: hit.modifiedMillis,
+                hidden: hit.hidden,
+                isSymlink: false,
+              );
+              final isVirtual = scope.root.startsWith('remote://') ||
+                  scope.root.startsWith('vault://');
+              final key = isVirtual
+                  ? '${scope.root}::${dto.path}'
+                  : _joinFullPath(scope.root, dto.path);
+              if (seenKeys.add(key)) {
+                combined.add((entry: EntryItem(dto), root: scope.root));
+                if (combined.length >= 500) break;
+              }
+            }
+            continue;
+          }
+
           final res = await widget.searchEntriesFn(
             root: scope.root,
             path: scope.relPath,
@@ -812,6 +958,62 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
                     ),
                   ],
                 ),
+                if (!widget.root.startsWith('vault://') &&
+                    !widget.root.startsWith('archive://vault://')) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _indexStats != null ? Icons.bolt : Icons.bolt_outlined,
+                          size: 16,
+                          color: _indexStats != null
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _indexStats != null
+                                ? l10n.fastIndexReady(_indexStats!.entryCount.toInt())
+                                : l10n.fastIndexNotBuilt,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _indexing ? null : _rebuildIndex,
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: Text(
+                            _indexing
+                                ? l10n.fastIndexBuilding
+                                : (_indexStats != null
+                                    ? l10n.fastIndexRebuild
+                                    : l10n.fastIndexBuild),
+                          ),
+                        ),
+                        if (_indexStats != null)
+                          IconButton(
+                            icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                            tooltip: l10n.fastIndexClear,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _indexing ? null : _clearIndex,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
               const Divider(height: 16),
               if (_error != null)

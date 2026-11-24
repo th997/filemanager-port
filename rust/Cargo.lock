@@ -1329,16 +1329,21 @@ dependencies = [
 name = "fm-remote"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
+ "argon2",
  "async-trait",
  "base64",
  "chrono",
  "fm-core",
+ "fm-local",
  "fm-vfs",
  "futures-util",
  "hex",
+ "hkdf",
  "hmac",
  "opendal",
  "parking_lot",
+ "rand_core 0.6.4",
  "regex",
  "reqwest",
  "russh",
@@ -1354,6 +1359,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "webpki-root-certs",
+ "zeroize",
 ]
 
 [[package]]
@@ -1363,10 +1369,13 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "chrono",
  "fm-core",
  "fm-local",
  "fm-vfs",
+ "futures-util",
  "mime_guess",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
