@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
-from PIL import Image
+import numpy as np
+from PIL import Image, ImageFilter
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(APP, "tool/master_icon.png")
@@ -8,20 +9,45 @@ SRC = os.path.join(APP, "tool/master_icon.png")
 master = Image.open(SRC).convert("RGBA")
 W, H = master.size
 
+# Soft cool gray-blue tones (Gboard / Material-style off-white surface)
+BG_TOP = (236, 241, 247)      # #ECF1F7
+BG_BOTTOM = (222, 230, 240)   # #DEE6F0
+BG_SOLID_HEX = "#E6EDF5"
+
+
+def make_gradient_bg(size, top_rgb, bot_rgb):
+    arr = np.zeros((size, size, 4), dtype=np.uint8)
+    t_arr = np.linspace(0.0, 1.0, size)[:, None]
+    for c in range(3):
+        arr[:, :, c] = np.round(top_rgb[c] * (1.0 - t_arr) + bot_rgb[c] * t_arr).astype(np.uint8)
+    arr[:, :, 3] = 255
+    return Image.fromarray(arr, mode="RGBA")
+
+
+def add_soft_shadow(canvas_size, fg_img, offset, blur_radius=14, opacity=0.14, y_shift=10):
+    alpha = fg_img.split()[3]
+    sh_layer = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    sh_fg = Image.new("RGBA", fg_img.size, (15, 35, 65, 255))
+    sh_fg.putalpha(alpha.point(lambda p: int(p * opacity)))
+    sh_layer.paste(sh_fg, (offset[0], offset[1] + y_shift), sh_fg)
+    return sh_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+
+
 # 1. Prepare Android adaptive foreground (108dp canvas with safe zone 66dp)
 # Scale the full-bleed master to 58% so corners fit comfortably inside circular mask
 scaled_size = int(W * 0.58)
 scaled_master = master.resize((scaled_size, scaled_size), Image.LANCZOS)
-# Foreground canvas MUST be transparent
-fg_canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-offset = ((W - scaled_size) // 2, (H - scaled_size) // 2)
-fg_canvas.paste(scaled_master, offset, scaled_master)
+fg_offset = ((W - scaled_size) // 2, (H - scaled_size) // 2)
+fg_canvas = add_soft_shadow(W, scaled_master, fg_offset, blur_radius=10, opacity=0.12, y_shift=8)
+fg_canvas.paste(scaled_master, fg_offset, scaled_master)
 
-# 2. Prepare iOS opaque RGB master (App Store forbids transparent icons)
-ios_size = int(W * 0.93)
+# 2. Prepare iOS opaque RGB master (Gboard-style soft cool gray-blue backdrop)
+ios_size = int(W * 0.92)
 ios_scaled = master.resize((ios_size, ios_size), Image.LANCZOS)
-ios_master = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 ios_offset = ((W - ios_size) // 2, (H - ios_size) // 2)
+ios_master = make_gradient_bg(W, BG_TOP, BG_BOTTOM)
+ios_shadow = add_soft_shadow(W, ios_scaled, ios_offset, blur_radius=14, opacity=0.14, y_shift=10)
+ios_master = Image.alpha_composite(ios_master, ios_shadow)
 ios_master.paste(ios_scaled, ios_offset, ios_scaled)
 ios_rgb = ios_master.convert("RGB")
 
@@ -29,10 +55,10 @@ def save(img, path, size):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.resize((size, size), Image.LANCZOS).save(path)
 
-# Update Android background color to #FFFFFF
+# Update Android adaptive background color to soft cool gray-blue
 bg_xml = os.path.join(APP, "android/app/src/main/res/values/ic_launcher_background.xml")
 with open(bg_xml, "w") as f:
-    f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#FFFFFF</color>\n</resources>\n')
+    f.write(f'<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">{BG_SOLID_HEX}</color>\n</resources>\n')
 
 # Android mipmaps
 ANDROID = os.path.join(APP, "android/app/src/main/res")
