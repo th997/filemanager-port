@@ -76,6 +76,9 @@ class BrowserBottomActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final disabledColor = scheme.onSurface.withValues(alpha: 0.38);
+    final hasSelection = selectedCount > 0;
     final selectionLabel = selectedBytes > BigInt.zero
         ? l10n.selectedCountBytesLabel(selectedCount, formatBytes(selectedBytes))
         : l10n.selectedCountLabel(selectedCount);
@@ -83,7 +86,7 @@ class BrowserBottomActionBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: scheme.surfaceContainerHighest,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
@@ -107,8 +110,8 @@ class BrowserBottomActionBar extends StatelessWidget {
                       _actionButton(
                         icon: Icons.download,
                         label: l10n.download,
-                        onTap: onDownload,
-                        color: Colors.blue,
+                        onTap: hasSelection ? onDownload : null,
+                        color: hasSelection ? Colors.blue : disabledColor,
                       ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -117,14 +120,15 @@ class BrowserBottomActionBar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: scheme.primary,
                         ),
                       ),
                     ),
                     _actionButton(
                       icon: Icons.copy,
                       label: l10n.copy,
-                      onTap: onCopy,
+                      onTap: hasSelection ? onCopy : null,
+                      color: hasSelection ? null : disabledColor,
                     ),
                     if (selectedCount >= 1)
                       _actionButton(
@@ -142,40 +146,58 @@ class BrowserBottomActionBar extends StatelessWidget {
                       _actionButton(
                         icon: Icons.cut,
                         label: l10n.cut,
-                        onTap: onCut,
+                        onTap: hasSelection ? onCut : null,
+                        color: hasSelection ? null : disabledColor,
                       ),
                       _actionButton(
                         icon: Icons.delete,
                         label: l10n.delete,
-                        onTap: onDelete,
-                        color: Colors.red,
+                        onTap: hasSelection ? onDelete : null,
+                        color: hasSelection ? scheme.error : disabledColor,
                       ),
                       if (selectedCount >= 1)
                         _actionButton(
-                          icon: selectedCount > 1 ? Icons.drive_file_rename_outline : Icons.edit,
-                          label: selectedCount > 1 ? l10n.batchRename : l10n.rename,
+                          icon: selectedCount > 1
+                              ? Icons.drive_file_rename_outline
+                              : Icons.edit,
+                          label: selectedCount > 1
+                              ? l10n.batchRename
+                              : l10n.rename,
                           onTap: onRename,
                         ),
                       if (canArchive)
                         _actionButton(
                           icon: Icons.archive,
                           label: l10n.compress,
-                          onTap: onCompress,
+                          onTap: hasSelection ? onCompress : null,
+                          color: hasSelection ? null : disabledColor,
                         ),
                     ],
                   ],
-                  if (clipboardCount != null && !isSelecting && canWrite) ...[
-                    _actionButton(
-                      icon: Icons.paste,
-                      label: l10n.pasteCount(clipboardCount!),
-                      onTap: onPaste,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                  if (clipboardCount != null && !isSelecting) ...[
+                    if (canWrite)
+                      _actionButton(
+                        icon: Icons.paste,
+                        label: l10n.pasteCount(clipboardCount!),
+                        onTap: onPaste,
+                        color: scheme.primary,
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Text(
+                          l10n.clipboardReadOnlyHint(clipboardCount!),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     _actionButton(
                       icon: Icons.close,
                       label: l10n.clear,
                       onTap: onClearClipboard,
-                      color: Colors.grey,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ],
                 ],

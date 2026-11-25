@@ -509,6 +509,100 @@ impl Vfs for LocalFs {
             Err(VfsError::Unsupported { operation: "chmod" })
         }
     }
+
+    async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
+        let native = self.join_lexical(path)?;
+        self.check_contained(path, &native, false)?;
+        let mut target = native;
+        while !target.exists() {
+            if target == self.root {
+                break;
+            }
+            match target.parent() {
+                Some(parent) => target = parent.to_path_buf(),
+                None => break,
+            }
+        }
+        if !target.exists() {
+            target = self.root.clone();
+        }
+        let space = tokio::task::spawn_blocking(move || stat_local_space(&target))
+            .await
+            .map_err(|join_err| VfsError::Backend {
+                path: path.clone(),
+                source: std::io::Error::other(join_err.to_string()),
+            })?
+            .map_err(|source| VfsError::Backend {
+                path: path.clone(),
+                source,
+            })?;
+        Ok(Some(space))
+    }
+}
+
+fn stat_local_space(path: &Path) -> std::io::Result<fm_core::SpaceInfo> {
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        let c_path = CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"))?;
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        let rc = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+        if rc != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let block_size = if stat.f_frsize > 0 {
+            stat.f_frsize as u64
+        } else {
+            stat.f_bsize as u64
+        };
+        let total = (stat.f_blocks as u64).saturating_mul(block_size);
+        let free = (stat.f_bavail as u64).saturating_mul(block_size);
+        Ok(fm_core::SpaceInfo {
+            total_bytes: (total > 0).then_some(total),
+            free_bytes: free,
+        })
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetDiskFreeSpaceExW(
+                lpDirectoryName: *const u16,
+                lpFreeBytesAvailableToCaller: *mut u64,
+                lpTotalNumberOfBytes: *mut u64,
+                lpTotalNumberOfFreeBytes: *mut u64,
+            ) -> i32;
+        }
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut avail = 0u64;
+        let mut total = 0u64;
+        let mut free = 0u64;
+        let ok = unsafe {
+            GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free)
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(fm_core::SpaceInfo {
+            total_bytes: (total > 0).then_some(total),
+            free_bytes: avail,
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "space query unsupported on this platform",
+        ))
+    }
 }
 
 /// Convenience for callers that want a modification time without pulling in
@@ -653,6 +747,22 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(buf, "data");
+    }
+
+    #[tokio::test]
+    async fn space_info_reports_positive_space_even_for_missing_subpath() {
+        let dir = fixture();
+        let fs = LocalFs::new(dir.path());
+        let root_space = fs.space_info(&VfsPath::root()).await.unwrap().unwrap();
+        assert!(root_space.free_bytes > 0);
+        assert!(root_space.total_bytes.unwrap_or(0) >= root_space.free_bytes);
+
+        let nested = fs
+            .space_info(&VfsPath::from_slash_path("/fm_pool/sub/not_created"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(nested.free_bytes > 0);
     }
 
 }

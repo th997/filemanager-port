@@ -57,7 +57,13 @@ Future<String?> showBrowserEntryModalBottomSheet({
                 onTap: () => Navigator.of(ctx).pop('open_as_text'),
               ),
             ],
-            if (canShareLan)
+            if (canShare && !item.isDir)
+              ListTile(
+                leading: const Icon(Icons.ios_share),
+                title: Text(l10n.share),
+                onTap: () => Navigator.of(ctx).pop('share'),
+              ),
+      if (canShareLan)
               ListTile(
                 leading: const Icon(Icons.wifi_tethering, color: Colors.teal),
                 title: Text(l10n.shareViaLan),
@@ -160,6 +166,7 @@ Future<String?> showBrowserContextMenu({
   required bool canArchive,
   bool canBookmark = true,
   bool canShareLan = false,
+  bool canShare = false,
   bool canPinOffline = false,
   bool canOpenInNewTab = true,
 }) {
@@ -195,6 +202,17 @@ Future<String?> showBrowserContextMenu({
               const Icon(Icons.tab_outlined, size: 18),
               const SizedBox(width: 8),
               Text(l10n.openInNewTab),
+            ],
+          ),
+        ),
+      if (canShare && !item.isDir)
+        PopupMenuItem(
+          value: 'share',
+          child: Row(
+            children: [
+              const Icon(Icons.ios_share, size: 18),
+              const SizedBox(width: 8),
+              Text(l10n.share),
             ],
           ),
         ),

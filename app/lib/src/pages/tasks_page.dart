@@ -27,18 +27,35 @@ class _TasksPageState extends State<TasksPage> {
 
   /// Tasks whose cancellation was requested and is still in flight.
   final Set<String> _cancelling = {};
+  final Set<String> _retrying = {};
 
   @override
   void initState() {
     super.initState();
+    TaskService.instance.addListener(_onTaskServiceChanged);
     _refresh();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _refresh());
   }
 
   @override
   void dispose() {
+    TaskService.instance.removeListener(_onTaskServiceChanged);
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _onTaskServiceChanged() {
+    if (!mounted) return;
+    _refresh();
+  }
+
+  void _schedulePoll() {
+    _timer?.cancel();
+    if (!mounted) return;
+    final hasActive = _tasks.any((t) => !_isTerminal(t));
+    _timer = Timer(
+      hasActive ? const Duration(seconds: 1) : const Duration(seconds: 4),
+      _refresh,
+    );
   }
 
   void _refresh() {
@@ -46,13 +63,15 @@ class _TasksPageState extends State<TasksPage> {
     try {
       tasks = TaskService.instance.list();
     } catch (_) {
-      // This runs on a 1-second timer: letting it throw left the page
+      // This runs on a timer: letting it throw left the page
       // showing "No tasks yet" while transfers were actually running.
+      _schedulePoll();
       return;
     }
     final ids = tasks.map((t) => t.id).toSet();
     _speeds.removeWhere((id, _) => !ids.contains(id));
     _cancelling.removeWhere((id) => !ids.contains(id));
+    _retrying.removeWhere((id) => !ids.contains(id));
     for (final t in tasks) {
       if (_isTerminal(t)) _cancelling.remove(t.id);
     }
@@ -64,6 +83,7 @@ class _TasksPageState extends State<TasksPage> {
     if (!_tasksEqual(_tasks, tasks)) {
       if (mounted) setState(() => _tasks = tasks);
     }
+    _schedulePoll();
   }
 
   bool _tasksEqual(List<TaskProgressDto> a, List<TaskProgressDto> b) {
@@ -76,9 +96,12 @@ class _TasksPageState extends State<TasksPage> {
           ta.state != tb.state ||
           ta.completed != tb.completed ||
           ta.total != tb.total ||
+          ta.fraction != tb.fraction ||
           ta.current != tb.current ||
           ta.error != tb.error ||
-          ta.skipped != tb.skipped) {
+          ta.skipped != tb.skipped ||
+          ta.rateLimitBps != tb.rateLimitBps ||
+          ta.failedItems.length != tb.failedItems.length) {
         return false;
       }
     }
@@ -129,6 +152,11 @@ class _TasksPageState extends State<TasksPage> {
         return l10n.taskCompress;
       case 'Extract':
         return l10n.taskExtract;
+      case 'Sync':
+      case 'DirectorySync':
+        return l10n.directorySync;
+      case 'Retry':
+        return l10n.retry;
       default:
         return label ?? l10n.taskGeneric;
     }
@@ -149,6 +177,8 @@ class _TasksPageState extends State<TasksPage> {
         return l10n.waiting;
       case 'running':
         return l10n.inProgress;
+      case 'paused':
+        return l10n.taskStatusPaused;
       case 'completed':
         return l10n.completed;
       case 'failed':
@@ -185,11 +215,16 @@ class _TasksPageState extends State<TasksPage> {
       final eta = estimator?.etaText(t.completed, t.total, l10n: l10n);
       if (eta != null) parts.add(eta);
     }
+    if (t.rateLimitBps > BigInt.zero && !terminalOrDone(t)) {
+      parts.add(l10n.taskRateLimitActive('${formatBytes(t.rateLimitBps)}/s'));
+    }
     if (t.skipped > BigInt.zero) {
       parts.add(l10n.skippedAlreadyExists(t.skipped.toInt()));
     }
     return parts.join(' • ');
   }
+
+  bool terminalOrDone(TaskProgressDto t) => _isTerminal(t);
 
   void _clearFinished() {
     var refused = 0;
@@ -342,13 +377,48 @@ class _TasksPageState extends State<TasksPage> {
                     _detailText(t, l10n),
                     style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
-                  if (t.current != null && !terminal) ...[
+                  if (t.current != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       t.current!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                  if (t.failedItems.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(bottom: 4),
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      title: Text(
+                        l10n.taskFailedItemsTitle(t.failedItems.length),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                      children: [
+                        for (final fi in t.failedItems.take(20))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                '${fi.srcPath}: ${fi.error}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                   if (t.error != null) ...[
@@ -449,23 +519,42 @@ class _TasksPageState extends State<TasksPage> {
                 children: [
                   if (t.canRetry && t.failedItems.isNotEmpty)
                     TextButton.icon(
-                      icon: const Icon(Icons.replay, size: 15),
+                      icon: _retrying.contains(t.id)
+                          ? const SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.replay, size: 15),
                       label: Text(
                         l10n.retryFailedItems(t.failedItems.length),
                         style: const TextStyle(fontSize: 11),
                       ),
-                      onPressed: () async {
-                        try {
-                          await TaskService.instance.retryFailed(t.id);
-                          _refresh();
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('$e')),
-                            );
-                          }
-                        }
-                      },
+                      onPressed: _retrying.contains(t.id)
+                          ? null
+                          : () async {
+                              setState(() => _retrying.add(t.id));
+                              final messenger = ScaffoldMessenger.of(context);
+                              try {
+                                await TaskService.instance.retryFailed(t.id);
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(content: Text(l10n.taskRetryStarted)),
+                                  );
+                                }
+                                _refresh();
+                              } catch (e) {
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(content: Text('$e')),
+                                  );
+                                }
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _retrying.remove(t.id));
+                                }
+                              }
+                            },
                     ),
                   AppIconButton(
                     icon: Icons.clear,

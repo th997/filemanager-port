@@ -52,19 +52,33 @@ class GlobalPlaybackService extends ChangeNotifier {
   /// Additional bottom inset (e.g. from BrowserBottomActionBar or bottom toolbars)
   /// that the floating mini player should stay above.
   final ValueNotifier<double> bottomBarInset = ValueNotifier<double>(0.0);
+  final Map<String, double> _namedBottomInsets = {};
 
-  void setBottomBarInset(double inset) {
-    if (bottomBarInset.value != inset) {
+  void setNamedBottomInset(String key, double inset) {
+    if (inset <= 0) {
+      _namedBottomInsets.remove(key);
+    } else {
+      _namedBottomInsets[key] = inset;
+    }
+    var pageInset = 0.0;
+    for (final entry in _namedBottomInsets.entries) {
+      if (entry.key == 'active_tasks_banner') continue;
+      if (entry.value > pageInset) pageInset = entry.value;
+    }
+    final next = pageInset + (_namedBottomInsets['active_tasks_banner'] ?? 0.0);
+    if (bottomBarInset.value != next) {
       final binding = WidgetsBinding.instance;
       if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
         binding.addPostFrameCallback((_) {
-          bottomBarInset.value = inset;
+          bottomBarInset.value = next;
         });
         return;
       }
-      bottomBarInset.value = inset;
+      bottomBarInset.value = next;
     }
   }
+
+  void setBottomBarInset(double inset) => setNamedBottomInset('_default', inset);
 
   void collapseMiniPlayer() {
     if (!isMiniPlayerCollapsed) {
@@ -629,6 +643,7 @@ class GlobalPlaybackService extends ChangeNotifier {
         isAudio: isAudio,
         playlist: playlist,
         startIndex: currentIndex,
+        forceMediaKit: desktopPlayer != null,
       ),
     );
 

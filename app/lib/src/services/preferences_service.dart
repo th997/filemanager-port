@@ -215,6 +215,8 @@ class PreferencesService {
       key.startsWith('window.') ||
       key == 'photo_backup.backed_up_ids_v1' ||
       key == 'photo_backup.last_backup_ms' ||
+      key == 'photo_backup.source_dirs_v1' ||
+      key == 'photo_backup.source_album_ids_v1' ||
       key == 'vault.pinned_entries' ||
       key == 'upload.recent_directories';
 

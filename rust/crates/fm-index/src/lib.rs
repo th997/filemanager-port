@@ -6,7 +6,9 @@ pub mod db;
 pub mod secret;
 
 use fm_core::{LocationId, VfsPath};
-pub use db::{Database, IndexStatsRecord, IndexedFileRecord, PinnedFileRecord, RemoteRecord};
+pub use db::{
+    Database, IndexStatsRecord, IndexedFileRecord, PinnedFileRecord, PoolRecord, RemoteRecord,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bookmark {
@@ -71,6 +73,24 @@ mod tests {
         assert_eq!(remotes[0].id, "s3-test");
         db.delete_remote("s3-test").unwrap();
         assert_eq!(db.list_remotes().unwrap().len(), 0);
+
+        // Pool test (including encryption at rest for passphrase)
+        let pool = PoolRecord {
+            id: "pool-1".into(),
+            name: "Mixed Cloud Pool".into(),
+            config_json: r#"{"id":"pool-1","passphrase":"super-secret-pool-key"}"#.into(),
+            created_at: 2000,
+        };
+        db.save_pool(&pool).unwrap();
+        let pools = db.list_pools().unwrap();
+        assert_eq!(pools.len(), 1);
+        assert_eq!(pools[0].id, "pool-1");
+        assert_eq!(pools[0].config_json, pool.config_json);
+        let fetched = db.get_pool("pool-1").unwrap().unwrap();
+        assert_eq!(fetched.config_json, pool.config_json);
+        db.delete_pool("pool-1").unwrap();
+        assert!(db.get_pool("pool-1").unwrap().is_none());
+        assert_eq!(db.list_pools().unwrap().len(), 0);
     }
 
     #[test]

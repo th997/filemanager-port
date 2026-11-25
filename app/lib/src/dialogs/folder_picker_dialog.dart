@@ -6,9 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../models/entry_item.dart';
 import '../rust/api/file_manager.dart';
+import '../rust/api/remotes.dart';
 import '../services/path_utils.dart';
 import '../services/platform_paths.dart';
+import '../services/pool_service.dart';
 import '../services/preferences_service.dart';
+import '../services/storage_service.dart';
 import '../services/vault_service.dart';
 import 'vfs_picker_scaffold.dart';
 
@@ -19,7 +22,7 @@ class PickedFolder {
 
   const PickedFolder({required this.root, required this.relPath});
 
-  String get path => relPath.isEmpty ? root : '$root/$relPath';
+  String get path => isNativeRoot(root) ? joinNative(root, relPath) : (relPath.isEmpty ? root : '$root/$relPath');
 }
 
 /// Minimal folder browser over the same VFS API the file list uses.
@@ -33,6 +36,9 @@ class FolderPickerDialog extends StatefulWidget {
   final String initialPath;
   final String? confirmLabel;
   final bool includeUnlockedVaults;
+  final bool includeRemotes;
+  final bool includePools;
+  final bool lockRoot;
 
   const FolderPickerDialog({
     super.key,
@@ -41,6 +47,9 @@ class FolderPickerDialog extends StatefulWidget {
     this.initialPath = '',
     this.confirmLabel,
     this.includeUnlockedVaults = false,
+    this.includeRemotes = false,
+    this.includePools = false,
+    this.lockRoot = false,
   });
 
   static Future<PickedFolder?> show(
@@ -50,6 +59,9 @@ class FolderPickerDialog extends StatefulWidget {
     String initialPath = '',
     String? confirmLabel,
     bool includeUnlockedVaults = false,
+    bool includeRemotes = false,
+    bool includePools = false,
+    bool lockRoot = false,
   }) {
     String root;
     String path;
@@ -76,6 +88,9 @@ class FolderPickerDialog extends StatefulWidget {
         initialPath: path,
         confirmLabel: confirmLabel,
         includeUnlockedVaults: includeUnlockedVaults,
+        includeRemotes: includeRemotes,
+        includePools: includePools,
+        lockRoot: lockRoot,
       ),
     );
   }
@@ -88,6 +103,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   late String _root;
   late String _relPath;
   List<EntryItem> _folders = const [];
+  List<RemoteConfigDto> _remotes = const [];
   bool _loading = false;
   String? _error;
   bool _showHidden = false;
@@ -100,7 +116,19 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     super.initState();
     _root = widget.initialRoot;
     _relPath = widget.initialPath;
-    _load();
+    if (widget.includeRemotes && !widget.lockRoot) {
+      _loadRemotes();
+    }
+    _load(fallbackToRootOnNotFound: true);
+  }
+
+  Future<void> _loadRemotes() async {
+    try {
+      final list = await StorageService.instance.getRemotes();
+      if (mounted) {
+        setState(() => _remotes = list);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -111,7 +139,17 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   int _loadSeq = 0;
 
-  Future<void> _load() async {
+  bool _isNotFoundError(Object error) {
+    final msg = '$error'.toLowerCase();
+    return msg.contains('not found') ||
+        msg.contains('notfound') ||
+        msg.contains('no such file') ||
+        msg.contains('404') ||
+        msg.contains('does not exist') ||
+        msg.contains("doesn't exist");
+  }
+
+  Future<void> _load({bool fallbackToRootOnNotFound = false}) async {
     final seq = ++_loadSeq;
     setState(() {
       _loading = true;
@@ -132,6 +170,18 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
         });
       }
     } catch (e) {
+      if (fallbackToRootOnNotFound &&
+          _relPath.isNotEmpty &&
+          _isNotFoundError(e)) {
+        if (mounted && seq == _loadSeq) {
+          setState(() {
+            _relPath = '';
+            _selectedFolder = null;
+          });
+          await _load();
+        }
+        return;
+      }
       if (mounted && seq == _loadSeq) {
         setState(() {
           _error = e.toString();
@@ -153,6 +203,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   bool get _canGoUp {
     if (_relPath.isNotEmpty) return true;
+    if (widget.lockRoot) return false;
     if (PlatformPaths.isPrivateInboxRoot(_root)) return false;
     if (isNativeRoot(_root)) {
       final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
@@ -174,6 +225,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       _load();
       return;
     }
+    if (widget.lockRoot) return;
     if (PlatformPaths.isPrivateInboxRoot(_root)) return;
     if (isNativeRoot(_root)) {
       final isWindows = _root.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(_root);
@@ -222,7 +274,11 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     }
   }
 
-  String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
+  String get _currentPath {
+    if (isNativeRoot(_root)) return joinNative(_root, _relPath);
+    if (widget.lockRoot) return _relPath.isEmpty ? '/' : '/$_relPath';
+    return _relPath.isEmpty ? _root : '$_root/$_relPath';
+  }
 
   void _navigateTo(String fullPath) {
     final split = PlatformPaths.splitPrivateInboxPath(fullPath) ??
@@ -261,12 +317,37 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final recentDirs = isNativeRoot(_root)
+    final recentDirs = (!widget.lockRoot && isNativeRoot(_root))
         ? PreferencesService.instance.getRecentUploadDirs()
         : const <String>[];
-    final quickTargets = <QuickTarget>[
-      if (isNativeRoot(_root) || widget.includeUnlockedVaults)
+    final showLocalTargets = !widget.lockRoot &&
+        (isNativeRoot(_root) ||
+            widget.includeUnlockedVaults ||
+            widget.includeRemotes ||
+            widget.includePools);
+    final quickTargets = widget.lockRoot
+        ? const <QuickTarget>[]
+        : <QuickTarget>[
+      if (showLocalTargets)
         ...PlatformPaths.quickTargets().where((t) => isNativeRoot(t.root)),
+      if (widget.includeRemotes)
+        for (final r in _remotes)
+          QuickTarget(
+            name: '☁️ ${r.name}',
+            kind: 'remote',
+            path: 'remote://${r.id}',
+            root: 'remote://${r.id}',
+            relPath: '',
+          ),
+      if (widget.includePools)
+        for (final p in PoolService.instance.pools)
+          QuickTarget(
+            name: '🧩 ${p.name}',
+            kind: 'pool',
+            path: 'pool://${p.id}',
+            root: 'pool://${p.id}',
+            relPath: '',
+          ),
       if (widget.includeUnlockedVaults)
         for (final v in VaultService.instance.unlockedVaults)
           QuickTarget(
@@ -340,7 +421,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
     return VfsPickerScaffold(
       title: widget.title,
-      onSystemPicker: isNativeRoot(_root) ? _switchToSystemPicker : null,
+      onSystemPicker:
+          (!widget.lockRoot && isNativeRoot(_root)) ? _switchToSystemPicker : null,
       recentDirs: recentDirs,
       onNavigateTo: _navigateTo,
       quickTargets: quickTargets,

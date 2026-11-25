@@ -47,6 +47,11 @@ class _TrashPageState extends State<TrashPage> {
       setState(() {
         _items = items;
         _loading = false;
+        if (items.isEmpty) {
+          _showSearch = false;
+          _searchQuery = '';
+          _searchController.clear();
+        }
       });
     } catch (e) {
       // Without this the page stays on its spinner after a storage failure.
@@ -70,12 +75,13 @@ class _TrashPageState extends State<TrashPage> {
   }
 
   String _deletedAgo(TrashItemDto item) {
+    final l10n = AppLocalizations.of(context);
     final then = DateTime.fromMillisecondsSinceEpoch(item.deletedMillis.toInt());
     final diff = DateTime.now().difference(then);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inHours < 1) return '${diff.inMinutes} min ago';
-    if (diff.inDays < 1) return '${diff.inHours} h ago';
-    if (diff.inDays < 30) return '${diff.inDays} d ago';
+    if (diff.inMinutes < 1) return l10n.timeJustNow;
+    if (diff.inHours < 1) return l10n.timeMinutesAgo(diff.inMinutes);
+    if (diff.inDays < 1) return l10n.timeHoursAgo(diff.inHours);
+    if (diff.inDays < 30) return l10n.timeDaysAgo(diff.inDays);
     return '${then.year}-${then.month.toString().padLeft(2, '0')}-${then.day.toString().padLeft(2, '0')}';
   }
 
@@ -509,7 +515,7 @@ class _TrashPageState extends State<TrashPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                if (_showSearch)
+                if (_showSearch && _items.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
@@ -570,11 +576,11 @@ class _TrashPageState extends State<TrashPage> {
                                   title: Text(
                                     name.isEmpty ? item.originalPath : name,
                                   ),
-                                  subtitle: Text(
-                                    '${_formatSize(item.size)}  •  deleted ${_deletedAgo(item)}  •  ${item.originalPath}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                    subtitle: Text(
+                                      '${_formatSize(item.size)}  •  ${AppLocalizations.of(context).deletedRelativeTime(_deletedAgo(item))}  •  ${item.originalPath}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [

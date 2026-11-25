@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
 import '../rust/api/tasks.dart' as tasks_api;
 import 'background_keepalive_service.dart';
@@ -180,7 +181,7 @@ class SpeedEstimator {
   }
 }
 
-class TaskService {
+class TaskService with ChangeNotifier {
   static final TaskService instance = TaskService._();
   TaskService._();
 
@@ -296,6 +297,7 @@ class TaskService {
         title: label,
       ),
     );
+    notifyListeners();
     return taskId;
   }
 
@@ -313,20 +315,27 @@ class TaskService {
     final ok = tasks_api.cancelTask(taskId: taskId);
     if (ok) {
       unawaited(BackgroundKeepAliveService.instance.release('task:$taskId'));
+      notifyListeners();
     }
     return ok;
   }
 
   bool pause(String taskId) {
-    return tasks_api.pauseTask(taskId: taskId);
+    final ok = tasks_api.pauseTask(taskId: taskId);
+    if (ok) notifyListeners();
+    return ok;
   }
 
   bool resume(String taskId) {
-    return tasks_api.resumeTask(taskId: taskId);
+    final ok = tasks_api.resumeTask(taskId: taskId);
+    if (ok) notifyListeners();
+    return ok;
   }
 
   bool setRateLimit(String taskId, BigInt bytesPerSec) {
-    return tasks_api.setTaskRateLimit(taskId: taskId, bytesPerSec: bytesPerSec);
+    final ok = tasks_api.setTaskRateLimit(taskId: taskId, bytesPerSec: bytesPerSec);
+    if (ok) notifyListeners();
+    return ok;
   }
 
   Future<String> retryFailed(String taskId) {
@@ -349,6 +358,7 @@ class TaskService {
     final ok = tasks_api.dismissTask(taskId: taskId);
     if (ok) {
       unawaited(BackgroundKeepAliveService.instance.release('task:$taskId'));
+      notifyListeners();
     }
     return ok;
   }

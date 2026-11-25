@@ -6535,7 +6535,7 @@ abstract class AppLocalizations {
   /// No description provided for @peerManualAddressHint.
   ///
   /// In en, this message translates to:
-  /// **'http://192.168.1.x:port'**
+  /// **'http://<LAN IP>:port'**
   String get peerManualAddressHint;
 
   /// No description provided for @peerIncomingOfferTitle.
@@ -6765,6 +6765,1669 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Home screen pinning is not supported on this platform'**
   String get pinToHomeScreenUnsupported;
+
+  /// No description provided for @storagePools.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Pools'**
+  String get storagePools;
+
+  /// No description provided for @storagePoolsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Aggregate SFTP, S3 & WebDAV into one replicated pool'**
+  String get storagePoolsSubtitle;
+
+  /// No description provided for @createStoragePool.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Storage Pool'**
+  String get createStoragePool;
+
+  /// No description provided for @editStoragePool.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Storage Pool'**
+  String get editStoragePool;
+
+  /// No description provided for @noStoragePools.
+  ///
+  /// In en, this message translates to:
+  /// **'No storage pools configured'**
+  String get noStoragePools;
+
+  /// No description provided for @noStoragePoolsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Combine multiple SFTP, S3, or WebDAV connections with failure-domain 2x replication, chunking, and optional encryption.'**
+  String get noStoragePoolsDesc;
+
+  /// No description provided for @poolName.
+  ///
+  /// In en, this message translates to:
+  /// **'Pool Name'**
+  String get poolName;
+
+  /// No description provided for @poolNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Media Aggregate Pool'**
+  String get poolNameHint;
+
+  /// No description provided for @poolChunkSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Chunk Size'**
+  String get poolChunkSize;
+
+  /// No description provided for @poolEncryptEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Client-Side AES-GCM Encryption'**
+  String get poolEncryptEnable;
+
+  /// No description provided for @poolEncryptSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypts chunk payloads and metadata snapshots before upload'**
+  String get poolEncryptSubtitle;
+
+  /// No description provided for @poolPassphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption Passphrase'**
+  String get poolPassphrase;
+
+  /// No description provided for @poolPassphraseHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty to keep existing passphrase'**
+  String get poolPassphraseHint;
+
+  /// No description provided for @poolSelectNodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Member Storage Nodes'**
+  String get poolSelectNodes;
+
+  /// No description provided for @poolNeedRemotesFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Add SFTP, S3, or WebDAV connections in Remote first.'**
+  String get poolNeedRemotesFirst;
+
+  /// No description provided for @poolFailureDomain.
+  ///
+  /// In en, this message translates to:
+  /// **'Failure Domain'**
+  String get poolFailureDomain;
+
+  /// No description provided for @poolQuotaGb.
+  ///
+  /// In en, this message translates to:
+  /// **'Quota (GB)'**
+  String get poolQuotaGb;
+
+  /// No description provided for @poolPrefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote Prefix'**
+  String get poolPrefix;
+
+  /// No description provided for @poolRoleRw.
+  ///
+  /// In en, this message translates to:
+  /// **'Read/Write'**
+  String get poolRoleRw;
+
+  /// No description provided for @poolRoleRo.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-Only'**
+  String get poolRoleRo;
+
+  /// No description provided for @poolRoleDraining.
+  ///
+  /// In en, this message translates to:
+  /// **'Draining'**
+  String get poolRoleDraining;
+
+  /// No description provided for @poolRoleOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get poolRoleOffline;
+
+  /// No description provided for @poolMetaBackup.
+  ///
+  /// In en, this message translates to:
+  /// **'Meta Backup'**
+  String get poolMetaBackup;
+
+  /// No description provided for @poolBrowse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse'**
+  String get poolBrowse;
+
+  /// No description provided for @poolProbeHealth.
+  ///
+  /// In en, this message translates to:
+  /// **'Probe Health'**
+  String get poolProbeHealth;
+
+  /// No description provided for @poolSyncMeta.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync Meta'**
+  String get poolSyncMeta;
+
+  /// No description provided for @poolHeal.
+  ///
+  /// In en, this message translates to:
+  /// **'Heal'**
+  String get poolHeal;
+
+  /// No description provided for @poolGc.
+  ///
+  /// In en, this message translates to:
+  /// **'Run GC'**
+  String get poolGc;
+
+  /// No description provided for @poolDrainNode.
+  ///
+  /// In en, this message translates to:
+  /// **'Drain'**
+  String get poolDrainNode;
+
+  /// No description provided for @poolLogicalCapacity.
+  ///
+  /// In en, this message translates to:
+  /// **'Effective Logical Capacity'**
+  String get poolLogicalCapacity;
+
+  /// No description provided for @poolPhysicalCapacity.
+  ///
+  /// In en, this message translates to:
+  /// **'Total Physical Quota'**
+  String get poolPhysicalCapacity;
+
+  /// No description provided for @poolDegradedWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} chunk(s) below 2 replicas — run Heal to restore redundancy'**
+  String poolDegradedWarning(int count);
+
+  /// No description provided for @poolEncryptedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted'**
+  String get poolEncryptedBadge;
+
+  /// No description provided for @poolPlaintextBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Standard'**
+  String get poolPlaintextBadge;
+
+  /// No description provided for @poolMetaVersionBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Meta v{version}'**
+  String poolMetaVersionBadge(int version);
+
+  /// No description provided for @poolDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove pool \"{name}\" from local configuration? Remote blob data will not be deleted.'**
+  String poolDeleteConfirm(String name);
+
+  /// No description provided for @poolDrainConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate all chunks off \"{node}\" to other healthy nodes before taking it offline?'**
+  String poolDrainConfirm(String node);
+
+  /// No description provided for @poolSyncDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata sync: {action} (v{version}, {uploaded} backup(s), {conflicts} conflict(s))'**
+  String poolSyncDone(String action, int version, int uploaded, int conflicts);
+
+  /// No description provided for @poolNodesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} node(s)'**
+  String poolNodesCount(int count);
+
+  /// No description provided for @lanTransferAndShareTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN Transfer & WebDAV Share'**
+  String get lanTransferAndShareTitle;
+
+  /// No description provided for @lanTransferAndShareSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct LAN drop, WebDAV mount, and browser upload/download'**
+  String get lanTransferAndShareSubtitle;
+
+  /// No description provided for @lanWebdavBrowserHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in any browser to upload/download files, or mount via Finder, Explorer, Infuse, or Kodi.'**
+  String get lanWebdavBrowserHint;
+
+  /// No description provided for @lanWebdavReadOnlyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable read-only to allow browser uploads, new folders, and edits'**
+  String get lanWebdavReadOnlyHint;
+
+  /// No description provided for @photoBackupSourceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup Source Folders'**
+  String get photoBackupSourceLabel;
+
+  /// No description provided for @photoBackupSelectSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Folder'**
+  String get photoBackupSelectSource;
+
+  /// No description provided for @photoBackupSelectAlbums.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Albums'**
+  String get photoBackupSelectAlbums;
+
+  /// No description provided for @photoBackupDefaultSources.
+  ///
+  /// In en, this message translates to:
+  /// **'Default gallery folders'**
+  String get photoBackupDefaultSources;
+
+  /// No description provided for @photoBackupAllAlbums.
+  ///
+  /// In en, this message translates to:
+  /// **'All Photos & Videos'**
+  String get photoBackupAllAlbums;
+
+  /// No description provided for @photoBackupSelectedAlbumsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} album(s) selected'**
+  String photoBackupSelectedAlbumsCount(int count);
+
+  /// No description provided for @photoBackupResetSources.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to Default'**
+  String get photoBackupResetSources;
+
+  /// No description provided for @syncExcludeRulesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Exclusion Rules'**
+  String get syncExcludeRulesTitle;
+
+  /// No description provided for @syncExcludeExtensionsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Excluded File Types (Extensions)'**
+  String get syncExcludeExtensionsLabel;
+
+  /// No description provided for @syncExcludeExtensionsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. tmp, log, bak'**
+  String get syncExcludeExtensionsHint;
+
+  /// No description provided for @syncExcludeNamesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Excluded File Names'**
+  String get syncExcludeNamesLabel;
+
+  /// No description provided for @syncExcludeNamesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. .DS_Store, Thumbs.db, ~\$*'**
+  String get syncExcludeNamesHint;
+
+  /// No description provided for @syncExcludeDirsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Excluded Folders'**
+  String get syncExcludeDirsLabel;
+
+  /// No description provided for @syncExcludeDirsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. node_modules, .git, build/cache'**
+  String get syncExcludeDirsHint;
+
+  /// No description provided for @syncExcludePresets.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick Presets'**
+  String get syncExcludePresets;
+
+  /// No description provided for @syncPickExcludeDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick Folder'**
+  String get syncPickExcludeDir;
+
+  /// No description provided for @syncExcludedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} excluded'**
+  String syncExcludedCount(int count);
+
+  /// No description provided for @syncAddRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get syncAddRule;
+
+  /// No description provided for @peerManualAddressLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Target Device Address (Manual)'**
+  String get peerManualAddressLabel;
+
+  /// No description provided for @peerManualAddressExample.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. http://{hostPlaceholder}:port'**
+  String peerManualAddressExample(String hostPlaceholder);
+
+  /// No description provided for @emptyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty'**
+  String get emptyLabel;
+
+  /// No description provided for @itemCountConnections.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} connection(s)'**
+  String itemCountConnections(int count);
+
+  /// No description provided for @itemCountPools.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} pool(s)'**
+  String itemCountPools(int count);
+
+  /// No description provided for @itemCountBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} bookmark(s)'**
+  String itemCountBookmarks(int count);
+
+  /// No description provided for @itemCountLocations.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} location(s)'**
+  String itemCountLocations(int count);
+
+  /// No description provided for @activeTasksRunningCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} running'**
+  String activeTasksRunningCount(int count);
+
+  /// No description provided for @timeJustNow.
+  ///
+  /// In en, this message translates to:
+  /// **'just now'**
+  String get timeJustNow;
+
+  /// No description provided for @timeMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}m ago'**
+  String timeMinutesAgo(int count);
+
+  /// No description provided for @timeHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}h ago'**
+  String timeHoursAgo(int count);
+
+  /// No description provided for @timeDaysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}d ago'**
+  String timeDaysAgo(int count);
+
+  /// No description provided for @deletedRelativeTime.
+  ///
+  /// In en, this message translates to:
+  /// **'deleted {time}'**
+  String deletedRelativeTime(String time);
+
+  /// No description provided for @stopSharing.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop Sharing'**
+  String get stopSharing;
+
+  /// No description provided for @manageRemotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Remotes'**
+  String get manageRemotes;
+
+  /// No description provided for @manageStoragePools.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Storage Pools'**
+  String get manageStoragePools;
+
+  /// No description provided for @backupRestoreConfigTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup & Restore Configuration'**
+  String get backupRestoreConfigTitle;
+
+  /// No description provided for @backupRestoreConfigSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Export or import remote connections, bookmarks, and preferences (optional AES-256 encrypted .fmbak)'**
+  String get backupRestoreConfigSubtitle;
+
+  /// No description provided for @exportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Export'**
+  String get exportAction;
+
+  /// No description provided for @exportMigrationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Export Device Migration Backup'**
+  String get exportMigrationTitle;
+
+  /// No description provided for @exportMigrationPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption Password (recommended)'**
+  String get exportMigrationPasswordLabel;
+
+  /// No description provided for @exportMigrationPasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty for plain JSON without credentials'**
+  String get exportMigrationPasswordHint;
+
+  /// No description provided for @exportIncludeCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Include passwords / keys (requires password)'**
+  String get exportIncludeCredentials;
+
+  /// No description provided for @copyJsonAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy JSON'**
+  String get copyJsonAction;
+
+  /// No description provided for @copyEncryptedAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy Encrypted'**
+  String get copyEncryptedAction;
+
+  /// No description provided for @saveBackupFileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save .fmbak'**
+  String get saveBackupFileAction;
+
+  /// No description provided for @saveJsonFileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save .json'**
+  String get saveJsonFileAction;
+
+  /// No description provided for @importMigrationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Device Configuration'**
+  String get importMigrationTitle;
+
+  /// No description provided for @chooseBackupFileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose .fmbak or .json File'**
+  String get chooseBackupFileAction;
+
+  /// No description provided for @importPasteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Or paste JSON / .fmbak text...'**
+  String get importPasteHint;
+
+  /// No description provided for @importPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Decryption Password (if encrypted)'**
+  String get importPasswordLabel;
+
+  /// No description provided for @importPasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Required for .fmbak files with credentials'**
+  String get importPasswordHint;
+
+  /// No description provided for @importPasswordRequiredError.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the decryption password for this encrypted .fmbak backup.'**
+  String get importPasswordRequiredError;
+
+  /// No description provided for @exportSavedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup saved to {path}'**
+  String exportSavedNotice(String path);
+
+  /// No description provided for @exportCopiedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup copied to clipboard'**
+  String get exportCopiedNotice;
+
+  /// No description provided for @importSummaryNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {remotes} remote(s), {bookmarks} bookmark(s), {prefs} preference(s)'**
+  String importSummaryNotice(int remotes, int bookmarks, int prefs);
+
+  /// No description provided for @unencryptedCredentialsBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning: OS secure keyring unavailable; remote passwords are saved in plaintext.'**
+  String get unencryptedCredentialsBanner;
+
+  /// No description provided for @remoteTestTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'timed out after 8 seconds'**
+  String get remoteTestTimedOut;
+
+  /// No description provided for @remoteImportFailedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'; {count} failed: {details}'**
+  String remoteImportFailedSummary(int count, String details);
+
+  /// No description provided for @remoteBucketLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Bucket: {bucket}'**
+  String remoteBucketLabel(String bucket);
+
+  /// No description provided for @keyringUnavailableBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'OS Keyring unavailable ({detail}). Credentials may not persist safely.'**
+  String keyringUnavailableBanner(String detail);
+
+  /// No description provided for @deleteRemotePoolWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning: This remote is used by storage pool(s): {pools}. Deleting it will degrade those pools.'**
+  String deleteRemotePoolWarning(String pools);
+
+  /// No description provided for @poolConfirmGcTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Run Garbage Collection?'**
+  String get poolConfirmGcTitle;
+
+  /// No description provided for @poolConfirmGcBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Purge unreferenced/deleted chunks from pool \"{name}\"? Deleted chunks cannot be recovered.'**
+  String poolConfirmGcBody(String name);
+
+  /// No description provided for @poolReplicationFactorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Replication Factor'**
+  String get poolReplicationFactorLabel;
+
+  /// No description provided for @poolMinNodesError.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least {count} member node(s) for {count}x replication.'**
+  String poolMinNodesError(int count);
+
+  /// No description provided for @poolInvalidQuotaError.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid node quota (> 0 GB).'**
+  String get poolInvalidQuotaError;
+
+  /// No description provided for @poolPassphraseConfirmLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Encryption Passphrase'**
+  String get poolPassphraseConfirmLabel;
+
+  /// No description provided for @poolPassphraseMismatchError.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption passphrases do not match.'**
+  String get poolPassphraseMismatchError;
+
+  /// No description provided for @poolEditLockedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Chunk size and encryption cannot be changed after pool creation.'**
+  String get poolEditLockedHint;
+
+  /// No description provided for @poolNodeHealthSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Health {pct}% · {ms} ms · {state}'**
+  String poolNodeHealthSummary(int pct, int ms, String state);
+
+  /// No description provided for @poolRoleShortRw.
+  ///
+  /// In en, this message translates to:
+  /// **'RW'**
+  String get poolRoleShortRw;
+
+  /// No description provided for @poolRoleShortRo.
+  ///
+  /// In en, this message translates to:
+  /// **'RO'**
+  String get poolRoleShortRo;
+
+  /// No description provided for @poolRoleShortDraining.
+  ///
+  /// In en, this message translates to:
+  /// **'DRAINING'**
+  String get poolRoleShortDraining;
+
+  /// No description provided for @poolRoleShortOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'OFFLINE'**
+  String get poolRoleShortOffline;
+
+  /// No description provided for @poolCircuitClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'closed'**
+  String get poolCircuitClosed;
+
+  /// No description provided for @poolCircuitOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'open'**
+  String get poolCircuitOpen;
+
+  /// No description provided for @poolCircuitHalfOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'half-open'**
+  String get poolCircuitHalfOpen;
+
+  /// No description provided for @cryptChooseBackingRemote.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Existing Remote / Local Folder'**
+  String get cryptChooseBackingRemote;
+
+  /// No description provided for @cryptLocalFolderOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick Local Folder...'**
+  String get cryptLocalFolderOption;
+
+  /// No description provided for @fileConflictBody.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" already exists in this folder. What should happen to it?'**
+  String fileConflictBody(String name);
+
+  /// No description provided for @filesConflictBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items already exist in this folder. What should happen to them?'**
+  String filesConflictBody(int count);
+
+  /// No description provided for @offlineOverwriteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Overwrite remote changes?'**
+  String get offlineOverwriteConfirmTitle;
+
+  /// No description provided for @offlineOverwriteConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" was also modified remotely. Overwrite the remote version with your local changes?'**
+  String offlineOverwriteConfirmBody(String name);
+
+  /// No description provided for @offlineDiscardLocalConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard local offline edits?'**
+  String get offlineDiscardLocalConfirmTitle;
+
+  /// No description provided for @offlineDiscardLocalConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" has un-synced local modifications or conflicts. Continuing will overwrite or remove the local changes.'**
+  String offlineDiscardLocalConfirmBody(String name);
+
+  /// No description provided for @offlineUploadedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploaded \"{name}\" to remote.'**
+  String offlineUploadedNotice(String name);
+
+  /// No description provided for @offlineCheckUpdatesTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Updates'**
+  String get offlineCheckUpdatesTooltip;
+
+  /// No description provided for @offlineSyncAllTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync All'**
+  String get offlineSyncAllTooltip;
+
+  /// No description provided for @offlineLruCapTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'LRU Cache Cap'**
+  String get offlineLruCapTooltip;
+
+  /// No description provided for @offlineLruCapOption.
+  ///
+  /// In en, this message translates to:
+  /// **'LRU Cap: {size}'**
+  String offlineLruCapOption(String size);
+
+  /// No description provided for @offlineUploadLocalTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload local changes to remote'**
+  String get offlineUploadLocalTooltip;
+
+  /// No description provided for @offlineBannerSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} pinned · {used} / {cap}'**
+  String offlineBannerSummary(int count, String used, String cap);
+
+  /// No description provided for @offlineStatusLocalModified.
+  ///
+  /// In en, this message translates to:
+  /// **'Local Modified'**
+  String get offlineStatusLocalModified;
+
+  /// No description provided for @offlineStatusRemoteNewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote Newer'**
+  String get offlineStatusRemoteNewer;
+
+  /// No description provided for @offlineStatusConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'Conflict'**
+  String get offlineStatusConflict;
+
+  /// No description provided for @offlineStatusSynced.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced'**
+  String get offlineStatusSynced;
+
+  /// No description provided for @offlineStatusMissingLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing Local'**
+  String get offlineStatusMissingLocal;
+
+  /// No description provided for @offlineStatusOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get offlineStatusOffline;
+
+  /// No description provided for @browserSelectItemsFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one item first.'**
+  String get browserSelectItemsFirst;
+
+  /// No description provided for @clipboardReadOnlyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard: {count} item(s) ready (read-only folder)'**
+  String clipboardReadOnlyHint(int count);
+
+  /// No description provided for @peerTabDirectTransfer.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct Transfer'**
+  String get peerTabDirectTransfer;
+
+  /// No description provided for @peerTabWebdavShare.
+  ///
+  /// In en, this message translates to:
+  /// **'WebDAV / Browser Share'**
+  String get peerTabWebdavShare;
+
+  /// No description provided for @peerPendingItemsToSend.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} item(s) ready to send'**
+  String peerPendingItemsToSend(int count);
+
+  /// No description provided for @peerReceiveFolderMustBeLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive folder must be on local storage.'**
+  String get peerReceiveFolderMustBeLocal;
+
+  /// No description provided for @peerOpenReceivedFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Folder'**
+  String get peerOpenReceivedFolder;
+
+  /// No description provided for @peerCopyReceivedText.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy Text'**
+  String get peerCopyReceivedText;
+
+  /// No description provided for @peerTextCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Received text copied to clipboard.'**
+  String get peerTextCopied;
+
+  /// No description provided for @peerWaitingForAccept.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending / waiting for peer to accept...'**
+  String get peerWaitingForAccept;
+
+  /// No description provided for @peerOfferStatusAccepted.
+  ///
+  /// In en, this message translates to:
+  /// **'Accepted'**
+  String get peerOfferStatusAccepted;
+
+  /// No description provided for @peerOfferStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get peerOfferStatusCompleted;
+
+  /// No description provided for @peerOfferStatusRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Rejected'**
+  String get peerOfferStatusRejected;
+
+  /// No description provided for @peerOfferStatusReceiving.
+  ///
+  /// In en, this message translates to:
+  /// **'Receiving'**
+  String get peerOfferStatusReceiving;
+
+  /// No description provided for @photoBackupScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning photos & folders...'**
+  String get photoBackupScanning;
+
+  /// No description provided for @photoBackupCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get photoBackupCancel;
+
+  /// No description provided for @photoBackupCancelledNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo backup cancelled (uploaded {count}).'**
+  String photoBackupCancelledNotice(int count);
+
+  /// No description provided for @photoBackupResetHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Backup History'**
+  String get photoBackupResetHistory;
+
+  /// No description provided for @photoBackupResetHistoryConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear local backup history so previously backed-up photos will be uploaded again?'**
+  String get photoBackupResetHistoryConfirm;
+
+  /// No description provided for @photoBackupLastRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Last backup: {time}'**
+  String photoBackupLastRun(String time);
+
+  /// No description provided for @photoBackupProgressCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{uploaded} / {total} uploaded'**
+  String photoBackupProgressCount(int uploaded, int total);
+
+  /// No description provided for @photoBackupOpenDestination.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Destination'**
+  String get photoBackupOpenDestination;
+
+  /// No description provided for @photoBackupVaultLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Target Privacy Folder is locked'**
+  String get photoBackupVaultLocked;
+
+  /// No description provided for @photoBackupPermissionDeniedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo Library Permission Needed'**
+  String get photoBackupPermissionDeniedTitle;
+
+  /// No description provided for @photoBackupPermissionDeniedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow photo library access in system settings to choose albums or back up photos.'**
+  String get photoBackupPermissionDeniedBody;
+
+  /// No description provided for @photoBackupOpenSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings'**
+  String get photoBackupOpenSettings;
+
+  /// No description provided for @syncSaveProfileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save Sync Profile'**
+  String get syncSaveProfileTitle;
+
+  /// No description provided for @syncProfileNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile name'**
+  String get syncProfileNameLabel;
+
+  /// No description provided for @syncSourceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Source'**
+  String get syncSourceLabel;
+
+  /// No description provided for @syncDestinationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Destination'**
+  String get syncDestinationLabel;
+
+  /// No description provided for @syncScanLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan limit reached; preview is truncated.'**
+  String get syncScanLimitReached;
+
+  /// No description provided for @syncSummaryChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'{changes} change(s) · {unchanged} unchanged'**
+  String syncSummaryChanges(int changes, int unchanged);
+
+  /// No description provided for @syncConfirmMirrorDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Mirror Deletions'**
+  String get syncConfirmMirrorDeleteTitle;
+
+  /// No description provided for @syncConfirmMirrorDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This sync will delete {count} extra file(s)/folder(s) from the destination. Continue?'**
+  String syncConfirmMirrorDeleteBody(int count);
+
+  /// No description provided for @syncConfirmDeleteProfileBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete saved sync profile \"{name}\"?'**
+  String syncConfirmDeleteProfileBody(String name);
+
+  /// No description provided for @syncSwapFoldersTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap source and destination'**
+  String get syncSwapFoldersTooltip;
+
+  /// No description provided for @syncSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select All'**
+  String get syncSelectAll;
+
+  /// No description provided for @syncDeselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect All'**
+  String get syncDeselectAll;
+
+  /// No description provided for @syncActionCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'COPY'**
+  String get syncActionCopy;
+
+  /// No description provided for @syncActionUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'UPDATE'**
+  String get syncActionUpdate;
+
+  /// No description provided for @syncActionDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'DELETE'**
+  String get syncActionDelete;
+
+  /// No description provided for @syncActionPullUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'PULL UPDATE'**
+  String get syncActionPullUpdate;
+
+  /// No description provided for @syncEditConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Folders'**
+  String get syncEditConfig;
+
+  /// No description provided for @syncAutoSyncFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Last auto-sync failed: {error}'**
+  String syncAutoSyncFailed(String error);
+
+  /// No description provided for @taskStatusPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get taskStatusPaused;
+
+  /// No description provided for @taskRateLimitActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Limit: {limit}'**
+  String taskRateLimitActive(String limit);
+
+  /// No description provided for @taskFailedItemsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed items ({count})'**
+  String taskFailedItemsTitle(int count);
+
+  /// No description provided for @taskRetryStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrying failed items in background.'**
+  String get taskRetryStarted;
+
+  /// No description provided for @analyzerStatsSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{files} files · {folders} folders'**
+  String analyzerStatsSummary(int files, int folders);
+
+  /// No description provided for @analyzerScanCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Analysis cancelled (showing partial results).'**
+  String get analyzerScanCancelled;
+
+  /// No description provided for @analyzerScanTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'Reached scan limit; totals may exclude deeper folders.'**
+  String get analyzerScanTruncated;
+
+  /// No description provided for @analyzerRescan.
+  ///
+  /// In en, this message translates to:
+  /// **'Rescan'**
+  String get analyzerRescan;
+
+  /// No description provided for @duplicatesGroupCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} group(s)'**
+  String duplicatesGroupCount(int count);
+
+  /// No description provided for @duplicatesCopiesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'({count} copies)'**
+  String duplicatesCopiesCount(int count);
+
+  /// No description provided for @duplicatesEachSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} each'**
+  String duplicatesEachSize(String size);
+
+  /// No description provided for @duplicatesDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} item(s) failed to delete'**
+  String duplicatesDeleteFailed(int count);
+
+  /// No description provided for @duplicatesAllCopiesWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning: {count} group(s) have ALL copies selected for deletion!'**
+  String duplicatesAllCopiesWarning(int count);
+
+  /// No description provided for @duplicatesClearSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear Selection'**
+  String get duplicatesClearSelection;
+
+  /// No description provided for @duplicatesScanCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate scan was cancelled.'**
+  String get duplicatesScanCancelled;
+
+  /// No description provided for @duplicatesTrashConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Move {count} duplicate item(s) to the Recycle Bin?'**
+  String duplicatesTrashConfirmBody(int count);
+
+  /// No description provided for @categoryTruncatedBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing first {count} matching files (result limit reached).'**
+  String categoryTruncatedBanner(int count);
+
+  /// No description provided for @galleryLocateInFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Locate in Folder'**
+  String get galleryLocateInFolder;
+
+  /// No description provided for @galleryUnsupportedFormatForPick.
+  ///
+  /// In en, this message translates to:
+  /// **'This file type is not accepted by the caller.'**
+  String get galleryUnsupportedFormatForPick;
+
+  /// No description provided for @galleryExifSkippedNonJpeg.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped {count} non-JPEG photo(s) (EXIF strip supports JPEG).'**
+  String galleryExifSkippedNonJpeg(int count);
+
+  /// No description provided for @searchFiltersLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Filters ({count})'**
+  String searchFiltersLabel(int count);
+
+  /// No description provided for @searchAllTypes.
+  ///
+  /// In en, this message translates to:
+  /// **'All Types'**
+  String get searchAllTypes;
+
+  /// No description provided for @pdfEncryptedError.
+  ///
+  /// In en, this message translates to:
+  /// **'This PDF is encrypted or password-protected.'**
+  String get pdfEncryptedError;
+
+  /// No description provided for @pdfPageTextTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {page} Text'**
+  String pdfPageTextTitle(int page);
+
+  /// No description provided for @pdfPageTextCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Page text copied to clipboard.'**
+  String get pdfPageTextCopied;
+
+  /// No description provided for @pdfNoSelectableText.
+  ///
+  /// In en, this message translates to:
+  /// **'No selectable text detected on this page (it may be a scanned image).'**
+  String get pdfNoSelectableText;
+
+  /// No description provided for @pdfSelectCopyPageText.
+  ///
+  /// In en, this message translates to:
+  /// **'Select / Copy Page Text'**
+  String get pdfSelectCopyPageText;
+
+  /// No description provided for @pdfRenderPageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to render page {page}.'**
+  String pdfRenderPageFailed(int page);
+
+  /// No description provided for @structuredEmptyValue.
+  ///
+  /// In en, this message translates to:
+  /// **'(empty)'**
+  String get structuredEmptyValue;
+
+  /// No description provided for @structuredCsvTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing first {shown} of {total} rows.'**
+  String structuredCsvTruncated(int shown, int total);
+
+  /// No description provided for @copyXPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy XPath'**
+  String get copyXPath;
+
+  /// No description provided for @subtitleLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsupported or unreadable subtitle file.'**
+  String get subtitleLoadFailed;
+
+  /// No description provided for @diffTruncatedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Directory diff reached the entry limit; some deeper entries were omitted.'**
+  String get diffTruncatedNotice;
+
+  /// No description provided for @diffSyncFoldersAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in Sync'**
+  String get diffSyncFoldersAction;
+
+  /// No description provided for @vaultHtmlBrowserWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot open decrypted Privacy Folder HTML in an external browser (zero-disk policy).'**
+  String get vaultHtmlBrowserWarning;
+
+  /// No description provided for @poolStorageDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Directory'**
+  String get poolStorageDirectory;
+
+  /// No description provided for @poolPickDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Folder'**
+  String get poolPickDirectory;
+
+  /// No description provided for @poolReplicationBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}x Replicas'**
+  String poolReplicationBadge(int count);
+
+  /// No description provided for @poolSetReplicationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Replication Factor'**
+  String get poolSetReplicationTitle;
+
+  /// No description provided for @poolSetReplicationHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Applies immediately to new writes; run Heal to replicate existing files up to the new target.'**
+  String get poolSetReplicationHint;
+
+  /// No description provided for @poolNodeRealFreeWithTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Free {free} / {total}'**
+  String poolNodeRealFreeWithTotal(String free, String total);
+
+  /// No description provided for @poolNodeRealFreeOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Free {free}'**
+  String poolNodeRealFreeOnly(String free);
+
+  /// No description provided for @poolNodeSpaceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Free space unavailable'**
+  String get poolNodeSpaceUnavailable;
+
+  /// No description provided for @poolNodeSpaceProbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking free space…'**
+  String get poolNodeSpaceProbing;
+
+  /// No description provided for @poolNodePoolUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Pool used: {used}'**
+  String poolNodePoolUsed(String used);
+
+  /// No description provided for @poolNodeDirectoryLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Dir: {dir}'**
+  String poolNodeDirectoryLabel(String dir);
+
+  /// No description provided for @remoteBatchExportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Encrypted Export'**
+  String get remoteBatchExportAction;
+
+  /// No description provided for @remoteBatchImportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Encrypted Import'**
+  String get remoteBatchImportAction;
+
+  /// No description provided for @remoteBatchExportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Export Connections'**
+  String get remoteBatchExportTitle;
+
+  /// No description provided for @remoteBatchExportSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connections and credentials are encrypted with AES-256-GCM using your password.'**
+  String get remoteBatchExportSubtitle;
+
+  /// No description provided for @remoteBatchSelectCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected {selected} / {total}'**
+  String remoteBatchSelectCount(int selected, int total);
+
+  /// No description provided for @remoteBatchSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select All'**
+  String get remoteBatchSelectAll;
+
+  /// No description provided for @remoteBatchDeselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect All'**
+  String get remoteBatchDeselectAll;
+
+  /// No description provided for @remoteBatchUnreadableSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Unreadable credentials (cannot be exported)'**
+  String get remoteBatchUnreadableSkipped;
+
+  /// No description provided for @remoteBatchNoReadableToExport.
+  ///
+  /// In en, this message translates to:
+  /// **'No readable remote connections available to export.'**
+  String get remoteBatchNoReadableToExport;
+
+  /// No description provided for @remoteBatchExportPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Encryption Password (Required)'**
+  String get remoteBatchExportPasswordLabel;
+
+  /// No description provided for @remoteBatchExportPasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'At least {min} characters'**
+  String remoteBatchExportPasswordHint(int min);
+
+  /// No description provided for @remoteBatchExportPasswordConfirmLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Encryption Password'**
+  String get remoteBatchExportPasswordConfirmLabel;
+
+  /// No description provided for @remoteBatchPasswordRequiredNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember this password — it is required when importing these connections.'**
+  String get remoteBatchPasswordRequiredNote;
+
+  /// No description provided for @remoteBatchPasswordTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at least {min} characters.'**
+  String remoteBatchPasswordTooShort(int min);
+
+  /// No description provided for @remoteBatchPasswordMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match.'**
+  String get remoteBatchPasswordMismatch;
+
+  /// No description provided for @remoteBatchSaveFileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save Encrypted File'**
+  String get remoteBatchSaveFileAction;
+
+  /// No description provided for @remoteBatchShareFileAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Export / Share File'**
+  String get remoteBatchShareFileAction;
+
+  /// No description provided for @remoteBatchExportSavedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted {count} connection(s) to {path}'**
+  String remoteBatchExportSavedNotice(int count, String path);
+
+  /// No description provided for @remoteBatchExportSharedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepared encrypted backup for {count} connection(s).'**
+  String remoteBatchExportSharedNotice(int count);
+
+  /// No description provided for @remoteBatchExportCopiedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied encrypted backup of {count} connection(s) to clipboard.'**
+  String remoteBatchExportCopiedNotice(int count);
+
+  /// No description provided for @remoteBatchImportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Import Connections'**
+  String get remoteBatchImportTitle;
+
+  /// No description provided for @remoteBatchChooseFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Backup File'**
+  String get remoteBatchChooseFile;
+
+  /// No description provided for @remoteBatchPasteClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste from Clipboard'**
+  String get remoteBatchPasteClipboard;
+
+  /// No description provided for @remoteBatchClipboardDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted backup detected in clipboard.'**
+  String get remoteBatchClipboardDetected;
+
+  /// No description provided for @remoteBatchClipboardEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Clipboard is empty.'**
+  String get remoteBatchClipboardEmpty;
+
+  /// No description provided for @remoteBatchSelectedFileLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected file: {name}'**
+  String remoteBatchSelectedFileLabel(String name);
+
+  /// No description provided for @remoteBatchPasteFieldHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Or paste encrypted .fmremotes / .fmbak content…'**
+  String get remoteBatchPasteFieldHint;
+
+  /// No description provided for @remoteBatchImportPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Decryption Password (Required)'**
+  String get remoteBatchImportPasswordLabel;
+
+  /// No description provided for @remoteBatchImportPasswordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the password set during export'**
+  String get remoteBatchImportPasswordHint;
+
+  /// No description provided for @remoteBatchDecryptAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Decrypt & Preview'**
+  String get remoteBatchDecryptAction;
+
+  /// No description provided for @remoteBatchPreviewSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Decrypted {count} connection(s)'**
+  String remoteBatchPreviewSummary(int count);
+
+  /// No description provided for @remoteBatchConflictSectionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'When connection already exists:'**
+  String get remoteBatchConflictSectionLabel;
+
+  /// No description provided for @remoteBatchConflictSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get remoteBatchConflictSkip;
+
+  /// No description provided for @remoteBatchConflictOverwrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Overwrite'**
+  String get remoteBatchConflictOverwrite;
+
+  /// No description provided for @remoteBatchConflictKeepBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Both'**
+  String get remoteBatchConflictKeepBoth;
+
+  /// No description provided for @remoteBatchBadgeNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get remoteBatchBadgeNew;
+
+  /// No description provided for @remoteBatchBadgeExists.
+  ///
+  /// In en, this message translates to:
+  /// **'Exists'**
+  String get remoteBatchBadgeExists;
+
+  /// No description provided for @remoteBatchAllSkippedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'All selected connections already exist and will be skipped. Switch to Overwrite or Keep Both to import them.'**
+  String get remoteBatchAllSkippedHint;
+
+  /// No description provided for @remoteBatchImportConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Import ({count})'**
+  String remoteBatchImportConfirm(int count);
+
+  /// No description provided for @remoteBatchImportSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {imported} connection(s) ({added} new, {overwritten} updated, {duplicated} copied, {skipped} skipped){detail}'**
+  String remoteBatchImportSummary(
+    int imported,
+    int added,
+    int overwritten,
+    int duplicated,
+    int skipped,
+    String detail,
+  );
+
+  /// No description provided for @remoteBatchErrorNotEncrypted.
+  ///
+  /// In en, this message translates to:
+  /// **'Unencrypted plaintext data is not allowed. Please select a password-encrypted backup.'**
+  String get remoteBatchErrorNotEncrypted;
+
+  /// No description provided for @remoteBatchErrorInvalidFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid backup file format.'**
+  String get remoteBatchErrorInvalidFormat;
+
+  /// No description provided for @remoteBatchErrorWrongPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password or corrupted backup file.'**
+  String get remoteBatchErrorWrongPassword;
+
+  /// No description provided for @remoteBatchErrorEmptyBundle.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup contains no valid remote connections.'**
+  String get remoteBatchErrorEmptyBundle;
+
+  /// No description provided for @remoteBatchErrorFileTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected file is too large to be a connection backup.'**
+  String get remoteBatchErrorFileTooLarge;
+
+  /// No description provided for @remoteBatchBackStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get remoteBatchBackStep;
 }
 
 class _AppLocalizationsDelegate

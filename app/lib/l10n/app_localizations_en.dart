@@ -3752,7 +3752,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peerSendClipboard => 'Send Clipboard Text';
 
   @override
-  String get peerManualAddressHint => 'http://192.168.1.x:port';
+  String get peerManualAddressHint => 'http://<LAN IP>:port';
 
   @override
   String peerIncomingOfferTitle(String sender) {
@@ -3885,4 +3885,1028 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get pinToHomeScreenUnsupported =>
       'Home screen pinning is not supported on this platform';
+
+  @override
+  String get storagePools => 'Storage Pools';
+
+  @override
+  String get storagePoolsSubtitle =>
+      'Aggregate SFTP, S3 & WebDAV into one replicated pool';
+
+  @override
+  String get createStoragePool => 'Create Storage Pool';
+
+  @override
+  String get editStoragePool => 'Edit Storage Pool';
+
+  @override
+  String get noStoragePools => 'No storage pools configured';
+
+  @override
+  String get noStoragePoolsDesc =>
+      'Combine multiple SFTP, S3, or WebDAV connections with failure-domain 2x replication, chunking, and optional encryption.';
+
+  @override
+  String get poolName => 'Pool Name';
+
+  @override
+  String get poolNameHint => 'e.g. Media Aggregate Pool';
+
+  @override
+  String get poolChunkSize => 'Chunk Size';
+
+  @override
+  String get poolEncryptEnable => 'Enable Client-Side AES-GCM Encryption';
+
+  @override
+  String get poolEncryptSubtitle =>
+      'Encrypts chunk payloads and metadata snapshots before upload';
+
+  @override
+  String get poolPassphrase => 'Encryption Passphrase';
+
+  @override
+  String get poolPassphraseHint => 'Leave empty to keep existing passphrase';
+
+  @override
+  String get poolSelectNodes => 'Member Storage Nodes';
+
+  @override
+  String get poolNeedRemotesFirst =>
+      'Add SFTP, S3, or WebDAV connections in Remote first.';
+
+  @override
+  String get poolFailureDomain => 'Failure Domain';
+
+  @override
+  String get poolQuotaGb => 'Quota (GB)';
+
+  @override
+  String get poolPrefix => 'Remote Prefix';
+
+  @override
+  String get poolRoleRw => 'Read/Write';
+
+  @override
+  String get poolRoleRo => 'Read-Only';
+
+  @override
+  String get poolRoleDraining => 'Draining';
+
+  @override
+  String get poolRoleOffline => 'Offline';
+
+  @override
+  String get poolMetaBackup => 'Meta Backup';
+
+  @override
+  String get poolBrowse => 'Browse';
+
+  @override
+  String get poolProbeHealth => 'Probe Health';
+
+  @override
+  String get poolSyncMeta => 'Sync Meta';
+
+  @override
+  String get poolHeal => 'Heal';
+
+  @override
+  String get poolGc => 'Run GC';
+
+  @override
+  String get poolDrainNode => 'Drain';
+
+  @override
+  String get poolLogicalCapacity => 'Effective Logical Capacity';
+
+  @override
+  String get poolPhysicalCapacity => 'Total Physical Quota';
+
+  @override
+  String poolDegradedWarning(int count) {
+    return '$count chunk(s) below 2 replicas — run Heal to restore redundancy';
+  }
+
+  @override
+  String get poolEncryptedBadge => 'Encrypted';
+
+  @override
+  String get poolPlaintextBadge => 'Standard';
+
+  @override
+  String poolMetaVersionBadge(int version) {
+    return 'Meta v$version';
+  }
+
+  @override
+  String poolDeleteConfirm(String name) {
+    return 'Remove pool \"$name\" from local configuration? Remote blob data will not be deleted.';
+  }
+
+  @override
+  String poolDrainConfirm(String node) {
+    return 'Migrate all chunks off \"$node\" to other healthy nodes before taking it offline?';
+  }
+
+  @override
+  String poolSyncDone(String action, int version, int uploaded, int conflicts) {
+    return 'Metadata sync: $action (v$version, $uploaded backup(s), $conflicts conflict(s))';
+  }
+
+  @override
+  String poolNodesCount(int count) {
+    return '$count node(s)';
+  }
+
+  @override
+  String get lanTransferAndShareTitle => 'LAN Transfer & WebDAV Share';
+
+  @override
+  String get lanTransferAndShareSubtitle =>
+      'Direct LAN drop, WebDAV mount, and browser upload/download';
+
+  @override
+  String get lanWebdavBrowserHint =>
+      'Open in any browser to upload/download files, or mount via Finder, Explorer, Infuse, or Kodi.';
+
+  @override
+  String get lanWebdavReadOnlyHint =>
+      'Disable read-only to allow browser uploads, new folders, and edits';
+
+  @override
+  String get photoBackupSourceLabel => 'Backup Source Folders';
+
+  @override
+  String get photoBackupSelectSource => 'Add Folder';
+
+  @override
+  String get photoBackupSelectAlbums => 'Select Albums';
+
+  @override
+  String get photoBackupDefaultSources => 'Default gallery folders';
+
+  @override
+  String get photoBackupAllAlbums => 'All Photos & Videos';
+
+  @override
+  String photoBackupSelectedAlbumsCount(int count) {
+    return '$count album(s) selected';
+  }
+
+  @override
+  String get photoBackupResetSources => 'Reset to Default';
+
+  @override
+  String get syncExcludeRulesTitle => 'Exclusion Rules';
+
+  @override
+  String get syncExcludeExtensionsLabel => 'Excluded File Types (Extensions)';
+
+  @override
+  String get syncExcludeExtensionsHint => 'e.g. tmp, log, bak';
+
+  @override
+  String get syncExcludeNamesLabel => 'Excluded File Names';
+
+  @override
+  String get syncExcludeNamesHint => 'e.g. .DS_Store, Thumbs.db, ~\$*';
+
+  @override
+  String get syncExcludeDirsLabel => 'Excluded Folders';
+
+  @override
+  String get syncExcludeDirsHint => 'e.g. node_modules, .git, build/cache';
+
+  @override
+  String get syncExcludePresets => 'Quick Presets';
+
+  @override
+  String get syncPickExcludeDir => 'Pick Folder';
+
+  @override
+  String syncExcludedCount(int count) {
+    return '$count excluded';
+  }
+
+  @override
+  String get syncAddRule => 'Add';
+
+  @override
+  String get peerManualAddressLabel => 'Target Device Address (Manual)';
+
+  @override
+  String peerManualAddressExample(String hostPlaceholder) {
+    return 'e.g. http://$hostPlaceholder:port';
+  }
+
+  @override
+  String get emptyLabel => 'Empty';
+
+  @override
+  String itemCountConnections(int count) {
+    return '$count connection(s)';
+  }
+
+  @override
+  String itemCountPools(int count) {
+    return '$count pool(s)';
+  }
+
+  @override
+  String itemCountBookmarks(int count) {
+    return '$count bookmark(s)';
+  }
+
+  @override
+  String itemCountLocations(int count) {
+    return '$count location(s)';
+  }
+
+  @override
+  String activeTasksRunningCount(int count) {
+    return '$count running';
+  }
+
+  @override
+  String get timeJustNow => 'just now';
+
+  @override
+  String timeMinutesAgo(int count) {
+    return '${count}m ago';
+  }
+
+  @override
+  String timeHoursAgo(int count) {
+    return '${count}h ago';
+  }
+
+  @override
+  String timeDaysAgo(int count) {
+    return '${count}d ago';
+  }
+
+  @override
+  String deletedRelativeTime(String time) {
+    return 'deleted $time';
+  }
+
+  @override
+  String get stopSharing => 'Stop Sharing';
+
+  @override
+  String get manageRemotes => 'Manage Remotes';
+
+  @override
+  String get manageStoragePools => 'Manage Storage Pools';
+
+  @override
+  String get backupRestoreConfigTitle => 'Backup & Restore Configuration';
+
+  @override
+  String get backupRestoreConfigSubtitle =>
+      'Export or import remote connections, bookmarks, and preferences (optional AES-256 encrypted .fmbak)';
+
+  @override
+  String get exportAction => 'Export';
+
+  @override
+  String get exportMigrationTitle => 'Export Device Migration Backup';
+
+  @override
+  String get exportMigrationPasswordLabel =>
+      'Encryption Password (recommended)';
+
+  @override
+  String get exportMigrationPasswordHint =>
+      'Leave empty for plain JSON without credentials';
+
+  @override
+  String get exportIncludeCredentials =>
+      'Include passwords / keys (requires password)';
+
+  @override
+  String get copyJsonAction => 'Copy JSON';
+
+  @override
+  String get copyEncryptedAction => 'Copy Encrypted';
+
+  @override
+  String get saveBackupFileAction => 'Save .fmbak';
+
+  @override
+  String get saveJsonFileAction => 'Save .json';
+
+  @override
+  String get importMigrationTitle => 'Import Device Configuration';
+
+  @override
+  String get chooseBackupFileAction => 'Choose .fmbak or .json File';
+
+  @override
+  String get importPasteHint => 'Or paste JSON / .fmbak text...';
+
+  @override
+  String get importPasswordLabel => 'Decryption Password (if encrypted)';
+
+  @override
+  String get importPasswordHint => 'Required for .fmbak files with credentials';
+
+  @override
+  String get importPasswordRequiredError =>
+      'Please enter the decryption password for this encrypted .fmbak backup.';
+
+  @override
+  String exportSavedNotice(String path) {
+    return 'Backup saved to $path';
+  }
+
+  @override
+  String get exportCopiedNotice => 'Backup copied to clipboard';
+
+  @override
+  String importSummaryNotice(int remotes, int bookmarks, int prefs) {
+    return 'Imported $remotes remote(s), $bookmarks bookmark(s), $prefs preference(s)';
+  }
+
+  @override
+  String get unencryptedCredentialsBanner =>
+      'Warning: OS secure keyring unavailable; remote passwords are saved in plaintext.';
+
+  @override
+  String get remoteTestTimedOut => 'timed out after 8 seconds';
+
+  @override
+  String remoteImportFailedSummary(int count, String details) {
+    return '; $count failed: $details';
+  }
+
+  @override
+  String remoteBucketLabel(String bucket) {
+    return 'Bucket: $bucket';
+  }
+
+  @override
+  String keyringUnavailableBanner(String detail) {
+    return 'OS Keyring unavailable ($detail). Credentials may not persist safely.';
+  }
+
+  @override
+  String deleteRemotePoolWarning(String pools) {
+    return 'Warning: This remote is used by storage pool(s): $pools. Deleting it will degrade those pools.';
+  }
+
+  @override
+  String get poolConfirmGcTitle => 'Run Garbage Collection?';
+
+  @override
+  String poolConfirmGcBody(String name) {
+    return 'Purge unreferenced/deleted chunks from pool \"$name\"? Deleted chunks cannot be recovered.';
+  }
+
+  @override
+  String get poolReplicationFactorLabel => 'Replication Factor';
+
+  @override
+  String poolMinNodesError(int count) {
+    return 'Select at least $count member node(s) for ${count}x replication.';
+  }
+
+  @override
+  String get poolInvalidQuotaError => 'Enter a valid node quota (> 0 GB).';
+
+  @override
+  String get poolPassphraseConfirmLabel => 'Confirm Encryption Passphrase';
+
+  @override
+  String get poolPassphraseMismatchError =>
+      'Encryption passphrases do not match.';
+
+  @override
+  String get poolEditLockedHint =>
+      'Chunk size and encryption cannot be changed after pool creation.';
+
+  @override
+  String poolNodeHealthSummary(int pct, int ms, String state) {
+    return 'Health $pct% · $ms ms · $state';
+  }
+
+  @override
+  String get poolRoleShortRw => 'RW';
+
+  @override
+  String get poolRoleShortRo => 'RO';
+
+  @override
+  String get poolRoleShortDraining => 'DRAINING';
+
+  @override
+  String get poolRoleShortOffline => 'OFFLINE';
+
+  @override
+  String get poolCircuitClosed => 'closed';
+
+  @override
+  String get poolCircuitOpen => 'open';
+
+  @override
+  String get poolCircuitHalfOpen => 'half-open';
+
+  @override
+  String get cryptChooseBackingRemote =>
+      'Choose Existing Remote / Local Folder';
+
+  @override
+  String get cryptLocalFolderOption => 'Pick Local Folder...';
+
+  @override
+  String fileConflictBody(String name) {
+    return '\"$name\" already exists in this folder. What should happen to it?';
+  }
+
+  @override
+  String filesConflictBody(int count) {
+    return '$count items already exist in this folder. What should happen to them?';
+  }
+
+  @override
+  String get offlineOverwriteConfirmTitle => 'Overwrite remote changes?';
+
+  @override
+  String offlineOverwriteConfirmBody(String name) {
+    return '\"$name\" was also modified remotely. Overwrite the remote version with your local changes?';
+  }
+
+  @override
+  String get offlineDiscardLocalConfirmTitle => 'Discard local offline edits?';
+
+  @override
+  String offlineDiscardLocalConfirmBody(String name) {
+    return '\"$name\" has un-synced local modifications or conflicts. Continuing will overwrite or remove the local changes.';
+  }
+
+  @override
+  String offlineUploadedNotice(String name) {
+    return 'Uploaded \"$name\" to remote.';
+  }
+
+  @override
+  String get offlineCheckUpdatesTooltip => 'Check Updates';
+
+  @override
+  String get offlineSyncAllTooltip => 'Sync All';
+
+  @override
+  String get offlineLruCapTooltip => 'LRU Cache Cap';
+
+  @override
+  String offlineLruCapOption(String size) {
+    return 'LRU Cap: $size';
+  }
+
+  @override
+  String get offlineUploadLocalTooltip => 'Upload local changes to remote';
+
+  @override
+  String offlineBannerSummary(int count, String used, String cap) {
+    return '$count pinned · $used / $cap';
+  }
+
+  @override
+  String get offlineStatusLocalModified => 'Local Modified';
+
+  @override
+  String get offlineStatusRemoteNewer => 'Remote Newer';
+
+  @override
+  String get offlineStatusConflict => 'Conflict';
+
+  @override
+  String get offlineStatusSynced => 'Synced';
+
+  @override
+  String get offlineStatusMissingLocal => 'Missing Local';
+
+  @override
+  String get offlineStatusOffline => 'Offline';
+
+  @override
+  String get browserSelectItemsFirst => 'Select at least one item first.';
+
+  @override
+  String clipboardReadOnlyHint(int count) {
+    return 'Clipboard: $count item(s) ready (read-only folder)';
+  }
+
+  @override
+  String get peerTabDirectTransfer => 'Direct Transfer';
+
+  @override
+  String get peerTabWebdavShare => 'WebDAV / Browser Share';
+
+  @override
+  String peerPendingItemsToSend(int count) {
+    return '$count item(s) ready to send';
+  }
+
+  @override
+  String get peerReceiveFolderMustBeLocal =>
+      'Receive folder must be on local storage.';
+
+  @override
+  String get peerOpenReceivedFolder => 'Open Folder';
+
+  @override
+  String get peerCopyReceivedText => 'Copy Text';
+
+  @override
+  String get peerTextCopied => 'Received text copied to clipboard.';
+
+  @override
+  String get peerWaitingForAccept => 'Sending / waiting for peer to accept...';
+
+  @override
+  String get peerOfferStatusAccepted => 'Accepted';
+
+  @override
+  String get peerOfferStatusCompleted => 'Completed';
+
+  @override
+  String get peerOfferStatusRejected => 'Rejected';
+
+  @override
+  String get peerOfferStatusReceiving => 'Receiving';
+
+  @override
+  String get photoBackupScanning => 'Scanning photos & folders...';
+
+  @override
+  String get photoBackupCancel => 'Cancel';
+
+  @override
+  String photoBackupCancelledNotice(int count) {
+    return 'Photo backup cancelled (uploaded $count).';
+  }
+
+  @override
+  String get photoBackupResetHistory => 'Reset Backup History';
+
+  @override
+  String get photoBackupResetHistoryConfirm =>
+      'Clear local backup history so previously backed-up photos will be uploaded again?';
+
+  @override
+  String photoBackupLastRun(String time) {
+    return 'Last backup: $time';
+  }
+
+  @override
+  String photoBackupProgressCount(int uploaded, int total) {
+    return '$uploaded / $total uploaded';
+  }
+
+  @override
+  String get photoBackupOpenDestination => 'Open Destination';
+
+  @override
+  String get photoBackupVaultLocked => 'Target Privacy Folder is locked';
+
+  @override
+  String get photoBackupPermissionDeniedTitle =>
+      'Photo Library Permission Needed';
+
+  @override
+  String get photoBackupPermissionDeniedBody =>
+      'Allow photo library access in system settings to choose albums or back up photos.';
+
+  @override
+  String get photoBackupOpenSettings => 'Open Settings';
+
+  @override
+  String get syncSaveProfileTitle => 'Save Sync Profile';
+
+  @override
+  String get syncProfileNameLabel => 'Profile name';
+
+  @override
+  String get syncSourceLabel => 'Source';
+
+  @override
+  String get syncDestinationLabel => 'Destination';
+
+  @override
+  String get syncScanLimitReached =>
+      'Scan limit reached; preview is truncated.';
+
+  @override
+  String syncSummaryChanges(int changes, int unchanged) {
+    return '$changes change(s) · $unchanged unchanged';
+  }
+
+  @override
+  String get syncConfirmMirrorDeleteTitle => 'Confirm Mirror Deletions';
+
+  @override
+  String syncConfirmMirrorDeleteBody(int count) {
+    return 'This sync will delete $count extra file(s)/folder(s) from the destination. Continue?';
+  }
+
+  @override
+  String syncConfirmDeleteProfileBody(String name) {
+    return 'Delete saved sync profile \"$name\"?';
+  }
+
+  @override
+  String get syncSwapFoldersTooltip => 'Swap source and destination';
+
+  @override
+  String get syncSelectAll => 'Select All';
+
+  @override
+  String get syncDeselectAll => 'Deselect All';
+
+  @override
+  String get syncActionCopy => 'COPY';
+
+  @override
+  String get syncActionUpdate => 'UPDATE';
+
+  @override
+  String get syncActionDelete => 'DELETE';
+
+  @override
+  String get syncActionPullUpdate => 'PULL UPDATE';
+
+  @override
+  String get syncEditConfig => 'Edit Folders';
+
+  @override
+  String syncAutoSyncFailed(String error) {
+    return 'Last auto-sync failed: $error';
+  }
+
+  @override
+  String get taskStatusPaused => 'Paused';
+
+  @override
+  String taskRateLimitActive(String limit) {
+    return 'Limit: $limit';
+  }
+
+  @override
+  String taskFailedItemsTitle(int count) {
+    return 'Failed items ($count)';
+  }
+
+  @override
+  String get taskRetryStarted => 'Retrying failed items in background.';
+
+  @override
+  String analyzerStatsSummary(int files, int folders) {
+    return '$files files · $folders folders';
+  }
+
+  @override
+  String get analyzerScanCancelled =>
+      'Analysis cancelled (showing partial results).';
+
+  @override
+  String get analyzerScanTruncated =>
+      'Reached scan limit; totals may exclude deeper folders.';
+
+  @override
+  String get analyzerRescan => 'Rescan';
+
+  @override
+  String duplicatesGroupCount(int count) {
+    return '$count group(s)';
+  }
+
+  @override
+  String duplicatesCopiesCount(int count) {
+    return '($count copies)';
+  }
+
+  @override
+  String duplicatesEachSize(String size) {
+    return '$size each';
+  }
+
+  @override
+  String duplicatesDeleteFailed(int count) {
+    return '$count item(s) failed to delete';
+  }
+
+  @override
+  String duplicatesAllCopiesWarning(int count) {
+    return 'Warning: $count group(s) have ALL copies selected for deletion!';
+  }
+
+  @override
+  String get duplicatesClearSelection => 'Clear Selection';
+
+  @override
+  String get duplicatesScanCancelled => 'Duplicate scan was cancelled.';
+
+  @override
+  String duplicatesTrashConfirmBody(int count) {
+    return 'Move $count duplicate item(s) to the Recycle Bin?';
+  }
+
+  @override
+  String categoryTruncatedBanner(int count) {
+    return 'Showing first $count matching files (result limit reached).';
+  }
+
+  @override
+  String get galleryLocateInFolder => 'Locate in Folder';
+
+  @override
+  String get galleryUnsupportedFormatForPick =>
+      'This file type is not accepted by the caller.';
+
+  @override
+  String galleryExifSkippedNonJpeg(int count) {
+    return 'Skipped $count non-JPEG photo(s) (EXIF strip supports JPEG).';
+  }
+
+  @override
+  String searchFiltersLabel(int count) {
+    return 'Filters ($count)';
+  }
+
+  @override
+  String get searchAllTypes => 'All Types';
+
+  @override
+  String get pdfEncryptedError =>
+      'This PDF is encrypted or password-protected.';
+
+  @override
+  String pdfPageTextTitle(int page) {
+    return 'Page $page Text';
+  }
+
+  @override
+  String get pdfPageTextCopied => 'Page text copied to clipboard.';
+
+  @override
+  String get pdfNoSelectableText =>
+      'No selectable text detected on this page (it may be a scanned image).';
+
+  @override
+  String get pdfSelectCopyPageText => 'Select / Copy Page Text';
+
+  @override
+  String pdfRenderPageFailed(int page) {
+    return 'Failed to render page $page.';
+  }
+
+  @override
+  String get structuredEmptyValue => '(empty)';
+
+  @override
+  String structuredCsvTruncated(int shown, int total) {
+    return 'Showing first $shown of $total rows.';
+  }
+
+  @override
+  String get copyXPath => 'Copy XPath';
+
+  @override
+  String get subtitleLoadFailed => 'Unsupported or unreadable subtitle file.';
+
+  @override
+  String get diffTruncatedNotice =>
+      'Directory diff reached the entry limit; some deeper entries were omitted.';
+
+  @override
+  String get diffSyncFoldersAction => 'Open in Sync';
+
+  @override
+  String get vaultHtmlBrowserWarning =>
+      'Cannot open decrypted Privacy Folder HTML in an external browser (zero-disk policy).';
+
+  @override
+  String get poolStorageDirectory => 'Storage Directory';
+
+  @override
+  String get poolPickDirectory => 'Choose Folder';
+
+  @override
+  String poolReplicationBadge(int count) {
+    return '${count}x Replicas';
+  }
+
+  @override
+  String get poolSetReplicationTitle => 'Set Replication Factor';
+
+  @override
+  String get poolSetReplicationHint =>
+      'Applies immediately to new writes; run Heal to replicate existing files up to the new target.';
+
+  @override
+  String poolNodeRealFreeWithTotal(String free, String total) {
+    return 'Free $free / $total';
+  }
+
+  @override
+  String poolNodeRealFreeOnly(String free) {
+    return 'Free $free';
+  }
+
+  @override
+  String get poolNodeSpaceUnavailable => 'Free space unavailable';
+
+  @override
+  String get poolNodeSpaceProbing => 'Checking free space…';
+
+  @override
+  String poolNodePoolUsed(String used) {
+    return 'Pool used: $used';
+  }
+
+  @override
+  String poolNodeDirectoryLabel(String dir) {
+    return 'Dir: $dir';
+  }
+
+  @override
+  String get remoteBatchExportAction => 'Batch Encrypted Export';
+
+  @override
+  String get remoteBatchImportAction => 'Batch Encrypted Import';
+
+  @override
+  String get remoteBatchExportTitle => 'Batch Export Connections';
+
+  @override
+  String get remoteBatchExportSubtitle =>
+      'Connections and credentials are encrypted with AES-256-GCM using your password.';
+
+  @override
+  String remoteBatchSelectCount(int selected, int total) {
+    return 'Selected $selected / $total';
+  }
+
+  @override
+  String get remoteBatchSelectAll => 'Select All';
+
+  @override
+  String get remoteBatchDeselectAll => 'Deselect All';
+
+  @override
+  String get remoteBatchUnreadableSkipped =>
+      'Unreadable credentials (cannot be exported)';
+
+  @override
+  String get remoteBatchNoReadableToExport =>
+      'No readable remote connections available to export.';
+
+  @override
+  String get remoteBatchExportPasswordLabel => 'Encryption Password (Required)';
+
+  @override
+  String remoteBatchExportPasswordHint(int min) {
+    return 'At least $min characters';
+  }
+
+  @override
+  String get remoteBatchExportPasswordConfirmLabel =>
+      'Confirm Encryption Password';
+
+  @override
+  String get remoteBatchPasswordRequiredNote =>
+      'Remember this password — it is required when importing these connections.';
+
+  @override
+  String remoteBatchPasswordTooShort(int min) {
+    return 'Password must be at least $min characters.';
+  }
+
+  @override
+  String get remoteBatchPasswordMismatch => 'Passwords do not match.';
+
+  @override
+  String get remoteBatchSaveFileAction => 'Save Encrypted File';
+
+  @override
+  String get remoteBatchShareFileAction => 'Export / Share File';
+
+  @override
+  String remoteBatchExportSavedNotice(int count, String path) {
+    return 'Encrypted $count connection(s) to $path';
+  }
+
+  @override
+  String remoteBatchExportSharedNotice(int count) {
+    return 'Prepared encrypted backup for $count connection(s).';
+  }
+
+  @override
+  String remoteBatchExportCopiedNotice(int count) {
+    return 'Copied encrypted backup of $count connection(s) to clipboard.';
+  }
+
+  @override
+  String get remoteBatchImportTitle => 'Batch Import Connections';
+
+  @override
+  String get remoteBatchChooseFile => 'Choose Backup File';
+
+  @override
+  String get remoteBatchPasteClipboard => 'Paste from Clipboard';
+
+  @override
+  String get remoteBatchClipboardDetected =>
+      'Encrypted backup detected in clipboard.';
+
+  @override
+  String get remoteBatchClipboardEmpty => 'Clipboard is empty.';
+
+  @override
+  String remoteBatchSelectedFileLabel(String name) {
+    return 'Selected file: $name';
+  }
+
+  @override
+  String get remoteBatchPasteFieldHint =>
+      'Or paste encrypted .fmremotes / .fmbak content…';
+
+  @override
+  String get remoteBatchImportPasswordLabel => 'Decryption Password (Required)';
+
+  @override
+  String get remoteBatchImportPasswordHint =>
+      'Enter the password set during export';
+
+  @override
+  String get remoteBatchDecryptAction => 'Decrypt & Preview';
+
+  @override
+  String remoteBatchPreviewSummary(int count) {
+    return 'Decrypted $count connection(s)';
+  }
+
+  @override
+  String get remoteBatchConflictSectionLabel =>
+      'When connection already exists:';
+
+  @override
+  String get remoteBatchConflictSkip => 'Skip';
+
+  @override
+  String get remoteBatchConflictOverwrite => 'Overwrite';
+
+  @override
+  String get remoteBatchConflictKeepBoth => 'Keep Both';
+
+  @override
+  String get remoteBatchBadgeNew => 'New';
+
+  @override
+  String get remoteBatchBadgeExists => 'Exists';
+
+  @override
+  String get remoteBatchAllSkippedHint =>
+      'All selected connections already exist and will be skipped. Switch to Overwrite or Keep Both to import them.';
+
+  @override
+  String remoteBatchImportConfirm(int count) {
+    return 'Import ($count)';
+  }
+
+  @override
+  String remoteBatchImportSummary(
+    int imported,
+    int added,
+    int overwritten,
+    int duplicated,
+    int skipped,
+    String detail,
+  ) {
+    return 'Imported $imported connection(s) ($added new, $overwritten updated, $duplicated copied, $skipped skipped)$detail';
+  }
+
+  @override
+  String get remoteBatchErrorNotEncrypted =>
+      'Unencrypted plaintext data is not allowed. Please select a password-encrypted backup.';
+
+  @override
+  String get remoteBatchErrorInvalidFormat => 'Invalid backup file format.';
+
+  @override
+  String get remoteBatchErrorWrongPassword =>
+      'Incorrect password or corrupted backup file.';
+
+  @override
+  String get remoteBatchErrorEmptyBundle =>
+      'This backup contains no valid remote connections.';
+
+  @override
+  String get remoteBatchErrorFileTooLarge =>
+      'Selected file is too large to be a connection backup.';
+
+  @override
+  String get remoteBatchBackStep => 'Back';
 }

@@ -9,6 +9,7 @@ import 'package:filemanager/l10n/app_localizations.dart';
 import '../dialogs/folder_picker_dialog.dart';
 import '../rust/api/file_manager.dart';
 import '../services/file_open_service.dart';
+import '../services/global_playback_service.dart';
 import '../services/highlight_service.dart';
 import '../services/markdown_pdf_service.dart';
 import '../services/path_utils.dart';
@@ -275,6 +276,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   @override
   void dispose() {
+    GlobalPlaybackService.instance.setNamedBottomInset('text_editor', 0.0);
     VaultService.instance.removeListener(_onVaultChanged);
     _findDebounce?.cancel();
     _controller.removeListener(_updateCursorPosition);
@@ -363,6 +365,11 @@ class _TextEditorPageState extends State<TextEditorPage> {
       return;
     }
 
+    final switchedFromPreview = _mode == TextFileMode.preview;
+    if (switchedFromPreview) {
+      setState(() => _mode = TextFileMode.code);
+    }
+
     _ensureLineCache(text);
     final targetLineIdx = (targetLine - 1).clamp(0, (_cachedLinesList?.length ?? 1) - 1);
     final offset = (_cachedLineStarts != null && targetLineIdx < _cachedLineStarts!.length)
@@ -371,7 +378,13 @@ class _TextEditorPageState extends State<TextEditorPage> {
     int lineEnd = text.indexOf('\n', offset);
     if (lineEnd == -1) lineEnd = text.length;
     _controller.selection = TextSelection(baseOffset: offset, extentOffset: lineEnd);
-    _scrollToMatch(offset, force: true);
+    if (switchedFromPreview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToMatch(offset, force: true);
+      });
+    } else {
+      _scrollToMatch(offset, force: true);
+    }
   }
 
   void _openFind({bool replace = false}) {
@@ -1190,6 +1203,12 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Future<void> _openInBrowser() async {
+    if (isVaultRoot(_root)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).vaultHtmlBrowserWarning)),
+      );
+      return;
+    }
     if (_isDirty) {
       final shouldSave = await showDialog<bool>(
         context: context,
@@ -1248,13 +1267,19 @@ class _TextEditorPageState extends State<TextEditorPage> {
     }
     if (result.formatted != _controller.text) {
       _controller.text = result.formatted;
+      _clearLineCache();
       setState(() => _isDirty = true);
+      _updateMatches(jumpToMatch: false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final canPreview = !_largeFileMode && (_isMarkdown || _isHtml || _isJson);
+    GlobalPlaybackService.instance.setNamedBottomInset(
+      'text_editor',
+      (!_loading && _error == null) ? 40.0 : 0.0,
+    );
 
     return AppSwipeBack(
       child: CallbackShortcuts(

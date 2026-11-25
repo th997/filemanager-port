@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `stop_media_streams_for_vault`
+// These functions are ignored because they are not marked as `pub`: `stop_media_streams_for_pool`, `stop_media_streams_for_vault`, `stop_webdav_for_vault`, `unique_send_filename`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 Future<ServerStatusDto> startLanHttpServer({
@@ -67,6 +67,7 @@ Future<ServerStatusDto> startLanWebdavServer({
   String? username,
   String? password,
   required bool readOnly,
+  String? defaultLang,
 }) => RustLib.instance.api.crateApiServersStartLanWebdavServer(
   root: root,
   relPath: relPath,
@@ -74,6 +75,7 @@ Future<ServerStatusDto> startLanWebdavServer({
   username: username,
   password: password,
   readOnly: readOnly,
+  defaultLang: defaultLang,
 );
 
 bool stopLanWebdavServer() =>

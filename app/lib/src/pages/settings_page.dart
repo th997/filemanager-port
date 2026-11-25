@@ -23,6 +23,7 @@ class SettingsPage extends StatefulWidget {
   final ValueChanged<String> onLocaleChanged;
   final String accentCode;
   final ValueChanged<String> onAccentChanged;
+  final VoidCallback? onConfigImported;
 
   const SettingsPage({
     super.key,
@@ -32,6 +33,7 @@ class SettingsPage extends StatefulWidget {
     required this.onLocaleChanged,
     required this.accentCode,
     required this.onAccentChanged,
+    this.onConfigImported,
   });
 
   @override
@@ -43,10 +45,14 @@ class _SettingsPageState extends State<SettingsPage> {
   // of those values and never rebuilt when they change, so the dropdowns and
   // subtitles kept showing the old choice after a selection.
   late ThemeMode _themeMode = widget.currentThemeMode;
-  late String _accentCode = widget.accentCode;
-  late String _localeCode = widget.localeCode;
-  late int _bufferDurationSec = PreferencesService.instance.bufferDurationSec;
-  late int _bufferSizeMb = PreferencesService.instance.bufferSizeMb;
+  late String _accentCode = _normalizeAccent(widget.accentCode);
+  late String _localeCode = _normalizeLocale(widget.localeCode);
+  late int _bufferDurationSec = _normalizeBufferDuration(
+    PreferencesService.instance.bufferDurationSec,
+  );
+  late int _bufferSizeMb = _normalizeBufferSize(
+    PreferencesService.instance.bufferSizeMb,
+  );
   late int _vaultAutoLockSec = _normalizeAutoLockSec(
     PreferencesService.instance.vaultAutoLockTimeoutSec,
   );
@@ -56,6 +62,44 @@ class _SettingsPageState extends State<SettingsPage> {
   static int _normalizeAutoLockSec(int raw) {
     const allowed = {0, 60, 300, 600, -1};
     return allowed.contains(raw) ? raw : 600;
+  }
+
+  static String _normalizeLocale(String raw) {
+    const allowed = {'system', 'en', 'zh', 'ja'};
+    return allowed.contains(raw) ? raw : 'system';
+  }
+
+  static String _normalizeAccent(String raw) {
+    const allowed = {'dynamic', 'deepTeal', 'classicBlue', 'indigo', 'forest', 'sunset', 'grape'};
+    if (!allowed.contains(raw)) return 'deepTeal';
+    if (!PlatformCapabilities.supportsDynamicColor && raw == 'dynamic') {
+      return 'deepTeal';
+    }
+    return raw;
+  }
+
+  static int _normalizeBufferDuration(int raw) {
+    const allowed = {5, 15, 30, 60, 120};
+    return allowed.contains(raw) ? raw : 30;
+  }
+
+  static int _normalizeBufferSize(int raw) {
+    const allowed = {4, 8, 16, 32, 64, 128};
+    return allowed.contains(raw) ? raw : 16;
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentThemeMode != widget.currentThemeMode) {
+      _themeMode = widget.currentThemeMode;
+    }
+    if (oldWidget.accentCode != widget.accentCode) {
+      _accentCode = _normalizeAccent(widget.accentCode);
+    }
+    if (oldWidget.localeCode != widget.localeCode) {
+      _localeCode = _normalizeLocale(widget.localeCode);
+    }
   }
 
   String _autoLockLabel(int sec) {
@@ -188,15 +232,15 @@ class _SettingsPageState extends State<SettingsPage> {
     int inboxTotal = 0;
     try {
       final tempDir = await getTemporaryDirectory();
-      if (tempDir.existsSync()) {
-        for (final file in tempDir.listSync(recursive: true, followLinks: false)) {
+      if (await tempDir.exists()) {
+        await for (final file in tempDir.list(recursive: true, followLinks: false)) {
           if (file is File) {
             try {
               final pth = file.path.replaceAll('\\', '/');
               // Rust's archiveCacheSize() counts temp_dir/fm_archive_cache;
               // skip it here so desktop/iOS platforms never double-count it.
               if (pth.contains('/fm_archive_cache/')) continue;
-              final len = file.lengthSync();
+              final len = await file.length();
               tempTotal += len;
               if (pth.contains('/inbox/') || pth.contains('/Inbox/')) {
                 inboxTotal += len;
@@ -353,21 +397,23 @@ class _SettingsPageState extends State<SettingsPage> {
     final passwordController = TextEditingController();
     var includeRemotes = true;
     var obscurePassword = true;
+    final outerL10n = AppLocalizations.of(context);
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
+          final l10n = AppLocalizations.of(ctx);
           final hasPassword = passwordController.text.isNotEmpty;
           return AlertDialog(
-            title: const Text('Export Device Migration Backup'),
+            title: Text(l10n.exportMigrationTitle),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Set a password to save an encrypted .fmbak backup including remote connections, bookmarks, and preferences. Leave blank to export unencrypted bookmarks & preferences only.',
-                    style: TextStyle(fontSize: 12),
+                  Text(
+                    l10n.exportMigrationPasswordHint,
+                    style: const TextStyle(fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -375,7 +421,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     obscureText: obscurePassword,
                     onChanged: (_) => setDialogState(() {}),
                     decoration: InputDecoration(
-                      labelText: 'Encryption Password',
+                      labelText: l10n.exportMigrationPasswordLabel,
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -396,15 +442,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     onChanged: hasPassword
                         ? (v) => setDialogState(() => includeRemotes = v ?? true)
                         : null,
-                    title: const Text(
-                      'Include remote connections (S3 / SFTP / SMB / WebDAV)',
-                      style: TextStyle(fontSize: 13),
+                    title: Text(
+                      l10n.exportIncludeCredentials,
+                      style: const TextStyle(fontSize: 13),
                     ),
                     subtitle: hasPassword
                         ? null
-                        : const Text(
-                            'Requires an encryption password',
-                            style: TextStyle(fontSize: 11),
+                        : Text(
+                            l10n.exportMigrationPasswordHint,
+                            style: const TextStyle(fontSize: 11),
                           ),
                   ),
                 ],
@@ -413,17 +459,21 @@ class _SettingsPageState extends State<SettingsPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(AppLocalizations.of(ctx).cancel),
+                child: Text(l10n.cancel),
               ),
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop('clipboard'),
-                child: const Text('Copy JSON'),
+                child: Text(
+                  hasPassword ? l10n.copyEncryptedAction : l10n.copyJsonAction,
+                ),
               ),
               FilledButton(
-                onPressed: hasPassword
-                    ? () => Navigator.of(ctx).pop('file')
-                    : null,
-                child: const Text('Save .fmbak'),
+                onPressed: () => Navigator.of(ctx).pop('file'),
+                child: Text(
+                  hasPassword
+                      ? l10n.saveBackupFileAction
+                      : l10n.saveJsonFileAction,
+                ),
               ),
             ],
           );
@@ -434,7 +484,8 @@ class _SettingsPageState extends State<SettingsPage> {
     passwordController.dispose();
     if (action == null || !mounted) return;
     try {
-      final payload = password.isNotEmpty
+      final isEncrypted = password.isNotEmpty;
+      final payload = isEncrypted
           ? await StorageService.instance.exportEncryptedMigrationBundle(
               password,
               includeRemotes: includeRemotes,
@@ -442,7 +493,9 @@ class _SettingsPageState extends State<SettingsPage> {
           : await StorageService.instance.exportAppConfigBundleJson();
       if (action == 'file') {
         final loc = await getSaveLocation(
-          suggestedName: 'filemanager-migration.fmbak',
+          suggestedName: isEncrypted
+              ? 'filemanager-migration.fmbak'
+              : 'filemanager-config.json',
           acceptedTypeGroups: const [
             XTypeGroup(
               label: 'FileManager Migration Backup',
@@ -454,25 +507,22 @@ class _SettingsPageState extends State<SettingsPage> {
         await File(loc.path).writeAsString(payload);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Encrypted migration backup saved to ${loc.path}.')),
+          SnackBar(content: Text(outerL10n.exportSavedNotice(loc.path))),
         );
       } else {
         await Clipboard.setData(ClipboardData(text: payload));
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              password.isNotEmpty
-                  ? 'Encrypted migration backup copied to clipboard.'
-                  : 'Bookmarks & preferences backup copied to clipboard.',
-            ),
-          ),
+          SnackBar(content: Text(outerL10n.exportCopiedNotice)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
+          SnackBar(
+            content: Text('$e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     }
@@ -490,18 +540,52 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  void _syncPreferencesAfterImport() {
+    final prefs = PreferencesService.instance;
+    prefs.flush();
+    final savedTheme = prefs.getString('theme_mode');
+    final nextTheme = ThemeMode.values.firstWhere(
+      (m) => m.name == savedTheme,
+      orElse: () => ThemeMode.system,
+    );
+    final nextLocale = _normalizeLocale(prefs.getString('app.language') ?? 'system');
+    final nextAccent = _normalizeAccent(prefs.getString('app.accent') ?? 'deepTeal');
+    prefs.syncToolbarAtBottom();
+    PreferencesService.historyRetentionDaysNotifier.value = prefs.historyRetentionDays;
+    PreferencesService.vaultVideoThumbnailsNotifier.value =
+        prefs.getBool(PreferencesService.prefVaultVideoThumbnails) ?? false;
+
+    setState(() {
+      _themeMode = nextTheme;
+      _localeCode = nextLocale;
+      _accentCode = nextAccent;
+      _bufferDurationSec = _normalizeBufferDuration(prefs.bufferDurationSec);
+      _bufferSizeMb = _normalizeBufferSize(prefs.bufferSizeMb);
+      _vaultAutoLockSec = _normalizeAutoLockSec(prefs.vaultAutoLockTimeoutSec);
+      _historyRetentionDays = prefs.historyRetentionDays;
+    });
+    widget.onThemeModeChanged(nextTheme);
+    widget.onLocaleChanged(nextLocale);
+    widget.onAccentChanged(nextAccent);
+    widget.onConfigImported?.call();
+  }
+
   Future<void> _importAppConfig() async {
     final contentController = TextEditingController();
     final passwordController = TextEditingController();
     var obscurePassword = true;
+    String? dialogError;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final isEncrypted =
-              _looksLikeEncryptedMigrationEnvelope(contentController.text.trim());
+          final l10n = AppLocalizations.of(ctx);
+          final rawText = contentController.text.trim();
+          final isEncrypted = _looksLikeEncryptedMigrationEnvelope(rawText);
+          final canSubmit =
+              rawText.isNotEmpty && (!isEncrypted || passwordController.text.isNotEmpty);
           return AlertDialog(
-            title: const Text('Import Device Configuration'),
+            title: Text(l10n.importMigrationTitle),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -509,40 +593,52 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   OutlinedButton.icon(
                     onPressed: () async {
-                      final file = await openFile(
-                        acceptedTypeGroups: const [
-                          XTypeGroup(
-                            label: 'FileManager Migration Backup',
-                            extensions: ['fmbak', 'json'],
-                          ),
-                        ],
-                      );
-                      if (file == null) return;
-                      final text = await File(file.path).readAsString();
-                      contentController.text = text;
-                      setDialogState(() {});
+                      try {
+                        final file = await openFile(
+                          acceptedTypeGroups: const [
+                            XTypeGroup(
+                              label: 'FileManager Migration Backup',
+                              extensions: ['fmbak', 'json'],
+                            ),
+                          ],
+                        );
+                        if (file == null) return;
+                        final text = await file.readAsString();
+                        contentController.text = text;
+                        dialogError = null;
+                        setDialogState(() {});
+                      } catch (e) {
+                        dialogError = '$e';
+                        setDialogState(() {});
+                      }
                     },
                     icon: const Icon(Icons.file_open_outlined),
-                    label: const Text('Choose .fmbak or .json File'),
+                    label: Text(l10n.chooseBackupFileAction),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: contentController,
                     maxLines: 6,
-                    onChanged: (_) => setDialogState(() {}),
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Or paste exported JSON / encrypted backup here...',
+                    onChanged: (_) {
+                      dialogError = null;
+                      setDialogState(() {});
+                    },
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
+                      hintText: l10n.importPasteHint,
                     ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: passwordController,
                     obscureText: obscurePassword,
+                    onChanged: (_) {
+                      dialogError = null;
+                      setDialogState(() {});
+                    },
                     decoration: InputDecoration(
-                      labelText: isEncrypted
-                          ? 'Decryption Password (Required)'
-                          : 'Decryption Password (If .fmbak)',
+                      labelText: l10n.importPasswordLabel,
+                      hintText: l10n.importPasswordHint,
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -556,17 +652,37 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                   ),
+                  if (isEncrypted && passwordController.text.isEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      l10n.importPasswordRequiredError,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Theme.of(ctx).colorScheme.warning,
+                      ),
+                    ),
+                  ],
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      dialogError!,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Theme.of(ctx).colorScheme.error,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(AppLocalizations.of(ctx).cancel),
+                child: Text(l10n.cancel),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text(AppLocalizations.of(ctx).ok),
+                onPressed: canSubmit ? () => Navigator.of(ctx).pop(true) : null,
+                child: Text(l10n.ok),
               ),
             ],
           );
@@ -578,6 +694,7 @@ class _SettingsPageState extends State<SettingsPage> {
     contentController.dispose();
     passwordController.dispose();
     if (confirmed != true || raw.isEmpty || !mounted) return;
+    final l10n = AppLocalizations.of(context);
     try {
       if (_looksLikeEncryptedMigrationEnvelope(raw) || password.isNotEmpty) {
         final res = await StorageService.instance.importEncryptedMigrationBundle(
@@ -585,31 +702,36 @@ class _SettingsPageState extends State<SettingsPage> {
           password,
         );
         if (!mounted) return;
+        _syncPreferencesAfterImport();
         final failed = StorageService.instance.lastImportFailures;
-        final failNote =
-            failed.isEmpty ? '' : ' (${failed.length} remotes failed)';
+        final failNote = failed.isEmpty
+            ? ''
+            : l10n.remoteImportFailedSummary(failed.length, failed.join(', '));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Imported ${res.remotes} remotes, ${res.bookmarks} bookmarks, and ${res.preferences} preferences$failNote.',
+              '${l10n.importSummaryNotice(res.remotes, res.bookmarks, res.preferences)}$failNote',
             ),
+            backgroundColor: failed.isNotEmpty ? Theme.of(context).colorScheme.error : null,
           ),
         );
       } else {
         final res = await StorageService.instance.importAppConfigBundleJson(raw);
         if (!mounted) return;
+        _syncPreferencesAfterImport();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Imported ${res.bookmarks} bookmarks and ${res.preferences} preferences.',
-            ),
+            content: Text(l10n.importSummaryNotice(0, res.bookmarks, res.preferences)),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
+          SnackBar(
+            content: Text('$e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     }
@@ -1031,14 +1153,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     color: Colors.amber.withValues(alpha: 0.14),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber),
-                        SizedBox(width: 8),
+                        const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'OS keyring & key-file persistence unavailable; remote credentials are currently stored unencrypted in SQLite.',
-                            style: TextStyle(fontSize: 11.5),
+                            l10n.unencryptedCredentialsBanner,
+                            style: const TextStyle(fontSize: 11.5),
                           ),
                         ),
                       ],
@@ -1096,32 +1218,43 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.import_export_rounded,
                     color: Colors.teal,
                   ),
-                  title: const Text('Backup & Restore Configuration'),
-                  subtitle: const Text(
-                    'Encrypted .fmbak device migration (remotes, bookmarks, preferences) or JSON export',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                  title: Text(l10n.backupRestoreConfigTitle),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.backupRestoreConfigSubtitle,
+                          style: const TextStyle(fontSize: 11),
                         ),
-                        onPressed: _exportAppConfig,
-                        child: const Text('Export'),
-                      ),
-                      const SizedBox(width: 6),
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.upload_file, size: 16),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              onPressed: _exportAppConfig,
+                              label: Text(l10n.exportAction),
+                            ),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.download_for_offline_outlined, size: 16),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              onPressed: _importAppConfig,
+                              label: Text(l10n.importAction),
+                            ),
+                          ],
                         ),
-                        onPressed: _importAppConfig,
-                        child: const Text('Import'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],

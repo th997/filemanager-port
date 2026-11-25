@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
 import '../controllers/image_prefetch_controller.dart';
@@ -47,10 +48,12 @@ class ImageViewerEntry {
   });
 
   bool get isLocal => localPath != null;
-  bool get canDelete =>
-      deleteHandler != null ||
-      localPath != null ||
-      (root != null && remotePath != null);
+  bool get canDelete {
+    if (root?.startsWith('archive://') == true) return false;
+    return deleteHandler != null ||
+        localPath != null ||
+        (root != null && remotePath != null);
+  }
 }
 
 /// Reading layout for [ImageViewerPage]: classic swipe (`single`), vertical
@@ -200,7 +203,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
 
     _pageController = PageController(initialPage: _index);
     _spreadController = PageController(initialPage: _index ~/ 2);
-    _webtoonController = ScrollController();
+    _webtoonController = ScrollController()..addListener(_onWebtoonScroll);
     _transformationController.addListener(_onTransformChanged);
     VaultService.instance.addListener(_onVaultChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -267,6 +270,39 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
         ImageReadingMode.doublePage => Icons.menu_book_outlined,
       };
 
+  final Map<int, GlobalKey> _webtoonItemKeys = {};
+
+  GlobalKey _webtoonKeyFor(int i) =>
+      _webtoonItemKeys.putIfAbsent(i, GlobalKey.new);
+
+  void _onWebtoonScroll() {
+    if (!mounted || _readingMode != ImageReadingMode.webtoon) return;
+    final viewHeight = MediaQuery.sizeOf(context).height;
+    final targetY = viewHeight * 0.4;
+    int? bestIdx;
+    double bestDist = double.infinity;
+    for (final entry in _webtoonItemKeys.entries) {
+      if (entry.key < 0 || entry.key >= _entries.length) continue;
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final ro = ctx.findRenderObject();
+      if (ro is! RenderBox || !ro.attached || !ro.hasSize) continue;
+      final top = ro.localToGlobal(Offset.zero).dy;
+      final bottom = top + ro.size.height;
+      if (bottom < 0 || top > viewHeight) continue;
+      final center = (top + bottom) * 0.5;
+      final dist = (center - targetY).abs();
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = entry.key;
+      }
+    }
+    if (bestIdx != null && bestIdx != _index) {
+      setState(() => _index = bestIdx!);
+      _prefetchNeighbors();
+    }
+  }
+
   Future<void> _stripExifCurrent() async {
     if (_isVaultEntry(_current)) return;
     final l10n = AppLocalizations.of(context);
@@ -274,6 +310,19 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       final native = await _localPathFor(_index);
       final savedPath = await ImagePrivacyService.stripExifAndSaveCopy(native);
       if (!mounted) return;
+      final savedEntry = ImageViewerEntry(
+        name: p.basename(savedPath),
+        localPath: savedPath,
+      );
+      setState(() {
+        final next = List<ImageViewerEntry>.of(_entries);
+        final insertAt = (_index + 1).clamp(0, next.length);
+        if (!next.any((e) => e.localPath == savedPath)) {
+          next.insert(insertAt, savedEntry);
+        }
+        _entries = next;
+      });
+      widget.onDeleted?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.stripExifDone(savedPath))),
       );
@@ -326,6 +375,23 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       }
     } else {
       setState(() => _index = index);
+      final targetCtx = _webtoonItemKeys[index]?.currentContext;
+      if (targetCtx != null) {
+        Scrollable.ensureVisible(
+          targetCtx,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      } else if (_webtoonController.hasClients && _entries.length > 1) {
+        final maxExt = _webtoonController.position.maxScrollExtent;
+        final approx =
+            (maxExt * index / (_entries.length - 1)).clamp(0.0, maxExt);
+        _webtoonController.animateTo(
+          approx,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
     }
   }
 
@@ -1127,65 +1193,73 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Text(
-                  _current.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const Divider(),
-              if (!_isVaultEntry(_current)) ...[
-                if (PlatformCapabilities.supportsNativeShareSheet)
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Text(
+                      _current.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Divider(),
+                  if (!_isVaultEntry(_current)) ...[
+                    if (PlatformCapabilities.supportsNativeShareSheet)
+                      ListTile(
+                        leading: const Icon(Icons.share),
+                        title: Text(AppLocalizations.of(context).shareImage),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _shareCurrent();
+                        },
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.copy_all_outlined),
+                      title: Text(AppLocalizations.of(context).copyPath),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _copyCurrentPath();
+                      },
+                    ),
+                  ],
                   ListTile(
-                    leading: const Icon(Icons.share),
-                    title: Text(AppLocalizations.of(context).shareImage),
+                    leading: const Icon(Icons.rotate_right),
+                    title: Text(AppLocalizations.of(context).rotate90),
                     onTap: () {
                       Navigator.pop(ctx);
-                      _shareCurrent();
+                      setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
                     },
                   ),
-                ListTile(
-                  leading: const Icon(Icons.copy_all_outlined),
-                  title: Text(AppLocalizations.of(context).copyPath),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _copyCurrentPath();
-                  },
-                ),
-              ],
-              ListTile(
-                leading: const Icon(Icons.rotate_right),
-                title: Text(AppLocalizations.of(context).rotate90),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
-                },
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: Text(AppLocalizations.of(context).imageDetails),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showImageDetails();
+                    },
+                  ),
+                  if (_current.canDelete)
+                    ListTile(
+                      leading: const Icon(Icons.delete_outline, color: Colors.red),
+                      title: Text(AppLocalizations.of(context).deleteImage, style: const TextStyle(color: Colors.red)),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _deleteCurrent();
+                      },
+                    ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: Text(AppLocalizations.of(context).imageDetails),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showImageDetails();
-                },
-              ),
-              if (_current.canDelete)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: Text(AppLocalizations.of(context).deleteImage, style: const TextStyle(color: Colors.red)),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _deleteCurrent();
-                  },
-                ),
-            ],
+            ),
           ),
         );
       },
@@ -1515,7 +1589,8 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
                     ),
                     itemCount: _entries.length,
                     itemBuilder: (ctx, i) {
-                      return Padding(
+                      return Container(
+                        key: _webtoonKeyFor(i),
                         padding: const EdgeInsets.only(bottom: 4),
                         child: GestureDetector(
                           onTap: () => setState(() => _showChrome = !_showChrome),

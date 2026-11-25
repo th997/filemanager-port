@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../dialogs/archive_password_dialog.dart';
 import '../dialogs/task_progress_dialog.dart';
+import '../rust/api/file_manager.dart' show checkArchiveEncrypted;
 import '../rust/api/metadata.dart';
 import '../rust/api/tasks.dart';
 import '../services/path_utils.dart';
@@ -15,32 +16,49 @@ import '../widgets/qr_code_widget.dart';
 /// Extracted file operations helpers shared across browser panes, tabs, and
 /// dual-pane split views.
 class BrowserFileOps {
-  /// Share a local folder or single file immediately over LAN HTTP and display
-  /// a scannable QR code + copyable link dialog.
+  /// Share a folder or file immediately over LAN WebDAV (with browser
+  /// upload/download UI + WebDAV mount) and display a scannable QR code + link.
   static Future<void> shareViaLan(
     BuildContext context, {
     required String nativeTargetPath,
     required String displayName,
+  }) {
+    final split = splitPathToRootAndRel(nativeTargetPath);
+    return shareViaLanWebDav(
+      context,
+      root: split.root,
+      relPath: split.relPath.replaceAll('\\', '/'),
+      displayName: displayName,
+      readOnly: true,
+    );
+  }
+
+  /// Share any VFS folder/file via LAN WebDAV with scannable QR code & NIC picker.
+  static Future<void> shareViaLanWebDav(
+    BuildContext context, {
+    required String root,
+    required String relPath,
+    required String displayName,
+    bool readOnly = true,
   }) async {
     final l10n = AppLocalizations.of(context);
     try {
-      final status = await SharingService.instance.startHttp(
-        rootDir: nativeTargetPath,
-        readOnly: true,
+      final status = await SharingService.instance.startWebDav(
+        root: root,
+        relPath: relPath,
+        readOnly: readOnly,
       );
       if (!context.mounted) return;
       final ips = status.addresses.isNotEmpty ? status.addresses : ['127.0.0.1'];
-      final tokenMatch = RegExp(r'[?&]token=([^&]+)').firstMatch(status.url);
-      final tokenSuffix = tokenMatch != null ? '/?token=${tokenMatch.group(1)}' : '/';
       String selectedIp = ips.first;
 
       await showDialog<void>(
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setState) {
-            final activeUrl = 'http://$selectedIp:${status.port}$tokenSuffix';
+            final activeUrl = 'http://$selectedIp:${status.port}/';
             return AlertDialog(
-              title: Text('${l10n.shareViaLan}: $displayName'),
+              title: Text('${l10n.lanWebdavShareTitle}: $displayName'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -71,7 +89,7 @@ class BrowserFileOps {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    l10n.scanQrToConnect,
+                    l10n.lanWebdavBrowserHint,
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(ctx).colorScheme.onSurfaceVariant,
@@ -91,17 +109,17 @@ class BrowserFileOps {
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: activeUrl));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(l10n.urlCopied)),
+                      SnackBar(content: Text(l10n.webdavUrlCopied)),
                     );
                   },
                   child: Text(l10n.copyUrl),
                 ),
                 TextButton(
                   onPressed: () {
-                    SharingService.instance.stopHttp();
+                    SharingService.instance.stopWebDav();
                     Navigator.of(ctx).pop();
                   },
-                  child: Text(l10n.stopped),
+                  child: Text(l10n.stopSharing),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(ctx).pop(),
@@ -201,6 +219,25 @@ class BrowserFileOps {
     final l10n = AppLocalizations.of(context);
     String? password = initialPassword;
     bool wrongPassword = false;
+
+    if (password == null) {
+      try {
+        final split = splitPathToRootAndRel(archiveNativePath);
+        final encrypted = await checkArchiveEncrypted(
+          root: split.root,
+          path: split.relPath,
+        );
+        if (encrypted) {
+          if (!context.mounted) return false;
+          password = await showArchivePasswordDialog(
+            context,
+            archiveName: archiveName,
+            wrongPassword: false,
+          );
+          if (password == null) return false;
+        }
+      } catch (_) {}
+    }
 
     for (int attempt = 0; attempt < 3; attempt++) {
       if (wrongPassword) {

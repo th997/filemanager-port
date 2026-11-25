@@ -31,12 +31,16 @@ class FilePickerDialog extends StatefulWidget {
   final String title;
   final String initialRoot;
   final String initialPath;
+  final String? confirmLabel;
+  final IconData? confirmIcon;
 
   const FilePickerDialog({
     super.key,
     required this.title,
     required this.initialRoot,
     this.initialPath = '',
+    this.confirmLabel,
+    this.confirmIcon,
   });
 
   static Future<PickedFiles?> show(
@@ -44,6 +48,8 @@ class FilePickerDialog extends StatefulWidget {
     required String title,
     String? initialRoot,
     String? initialPath,
+    String? confirmLabel,
+    IconData? confirmIcon,
   }) {
     String root;
     String path;
@@ -68,6 +74,8 @@ class FilePickerDialog extends StatefulWidget {
         title: title,
         initialRoot: root,
         initialPath: path,
+        confirmLabel: confirmLabel,
+        confirmIcon: confirmIcon,
       ),
     );
   }
@@ -148,17 +156,55 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     _load();
   }
 
+  bool get _canGoUp {
+    if (_relPath.isNotEmpty) return true;
+    if (PlatformPaths.isPrivateInboxRoot(_root)) return false;
+    if (isNativeRoot(_root)) {
+      final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      return parts.length > 1 || (parts.length == 1 && !RegExp(r'^[a-zA-Z]:$').hasMatch(parts.first));
+    }
+    return false;
+  }
+
   void _up() {
-    if (_relPath.isEmpty) return;
-    final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-    segments.removeLast();
-    setState(() {
-      _relPath = segments.join('/');
-      _selectedPaths.clear();
-      _filterQuery = '';
-      _filterController.clear();
-    });
-    _load();
+    if (_relPath.isNotEmpty) {
+      final segments = _relPath.split('/').where((s) => s.isNotEmpty).toList();
+      segments.removeLast();
+      setState(() {
+        _relPath = segments.join('/');
+        _selectedPaths.clear();
+        _filterQuery = '';
+        _filterController.clear();
+      });
+      _load();
+      return;
+    }
+    if (PlatformPaths.isPrivateInboxRoot(_root)) return;
+    if (isNativeRoot(_root)) {
+      final isWindows = _root.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(_root);
+      final parts = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
+      if (parts.length > 1) {
+        parts.removeLast();
+        final newRoot = isWindows ? parts.join('\\') : '/${parts.join('/')}';
+        setState(() {
+          _root = newRoot;
+          _relPath = '';
+          _selectedPaths.clear();
+          _filterQuery = '';
+          _filterController.clear();
+        });
+        _load();
+      } else if (parts.length == 1 && !isWindows) {
+        setState(() {
+          _root = '/';
+          _relPath = '';
+          _selectedPaths.clear();
+          _filterQuery = '';
+          _filterController.clear();
+        });
+        _load();
+      }
+    }
   }
 
   String _fullPath(EntryItem item) {
@@ -212,7 +258,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     });
   }
 
-  String get _currentPath => _relPath.isEmpty ? _root : '$_root/$_relPath';
+  String get _currentPath => isNativeRoot(_root) ? joinNative(_root, _relPath) : (_relPath.isEmpty ? _root : '$_root/$_relPath');
 
   void _navigateTo(String fullPath) {
     final split = PlatformPaths.splitPrivateInboxPath(fullPath) ??
@@ -235,7 +281,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
     try {
       final files = await openFiles(
         initialDirectory: initialDir,
-        confirmButtonText: l10n.upload,
+        confirmButtonText: widget.confirmLabel ?? l10n.upload,
       );
       if (files.isEmpty || !mounted) return;
 
@@ -355,7 +401,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
 
     return VfsPickerScaffold(
       title: widget.title,
-      onSystemPicker: _switchToSystemPicker,
+      onSystemPicker: isNativeRoot(_root) ? _switchToSystemPicker : null,
       recentDirs: recentDirs,
       onNavigateTo: _navigateTo,
       quickTargets: quickTargets,
@@ -370,7 +416,7 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
         _load();
       },
       currentPath: _currentPath,
-      canGoUp: _relPath.isNotEmpty,
+      canGoUp: _canGoUp,
       onUp: _up,
       showHidden: _showHidden,
       onToggleHidden: () {
@@ -430,15 +476,17 @@ class _FilePickerDialogState extends State<FilePickerDialog> {
           child: Text(l10n.cancel),
         ),
         FilledButton.icon(
-          icon: const Icon(Icons.upload, size: 18),
+          icon: Icon(widget.confirmIcon ?? Icons.upload, size: 18),
           label: Text(
-            '${l10n.upload} (${_selectedPaths.length})',
+            '${widget.confirmLabel ?? l10n.upload} (${_selectedPaths.length})',
           ),
           onPressed: _selectedPaths.isEmpty
               ? null
               : () {
-                  final dirToSave = _relPath.isEmpty ? _root : joinNative(_root, _relPath);
-                  PreferencesService.instance.addRecentUploadDir(dirToSave);
+                  if (isNativeRoot(_root)) {
+                    final dirToSave = _relPath.isEmpty ? _root : joinNative(_root, _relPath);
+                    PreferencesService.instance.addRecentUploadDir(dirToSave);
+                  }
                   Navigator.of(context).pop(
                     PickedFiles(root: _root, paths: _selectedPaths.toList()),
                   );

@@ -7,6 +7,7 @@ import '../models/entry_item.dart';
 import '../pages/text_editor_page.dart';
 import '../rust/api/file_manager.dart';
 import '../rust/api/metadata.dart';
+import '../rust/api/pool.dart';
 import '../rust/api/remotes.dart';
 import '../rust/api/search.dart';
 import '../rust/api/vault.dart';
@@ -16,11 +17,12 @@ import '../services/task_service.dart';
 import '../services/vault_service.dart';
 
 /// Optional metadata sources for Global Search (bookmarks, quick folders,
-/// privacy vaults, remotes, and browsing history).
+/// privacy vaults, remotes, storage pools, and browsing history).
 class GlobalSearchSources {
   final List<BookmarkDto> bookmarks;
   final List<HistoryDto> history;
   final List<RemoteConfigDto> remotes;
+  final List<PoolSummaryDto> pools;
   final List<QuickTarget> quickTargets;
   final List<UnlockedVaultDto> unlockedVaults;
   final List<PinnedVaultEntry> lockedPinnedVaults;
@@ -29,6 +31,7 @@ class GlobalSearchSources {
     this.bookmarks = const [],
     this.history = const [],
     this.remotes = const [],
+    this.pools = const [],
     this.quickTargets = const [],
     this.unlockedVaults = const [],
     this.lockedPinnedVaults = const [],
@@ -42,6 +45,7 @@ class GlobalSearchMatches {
   final List<UnlockedVaultDto> unlockedVaults;
   final List<PinnedVaultEntry> lockedPinnedVaults;
   final List<RemoteConfigDto> remotes;
+  final List<PoolSummaryDto> pools;
   final List<HistoryDto> history;
 
   const GlobalSearchMatches({
@@ -50,6 +54,7 @@ class GlobalSearchMatches {
     this.unlockedVaults = const [],
     this.lockedPinnedVaults = const [],
     this.remotes = const [],
+    this.pools = const [],
     this.history = const [],
   });
 
@@ -59,11 +64,12 @@ class GlobalSearchMatches {
       unlockedVaults.isEmpty &&
       lockedPinnedVaults.isEmpty &&
       remotes.isEmpty &&
+      pools.isEmpty &&
       history.isEmpty;
 }
 
 /// Pure matcher for filtering local metadata (bookmarks, quick folders, vaults,
-/// remotes, and recent history) synchronously while the disk search runs.
+/// remotes, storage pools, and recent history) synchronously while disk search runs.
 class GlobalSearchMatcher {
   static GlobalSearchMatches match({
     required GlobalSearchSources sources,
@@ -72,11 +78,13 @@ class GlobalSearchMatcher {
     bool caseSensitive = false,
     String category = 'all',
     bool hasSizeFilter = false,
+    bool hasDateFilter = false,
     AppLocalizations? l10n,
   }) {
     final trimmed = query.trim();
     if (trimmed.isEmpty ||
         hasSizeFilter ||
+        hasDateFilter ||
         (category != 'all' && category != 'folder')) {
       return const GlobalSearchMatches();
     }
@@ -115,6 +123,10 @@ class GlobalSearchMatcher {
             predicate(r.bucket ?? ''))
         .toList();
 
+    final pools = sources.pools
+        .where((p) => predicate(p.name) || predicate(p.id))
+        .toList();
+
     final bookmarkKeys = <String>{
       for (final bm in bookmarks) _canonicalKey(bm.root, bm.path),
     };
@@ -131,6 +143,7 @@ class GlobalSearchMatcher {
       unlockedVaults: unlockedVaults,
       lockedPinnedVaults: lockedPinnedVaults,
       remotes: remotes,
+      pools: pools,
       history: history,
     );
   }
@@ -198,6 +211,7 @@ enum AdvancedSearchSelectionKind {
   bookmark,
   history,
   remote,
+  pool,
   quickTarget,
   unlockedVault,
   lockedPinnedVault,
@@ -211,6 +225,7 @@ class AdvancedSearchSelection {
   final BookmarkDto? bookmark;
   final HistoryDto? history;
   final RemoteConfigDto? remote;
+  final PoolSummaryDto? pool;
   final QuickTarget? quickTarget;
   final UnlockedVaultDto? unlockedVault;
   final PinnedVaultEntry? lockedPinnedVault;
@@ -222,6 +237,7 @@ class AdvancedSearchSelection {
     this.bookmark,
     this.history,
     this.remote,
+    this.pool,
     this.quickTarget,
     this.unlockedVault,
     this.lockedPinnedVault,
@@ -242,6 +258,9 @@ class AdvancedSearchSelection {
 
   const AdvancedSearchSelection.remote(RemoteConfigDto remote)
       : this._(kind: AdvancedSearchSelectionKind.remote, remote: remote);
+
+  const AdvancedSearchSelection.pool(PoolSummaryDto pool)
+      : this._(kind: AdvancedSearchSelectionKind.pool, pool: pool);
 
   const AdvancedSearchSelection.quickTarget(QuickTarget target)
       : this._(kind: AdvancedSearchSelectionKind.quickTarget, quickTarget: target);
@@ -383,12 +402,21 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
   String _matchMode = 'contains';
   bool _caseSensitive = false;
   bool _includeHidden = false;
+  bool _filtersExpanded = false;
 
   Timer? _debounce;
-  int _searchSeq = 0;
-  bool _hasSearched = false;
-  bool _searching = false;
-  String? _error;
+  int _fileSearchSeq = 0;
+  int _grepSearchSeq = 0;
+  bool _hasSearchedFiles = false;
+  bool _hasSearchedGrep = false;
+  bool _searchingFiles = false;
+  bool _searchingGrep = false;
+  String? _fileError;
+  String? _grepError;
+
+  bool get _searching => _grepMode ? _searchingGrep : _searchingFiles;
+  bool get _hasSearched => _grepMode ? _hasSearchedGrep : _hasSearchedFiles;
+  String? get _error => _grepMode ? _grepError : _fileError;
 
   SearchIndexStatsDto? _indexStats;
   bool _indexing = false;
@@ -449,7 +477,7 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
       if (!mounted) return;
       setState(() {
         _indexing = false;
-        _error = '$e';
+        _fileError = '$e';
       });
     }
   }
@@ -479,11 +507,13 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
       _minMbController.text.trim().isNotEmpty ||
       _maxMbController.text.trim().isNotEmpty;
 
+  bool get _hasDateFilter => _daysController.text.trim().isNotEmpty;
+
   bool get _hasAnyFilter =>
       _queryController.text.trim().isNotEmpty ||
       _category != 'all' ||
       _hasSizeFilter ||
-      _daysController.text.trim().isNotEmpty;
+      _hasDateFilter;
 
   void _refreshGlobalMatches() {
     final sources = widget.globalSources;
@@ -501,6 +531,7 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
       caseSensitive: _caseSensitive,
       category: _category,
       hasSizeFilter: _hasSizeFilter,
+      hasDateFilter: _hasDateFilter,
       l10n: l10n,
     );
     setState(() => _globalMatches = matches);
@@ -511,12 +542,12 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
     if (_grepMode) return;
     _debounce?.cancel();
     if (!_hasAnyFilter) {
-      _searchSeq++;
+      _fileSearchSeq++;
       setState(() {
         _fileResults = const [];
-        _searching = false;
-        _hasSearched = false;
-        _error = null;
+        _searchingFiles = false;
+        _hasSearchedFiles = false;
+        _fileError = null;
       });
       return;
     }
@@ -525,7 +556,7 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
 
   void _onFilterOptionChanged() {
     _refreshGlobalMatches();
-    if (!_grepMode && (_hasSearched || _hasAnyFilter)) {
+    if (!_grepMode && (_hasSearchedFiles || _hasAnyFilter)) {
       _debounce?.cancel();
       _runSearch();
     }
@@ -585,17 +616,14 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
 
   Future<void> _runSearch() async {
     _debounce?.cancel();
-    final seq = ++_searchSeq;
-    _refreshGlobalMatches();
-
-    setState(() {
-      _searching = true;
-      _hasSearched = true;
-      _error = null;
-    });
-
-    try {
-      if (_grepMode) {
+    if (_grepMode) {
+      final seq = ++_grepSearchSeq;
+      setState(() {
+        _searchingGrep = true;
+        _hasSearchedGrep = true;
+        _grepError = null;
+      });
+      try {
         final hits = await widget.grepTextFilesFn(
           root: widget.root,
           path: widget.relPath,
@@ -605,15 +633,32 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
           includeHidden: _includeHidden,
           maxMatches: 300,
         );
-        if (!mounted || seq != _searchSeq) return;
+        if (!mounted || seq != _grepSearchSeq) return;
         setState(() {
           _grepResults = hits;
-          _fileResults = const [];
-          _searching = false;
+          _searchingGrep = false;
         });
-        return;
+      } catch (e) {
+        if (mounted && seq == _grepSearchSeq) {
+          setState(() {
+            _grepError = '$e';
+            _searchingGrep = false;
+          });
+        }
       }
+      return;
+    }
 
+    final seq = ++_fileSearchSeq;
+    _refreshGlobalMatches();
+
+    setState(() {
+      _searchingFiles = true;
+      _hasSearchedFiles = true;
+      _fileError = null;
+    });
+
+    try {
       final rawMinMb = double.tryParse(_minMbController.text.trim());
       final rawMaxMb = double.tryParse(_maxMbController.text.trim());
       final minMb = rawMinMb == null ? null : (rawMinMb < 0 ? 0.0 : rawMinMb);
@@ -647,7 +692,6 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
       final canUseFastIndex = _indexStats != null &&
           _matchMode == 'contains' &&
           !_caseSensitive &&
-          relNorm.isEmpty &&
           !widget.root.startsWith('vault://') &&
           !widget.root.startsWith('archive://vault://');
 
@@ -668,7 +712,7 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
               includeHidden: options.includeHidden,
               maxResults: 500,
             );
-            if (!mounted || seq != _searchSeq) return;
+            if (!mounted || seq != _fileSearchSeq) return;
             for (final hit in hits) {
               if (relNorm.isNotEmpty) {
                 final hp = hit.path.replaceFirst(RegExp(r'^/+'), '');
@@ -686,7 +730,8 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
                 isSymlink: false,
               );
               final isVirtual = scope.root.startsWith('remote://') ||
-                  scope.root.startsWith('vault://');
+                  scope.root.startsWith('vault://') ||
+                  scope.root.startsWith('pool://');
               final key = isVirtual
                   ? '${scope.root}::${dto.path}'
                   : _joinFullPath(scope.root, dto.path);
@@ -703,10 +748,11 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
             path: scope.relPath,
             options: options,
           );
-          if (!mounted || seq != _searchSeq) return;
+          if (!mounted || seq != _fileSearchSeq) return;
           for (final dto in res) {
             final isVirtual = scope.root.startsWith('remote://') ||
-                scope.root.startsWith('vault://');
+                scope.root.startsWith('vault://') ||
+                scope.root.startsWith('pool://');
             final key = isVirtual
                 ? '${scope.root}::${dto.path}'
                 : _joinFullPath(scope.root, dto.path);
@@ -720,17 +766,16 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
         }
       }
 
-      if (!mounted || seq != _searchSeq) return;
+      if (!mounted || seq != _fileSearchSeq) return;
       setState(() {
         _fileResults = combined;
-        _grepResults = const [];
-        _searching = false;
+        _searchingFiles = false;
       });
     } catch (e) {
-      if (mounted && seq == _searchSeq) {
+      if (mounted && seq == _fileSearchSeq) {
         setState(() {
-          _error = '$e';
-          _searching = false;
+          _fileError = '$e';
+          _searchingFiles = false;
         });
       }
     }
@@ -740,6 +785,13 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final isNarrow = MediaQuery.sizeOf(context).width < 600;
+    final activeFilterCount = (_matchMode != 'contains' ? 1 : 0) +
+        (!_grepMode && _category != 'all' ? 1 : 0) +
+        (_caseSensitive ? 1 : 0) +
+        (_includeHidden ? 1 : 0) +
+        (!_grepMode && _hasSizeFilter ? 1 : 0) +
+        (!_grepMode && _hasDateFilter ? 1 : 0);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
@@ -773,7 +825,6 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
                           if (nextGrep && _matchMode == 'wildcard') {
                             _matchMode = 'contains';
                           }
-                          _error = null;
                         });
                         _refreshGlobalMatches();
                       },
@@ -813,153 +864,174 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  DropdownButton<String>(
-                    value: _matchMode,
-                    isDense: true,
-                    items: [
-                      DropdownMenuItem(
-                        value: 'contains',
-                        child: Text(l10n.matchContains),
-                      ),
-                      if (!_grepMode)
-                        DropdownMenuItem(
-                          value: 'wildcard',
-                          child: Text(l10n.matchWildcard),
-                        ),
-                      DropdownMenuItem(
-                        value: 'regex',
-                        child: Text(l10n.matchRegex),
-                      ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _matchMode = v);
-                        _onFilterOptionChanged();
-                      }
-                    },
+              if (isNarrow)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () =>
+                        setState(() => _filtersExpanded = !_filtersExpanded),
+                    icon: Icon(
+                      _filtersExpanded ? Icons.expand_less : Icons.tune,
+                      size: 16,
+                    ),
+                    label: Text(l10n.searchFiltersLabel(activeFilterCount)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ),
-                  if (!_grepMode)
+                ),
+              if (!isNarrow || _filtersExpanded) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
                     DropdownButton<String>(
-                      value: _category,
+                      value: _matchMode,
                       isDense: true,
                       items: [
                         DropdownMenuItem(
-                          value: 'all',
-                          child: Text(l10n.searchCategoryAll),
+                          value: 'contains',
+                          child: Text(l10n.matchContains),
                         ),
-                        DropdownMenuItem(
-                          value: 'image',
-                          child: Text(l10n.gallery),
-                        ),
-                        DropdownMenuItem(
-                          value: 'video',
-                          child: Text(l10n.categoryVideos),
-                        ),
-                        DropdownMenuItem(
-                          value: 'audio',
-                          child: Text(l10n.categoryAudio),
-                        ),
-                        DropdownMenuItem(
-                          value: 'document',
-                          child: Text(l10n.categoryDocuments),
-                        ),
-                        DropdownMenuItem(
-                          value: 'archive',
-                          child: Text(l10n.categoryArchives),
-                        ),
-                        if (PlatformCapabilities.supportsInstallersCategory)
+                        if (!_grepMode)
                           DropdownMenuItem(
-                            value: 'apk',
-                            child: Text(l10n.categoryApks),
+                            value: 'wildcard',
+                            child: Text(l10n.matchWildcard),
                           ),
                         DropdownMenuItem(
-                          value: 'code',
-                          child: Text(l10n.searchCategoryCode),
-                        ),
-                        DropdownMenuItem(
-                          value: 'folder',
-                          child: Text(l10n.searchCategoryFolders),
+                          value: 'regex',
+                          child: Text(l10n.matchRegex),
                         ),
                       ],
                       onChanged: (v) {
                         if (v != null) {
-                          setState(() => _category = v);
+                          setState(() => _matchMode = v);
                           _onFilterOptionChanged();
                         }
                       },
                     ),
-                  FilterChip(
-                    label: const Text('Aa'),
-                    selected: _caseSensitive,
-                    onSelected: (v) {
-                      setState(() => _caseSensitive = v);
-                      _onFilterOptionChanged();
-                    },
-                  ),
-                  FilterChip(
-                    label: Text(l10n.showHiddenFiles),
-                    selected: _includeHidden,
-                    onSelected: (v) {
-                      setState(() => _includeHidden = v);
-                      _onFilterOptionChanged();
-                    },
-                  ),
-                ],
-              ),
-              if (!_grepMode) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _minMbController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          labelText: l10n.minSizeMb,
-                          border: const OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => _refreshGlobalMatches(),
-                        onSubmitted: (_) => _runSearch(),
+                    if (!_grepMode)
+                      DropdownButton<String>(
+                        value: _category,
+                        isDense: true,
+                        items: [
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text(l10n.searchAllTypes),
+                          ),
+                          DropdownMenuItem(
+                            value: 'image',
+                            child: Text(l10n.gallery),
+                          ),
+                          DropdownMenuItem(
+                            value: 'video',
+                            child: Text(l10n.categoryVideos),
+                          ),
+                          DropdownMenuItem(
+                            value: 'audio',
+                            child: Text(l10n.categoryAudio),
+                          ),
+                          DropdownMenuItem(
+                            value: 'document',
+                            child: Text(l10n.categoryDocuments),
+                          ),
+                          DropdownMenuItem(
+                            value: 'archive',
+                            child: Text(l10n.categoryArchives),
+                          ),
+                          if (PlatformCapabilities.supportsInstallersCategory)
+                            DropdownMenuItem(
+                              value: 'apk',
+                              child: Text(l10n.categoryApks),
+                            ),
+                          DropdownMenuItem(
+                            value: 'code',
+                            child: Text(l10n.searchCategoryCode),
+                          ),
+                          DropdownMenuItem(
+                            value: 'folder',
+                            child: Text(l10n.searchCategoryFolders),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setState(() => _category = v);
+                            _onFilterOptionChanged();
+                          }
+                        },
                       ),
+                    FilterChip(
+                      label: const Text('Aa'),
+                      selected: _caseSensitive,
+                      onSelected: (v) {
+                        setState(() => _caseSensitive = v);
+                        _onFilterOptionChanged();
+                      },
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _maxMbController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          labelText: l10n.maxSizeMb,
-                          border: const OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => _refreshGlobalMatches(),
-                        onSubmitted: (_) => _runSearch(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _daysController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          labelText: l10n.modifiedDaysAgo,
-                          border: const OutlineInputBorder(),
-                        ),
-                        onSubmitted: (_) => _runSearch(),
-                      ),
+                    FilterChip(
+                      label: Text(l10n.showHiddenFiles),
+                      selected: _includeHidden,
+                      onSelected: (v) {
+                        setState(() => _includeHidden = v);
+                        _onFilterOptionChanged();
+                      },
                     ),
                   ],
                 ),
-                if (!widget.root.startsWith('vault://') &&
-                    !widget.root.startsWith('archive://vault://')) ...[
+                if (!_grepMode) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _minMbController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: l10n.minSizeMb,
+                            border: const OutlineInputBorder(),
+                          ),
+                          onChanged: _onQueryChanged,
+                          onSubmitted: (_) => _runSearch(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _maxMbController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: l10n.maxSizeMb,
+                            border: const OutlineInputBorder(),
+                          ),
+                          onChanged: _onQueryChanged,
+                          onSubmitted: (_) => _runSearch(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _daysController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: l10n.modifiedDaysAgo,
+                            border: const OutlineInputBorder(),
+                          ),
+                          onChanged: _onQueryChanged,
+                          onSubmitted: (_) => _runSearch(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+              if (!_grepMode &&
+                  !widget.root.startsWith('vault://') &&
+                  !widget.root.startsWith('archive://vault://')) ...[
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1014,7 +1086,6 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
                     ),
                   ),
                 ],
-              ],
               const Divider(height: 16),
               if (_error != null)
                 Padding(
@@ -1200,6 +1271,29 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
       }
     }
 
+    if (_globalMatches.pools.isNotEmpty) {
+      rows.add(_sectionHeader(l10n.storagePools, scheme));
+      for (final p in _globalMatches.pools) {
+        rows.add(ListTile(
+          dense: true,
+          leading: const Icon(
+            Icons.storage_outlined,
+            size: 18,
+            color: Colors.deepPurple,
+          ),
+          title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            'pool://${p.id}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11),
+          ),
+          onTap: () =>
+              Navigator.of(context).pop(AdvancedSearchSelection.pool(p)),
+        ));
+      }
+    }
+
     if (_globalMatches.history.isNotEmpty) {
       rows.add(_sectionHeader(l10n.recent, scheme));
       for (final h in _globalMatches.history) {
@@ -1303,7 +1397,9 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
           dense: true,
           leading: const Icon(Icons.find_in_page_outlined, size: 18),
           title: Text(
-            '${hit.name}:${hit.lineNumber}',
+            '${hit.path}:${hit.lineNumber}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
           ),
           subtitle: Text(
@@ -1313,8 +1409,9 @@ class _AdvancedSearchDialogState extends State<_AdvancedSearchDialog> {
             style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5),
           ),
           onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
+            final nav = Navigator.of(context);
+            nav.pop();
+            nav.push(
               MaterialPageRoute(
                 builder: (_) => TextEditorPage(
                   root: widget.root,

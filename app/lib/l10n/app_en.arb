@@ -2594,7 +2594,7 @@
   "peerNoDevicesFound": "No FP File Manager receivers found on LAN",
   "peerSendFiles": "Send Files",
   "peerSendClipboard": "Send Clipboard Text",
-  "peerManualAddressHint": "http://192.168.1.x:port",
+  "peerManualAddressHint": "http://<LAN IP>:port",
   "peerIncomingOfferTitle": "Incoming transfer from {sender}",
   "@peerIncomingOfferTitle": {
     "placeholders": {
@@ -2672,5 +2672,489 @@
       "name": { "type": "String" }
     }
   },
-  "pinToHomeScreenUnsupported": "Home screen pinning is not supported on this platform"
+  "pinToHomeScreenUnsupported": "Home screen pinning is not supported on this platform",
+  "storagePools": "Storage Pools",
+  "storagePoolsSubtitle": "Aggregate SFTP, S3 & WebDAV into one replicated pool",
+  "createStoragePool": "Create Storage Pool",
+  "editStoragePool": "Edit Storage Pool",
+  "noStoragePools": "No storage pools configured",
+  "noStoragePoolsDesc": "Combine multiple SFTP, S3, or WebDAV connections with failure-domain 2x replication, chunking, and optional encryption.",
+  "poolName": "Pool Name",
+  "poolNameHint": "e.g. Media Aggregate Pool",
+  "poolChunkSize": "Chunk Size",
+  "poolEncryptEnable": "Enable Client-Side AES-GCM Encryption",
+  "poolEncryptSubtitle": "Encrypts chunk payloads and metadata snapshots before upload",
+  "poolPassphrase": "Encryption Passphrase",
+  "poolPassphraseHint": "Leave empty to keep existing passphrase",
+  "poolSelectNodes": "Member Storage Nodes",
+  "poolNeedRemotesFirst": "Add SFTP, S3, or WebDAV connections in Remote first.",
+  "poolFailureDomain": "Failure Domain",
+  "poolQuotaGb": "Quota (GB)",
+  "poolPrefix": "Remote Prefix",
+  "poolRoleRw": "Read/Write",
+  "poolRoleRo": "Read-Only",
+  "poolRoleDraining": "Draining",
+  "poolRoleOffline": "Offline",
+  "poolMetaBackup": "Meta Backup",
+  "poolBrowse": "Browse",
+  "poolProbeHealth": "Probe Health",
+  "poolSyncMeta": "Sync Meta",
+  "poolHeal": "Heal",
+  "poolGc": "Run GC",
+  "poolDrainNode": "Drain",
+  "poolLogicalCapacity": "Effective Logical Capacity",
+  "poolPhysicalCapacity": "Total Physical Quota",
+  "poolDegradedWarning": "{count} chunk(s) below 2 replicas — run Heal to restore redundancy",
+  "@poolDegradedWarning": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "poolEncryptedBadge": "Encrypted",
+  "poolPlaintextBadge": "Standard",
+  "poolMetaVersionBadge": "Meta v{version}",
+  "@poolMetaVersionBadge": {
+    "placeholders": {
+      "version": { "type": "int" }
+    }
+  },
+  "poolDeleteConfirm": "Remove pool \"{name}\" from local configuration? Remote blob data will not be deleted.",
+  "@poolDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "poolDrainConfirm": "Migrate all chunks off \"{node}\" to other healthy nodes before taking it offline?",
+  "@poolDrainConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolSyncDone": "Metadata sync: {action} (v{version}, {uploaded} backup(s), {conflicts} conflict(s))",
+  "@poolSyncDone": {
+    "placeholders": {
+      "action": { "type": "String" },
+      "version": { "type": "int" },
+      "uploaded": { "type": "int" },
+      "conflicts": { "type": "int" }
+    }
+  },
+  "poolNodesCount": "{count} node(s)",
+  "@poolNodesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "lanTransferAndShareTitle": "LAN Transfer & WebDAV Share",
+  "lanTransferAndShareSubtitle": "Direct LAN drop, WebDAV mount, and browser upload/download",
+  "lanWebdavBrowserHint": "Open in any browser to upload/download files, or mount via Finder, Explorer, Infuse, or Kodi.",
+  "lanWebdavReadOnlyHint": "Disable read-only to allow browser uploads, new folders, and edits",
+  "photoBackupSourceLabel": "Backup Source Folders",
+  "photoBackupSelectSource": "Add Folder",
+  "photoBackupSelectAlbums": "Select Albums",
+  "photoBackupDefaultSources": "Default gallery folders",
+  "photoBackupAllAlbums": "All Photos & Videos",
+  "photoBackupSelectedAlbumsCount": "{count} album(s) selected",
+  "@photoBackupSelectedAlbumsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "photoBackupResetSources": "Reset to Default",
+  "syncExcludeRulesTitle": "Exclusion Rules",
+  "syncExcludeExtensionsLabel": "Excluded File Types (Extensions)",
+  "syncExcludeExtensionsHint": "e.g. tmp, log, bak",
+  "syncExcludeNamesLabel": "Excluded File Names",
+  "syncExcludeNamesHint": "e.g. .DS_Store, Thumbs.db, ~$*",
+  "syncExcludeDirsLabel": "Excluded Folders",
+  "syncExcludeDirsHint": "e.g. node_modules, .git, build/cache",
+  "syncExcludePresets": "Quick Presets",
+  "syncPickExcludeDir": "Pick Folder",
+  "syncExcludedCount": "{count} excluded",
+  "@syncExcludedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "syncAddRule": "Add",
+  "peerManualAddressLabel": "Target Device Address (Manual)",
+  "peerManualAddressExample": "e.g. http://{hostPlaceholder}:port",
+  "@peerManualAddressExample": {
+    "placeholders": {
+      "hostPlaceholder": { "type": "String" }
+    }
+  },
+  "emptyLabel": "Empty",
+  "itemCountConnections": "{count} connection(s)",
+  "@itemCountConnections": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountPools": "{count} pool(s)",
+  "@itemCountPools": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountBookmarks": "{count} bookmark(s)",
+  "@itemCountBookmarks": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountLocations": "{count} location(s)",
+  "@itemCountLocations": { "placeholders": { "count": { "type": "int" } } },
+  "activeTasksRunningCount": "{count} running",
+  "@activeTasksRunningCount": { "placeholders": { "count": { "type": "int" } } },
+  "timeJustNow": "just now",
+  "timeMinutesAgo": "{count}m ago",
+  "@timeMinutesAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeHoursAgo": "{count}h ago",
+  "@timeHoursAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeDaysAgo": "{count}d ago",
+  "@timeDaysAgo": { "placeholders": { "count": { "type": "int" } } },
+  "deletedRelativeTime": "deleted {time}",
+  "@deletedRelativeTime": { "placeholders": { "time": { "type": "String" } } },
+  "stopSharing": "Stop Sharing",
+  "manageRemotes": "Manage Remotes",
+  "manageStoragePools": "Manage Storage Pools",
+  "backupRestoreConfigTitle": "Backup & Restore Configuration",
+  "backupRestoreConfigSubtitle": "Export or import remote connections, bookmarks, and preferences (optional AES-256 encrypted .fmbak)",
+  "exportAction": "Export",
+  "importAction": "Import",
+  "exportMigrationTitle": "Export Device Migration Backup",
+  "exportMigrationPasswordLabel": "Encryption Password (recommended)",
+  "exportMigrationPasswordHint": "Leave empty for plain JSON without credentials",
+  "exportIncludeCredentials": "Include passwords / keys (requires password)",
+  "copyJsonAction": "Copy JSON",
+  "copyEncryptedAction": "Copy Encrypted",
+  "saveBackupFileAction": "Save .fmbak",
+  "saveJsonFileAction": "Save .json",
+  "importMigrationTitle": "Import Device Configuration",
+  "chooseBackupFileAction": "Choose .fmbak or .json File",
+  "importPasteHint": "Or paste JSON / .fmbak text...",
+  "importPasswordLabel": "Decryption Password (if encrypted)",
+  "importPasswordHint": "Required for .fmbak files with credentials",
+  "importPasswordRequiredError": "Please enter the decryption password for this encrypted .fmbak backup.",
+  "exportSavedNotice": "Backup saved to {path}",
+  "@exportSavedNotice": { "placeholders": { "path": { "type": "String" } } },
+  "exportCopiedNotice": "Backup copied to clipboard",
+  "importSummaryNotice": "Imported {remotes} remote(s), {bookmarks} bookmark(s), {prefs} preference(s)",
+  "@importSummaryNotice": {
+    "placeholders": {
+      "remotes": { "type": "int" },
+      "bookmarks": { "type": "int" },
+      "prefs": { "type": "int" }
+    }
+  },
+  "unencryptedCredentialsBanner": "Warning: OS secure keyring unavailable; remote passwords are saved in plaintext.",
+  "remoteTestTimedOut": "timed out after 8 seconds",
+  "remoteImportFailedSummary": "; {count} failed: {details}",
+  "@remoteImportFailedSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "details": { "type": "String" }
+    }
+  },
+  "remoteBucketLabel": "Bucket: {bucket}",
+  "@remoteBucketLabel": { "placeholders": { "bucket": { "type": "String" } } },
+  "keyringUnavailableBanner": "OS Keyring unavailable ({detail}). Credentials may not persist safely.",
+  "@keyringUnavailableBanner": { "placeholders": { "detail": { "type": "String" } } },
+  "deleteRemotePoolWarning": "Warning: This remote is used by storage pool(s): {pools}. Deleting it will degrade those pools.",
+  "@deleteRemotePoolWarning": { "placeholders": { "pools": { "type": "String" } } },
+  "poolConfirmGcTitle": "Run Garbage Collection?",
+  "poolConfirmGcBody": "Purge unreferenced/deleted chunks from pool \"{name}\"? Deleted chunks cannot be recovered.",
+  "@poolConfirmGcBody": { "placeholders": { "name": { "type": "String" } } },
+  "poolReplicationFactorLabel": "Replication Factor",
+  "poolMinNodesError": "Select at least {count} member node(s) for {count}x replication.",
+  "@poolMinNodesError": { "placeholders": { "count": { "type": "int" } } },
+  "poolInvalidQuotaError": "Enter a valid node quota (> 0 GB).",
+  "poolPassphraseConfirmLabel": "Confirm Encryption Passphrase",
+  "poolPassphraseMismatchError": "Encryption passphrases do not match.",
+  "poolEditLockedHint": "Chunk size and encryption cannot be changed after pool creation.",
+  "poolNodeHealthSummary": "Health {pct}% · {ms} ms · {state}",
+  "@poolNodeHealthSummary": {
+    "placeholders": {
+      "pct": { "type": "int" },
+      "ms": { "type": "int" },
+      "state": { "type": "String" }
+    }
+  },
+  "poolRoleShortRw": "RW",
+  "poolRoleShortRo": "RO",
+  "poolRoleShortDraining": "DRAINING",
+  "poolRoleShortOffline": "OFFLINE",
+  "poolCircuitClosed": "closed",
+  "poolCircuitOpen": "open",
+  "poolCircuitHalfOpen": "half-open",
+  "cryptChooseBackingRemote": "Choose Existing Remote / Local Folder",
+  "cryptLocalFolderOption": "Pick Local Folder...",
+  "fileConflictBody": "\"{name}\" already exists in this folder. What should happen to it?",
+  "@fileConflictBody": { "placeholders": { "name": { "type": "String" } } },
+  "filesConflictBody": "{count} items already exist in this folder. What should happen to them?",
+  "@filesConflictBody": { "placeholders": { "count": { "type": "int" } } },
+  "offlineOverwriteConfirmTitle": "Overwrite remote changes?",
+  "offlineOverwriteConfirmBody": "\"{name}\" was also modified remotely. Overwrite the remote version with your local changes?",
+  "@offlineOverwriteConfirmBody": { "placeholders": { "name": { "type": "String" } } },
+  "offlineDiscardLocalConfirmTitle": "Discard local offline edits?",
+  "offlineDiscardLocalConfirmBody": "\"{name}\" has un-synced local modifications or conflicts. Continuing will overwrite or remove the local changes.",
+  "@offlineDiscardLocalConfirmBody": { "placeholders": { "name": { "type": "String" } } },
+  "offlineUploadedNotice": "Uploaded \"{name}\" to remote.",
+  "@offlineUploadedNotice": { "placeholders": { "name": { "type": "String" } } },
+  "offlineCheckUpdatesTooltip": "Check Updates",
+  "offlineSyncAllTooltip": "Sync All",
+  "offlineLruCapTooltip": "LRU Cache Cap",
+  "offlineLruCapOption": "LRU Cap: {size}",
+  "@offlineLruCapOption": { "placeholders": { "size": { "type": "String" } } },
+  "offlineUploadLocalTooltip": "Upload local changes to remote",
+  "offlineBannerSummary": "{count} pinned · {used} / {cap}",
+  "@offlineBannerSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "used": { "type": "String" },
+      "cap": { "type": "String" }
+    }
+  },
+  "offlineStatusLocalModified": "Local Modified",
+  "offlineStatusRemoteNewer": "Remote Newer",
+  "offlineStatusConflict": "Conflict",
+  "offlineStatusSynced": "Synced",
+  "offlineStatusMissingLocal": "Missing Local",
+  "offlineStatusOffline": "Offline",
+  "browserSelectItemsFirst": "Select at least one item first.",
+  "clipboardReadOnlyHint": "Clipboard: {count} item(s) ready (read-only folder)",
+  "@clipboardReadOnlyHint": { "placeholders": { "count": { "type": "int" } } },
+  "peerTabDirectTransfer": "Direct Transfer",
+  "peerTabWebdavShare": "WebDAV / Browser Share",
+  "peerPendingItemsToSend": "{count} item(s) ready to send",
+  "@peerPendingItemsToSend": { "placeholders": { "count": { "type": "int" } } },
+  "peerReceiveFolderMustBeLocal": "Receive folder must be on local storage.",
+  "peerOpenReceivedFolder": "Open Folder",
+  "peerCopyReceivedText": "Copy Text",
+  "peerTextCopied": "Received text copied to clipboard.",
+  "peerWaitingForAccept": "Sending / waiting for peer to accept...",
+  "peerOfferStatusAccepted": "Accepted",
+  "peerOfferStatusCompleted": "Completed",
+  "peerOfferStatusRejected": "Rejected",
+  "peerOfferStatusReceiving": "Receiving",
+  "photoBackupScanning": "Scanning photos & folders...",
+  "photoBackupCancel": "Cancel",
+  "photoBackupCancelledNotice": "Photo backup cancelled (uploaded {count}).",
+  "@photoBackupCancelledNotice": { "placeholders": { "count": { "type": "int" } } },
+  "photoBackupResetHistory": "Reset Backup History",
+  "photoBackupResetHistoryConfirm": "Clear local backup history so previously backed-up photos will be uploaded again?",
+  "photoBackupLastRun": "Last backup: {time}",
+  "@photoBackupLastRun": { "placeholders": { "time": { "type": "String" } } },
+  "photoBackupProgressCount": "{uploaded} / {total} uploaded",
+  "@photoBackupProgressCount": {
+    "placeholders": {
+      "uploaded": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "photoBackupOpenDestination": "Open Destination",
+  "photoBackupVaultLocked": "Target Privacy Folder is locked",
+  "photoBackupPermissionDeniedTitle": "Photo Library Permission Needed",
+  "photoBackupPermissionDeniedBody": "Allow photo library access in system settings to choose albums or back up photos.",
+  "photoBackupOpenSettings": "Open Settings",
+  "syncSaveProfileTitle": "Save Sync Profile",
+  "syncProfileNameLabel": "Profile name",
+  "syncSourceLabel": "Source",
+  "syncDestinationLabel": "Destination",
+  "syncScanLimitReached": "Scan limit reached; preview is truncated.",
+  "syncSummaryChanges": "{changes} change(s) · {unchanged} unchanged",
+  "@syncSummaryChanges": {
+    "placeholders": {
+      "changes": { "type": "int" },
+      "unchanged": { "type": "int" }
+    }
+  },
+  "syncConfirmMirrorDeleteTitle": "Confirm Mirror Deletions",
+  "syncConfirmMirrorDeleteBody": "This sync will delete {count} extra file(s)/folder(s) from the destination. Continue?",
+  "@syncConfirmMirrorDeleteBody": { "placeholders": { "count": { "type": "int" } } },
+  "syncConfirmDeleteProfileBody": "Delete saved sync profile \"{name}\"?",
+  "@syncConfirmDeleteProfileBody": { "placeholders": { "name": { "type": "String" } } },
+  "syncSwapFoldersTooltip": "Swap source and destination",
+  "syncSelectAll": "Select All",
+  "syncDeselectAll": "Deselect All",
+  "syncActionCopy": "COPY",
+  "syncActionUpdate": "UPDATE",
+  "syncActionDelete": "DELETE",
+  "syncActionPullUpdate": "PULL UPDATE",
+  "syncEditConfig": "Edit Folders",
+  "syncAutoSyncFailed": "Last auto-sync failed: {error}",
+  "@syncAutoSyncFailed": { "placeholders": { "error": { "type": "String" } } },
+  "taskStatusPaused": "Paused",
+  "taskRateLimitActive": "Limit: {limit}",
+  "@taskRateLimitActive": { "placeholders": { "limit": { "type": "String" } } },
+  "taskFailedItemsTitle": "Failed items ({count})",
+  "@taskFailedItemsTitle": { "placeholders": { "count": { "type": "int" } } },
+  "taskRetryStarted": "Retrying failed items in background.",
+  "analyzerStatsSummary": "{files} files · {folders} folders",
+  "@analyzerStatsSummary": {
+    "placeholders": {
+      "files": { "type": "int" },
+      "folders": { "type": "int" }
+    }
+  },
+  "analyzerScanCancelled": "Analysis cancelled (showing partial results).",
+  "analyzerScanTruncated": "Reached scan limit; totals may exclude deeper folders.",
+  "analyzerRescan": "Rescan",
+  "duplicatesGroupCount": "{count} group(s)",
+  "@duplicatesGroupCount": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesCopiesCount": "({count} copies)",
+  "@duplicatesCopiesCount": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesEachSize": "{size} each",
+  "@duplicatesEachSize": { "placeholders": { "size": { "type": "String" } } },
+  "duplicatesDeleteFailed": "{count} item(s) failed to delete",
+  "@duplicatesDeleteFailed": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesAllCopiesWarning": "Warning: {count} group(s) have ALL copies selected for deletion!",
+  "@duplicatesAllCopiesWarning": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesClearSelection": "Clear Selection",
+  "duplicatesScanCancelled": "Duplicate scan was cancelled.",
+  "duplicatesTrashConfirmBody": "Move {count} duplicate item(s) to the Recycle Bin?",
+  "@duplicatesTrashConfirmBody": { "placeholders": { "count": { "type": "int" } } },
+  "categoryTruncatedBanner": "Showing first {count} matching files (result limit reached).",
+  "@categoryTruncatedBanner": { "placeholders": { "count": { "type": "int" } } },
+  "galleryLocateInFolder": "Locate in Folder",
+  "galleryUnsupportedFormatForPick": "This file type is not accepted by the caller.",
+  "galleryExifSkippedNonJpeg": "Skipped {count} non-JPEG photo(s) (EXIF strip supports JPEG).",
+  "@galleryExifSkippedNonJpeg": { "placeholders": { "count": { "type": "int" } } },
+  "searchFiltersLabel": "Filters ({count})",
+  "@searchFiltersLabel": { "placeholders": { "count": { "type": "int" } } },
+  "searchAllTypes": "All Types",
+  "pdfEncryptedError": "This PDF is encrypted or password-protected.",
+  "pdfPageTextTitle": "Page {page} Text",
+  "@pdfPageTextTitle": { "placeholders": { "page": { "type": "int" } } },
+  "pdfPageTextCopied": "Page text copied to clipboard.",
+  "pdfNoSelectableText": "No selectable text detected on this page (it may be a scanned image).",
+  "pdfSelectCopyPageText": "Select / Copy Page Text",
+  "pdfRenderPageFailed": "Failed to render page {page}.",
+  "@pdfRenderPageFailed": { "placeholders": { "page": { "type": "int" } } },
+  "structuredEmptyValue": "(empty)",
+  "structuredCsvTruncated": "Showing first {shown} of {total} rows.",
+  "@structuredCsvTruncated": {
+    "placeholders": {
+      "shown": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "copyXPath": "Copy XPath",
+  "subtitleLoadFailed": "Unsupported or unreadable subtitle file.",
+  "diffTruncatedNotice": "Directory diff reached the entry limit; some deeper entries were omitted.",
+  "diffSyncFoldersAction": "Open in Sync",
+  "vaultHtmlBrowserWarning": "Cannot open decrypted Privacy Folder HTML in an external browser (zero-disk policy).",
+  "poolStorageDirectory": "Storage Directory",
+  "poolPickDirectory": "Choose Folder",
+  "poolReplicationBadge": "{count}x Replicas",
+  "@poolReplicationBadge": { "placeholders": { "count": { "type": "int" } } },
+  "poolSetReplicationTitle": "Set Replication Factor",
+  "poolSetReplicationHint": "Applies immediately to new writes; run Heal to replicate existing files up to the new target.",
+  "poolNodeRealFreeWithTotal": "Free {free} / {total}",
+  "@poolNodeRealFreeWithTotal": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "poolNodeRealFreeOnly": "Free {free}",
+  "@poolNodeRealFreeOnly": { "placeholders": { "free": { "type": "String" } } },
+  "poolNodeSpaceUnavailable": "Free space unavailable",
+  "poolNodeSpaceProbing": "Checking free space…",
+  "poolNodePoolUsed": "Pool used: {used}",
+  "@poolNodePoolUsed": { "placeholders": { "used": { "type": "String" } } },
+  "poolNodeDirectoryLabel": "Dir: {dir}",
+  "@poolNodeDirectoryLabel": { "placeholders": { "dir": { "type": "String" } } },
+  "remoteBatchExportAction": "Batch Encrypted Export",
+  "remoteBatchImportAction": "Batch Encrypted Import",
+  "remoteBatchExportTitle": "Batch Export Connections",
+  "remoteBatchExportSubtitle": "Connections and credentials are encrypted with AES-256-GCM using your password.",
+  "remoteBatchSelectCount": "Selected {selected} / {total}",
+  "@remoteBatchSelectCount": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "remoteBatchSelectAll": "Select All",
+  "remoteBatchDeselectAll": "Deselect All",
+  "remoteBatchUnreadableSkipped": "Unreadable credentials (cannot be exported)",
+  "remoteBatchNoReadableToExport": "No readable remote connections available to export.",
+  "remoteBatchExportPasswordLabel": "Encryption Password (Required)",
+  "remoteBatchExportPasswordHint": "At least {min} characters",
+  "@remoteBatchExportPasswordHint": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+  },
+  "remoteBatchExportPasswordConfirmLabel": "Confirm Encryption Password",
+  "remoteBatchPasswordRequiredNote": "Remember this password — it is required when importing these connections.",
+  "remoteBatchPasswordTooShort": "Password must be at least {min} characters.",
+  "@remoteBatchPasswordTooShort": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+  },
+  "remoteBatchPasswordMismatch": "Passwords do not match.",
+  "remoteBatchSaveFileAction": "Save Encrypted File",
+  "remoteBatchShareFileAction": "Export / Share File",
+  "remoteBatchExportSavedNotice": "Encrypted {count} connection(s) to {path}",
+  "@remoteBatchExportSavedNotice": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "path": { "type": "String" }
+    }
+  },
+  "remoteBatchExportSharedNotice": "Prepared encrypted backup for {count} connection(s).",
+  "@remoteBatchExportSharedNotice": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchExportCopiedNotice": "Copied encrypted backup of {count} connection(s) to clipboard.",
+  "@remoteBatchExportCopiedNotice": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchImportTitle": "Batch Import Connections",
+  "remoteBatchChooseFile": "Choose Backup File",
+  "remoteBatchPasteClipboard": "Paste from Clipboard",
+  "remoteBatchClipboardDetected": "Encrypted backup detected in clipboard.",
+  "remoteBatchClipboardEmpty": "Clipboard is empty.",
+  "remoteBatchSelectedFileLabel": "Selected file: {name}",
+  "@remoteBatchSelectedFileLabel": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "remoteBatchPasteFieldHint": "Or paste encrypted .fmremotes / .fmbak content…",
+  "remoteBatchImportPasswordLabel": "Decryption Password (Required)",
+  "remoteBatchImportPasswordHint": "Enter the password set during export",
+  "remoteBatchDecryptAction": "Decrypt & Preview",
+  "remoteBatchPreviewSummary": "Decrypted {count} connection(s)",
+  "@remoteBatchPreviewSummary": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchConflictSectionLabel": "When connection already exists:",
+  "remoteBatchConflictSkip": "Skip",
+  "remoteBatchConflictOverwrite": "Overwrite",
+  "remoteBatchConflictKeepBoth": "Keep Both",
+  "remoteBatchBadgeNew": "New",
+  "remoteBatchBadgeExists": "Exists",
+  "remoteBatchAllSkippedHint": "All selected connections already exist and will be skipped. Switch to Overwrite or Keep Both to import them.",
+  "remoteBatchImportConfirm": "Import ({count})",
+  "@remoteBatchImportConfirm": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchImportSummary": "Imported {imported} connection(s) ({added} new, {overwritten} updated, {duplicated} copied, {skipped} skipped){detail}",
+  "@remoteBatchImportSummary": {
+    "placeholders": {
+      "imported": { "type": "int" },
+      "added": { "type": "int" },
+      "overwritten": { "type": "int" },
+      "duplicated": { "type": "int" },
+      "skipped": { "type": "int" },
+      "detail": { "type": "String" }
+    }
+  },
+  "remoteBatchErrorNotEncrypted": "Unencrypted plaintext data is not allowed. Please select a password-encrypted backup.",
+  "remoteBatchErrorInvalidFormat": "Invalid backup file format.",
+  "remoteBatchErrorWrongPassword": "Incorrect password or corrupted backup file.",
+  "remoteBatchErrorEmptyBundle": "This backup contains no valid remote connections.",
+  "remoteBatchErrorFileTooLarge": "Selected file is too large to be a connection backup.",
+  "remoteBatchBackStep": "Back"
 }

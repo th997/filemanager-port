@@ -59,10 +59,18 @@ List<String> expandInboxDirCandidates(Directory baseDir, String subDir) {
 bool isPathInTemporaryInbox(String filePath, List<String> allowedInboxDirs) {
   if (filePath.isEmpty || allowedInboxDirs.isEmpty) return false;
   final normFile = p.normalize(filePath);
+  final fileCandidates = <String>[normFile];
+  try {
+    final resolvedParent = Directory(p.dirname(normFile)).resolveSymbolicLinksSync();
+    final resolvedFile = p.normalize(p.join(resolvedParent, p.basename(normFile)));
+    if (!fileCandidates.contains(resolvedFile)) {
+      fileCandidates.add(resolvedFile);
+    }
+  } catch (_) {}
   for (final dir in allowedInboxDirs) {
     if (dir.isEmpty) continue;
     final normDir = p.normalize(dir);
-    if (p.isWithin(normDir, normFile)) {
+    if (fileCandidates.any((candidate) => p.isWithin(normDir, candidate))) {
       return true;
     }
   }

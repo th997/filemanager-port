@@ -85,7 +85,7 @@ class BrowserListColumnHeader extends StatelessWidget {
     return Container(
       height: 30,
       padding: EdgeInsets.only(
-        left: hasLeadingCheckbox ? 46 : 42,
+        left: hasLeadingCheckbox ? 70 : 40,
         right: 14,
       ),
       decoration: BoxDecoration(

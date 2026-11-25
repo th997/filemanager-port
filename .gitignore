@@ -15,6 +15,7 @@ app/ios/Pods/
 app/ios/.symlinks/
 app/macos/Pods/
 app/macos/.symlinks/
+app/macos/Runner/Configs/LocalSigning.xcconfig
 app/linux/flutter/ephemeral/
 app/windows/flutter/ephemeral/
 app/android/.gradle/

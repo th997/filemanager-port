@@ -71,6 +71,8 @@ class VfsPickerScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = Localizations.of<AppLocalizations>(context, AppLocalizations);
+    final media = MediaQuery.of(context);
+    final availH = (media.size.height - media.viewInsets.bottom - 140).clamp(240.0, maxHeight);
 
     return AlertDialog(
       title: Row(
@@ -91,10 +93,10 @@ class VfsPickerScaffold extends StatelessWidget {
       ),
       actionsOverflowButtonSpacing: 6,
       content: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: availH),
         child: SizedBox(
           width: double.maxFinite,
-          height: maxHeight,
+          height: availH,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -115,7 +117,7 @@ class VfsPickerScaffold extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 SizedBox(
-                  height: 32,
+                  height: 38,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: [
@@ -128,6 +130,8 @@ class VfsPickerScaffold extends StatelessWidget {
                               shortDirectoryName(dir),
                               style: const TextStyle(fontSize: 11),
                             ),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             tooltip: dir,
                             onPressed: () => onNavigateTo?.call(dir),
                           ),
@@ -139,7 +143,7 @@ class VfsPickerScaffold extends StatelessWidget {
               ],
               if (quickTargets.isNotEmpty)
                 SizedBox(
-                  height: 36,
+                  height: 38,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: [
@@ -148,6 +152,8 @@ class VfsPickerScaffold extends StatelessWidget {
                           padding: const EdgeInsets.only(right: 6),
                           child: ActionChip(
                             label: Text(target.displayName(l10n), style: const TextStyle(fontSize: 12)),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             onPressed: () => onSelectTarget?.call(target),
                           ),
                         ),

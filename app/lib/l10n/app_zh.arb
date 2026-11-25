@@ -1072,7 +1072,7 @@
   "peerNoDevicesFound": "未在局域网发现其他开启接收模式的设备",
   "peerSendFiles": "发送文件",
   "peerSendClipboard": "发送剪贴板文本",
-  "peerManualAddressHint": "http://192.168.1.x:端口",
+  "peerManualAddressHint": "http://<局域网IP>:端口",
   "peerIncomingOfferTitle": "来自 {sender} 的传输请求",
   "peerAccept": "接收",
   "peerReject": "拒绝",
@@ -1110,5 +1110,489 @@
   "photoBackupCompleted": "本次成功备份 {count} 项新增媒体",
   "pinToHomeScreen": "固定到手机桌面",
   "pinToHomeScreenSuccess": "已将快捷方式“{name}”添加到桌面",
-  "pinToHomeScreenUnsupported": "当前平台不支持桌面快捷方式"
+  "pinToHomeScreenUnsupported": "当前平台不支持桌面快捷方式",
+  "storagePools": "分布式存储池",
+  "storagePoolsSubtitle": "聚合多个 SFTP / S3 / WebDAV 节点为统一 2 副本空间",
+  "createStoragePool": "新建存储池",
+  "editStoragePool": "编辑存储池",
+  "noStoragePools": "暂无分布式存储池",
+  "noStoragePoolsDesc": "可将多个 SFTP、S3 或 WebDAV 节点聚合成支持跨故障域 2 副本、固定分块与端到端加密的虚拟文件系统。",
+  "poolName": "存储池名称",
+  "poolNameHint": "例如：影音聚合存储池",
+  "poolChunkSize": "分块大小",
+  "poolEncryptEnable": "开启客户端透明 AES-GCM 加密",
+  "poolEncryptSubtitle": "上传前在本地加密所有分块内容与元数据快照",
+  "poolPassphrase": "加密口令",
+  "poolPassphraseHint": "编辑时留空则保留原口令",
+  "poolSelectNodes": "选择成员节点",
+  "poolNeedRemotesFirst": "请先在“远程连接”中配置 SFTP、S3 或 WebDAV 节点。",
+  "poolFailureDomain": "故障域标签",
+  "poolQuotaGb": "配额 (GB)",
+  "poolPrefix": "远端目录前缀",
+  "poolRoleRw": "读写 (RW)",
+  "poolRoleRo": "只读 (RO)",
+  "poolRoleDraining": "迁移下线中",
+  "poolRoleOffline": "已离线",
+  "poolMetaBackup": "元数据备份节点",
+  "poolBrowse": "浏览文件",
+  "poolProbeHealth": "探测健康度",
+  "poolSyncMeta": "同步元数据",
+  "poolHeal": "一键修复副本",
+  "poolGc": "清理孤儿块",
+  "poolDrainNode": "下线迁移",
+  "poolLogicalCapacity": "有效逻辑容量",
+  "poolPhysicalCapacity": "物理总配额",
+  "poolDegradedWarning": "检测到 {count} 个分块不足 2 副本，建议执行“一键修复副本”",
+  "@poolDegradedWarning": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "poolEncryptedBadge": "已加密",
+  "poolPlaintextBadge": "明文模式",
+  "poolMetaVersionBadge": "元数据 v{version}",
+  "@poolMetaVersionBadge": {
+    "placeholders": {
+      "version": { "type": "int" }
+    }
+  },
+  "poolDeleteConfirm": "确定移除存储池“{name}”？默认仅删除本地配置，不会清理远端已写入的数据块。",
+  "@poolDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "poolDrainConfirm": "确定将节点“{node}”上的全部分块迁移至其他健康节点并下线？",
+  "@poolDrainConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolSyncDone": "元数据同步：{action}（v{version}，备份 {uploaded} 节点，冲突 {conflicts}）",
+  "@poolSyncDone": {
+    "placeholders": {
+      "action": { "type": "String" },
+      "version": { "type": "int" },
+      "uploaded": { "type": "int" },
+      "conflicts": { "type": "int" }
+    }
+  },
+  "poolNodesCount": "{count} 个节点",
+  "@poolNodesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "lanTransferAndShareTitle": "局域网直传与 WebDAV 共享",
+  "lanTransferAndShareSubtitle": "局域网点对点直传、WebDAV 挂载与浏览器上传下载",
+  "lanWebdavBrowserHint": "支持浏览器直接打开上传/下载文件，也支持访达、资源管理器、Infuse、Kodi 挂载。",
+  "lanWebdavReadOnlyHint": "关闭只读模式后可允许浏览器上传、新建文件夹和修改文件",
+  "photoBackupSourceLabel": "要备份的目录 / 相册",
+  "photoBackupSelectSource": "添加备份目录",
+  "photoBackupSelectAlbums": "选择相册",
+  "photoBackupDefaultSources": "默认相册目录",
+  "photoBackupAllAlbums": "全部照片与视频",
+  "photoBackupSelectedAlbumsCount": "已选 {count} 个相册",
+  "@photoBackupSelectedAlbumsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "photoBackupResetSources": "恢复默认",
+  "syncExcludeRulesTitle": "排除规则",
+  "syncExcludeExtensionsLabel": "排除的文件类型（扩展名）",
+  "syncExcludeExtensionsHint": "如 tmp, log, bak（逗号分隔）",
+  "syncExcludeNamesLabel": "排除的文件名称",
+  "syncExcludeNamesHint": "如 .DS_Store, Thumbs.db, ~$*",
+  "syncExcludeDirsLabel": "排除的文件夹",
+  "syncExcludeDirsHint": "如 node_modules, .git, build/cache",
+  "syncExcludePresets": "常用预设",
+  "syncPickExcludeDir": "选择文件夹",
+  "syncExcludedCount": "已排除 {count} 项",
+  "@syncExcludedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "syncAddRule": "添加",
+  "peerManualAddressLabel": "目标设备地址（可手动输入）",
+  "peerManualAddressExample": "例如 http://{hostPlaceholder}:端口",
+  "@peerManualAddressExample": {
+    "placeholders": {
+      "hostPlaceholder": { "type": "String" }
+    }
+  },
+  "emptyLabel": "空",
+  "itemCountConnections": "{count} 个连接",
+  "@itemCountConnections": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountPools": "{count} 个存储池",
+  "@itemCountPools": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountBookmarks": "{count} 个书签",
+  "@itemCountBookmarks": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountLocations": "{count} 个位置",
+  "@itemCountLocations": { "placeholders": { "count": { "type": "int" } } },
+  "activeTasksRunningCount": "{count} 个任务运行中",
+  "@activeTasksRunningCount": { "placeholders": { "count": { "type": "int" } } },
+  "timeJustNow": "刚刚",
+  "timeMinutesAgo": "{count} 分钟前",
+  "@timeMinutesAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeHoursAgo": "{count} 小时前",
+  "@timeHoursAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeDaysAgo": "{count} 天前",
+  "@timeDaysAgo": { "placeholders": { "count": { "type": "int" } } },
+  "deletedRelativeTime": "删除于 {time}",
+  "@deletedRelativeTime": { "placeholders": { "time": { "type": "String" } } },
+  "stopSharing": "停止共享",
+  "manageRemotes": "管理远程连接",
+  "manageStoragePools": "管理存储池",
+  "backupRestoreConfigTitle": "备份与恢复配置",
+  "backupRestoreConfigSubtitle": "导出或导入远程连接、书签和偏好设置（支持 AES-256 加密 .fmbak）",
+  "exportAction": "导出",
+  "importAction": "导入",
+  "exportMigrationTitle": "导出设备迁移备份",
+  "exportMigrationPasswordLabel": "加密密码（建议设置）",
+  "exportMigrationPasswordHint": "留空将导出不含凭据的纯文本 JSON",
+  "exportIncludeCredentials": "包含密码与私钥（需设置加密密码）",
+  "copyJsonAction": "复制 JSON",
+  "copyEncryptedAction": "复制加密备份",
+  "saveBackupFileAction": "保存 .fmbak",
+  "saveJsonFileAction": "保存 .json",
+  "importMigrationTitle": "导入设备配置",
+  "chooseBackupFileAction": "选择 .fmbak 或 .json 文件",
+  "importPasteHint": "或直接粘贴 JSON / .fmbak 内容…",
+  "importPasswordLabel": "解密密码（如已加密）",
+  "importPasswordHint": "含凭据的 .fmbak 备份需要填写",
+  "importPasswordRequiredError": "请输入此加密 .fmbak 备份文件的解密密码。",
+  "exportSavedNotice": "备份已保存到 {path}",
+  "@exportSavedNotice": { "placeholders": { "path": { "type": "String" } } },
+  "exportCopiedNotice": "备份内容已复制到剪贴板",
+  "importSummaryNotice": "已导入 {remotes} 个远程、{bookmarks} 个书签、{prefs} 项偏好设置",
+  "@importSummaryNotice": {
+    "placeholders": {
+      "remotes": { "type": "int" },
+      "bookmarks": { "type": "int" },
+      "prefs": { "type": "int" }
+    }
+  },
+  "unencryptedCredentialsBanner": "警告：系统安全钥匙串不可用，远程密码将以明文保存。",
+  "remoteTestTimedOut": "连接测试超时（8 秒）",
+  "remoteImportFailedSummary": "；{count} 项失败：{details}",
+  "@remoteImportFailedSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "details": { "type": "String" }
+    }
+  },
+  "remoteBucketLabel": "存储桶: {bucket}",
+  "@remoteBucketLabel": { "placeholders": { "bucket": { "type": "String" } } },
+  "keyringUnavailableBanner": "系统钥匙串不可用（{detail}），凭据可能无法安全持久化。",
+  "@keyringUnavailableBanner": { "placeholders": { "detail": { "type": "String" } } },
+  "deleteRemotePoolWarning": "警告：以下存储池正在使用此远程连接：{pools}。删除会导致存储池降级或不可用。",
+  "@deleteRemotePoolWarning": { "placeholders": { "pools": { "type": "String" } } },
+  "poolConfirmGcTitle": "执行垃圾回收？",
+  "poolConfirmGcBody": "确认立即清理存储池“{name}”中未引用或已删除的数据块？清理后无法恢复。",
+  "@poolConfirmGcBody": { "placeholders": { "name": { "type": "String" } } },
+  "poolReplicationFactorLabel": "副本数（冗余份数）",
+  "poolMinNodesError": "{count} 副本模式至少需要选择 {count} 个存储节点。",
+  "@poolMinNodesError": { "placeholders": { "count": { "type": "int" } } },
+  "poolInvalidQuotaError": "请输入有效的节点配额（大于 0 GB）。",
+  "poolPassphraseConfirmLabel": "确认加密口令",
+  "poolPassphraseMismatchError": "两次输入的加密口令不一致。",
+  "poolEditLockedHint": "分块大小与加密开关在创建后不可修改。",
+  "poolNodeHealthSummary": "健康度 {pct}% · {ms} ms · {state}",
+  "@poolNodeHealthSummary": {
+    "placeholders": {
+      "pct": { "type": "int" },
+      "ms": { "type": "int" },
+      "state": { "type": "String" }
+    }
+  },
+  "poolRoleShortRw": "读写",
+  "poolRoleShortRo": "只读",
+  "poolRoleShortDraining": "排空中",
+  "poolRoleShortOffline": "离线",
+  "poolCircuitClosed": "正常",
+  "poolCircuitOpen": "熔断",
+  "poolCircuitHalfOpen": "半开探测",
+  "cryptChooseBackingRemote": "选择已有远程或本地目录",
+  "cryptLocalFolderOption": "选择本地文件夹…",
+  "fileConflictBody": "当前目录已存在“{name}”，请选择处理方式：",
+  "@fileConflictBody": { "placeholders": { "name": { "type": "String" } } },
+  "filesConflictBody": "当前目录已存在 {count} 个同名项目，请选择处理方式：",
+  "@filesConflictBody": { "placeholders": { "count": { "type": "int" } } },
+  "offlineOverwriteConfirmTitle": "覆盖远程更改？",
+  "offlineOverwriteConfirmBody": "远程“{name}”也有新版本，确定要用本地离线修改覆盖远程文件吗？",
+  "@offlineOverwriteConfirmBody": { "placeholders": { "name": { "type": "String" } } },
+  "offlineDiscardLocalConfirmTitle": "丢弃本地离线修改？",
+  "offlineDiscardLocalConfirmBody": "“{name}”包含未同步的本地修改或冲突，继续操作将覆盖或删除这些更改。",
+  "@offlineDiscardLocalConfirmBody": { "placeholders": { "name": { "type": "String" } } },
+  "offlineUploadedNotice": "已将“{name}”上传到远程。",
+  "@offlineUploadedNotice": { "placeholders": { "name": { "type": "String" } } },
+  "offlineCheckUpdatesTooltip": "检查更新",
+  "offlineSyncAllTooltip": "全部同步",
+  "offlineLruCapTooltip": "缓存上限",
+  "offlineLruCapOption": "缓存上限：{size}",
+  "@offlineLruCapOption": { "placeholders": { "size": { "type": "String" } } },
+  "offlineUploadLocalTooltip": "上传本地修改到远程",
+  "offlineBannerSummary": "已固定 {count} 项 · {used} / {cap}",
+  "@offlineBannerSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "used": { "type": "String" },
+      "cap": { "type": "String" }
+    }
+  },
+  "offlineStatusLocalModified": "本地已修改",
+  "offlineStatusRemoteNewer": "远程有更新",
+  "offlineStatusConflict": "存在冲突",
+  "offlineStatusSynced": "已同步",
+  "offlineStatusMissingLocal": "本地缺失",
+  "offlineStatusOffline": "离线",
+  "browserSelectItemsFirst": "请先选择至少一个项目。",
+  "clipboardReadOnlyHint": "剪贴板已有 {count} 项（当前目录只读）",
+  "@clipboardReadOnlyHint": { "placeholders": { "count": { "type": "int" } } },
+  "peerTabDirectTransfer": "局域网直传",
+  "peerTabWebdavShare": "WebDAV / 网页共享",
+  "peerPendingItemsToSend": "已准备发送 {count} 个项目",
+  "@peerPendingItemsToSend": { "placeholders": { "count": { "type": "int" } } },
+  "peerReceiveFolderMustBeLocal": "接收保存目录必须位于本地存储。",
+  "peerOpenReceivedFolder": "打开目录",
+  "peerCopyReceivedText": "复制文本",
+  "peerTextCopied": "接收到的文本已复制到剪贴板。",
+  "peerWaitingForAccept": "正在发送，等待对方确认接收…",
+  "peerOfferStatusAccepted": "已同意",
+  "peerOfferStatusCompleted": "已完成",
+  "peerOfferStatusRejected": "已拒绝",
+  "peerOfferStatusReceiving": "接收中",
+  "photoBackupScanning": "正在扫描照片与目录…",
+  "photoBackupCancel": "取消",
+  "photoBackupCancelledNotice": "已取消相册备份（已上传 {count} 张）。",
+  "@photoBackupCancelledNotice": { "placeholders": { "count": { "type": "int" } } },
+  "photoBackupResetHistory": "重置备份记录",
+  "photoBackupResetHistoryConfirm": "清空本地已备份记录？清空后下次备份将重新校验并上传照片。",
+  "photoBackupLastRun": "上次备份：{time}",
+  "@photoBackupLastRun": { "placeholders": { "time": { "type": "String" } } },
+  "photoBackupProgressCount": "已上传 {uploaded} / {total}",
+  "@photoBackupProgressCount": {
+    "placeholders": {
+      "uploaded": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "photoBackupOpenDestination": "打开备份目录",
+  "photoBackupVaultLocked": "目标隐私文件夹尚未解锁",
+  "photoBackupPermissionDeniedTitle": "需要相册访问权限",
+  "photoBackupPermissionDeniedBody": "请在系统设置中允许访问照片图库，以选择相册或执行备份。",
+  "photoBackupOpenSettings": "前往设置",
+  "syncSaveProfileTitle": "保存同步配置",
+  "syncProfileNameLabel": "配置名称",
+  "syncSourceLabel": "源目录",
+  "syncDestinationLabel": "目标目录",
+  "syncScanLimitReached": "目录扫描达到上限，预览结果可能不完整。",
+  "syncSummaryChanges": "{changes} 项变更 · {unchanged} 项一致",
+  "@syncSummaryChanges": {
+    "placeholders": {
+      "changes": { "type": "int" },
+      "unchanged": { "type": "int" }
+    }
+  },
+  "syncConfirmMirrorDeleteTitle": "确认镜像删除",
+  "syncConfirmMirrorDeleteBody": "本次同步将在目标端删除 {count} 个多余的文件或文件夹，确认继续？",
+  "@syncConfirmMirrorDeleteBody": { "placeholders": { "count": { "type": "int" } } },
+  "syncConfirmDeleteProfileBody": "确定删除已保存的同步配置“{name}”？",
+  "@syncConfirmDeleteProfileBody": { "placeholders": { "name": { "type": "String" } } },
+  "syncSwapFoldersTooltip": "交换源目录与目标目录",
+  "syncSelectAll": "全选",
+  "syncDeselectAll": "取消全选",
+  "syncActionCopy": "复制",
+  "syncActionUpdate": "更新",
+  "syncActionDelete": "删除",
+  "syncActionPullUpdate": "回拉更新",
+  "syncEditConfig": "调整目录",
+  "syncAutoSyncFailed": "上次自动同步失败：{error}",
+  "@syncAutoSyncFailed": { "placeholders": { "error": { "type": "String" } } },
+  "taskStatusPaused": "已暂停",
+  "taskRateLimitActive": "限速：{limit}",
+  "@taskRateLimitActive": { "placeholders": { "limit": { "type": "String" } } },
+  "taskFailedItemsTitle": "失败详情（{count} 项）",
+  "@taskFailedItemsTitle": { "placeholders": { "count": { "type": "int" } } },
+  "taskRetryStarted": "已重新提交失败项进行重试。",
+  "analyzerStatsSummary": "{files} 个文件 · {folders} 个文件夹",
+  "@analyzerStatsSummary": {
+    "placeholders": {
+      "files": { "type": "int" },
+      "folders": { "type": "int" }
+    }
+  },
+  "analyzerScanCancelled": "扫描已取消（仅展示部分统计结果）。",
+  "analyzerScanTruncated": "扫描达到上限，更深层目录未计入统计。",
+  "analyzerRescan": "重新扫描",
+  "duplicatesGroupCount": "{count} 组重复",
+  "@duplicatesGroupCount": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesCopiesCount": "（{count} 份）",
+  "@duplicatesCopiesCount": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesEachSize": "每份 {size}",
+  "@duplicatesEachSize": { "placeholders": { "size": { "type": "String" } } },
+  "duplicatesDeleteFailed": "有 {count} 项删除失败",
+  "@duplicatesDeleteFailed": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesAllCopiesWarning": "警告：有 {count} 组重复文件选中了全部副本，删除后将不留备份！",
+  "@duplicatesAllCopiesWarning": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesClearSelection": "清空选择",
+  "duplicatesScanCancelled": "重复文件扫描已取消。",
+  "duplicatesTrashConfirmBody": "确认将选中的 {count} 个重复项目移入回收站？",
+  "@duplicatesTrashConfirmBody": { "placeholders": { "count": { "type": "int" } } },
+  "categoryTruncatedBanner": "仅展示前 {count} 个匹配文件（已达上限）。",
+  "@categoryTruncatedBanner": { "placeholders": { "count": { "type": "int" } } },
+  "galleryLocateInFolder": "在文件夹中定位",
+  "galleryUnsupportedFormatForPick": "当前选择的文件格式不符合外部请求要求。",
+  "galleryExifSkippedNonJpeg": "已跳过 {count} 张非 JPEG 图片（去 EXIF 仅支持 JPEG）。",
+  "@galleryExifSkippedNonJpeg": { "placeholders": { "count": { "type": "int" } } },
+  "searchFiltersLabel": "筛选条件 ({count})",
+  "@searchFiltersLabel": { "placeholders": { "count": { "type": "int" } } },
+  "searchAllTypes": "全部类型",
+  "pdfEncryptedError": "该 PDF 已加密或受密码保护，无法直接渲染。",
+  "pdfPageTextTitle": "第 {page} 页文本",
+  "@pdfPageTextTitle": { "placeholders": { "page": { "type": "int" } } },
+  "pdfPageTextCopied": "当前页文本已复制到剪贴板。",
+  "pdfNoSelectableText": "该页未检测到可选文本（可能是扫描图片）。",
+  "pdfSelectCopyPageText": "选择 / 复制本页文本",
+  "pdfRenderPageFailed": "第 {page} 页渲染失败。",
+  "@pdfRenderPageFailed": { "placeholders": { "page": { "type": "int" } } },
+  "structuredEmptyValue": "（空）",
+  "structuredCsvTruncated": "当前展示前 {shown} 行（共 {total} 行）。",
+  "@structuredCsvTruncated": {
+    "placeholders": {
+      "shown": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "copyXPath": "复制 XPath",
+  "subtitleLoadFailed": "不支持或无法读取该字幕文件。",
+  "diffTruncatedNotice": "目录对比已达到条目上限，部分深层文件未显示。",
+  "diffSyncFoldersAction": "去同步目录",
+  "vaultHtmlBrowserWarning": "为遵守隐私空间零落盘原则，禁止在外部浏览器中打开解密后的 HTML。",
+  "poolStorageDirectory": "存储目录",
+  "poolPickDirectory": "选择目录",
+  "poolReplicationBadge": "{count} 副本",
+  "@poolReplicationBadge": { "placeholders": { "count": { "type": "int" } } },
+  "poolSetReplicationTitle": "设置副本数",
+  "poolSetReplicationHint": "新写入文件立即按此副本数存储；已有文件可通过“修复”补齐副本。",
+  "poolNodeRealFreeWithTotal": "剩余 {free} / 共 {total}",
+  "@poolNodeRealFreeWithTotal": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "poolNodeRealFreeOnly": "剩余 {free}",
+  "@poolNodeRealFreeOnly": { "placeholders": { "free": { "type": "String" } } },
+  "poolNodeSpaceUnavailable": "剩余空间未知",
+  "poolNodeSpaceProbing": "正在探测剩余空间…",
+  "poolNodePoolUsed": "存储池已用: {used}",
+  "@poolNodePoolUsed": { "placeholders": { "used": { "type": "String" } } },
+  "poolNodeDirectoryLabel": "目录: {dir}",
+  "@poolNodeDirectoryLabel": { "placeholders": { "dir": { "type": "String" } } },
+  "remoteBatchExportAction": "批量加密导出",
+  "remoteBatchImportAction": "批量加密导入",
+  "remoteBatchExportTitle": "批量导出远程连接",
+  "remoteBatchExportSubtitle": "连接配置与凭据将使用您设置的密码通过 AES-256-GCM 加密保护。",
+  "remoteBatchSelectCount": "已选择 {selected} / {total} 个连接",
+  "@remoteBatchSelectCount": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "remoteBatchSelectAll": "全选",
+  "remoteBatchDeselectAll": "取消全选",
+  "remoteBatchUnreadableSkipped": "凭据无法读取（不可导出）",
+  "remoteBatchNoReadableToExport": "当前没有可读取的远程连接可供导出。",
+  "remoteBatchExportPasswordLabel": "加密密码（必填）",
+  "remoteBatchExportPasswordHint": "至少 {min} 位字符",
+  "@remoteBatchExportPasswordHint": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+  },
+  "remoteBatchExportPasswordConfirmLabel": "确认加密密码",
+  "remoteBatchPasswordRequiredNote": "请牢记此密码，批量导入远程连接时必须输入同一密码解密。",
+  "remoteBatchPasswordTooShort": "加密密码至少需要 {min} 位字符。",
+  "@remoteBatchPasswordTooShort": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+  },
+  "remoteBatchPasswordMismatch": "两次输入的密码不一致。",
+  "remoteBatchSaveFileAction": "保存加密文件",
+  "remoteBatchShareFileAction": "导出 / 分享文件",
+  "remoteBatchExportSavedNotice": "已加密导出 {count} 个连接到 {path}",
+  "@remoteBatchExportSavedNotice": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "path": { "type": "String" }
+    }
+  },
+  "remoteBatchExportSharedNotice": "已生成 {count} 个连接的加密备份文件。",
+  "@remoteBatchExportSharedNotice": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchExportCopiedNotice": "已复制 {count} 个连接的加密备份到剪贴板。",
+  "@remoteBatchExportCopiedNotice": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchImportTitle": "批量导入远程连接",
+  "remoteBatchChooseFile": "选择备份文件",
+  "remoteBatchPasteClipboard": "粘贴剪贴板",
+  "remoteBatchClipboardDetected": "已检测到剪贴板中的加密备份。",
+  "remoteBatchClipboardEmpty": "剪贴板为空。",
+  "remoteBatchSelectedFileLabel": "已选文件：{name}",
+  "@remoteBatchSelectedFileLabel": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "remoteBatchPasteFieldHint": "或直接粘贴加密的 .fmremotes / .fmbak 备份内容…",
+  "remoteBatchImportPasswordLabel": "解密密码（必填）",
+  "remoteBatchImportPasswordHint": "请输入导出时设置的密码",
+  "remoteBatchDecryptAction": "解密并预览",
+  "remoteBatchPreviewSummary": "解密成功，共 {count} 个连接",
+  "@remoteBatchPreviewSummary": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchConflictSectionLabel": "遇到同名 ID 已有连接时：",
+  "remoteBatchConflictSkip": "跳过已有",
+  "remoteBatchConflictOverwrite": "覆盖已有",
+  "remoteBatchConflictKeepBoth": "保留两者",
+  "remoteBatchBadgeNew": "新增",
+  "remoteBatchBadgeExists": "已存在",
+  "remoteBatchAllSkippedHint": "所选连接均已存在且将被跳过，可切换为“覆盖已有”或“保留两者”。",
+  "remoteBatchImportConfirm": "导入 ({count})",
+  "@remoteBatchImportConfirm": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchImportSummary": "已导入 {imported} 个连接（新增 {added}、更新 {overwritten}、副本 {duplicated}、跳过 {skipped}）{detail}",
+  "@remoteBatchImportSummary": {
+    "placeholders": {
+      "imported": { "type": "int" },
+      "added": { "type": "int" },
+      "overwritten": { "type": "int" },
+      "duplicated": { "type": "int" },
+      "skipped": { "type": "int" },
+      "detail": { "type": "String" }
+    }
+  },
+  "remoteBatchErrorNotEncrypted": "不支持明文数据，请选择使用密码加密导出的备份文件或内容。",
+  "remoteBatchErrorInvalidFormat": "备份文件格式无效，无法解析。",
+  "remoteBatchErrorWrongPassword": "密码错误或备份文件已损坏，请检查密码后重试。",
+  "remoteBatchErrorEmptyBundle": "该加密备份中不包含有效的远程连接。",
+  "remoteBatchErrorFileTooLarge": "所选文件过大，不是有效的远程连接备份文件。",
+  "remoteBatchBackStep": "返回上一步"
 }

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -12,7 +13,9 @@ import '../services/external_file_service.dart';
 import '../services/image_privacy_service.dart';
 import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
+import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
+import 'browser_page.dart';
 import 'image_viewer_page.dart';
 import 'photo_backup_page.dart';
 import 'package:filemanager/l10n/app_localizations.dart';
@@ -289,8 +292,16 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     if (widget.pickRequest != null) {
       if (widget.pickRequest!.matchesFileName(file.path)) {
         Navigator.of(context).pop([file.path]);
-        return;
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).galleryUnsupportedFormatForPick,
+            ),
+          ),
+        );
       }
+      return;
     }
     // Siblings resolve lazily inside the viewer: each asset.file may copy
     // bytes out of the library, so touching the whole roll up front is slow.
@@ -333,15 +344,20 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
   }
 
   Future<void> _deletePhoto(int index) async {
-    if (index < 0 || index >= _photos.length) return;
+    if (_batchBusy || index < 0 || index >= _photos.length) return;
     final photo = _photos[index];
     final l10n = AppLocalizations.of(context);
+    final isDesktopFile = photo.file != null;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.delete_outline, color: Colors.red, size: 28),
         title: Text(l10n.deleteSingleConfirmTitle(photo.name)),
-        content: Text(l10n.deleteImageConfirm),
+        content: Text(
+          isDesktopFile
+              ? l10n.deleteChoiceTrashOrPermanent
+              : l10n.deleteImageConfirm,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -357,16 +373,21 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     );
     if (confirm != true || !mounted) return;
 
+    setState(() => _batchBusy = true);
     try {
       bool deleted = false;
+      bool deletedAsset = false;
       if (photo.file != null) {
-        if (photo.file!.existsSync()) {
-          await photo.file!.delete();
+        if (widget.deleteFilesOverride != null) {
+          await widget.deleteFilesOverride!([photo.file!]);
+        } else if (photo.file!.existsSync()) {
+          await StorageService.instance.moveToTrash(photo.file!.path);
         }
         deleted = true;
       } else if (photo.asset != null) {
         final ids = await PhotoManager.editor.deleteWithIds([photo.asset!.id]);
         deleted = ids.isNotEmpty;
+        deletedAsset = deleted;
       }
       if (!deleted || !mounted) return;
       HapticFeedback.lightImpact();
@@ -376,6 +397,10 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         } else {
           _photos.remove(photo);
         }
+        if (deletedAsset && _albumTotal > 0) {
+          _albumTotal = math.max(0, _albumTotal - 1);
+        }
+        _selectedKeys.remove(photo.key);
         _groupedPhotos = null;
         _lastGroupedLength = -1;
       });
@@ -390,6 +415,10 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _batchBusy = false);
+      }
     }
   }
 
@@ -442,6 +471,17 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                 ],
               ),
             ),
+          if (photo.file != null)
+            PopupMenuItem(
+              value: 'locate',
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_open_outlined, size: 18),
+                  const SizedBox(width: 10),
+                  Text(l10n.galleryLocateInFolder),
+                ],
+              ),
+            ),
           PopupMenuItem(
             value: 'copy_path',
             child: Row(
@@ -476,7 +516,32 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         break;
       case 'share':
         if (file != null) {
-          SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+          try {
+            if (widget.shareFilesOverride != null) {
+              await widget.shareFilesOverride!([file.path]);
+            } else {
+              await SharePlus.instance.share(
+                ShareParams(files: [XFile(file.path)]),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('$e')),
+              );
+            }
+          }
+        }
+        break;
+      case 'locate':
+        if (photo.file != null && mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => BrowserPage(
+                initialRoot: p.dirname(photo.file!.path),
+              ),
+            ),
+          );
         }
         break;
       case 'copy_path':
@@ -614,6 +679,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     final selected = _selectedPhotos;
     if (selected.isEmpty || _batchBusy) return;
 
+    final hasLocalFile = selected.any((p) => p.file != null);
     final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
       context: context,
@@ -624,7 +690,11 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               ? l10n.deleteSingleConfirmTitle(selected.first.name)
               : l10n.deleteMultipleConfirmTitle(selected.length),
         ),
-        content: Text(l10n.deletePermanentWarning),
+        content: Text(
+          hasLocalFile
+              ? l10n.deleteChoiceTrashOrPermanent
+              : l10n.deletePermanentWarning,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -643,6 +713,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
     setState(() => _batchBusy = true);
     try {
       final deletedKeys = <String>{};
+      var deletedAssetsCount = 0;
       if (widget.deleteFilesOverride != null) {
         final files = selected.map((p) => p.file).whereType<File>().toList();
         await widget.deleteFilesOverride!(files);
@@ -653,7 +724,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         for (final p in selected) {
           if (p.file != null) {
             if (p.file!.existsSync()) {
-              await p.file!.delete();
+              await StorageService.instance.moveToTrash(p.file!.path);
             }
             deletedKeys.add(p.key);
           }
@@ -665,6 +736,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
         if (assetIds.isNotEmpty) {
           final deletedIds = await PhotoManager.editor.deleteWithIds(assetIds);
           final deletedIdSet = deletedIds.toSet();
+          deletedAssetsCount = deletedIdSet.length;
           for (final p in selected) {
             if (p.asset != null && deletedIdSet.contains(p.asset!.id)) {
               deletedKeys.add(p.key);
@@ -680,6 +752,9 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
           _photos = _photos
               .where((p) => !deletedKeys.contains(p.key))
               .toList();
+          if (deletedAssetsCount > 0) {
+            _albumTotal = math.max(0, _albumTotal - deletedAssetsCount);
+          }
           _groupedPhotos = null;
           _lastGroupedLength = -1;
           _selectedKeys.removeAll(deletedKeys);
@@ -778,21 +853,55 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
 
     setState(() => _batchBusy = true);
     try {
-      final paths = <String>[];
-      for (final p in selected) {
-        final file = await p.resolve();
-        if (file != null) paths.add(file.path);
+      var saved = 0;
+      var skippedNonJpeg = 0;
+      for (final photo in selected) {
+        final file = await photo.resolve();
+        if (file == null || !await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        if (!ImagePrivacyService.isJpeg(bytes)) {
+          skippedNonJpeg++;
+          continue;
+        }
+        if (photo.asset != null) {
+          final cleanPath =
+              await ImagePrivacyService.stripExifAndSaveCopy(file.path);
+          try {
+            final cleanName = '${p.basenameWithoutExtension(photo.name)}_clean.jpg';
+            await PhotoManager.editor.saveImageWithPath(
+              cleanPath,
+              title: cleanName,
+            );
+            saved++;
+          } finally {
+            try {
+              final f = File(cleanPath);
+              if (await f.exists()) await f.delete();
+            } catch (_) {}
+          }
+        } else {
+          await ImagePrivacyService.stripExifAndSaveCopy(file.path);
+          saved++;
+        }
       }
-      if (paths.isEmpty || !mounted) return;
-      final saved = await ImagePrivacyService.batchStripExif(paths);
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
+      final msg = skippedNonJpeg > 0 && saved == 0
+          ? l10n.galleryExifSkippedNonJpeg(skippedNonJpeg)
+          : skippedNonJpeg > 0
+              ? '${l10n.stripExifBatchDone(saved)} · ${l10n.galleryExifSkippedNonJpeg(skippedNonJpeg)}'
+              : l10n.stripExifBatchDone(saved);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.stripExifBatchDone(saved))),
+        SnackBar(content: Text(msg)),
       );
       if (saved > 0) {
         await _scan();
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
     } finally {
       if (mounted) {
         setState(() => _batchBusy = false);
@@ -815,7 +924,17 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
           paths.add(file.path);
         }
       }
-      if (!mounted || paths.isEmpty) return;
+      if (!mounted) return;
+      if (paths.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).galleryUnsupportedFormatForPick,
+            ),
+          ),
+        );
+        return;
+      }
       Navigator.of(context).pop(paths);
     } finally {
       if (mounted) {
@@ -850,6 +969,11 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
               if (_isSelecting) _toggleSelectAll();
             },
             const SingleActivator(LogicalKeyboardKey.delete): () {
+              if (_isSelecting && _selectedKeys.isNotEmpty) {
+                _batchDeleteSelected();
+              }
+            },
+            const SingleActivator(LogicalKeyboardKey.backspace): () {
               if (_isSelecting && _selectedKeys.isNotEmpty) {
                 _batchDeleteSelected();
               }
@@ -895,7 +1019,7 @@ class _GalleryPageState extends State<GalleryPage> with WidgetsBindingObserver {
                             onPressed: () => _enterSelectionMode(),
                           ),
                         IconButton(
-                          icon: const Icon(Icons.backup_outlined),
+                          icon: const Icon(Icons.cloud_upload_outlined),
                           tooltip: l10n.photoBackupTitle,
                           onPressed: () {
                             Navigator.of(context).push(

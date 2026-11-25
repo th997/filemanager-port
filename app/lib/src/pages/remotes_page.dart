@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import '../dialogs/remote_batch_transfer_dialogs.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/metadata.dart' show isSecretEncryptionActive;
@@ -11,7 +11,8 @@ import 'package:filemanager/l10n/app_localizations.dart';
 import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
 import '../widgets/error_recovery_action.dart';
-import '../services/platform_capabilities.dart';
+import '../services/pool_service.dart';
+import '../services/remote_transfer_service.dart';
 import '../services/shortcut_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
@@ -23,8 +24,17 @@ enum _ConnStatus { unknown, checking, online, offline }
 
 class RemotesPage extends StatefulWidget {
   final ExternalPickRequest? pickRequest;
+  final bool embedded;
+  final void Function(RemoteConfigDto remote)? onOpenRemote;
+  final VoidCallback? onRemotesChanged;
 
-  const RemotesPage({super.key, this.pickRequest});
+  const RemotesPage({
+    super.key,
+    this.pickRequest,
+    this.embedded = false,
+    this.onOpenRemote,
+    this.onRemotesChanged,
+  });
 
   @override
   State<RemotesPage> createState() => _RemotesPageState();
@@ -116,24 +126,41 @@ class _RemotesPageState extends State<RemotesPage> {
     return list;
   }
 
+  String _formatSubtitle(RemoteConfigDto r, AppLocalizations l10n) {
+    if (_isUnreadable(r)) return l10n.detailsUnavailableReconnect;
+    if (r.endpoint != null) {
+      return r.bucket != null
+          ? '${r.endpoint!} (${l10n.remoteBucketLabel(r.bucket!)})'
+          : r.endpoint!;
+    }
+    if (r.bucket != null) return l10n.remoteBucketLabel(r.bucket!);
+    final portSuffix = r.port != null ? ':${r.port}' : '';
+    return '${r.host ?? ""}$portSuffix';
+  }
+
   void _copyRemoteUri(RemoteConfigDto r) {
+    final l10n = AppLocalizations.of(context);
+    if (_isUnreadable(r)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.connectionNoReadableDetails)),
+      );
+      return;
+    }
+    final portSuffix = r.port != null ? ':${r.port}' : '';
     final uri = r.endpoint ??
         (r.bucket != null
             ? '${r.kind}://${r.bucket}'
-            : '${r.kind}://${r.host ?? ""}:${r.port ?? ""}');
+            : '${r.kind}://${r.host ?? ""}$portSuffix');
     Clipboard.setData(ClipboardData(text: uri));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppLocalizations.of(context).copiedValue(uri))),
+      SnackBar(content: Text(l10n.copiedValue(uri))),
     );
   }
 
   /// The stored config could not be decrypted, so every field but the
   /// name and kind is empty. Editing or testing it would just fail.
   static bool _isUnreadable(RemoteConfigDto r) =>
-      r.rootPath == null &&
-      r.host == null &&
-      r.endpoint == null &&
-      r.bucket == null;
+      StorageService.isUnreadableRemote(r);
 
   Future<void> _loadRemotes() async {
     try {
@@ -171,6 +198,10 @@ class _RemotesPageState extends State<RemotesPage> {
   }
 
   void _openRemote(RemoteConfigDto remote) async {
+    if (widget.pickRequest == null && widget.onOpenRemote != null) {
+      widget.onOpenRemote!(remote);
+      return;
+    }
     final picked = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => BrowserPage(
@@ -189,8 +220,8 @@ class _RemotesPageState extends State<RemotesPage> {
 
   void _showRemoteActionSheet(RemoteConfigDto r) {
     HapticFeedback.mediumImpact();
-    final sub = r.endpoint ??
-        (r.bucket != null ? 'Bucket: ${r.bucket}' : '${r.host ?? ""}:${r.port ?? ""}');
+    final l10n = AppLocalizations.of(context);
+    final sub = _formatSubtitle(r, l10n);
 
     showModalBottomSheet(
       context: context,
@@ -219,7 +250,7 @@ class _RemotesPageState extends State<RemotesPage> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.folder_open),
-                title: Text(AppLocalizations.of(context).connectAndBrowse),
+                title: Text(l10n.connectAndBrowse),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openRemote(r);
@@ -227,7 +258,7 @@ class _RemotesPageState extends State<RemotesPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.network_check),
-                title: Text(AppLocalizations.of(context).testConnection),
+                title: Text(l10n.testConnection),
                 onTap: () {
                   Navigator.pop(ctx);
                   _testRemote(r);
@@ -235,15 +266,24 @@ class _RemotesPageState extends State<RemotesPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.copy_outlined),
-                title: Text(AppLocalizations.of(context).copyUri),
+                title: Text(l10n.copyUri),
                 onTap: () {
                   Navigator.pop(ctx);
                   _copyRemoteUri(r);
                 },
               ),
+              if (_shortcutsSupported)
+                ListTile(
+                  leading: const Icon(Icons.add_to_home_screen),
+                  title: Text(l10n.pinToHomeScreen),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pinRemoteShortcut(r);
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
-                title: Text(AppLocalizations.of(context).editConfiguration),
+                title: Text(l10n.editConfiguration),
                 onTap: () {
                   Navigator.pop(ctx);
                   _editRemote(r);
@@ -252,7 +292,7 @@ class _RemotesPageState extends State<RemotesPage> {
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
                 title: Text(
-                  AppLocalizations.of(context).deleteRemote,
+                  l10n.deleteRemote,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
@@ -273,7 +313,8 @@ class _RemotesPageState extends State<RemotesPage> {
       builder: (ctx) => const RemoteWizardDialog(),
     );
     if (created != null) {
-      _loadRemotes();
+      await _loadRemotes();
+      widget.onRemotesChanged?.call();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context).addedRemote(created.name))),
@@ -289,23 +330,48 @@ class _RemotesPageState extends State<RemotesPage> {
     );
     if (updated != null) {
       invalidateRoot(root: 'remote://${updated.id}');
-      _loadRemotes();
+      _status.remove(remote.id);
+      _status.remove(updated.id);
+      await _loadRemotes();
+      widget.onRemotesChanged?.call();
     }
   }
 
   Future<void> _deleteRemote(RemoteConfigDto remote) async {
+    final l10n = AppLocalizations.of(context);
+    final affectedPools = PoolService.instance.pools
+        .where((p) => p.nodes.any((n) => n.remoteId == remote.id))
+        .map((p) => p.name)
+        .toList();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(AppLocalizations.of(context).deleteRemote),
-        content: Text(
-          AppLocalizations.of(context).deleteRemoteConfirm(remote.name)
-
-          ,
+        title: Text(l10n.deleteRemote),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.deleteRemoteConfirm(remote.name)),
+            if (affectedPools.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.deleteRemotePoolWarning(affectedPools.join(', ')),
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(context).cancel)),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(AppLocalizations.of(context).delete)),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(l10n.cancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.delete),
+          ),
         ],
       ),
     );
@@ -314,21 +380,24 @@ class _RemotesPageState extends State<RemotesPage> {
       try {
         await StorageService.instance.deleteRemote(remote.id);
         invalidateRoot(root: 'remote://${remote.id}');
+        await PoolService.instance.refresh();
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context).couldNotDeleteNamed(remote.name, '$e')),
+              content: Text(l10n.couldNotDeleteNamed(remote.name, '$e')),
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
           );
         }
         return;
       }
-      _loadRemotes();
+      _status.remove(remote.id);
+      await _loadRemotes();
+      widget.onRemotesChanged?.call();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).deletedItem(remote.name))),
+          SnackBar(content: Text(l10n.deletedItem(remote.name))),
         );
       }
     }
@@ -364,7 +433,7 @@ class _RemotesPageState extends State<RemotesPage> {
           .timeout(const Duration(seconds: 8));
     } on TimeoutException {
       ok = false;
-      error = 'timed out after 8 seconds';
+      error = l10n.remoteTestTimedOut;
     } catch (e) {
       ok = false;
       error = friendlyErrorText(e, l10n);
@@ -413,194 +482,89 @@ class _RemotesPageState extends State<RemotesPage> {
   }
 
   Future<void> _exportRemotes() async {
-    try {
-      if (_remotes.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).noConnectionsToExport)),
-        );
-        return;
-      }
-      final jsonStr = await StorageService.instance.exportRemotesJson();
-      if (!mounted) return;
-      showModalBottomSheet(
-        context: context,
-        showDragHandle: true,
-        builder: (ctx) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  AppLocalizations.of(context).backupConnectionsCount(_remotes.length),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  AppLocalizations.of(context).backupConnectionsDesc,
-                  style: TextStyle(fontSize: 12),
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  icon: const Icon(Icons.copy, size: 18),
-                  label: Text(AppLocalizations.of(context).copyToClipboard),
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    Clipboard.setData(ClipboardData(text: jsonStr));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(AppLocalizations.of(context).connectionsCopied)),
-                    );
-                  },
-                ),
-                if (PlatformCapabilities.supportsNativeShareSheet) ...[
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.share, size: 18),
-                    label: Text(AppLocalizations.of(context).shareSaveToFiles),
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      SharePlus.instance.share(ShareParams(
-                        text: jsonStr,
-                        subject: 'remotes_backup.json',
-                      ));
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
+    final l10n = AppLocalizations.of(context);
+    if (_remotes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.noConnectionsToExport)),
       );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context).exportFailed('$e')),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
+      return;
     }
+    if (!_remotes.any(RemoteTransferService.isReadableRemote)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.remoteBatchNoReadableToExport)),
+      );
+      return;
+    }
+    final sortedRemotes = List<RemoteConfigDto>.of(_remotes)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final outcome = await RemoteBatchExportDialog.show(
+      context,
+      remotes: sortedRemotes,
+    );
+    if (outcome == null || !mounted) return;
+    final currentL10n = AppLocalizations.of(context);
+    final message = switch (outcome.method) {
+      RemoteBatchExportMethod.saveFile => currentL10n.remoteBatchExportSavedNotice(
+          outcome.count,
+          outcome.savedPath ?? '',
+        ),
+      RemoteBatchExportMethod.shareFile =>
+        currentL10n.remoteBatchExportSharedNotice(outcome.count),
+      RemoteBatchExportMethod.copyClipboard =>
+        currentL10n.remoteBatchExportCopiedNotice(outcome.count),
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.success,
+      ),
+    );
   }
 
   Future<void> _importRemotes() async {
-    final controller = TextEditingController();
-    try {
-      final clip = await Clipboard.getData(Clipboard.kTextPlain);
-      if (clip?.text != null &&
-          (clip!.text!.trim().startsWith('[') || clip.text!.trim().startsWith('{'))) {
-        controller.text = clip.text!.trim();
-      }
-    } catch (_) {}
-
-    if (!mounted) {
-      controller.dispose();
-      return;
-    }
-    bool? imported;
-    try {
-      var importing = false;
-      imported = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: Text(AppLocalizations.of(context).restoreConnections),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    AppLocalizations.of(context).pasteJsonBackupHint,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: controller,
-                    maxLines: 8,
-                    decoration: const InputDecoration(
-                      hintText: '[{"id": "...", "name": "...", "kind": "s3", ...}]',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: importing ? null : () => Navigator.of(ctx).pop(false),
-                child: Text(AppLocalizations.of(context).cancel),
-              ),
-              FilledButton(
-                onPressed: importing
-                    ? null
-                    : () async {
-                        final text = controller.text.trim();
-                        if (text.isEmpty) return;
-                        setDialogState(() => importing = true);
-                        try {
-                          final count = await StorageService.instance.importRemotesJson(text);
-                          final failures = StorageService.instance.lastImportFailures;
-                          if (ctx.mounted) {
-                            Navigator.of(ctx).pop(true);
-                          }
-                          if (mounted) {
-                            final detail = failures.isEmpty
-                                ? ''
-                                : '; ${failures.length} failed: ${failures.join(', ')}';
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(AppLocalizations.of(context).importedConnections(count, detail)),
-                                backgroundColor: failures.isEmpty
-                                    ? Theme.of(context).colorScheme.success
-                                    : Theme.of(context).colorScheme.error,
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            setDialogState(() => importing = false);
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(
-                                content: Text(AppLocalizations.of(ctx).importFailed('$e')),
-                                backgroundColor: Theme.of(ctx).colorScheme.error,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                child: importing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(AppLocalizations.of(context).importAction),
-              ),
-            ],
+    final result = await RemoteBatchImportDialog.show(
+      context,
+      existingRemotes: _remotes,
+    );
+    if (result == null || !mounted) return;
+    await _loadRemotes();
+    widget.onRemotesChanged?.call();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    final detail = result.failures.isEmpty
+        ? ''
+        : l10n.remoteImportFailedSummary(
+            result.failures.length,
+            result.failures.join(', '),
+          );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          l10n.remoteBatchImportSummary(
+            result.totalImported,
+            result.added,
+            result.overwritten,
+            result.duplicated,
+            result.skipped,
+            detail,
           ),
         ),
-      );
-    } finally {
-      controller.dispose();
-    }
-    if (imported == true) {
-      _loadRemotes();
-    }
+        backgroundColor: result.failures.isEmpty
+            ? Theme.of(context).colorScheme.success
+            : Theme.of(context).colorScheme.error,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final displayedRemotes = _visibleRemotes;
+    final l10n = AppLocalizations.of(context);
 
-    return AppSwipeBack(
-      child: Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).cloudRemoteStorage),
+        automaticallyImplyLeading: !widget.embedded,
+        title: Text(l10n.cloudRemoteStorage),
         actions: [
           if (_remotes.isNotEmpty)
             IconButton(
@@ -641,9 +605,9 @@ class _RemotesPageState extends State<RemotesPage> {
                 value: 'export',
                 child: Row(
                   children: [
-                    Icon(Icons.upload_file, size: 18),
-                    SizedBox(width: 8),
-                    Text(AppLocalizations.of(context).backupExport),
+                    const Icon(Icons.upload_file, size: 18),
+                    const SizedBox(width: 8),
+                    Text(l10n.remoteBatchExportAction),
                   ],
                 ),
               ),
@@ -651,9 +615,9 @@ class _RemotesPageState extends State<RemotesPage> {
                 value: 'import',
                 child: Row(
                   children: [
-                    Icon(Icons.download_for_offline, size: 18),
-                    SizedBox(width: 8),
-                    Text(AppLocalizations.of(context).restoreImport),
+                    const Icon(Icons.download_for_offline, size: 18),
+                    const SizedBox(width: 8),
+                    Text(l10n.remoteBatchImportAction),
                   ],
                 ),
               ),
@@ -675,14 +639,14 @@ class _RemotesPageState extends State<RemotesPage> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
                         Icon(Icons.warning_amber_rounded, size: 18, color: Colors.amber),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'OS keyring & key-file persistence failed; saved remote credentials are stored unencrypted locally.',
-                            style: TextStyle(fontSize: 12),
+                            l10n.unencryptedCredentialsBanner,
+                            style: const TextStyle(fontSize: 12),
                           ),
                         ),
                       ],
@@ -727,10 +691,25 @@ class _RemotesPageState extends State<RemotesPage> {
                                   icon: Icons.cloud_queue,
                                   title: AppLocalizations.of(context).noRemoteConnections,
                                   subtitle: AppLocalizations.of(context).noRemoteConnectionsDesc,
-                                  action: FilledButton.icon(
-                                    onPressed: _addRemote,
-                                    icon: const Icon(Icons.add, size: 18),
-                                    label: Text(AppLocalizations.of(context).addRemoteStorage),
+                                  action: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      FilledButton.icon(
+                                        onPressed: _addRemote,
+                                        icon: const Icon(Icons.add, size: 18),
+                                        label: Text(l10n.addRemoteStorage),
+                                      ),
+                                      OutlinedButton.icon(
+                                        onPressed: _importRemotes,
+                                        icon: const Icon(
+                                          Icons.download_for_offline_outlined,
+                                          size: 18,
+                                        ),
+                                        label: Text(l10n.remoteBatchImportAction),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -770,13 +749,7 @@ class _RemotesPageState extends State<RemotesPage> {
 
                                   final r = displayedRemotes[i];
                                   final (icon, color) = _remoteVisuals(r.kind);
-                                  final unreadable = _isUnreadable(r);
-                                  final sub = unreadable
-                                      ? AppLocalizations.of(context).detailsUnavailableReconnect
-                                      : (r.endpoint ??
-                                          (r.bucket != null
-                                              ? 'Bucket: ${r.bucket}'
-                                              : '${r.host ?? ""}:${r.port ?? ""}'));
+                                  final sub = _formatSubtitle(r, l10n);
 
                                   return Card(
                                     child: ListTile(
@@ -910,7 +883,7 @@ class _RemotesPageState extends State<RemotesPage> {
                 ),
               ],
             ),
-      ),
     );
+    return widget.embedded ? scaffold : AppSwipeBack(child: scaffold);
   }
 }

@@ -172,7 +172,7 @@ void main() {
 
       final barBox = tester.getRect(find.byType(BrowserUnifiedAddressBar));
       // Tap empty right half of the breadcrumb bar (avoiding trailing edit icon).
-      await tester.tapAt(Offset(barBox.left + 200, barBox.center.dy));
+      await tester.tapAt(Offset(barBox.right - 80, barBox.center.dy));
       await tester.pump();
       expect(startedEdit, isTrue);
 

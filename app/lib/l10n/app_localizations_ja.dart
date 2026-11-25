@@ -3678,7 +3678,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get peerSendClipboard => 'クリップボードテキストを送信';
 
   @override
-  String get peerManualAddressHint => 'http://192.168.1.x:ポート';
+  String get peerManualAddressHint => 'http://<LAN IP>:ポート';
 
   @override
   String peerIncomingOfferTitle(String sender) {
@@ -3810,4 +3810,1000 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get pinToHomeScreenUnsupported => 'このプラットフォームではホーム画面への固定に対応していません';
+
+  @override
+  String get storagePools => 'ストレージプール';
+
+  @override
+  String get storagePoolsSubtitle => 'SFTP・S3・WebDAV を 2 重化仮想ストレージに統合';
+
+  @override
+  String get createStoragePool => 'ストレージプールを作成';
+
+  @override
+  String get editStoragePool => 'ストレージプールを編集';
+
+  @override
+  String get noStoragePools => 'ストレージプールはありません';
+
+  @override
+  String get noStoragePoolsDesc =>
+      '複数の SFTP・S3・WebDAV 接続を障害ドメイン分離の 2 レプリカ構成、チャンク分割、暗号化付き仮想ドライブとして統合します。';
+
+  @override
+  String get poolName => 'プール名';
+
+  @override
+  String get poolNameHint => '例: メディア統合プール';
+
+  @override
+  String get poolChunkSize => 'チャンクサイズ';
+
+  @override
+  String get poolEncryptEnable => 'クライアント側 AES-GCM 暗号化を有効にする';
+
+  @override
+  String get poolEncryptSubtitle => 'アップロード前にチャンクとメタデータスナップショットを暗号化';
+
+  @override
+  String get poolPassphrase => '暗号化パスフレーズ';
+
+  @override
+  String get poolPassphraseHint => '空欄のままにすると既存のパスフレーズを保持';
+
+  @override
+  String get poolSelectNodes => 'メンバーノードを選択';
+
+  @override
+  String get poolNeedRemotesFirst => '先にリモート接続で SFTP・S3・WebDAV を追加してください。';
+
+  @override
+  String get poolFailureDomain => '障害ドメイン';
+
+  @override
+  String get poolQuotaGb => 'クォータ (GB)';
+
+  @override
+  String get poolPrefix => 'リモートプレフィックス';
+
+  @override
+  String get poolRoleRw => '読み書き (RW)';
+
+  @override
+  String get poolRoleRo => '読み取り専用';
+
+  @override
+  String get poolRoleDraining => '退避中 (Drain)';
+
+  @override
+  String get poolRoleOffline => 'オフライン';
+
+  @override
+  String get poolMetaBackup => 'メタデータバックアップ';
+
+  @override
+  String get poolBrowse => 'ファイルを開く';
+
+  @override
+  String get poolProbeHealth => 'ヘルス計測';
+
+  @override
+  String get poolSyncMeta => 'メタ同期';
+
+  @override
+  String get poolHeal => '修復 (Heal)';
+
+  @override
+  String get poolGc => 'GC 実行';
+
+  @override
+  String get poolDrainNode => '退避 (Drain)';
+
+  @override
+  String get poolLogicalCapacity => '実効論理容量';
+
+  @override
+  String get poolPhysicalCapacity => '物理クォータ合計';
+
+  @override
+  String poolDegradedWarning(int count) {
+    return '$count 個のチャンクが 2 レプリカ未満です — 修復 (Heal) を実行してください';
+  }
+
+  @override
+  String get poolEncryptedBadge => '暗号化';
+
+  @override
+  String get poolPlaintextBadge => '標準';
+
+  @override
+  String poolMetaVersionBadge(int version) {
+    return 'メタ v$version';
+  }
+
+  @override
+  String poolDeleteConfirm(String name) {
+    return 'ストレージプール「$name」を削除しますか？リモートのチャンクデータは削除されません。';
+  }
+
+  @override
+  String poolDrainConfirm(String node) {
+    return 'ノード「$node」のすべてのチャンクを他の健全なノードへ退避しますか？';
+  }
+
+  @override
+  String poolSyncDone(String action, int version, int uploaded, int conflicts) {
+    return 'メタ同期完了: $action (v$version, $uploaded バックアップ, 競合 $conflicts)';
+  }
+
+  @override
+  String poolNodesCount(int count) {
+    return '$count ノード';
+  }
+
+  @override
+  String get lanTransferAndShareTitle => 'LAN 転送と WebDAV 共有';
+
+  @override
+  String get lanTransferAndShareSubtitle =>
+      'LAN 直接転送・WebDAV マウント・ブラウザでのアップロード/ダウンロード';
+
+  @override
+  String get lanWebdavBrowserHint =>
+      'ブラウザで直接開いてアップロード/ダウンロードできるほか、Finder・エクスプローラー・Infuse・Kodi からマウント可能です。';
+
+  @override
+  String get lanWebdavReadOnlyHint => '読み取り専用をオフにすると、ブラウザからのアップロードや編集が可能になります';
+
+  @override
+  String get photoBackupSourceLabel => 'バックアップ元フォルダ / アルバム';
+
+  @override
+  String get photoBackupSelectSource => 'フォルダを追加';
+
+  @override
+  String get photoBackupSelectAlbums => 'アルバムを選択';
+
+  @override
+  String get photoBackupDefaultSources => 'デフォルトの写真フォルダ';
+
+  @override
+  String get photoBackupAllAlbums => 'すべての写真と動画';
+
+  @override
+  String photoBackupSelectedAlbumsCount(int count) {
+    return '$count 件のアルバムを選択中';
+  }
+
+  @override
+  String get photoBackupResetSources => 'デフォルトに戻す';
+
+  @override
+  String get syncExcludeRulesTitle => '除外ルール';
+
+  @override
+  String get syncExcludeExtensionsLabel => '除外するファイル形式（拡張子）';
+
+  @override
+  String get syncExcludeExtensionsHint => '例: tmp, log, bak';
+
+  @override
+  String get syncExcludeNamesLabel => '除外するファイル名';
+
+  @override
+  String get syncExcludeNamesHint => '例: .DS_Store, Thumbs.db, ~\$*';
+
+  @override
+  String get syncExcludeDirsLabel => '除外するフォルダ';
+
+  @override
+  String get syncExcludeDirsHint => '例: node_modules, .git, build/cache';
+
+  @override
+  String get syncExcludePresets => 'よく使うプリセット';
+
+  @override
+  String get syncPickExcludeDir => 'フォルダ選択';
+
+  @override
+  String syncExcludedCount(int count) {
+    return '$count 件を除外';
+  }
+
+  @override
+  String get syncAddRule => '追加';
+
+  @override
+  String get peerManualAddressLabel => '送信先アドレス（手動入力）';
+
+  @override
+  String peerManualAddressExample(String hostPlaceholder) {
+    return '例: http://$hostPlaceholder:ポート';
+  }
+
+  @override
+  String get emptyLabel => '空';
+
+  @override
+  String itemCountConnections(int count) {
+    return '$count 件の接続';
+  }
+
+  @override
+  String itemCountPools(int count) {
+    return '$count 個のプール';
+  }
+
+  @override
+  String itemCountBookmarks(int count) {
+    return '$count 件のブックマーク';
+  }
+
+  @override
+  String itemCountLocations(int count) {
+    return '$count 件の履歴';
+  }
+
+  @override
+  String activeTasksRunningCount(int count) {
+    return '$count 件実行中';
+  }
+
+  @override
+  String get timeJustNow => 'たった今';
+
+  @override
+  String timeMinutesAgo(int count) {
+    return '$count 分前';
+  }
+
+  @override
+  String timeHoursAgo(int count) {
+    return '$count 時間前';
+  }
+
+  @override
+  String timeDaysAgo(int count) {
+    return '$count 日前';
+  }
+
+  @override
+  String deletedRelativeTime(String time) {
+    return '$time に削除';
+  }
+
+  @override
+  String get stopSharing => '共有を停止';
+
+  @override
+  String get manageRemotes => 'リモート管理';
+
+  @override
+  String get manageStoragePools => 'ストレージプール管理';
+
+  @override
+  String get backupRestoreConfigTitle => '設定のバックアップと復元';
+
+  @override
+  String get backupRestoreConfigSubtitle =>
+      'リモート接続・ブックマーク・設定をエクスポートまたはインポート（AES-256 暗号化 .fmbak 対応）';
+
+  @override
+  String get exportAction => 'エクスポート';
+
+  @override
+  String get exportMigrationTitle => '移行用バックアップのエクスポート';
+
+  @override
+  String get exportMigrationPasswordLabel => '暗号化パスワード（推奨）';
+
+  @override
+  String get exportMigrationPasswordHint => '空欄の場合は資格情報なしの平文 JSON';
+
+  @override
+  String get exportIncludeCredentials => 'パスワードと鍵を含める（暗号化必須）';
+
+  @override
+  String get copyJsonAction => 'JSON をコピー';
+
+  @override
+  String get copyEncryptedAction => '暗号化データをコピー';
+
+  @override
+  String get saveBackupFileAction => '.fmbak を保存';
+
+  @override
+  String get saveJsonFileAction => '.json を保存';
+
+  @override
+  String get importMigrationTitle => 'デバイス設定をインポート';
+
+  @override
+  String get chooseBackupFileAction => '.fmbak または .json を選択';
+
+  @override
+  String get importPasteHint => 'または JSON / .fmbak テキストを貼り付け…';
+
+  @override
+  String get importPasswordLabel => '復号パスワード（暗号化時）';
+
+  @override
+  String get importPasswordHint => '資格情報付き .fmbak ファイルに必要';
+
+  @override
+  String get importPasswordRequiredError =>
+      '暗号化された .fmbak バックアップの復号パスワードを入力してください。';
+
+  @override
+  String exportSavedNotice(String path) {
+    return 'バックアップを $path に保存しました';
+  }
+
+  @override
+  String get exportCopiedNotice => 'バックアップをクリップボードにコピーしました';
+
+  @override
+  String importSummaryNotice(int remotes, int bookmarks, int prefs) {
+    return '$remotes 件のリモート、$bookmarks 件のブックマーク、$prefs 件の設定をインポートしました';
+  }
+
+  @override
+  String get unencryptedCredentialsBanner =>
+      '警告: OS キーチェーンが利用できないため、資格情報は平文で保存されます。';
+
+  @override
+  String get remoteTestTimedOut => '8 秒でタイムアウトしました';
+
+  @override
+  String remoteImportFailedSummary(int count, String details) {
+    return '；$count 件失敗: $details';
+  }
+
+  @override
+  String remoteBucketLabel(String bucket) {
+    return 'バケット: $bucket';
+  }
+
+  @override
+  String keyringUnavailableBanner(String detail) {
+    return 'OS キーチェーンが利用できません（$detail）。資格情報が安全に保持されない場合があります。';
+  }
+
+  @override
+  String deleteRemotePoolWarning(String pools) {
+    return '警告: このリモートはストレージプール ($pools) で使用されています。削除するとプールが劣化・利用不可になります。';
+  }
+
+  @override
+  String get poolConfirmGcTitle => 'ガベージコレクションを実行しますか？';
+
+  @override
+  String poolConfirmGcBody(String name) {
+    return 'プール「$name」の未参照チャンクを完全に削除しますか？削除後は復元できません。';
+  }
+
+  @override
+  String get poolReplicationFactorLabel => 'レプリケーション数';
+
+  @override
+  String poolMinNodesError(int count) {
+    return '$count 倍レプリケーションには少なくとも $count 個のノードが必要です。';
+  }
+
+  @override
+  String get poolInvalidQuotaError => '有効なクォータ（0 GB 超）を入力してください。';
+
+  @override
+  String get poolPassphraseConfirmLabel => '暗号化パスフレーズ（確認）';
+
+  @override
+  String get poolPassphraseMismatchError => 'パスフレーズが一致しません。';
+
+  @override
+  String get poolEditLockedHint => 'チャンクサイズと暗号化設定は作成後に変更できません。';
+
+  @override
+  String poolNodeHealthSummary(int pct, int ms, String state) {
+    return '健全性 $pct% · $ms ms · $state';
+  }
+
+  @override
+  String get poolRoleShortRw => '読み書き';
+
+  @override
+  String get poolRoleShortRo => '読み取り専用';
+
+  @override
+  String get poolRoleShortDraining => '排出中';
+
+  @override
+  String get poolRoleShortOffline => 'オフライン';
+
+  @override
+  String get poolCircuitClosed => '正常';
+
+  @override
+  String get poolCircuitOpen => '遮断';
+
+  @override
+  String get poolCircuitHalfOpen => '半開';
+
+  @override
+  String get cryptChooseBackingRemote => '既存のリモートまたはローカルフォルダを選択';
+
+  @override
+  String get cryptLocalFolderOption => 'ローカルフォルダを選択…';
+
+  @override
+  String fileConflictBody(String name) {
+    return '「$name」はこのフォルダに既に存在します。どう処理しますか？';
+  }
+
+  @override
+  String filesConflictBody(int count) {
+    return '$count 件の同名の項目が既に存在します。どう処理しますか？';
+  }
+
+  @override
+  String get offlineOverwriteConfirmTitle => 'リモートの変更を上書きしますか？';
+
+  @override
+  String offlineOverwriteConfirmBody(String name) {
+    return 'リモート側の「$name」も更新されています。ローカルの変更で上書きしますか？';
+  }
+
+  @override
+  String get offlineDiscardLocalConfirmTitle => 'ローカルのオフライン編集を破棄しますか？';
+
+  @override
+  String offlineDiscardLocalConfirmBody(String name) {
+    return '「$name」には未同期のローカル変更または競合があります。続行すると上書きまたは削除されます。';
+  }
+
+  @override
+  String offlineUploadedNotice(String name) {
+    return '「$name」をリモートへアップロードしました。';
+  }
+
+  @override
+  String get offlineCheckUpdatesTooltip => '更新を確認';
+
+  @override
+  String get offlineSyncAllTooltip => 'すべて同期';
+
+  @override
+  String get offlineLruCapTooltip => 'LRU キャッシュ上限';
+
+  @override
+  String offlineLruCapOption(String size) {
+    return 'キャッシュ上限: $size';
+  }
+
+  @override
+  String get offlineUploadLocalTooltip => 'ローカル変更をリモートにアップロード';
+
+  @override
+  String offlineBannerSummary(int count, String used, String cap) {
+    return '固定 $count 件 · $used / $cap';
+  }
+
+  @override
+  String get offlineStatusLocalModified => 'ローカル変更あり';
+
+  @override
+  String get offlineStatusRemoteNewer => 'リモートに更新あり';
+
+  @override
+  String get offlineStatusConflict => '競合';
+
+  @override
+  String get offlineStatusSynced => '同期済み';
+
+  @override
+  String get offlineStatusMissingLocal => 'ローカル欠損';
+
+  @override
+  String get offlineStatusOffline => 'オフライン';
+
+  @override
+  String get browserSelectItemsFirst => '先に 1 つ以上の項目を選択してください。';
+
+  @override
+  String clipboardReadOnlyHint(int count) {
+    return 'クリップボード: $count 件（読み取り専用フォルダ）';
+  }
+
+  @override
+  String get peerTabDirectTransfer => 'LAN ダイレクト転送';
+
+  @override
+  String get peerTabWebdavShare => 'WebDAV / ブラウザ共有';
+
+  @override
+  String peerPendingItemsToSend(int count) {
+    return '送信準備完了: $count 件';
+  }
+
+  @override
+  String get peerReceiveFolderMustBeLocal => '受信フォルダはローカルストレージ上に設定してください。';
+
+  @override
+  String get peerOpenReceivedFolder => 'フォルダを開く';
+
+  @override
+  String get peerCopyReceivedText => 'テキストをコピー';
+
+  @override
+  String get peerTextCopied => '受信テキストをクリップボードにコピーしました。';
+
+  @override
+  String get peerWaitingForAccept => '送信中・相手の承認を待機しています…';
+
+  @override
+  String get peerOfferStatusAccepted => '承認済み';
+
+  @override
+  String get peerOfferStatusCompleted => '完了';
+
+  @override
+  String get peerOfferStatusRejected => '拒否';
+
+  @override
+  String get peerOfferStatusReceiving => '受信中';
+
+  @override
+  String get photoBackupScanning => '写真とフォルダをスキャン中…';
+
+  @override
+  String get photoBackupCancel => 'キャンセル';
+
+  @override
+  String photoBackupCancelledNotice(int count) {
+    return 'バックアップをキャンセルしました（$count 件アップロード済み）。';
+  }
+
+  @override
+  String get photoBackupResetHistory => 'バックアップ履歴をリセット';
+
+  @override
+  String get photoBackupResetHistoryConfirm =>
+      'ローカルのバックアップ履歴をクリアしますか？次回は再度チェック・アップロードされます。';
+
+  @override
+  String photoBackupLastRun(String time) {
+    return '前回: $time';
+  }
+
+  @override
+  String photoBackupProgressCount(int uploaded, int total) {
+    return '$uploaded / $total 完了';
+  }
+
+  @override
+  String get photoBackupOpenDestination => '保存先を開く';
+
+  @override
+  String get photoBackupVaultLocked => '保存先のプライバシーフォルダがロックされています';
+
+  @override
+  String get photoBackupPermissionDeniedTitle => '写真ライブラリのアクセス許可が必要です';
+
+  @override
+  String get photoBackupPermissionDeniedBody =>
+      'システム設定で写真ライブラリへのアクセスを許可してください。';
+
+  @override
+  String get photoBackupOpenSettings => '設定を開く';
+
+  @override
+  String get syncSaveProfileTitle => '同期プロファイルを保存';
+
+  @override
+  String get syncProfileNameLabel => 'プロファイル名';
+
+  @override
+  String get syncSourceLabel => '同期元';
+
+  @override
+  String get syncDestinationLabel => '同期先';
+
+  @override
+  String get syncScanLimitReached => 'スキャン上限に達したためプレビューが省略されています。';
+
+  @override
+  String syncSummaryChanges(int changes, int unchanged) {
+    return '$changes 件の変更 · $unchanged 件変更なし';
+  }
+
+  @override
+  String get syncConfirmMirrorDeleteTitle => 'ミラー削除の確認';
+
+  @override
+  String syncConfirmMirrorDeleteBody(int count) {
+    return '同期により同期先の不要なファイル/フォルダ $count 件が削除されます。続行しますか？';
+  }
+
+  @override
+  String syncConfirmDeleteProfileBody(String name) {
+    return '同期プロファイル「$name」を削除しますか？';
+  }
+
+  @override
+  String get syncSwapFoldersTooltip => '同期元と同期先を入れ替え';
+
+  @override
+  String get syncSelectAll => 'すべて選択';
+
+  @override
+  String get syncDeselectAll => '選択解除';
+
+  @override
+  String get syncActionCopy => 'コピー';
+
+  @override
+  String get syncActionUpdate => '更新';
+
+  @override
+  String get syncActionDelete => '削除';
+
+  @override
+  String get syncActionPullUpdate => 'プル更新';
+
+  @override
+  String get syncEditConfig => 'フォルダ変更';
+
+  @override
+  String syncAutoSyncFailed(String error) {
+    return '前回の自動同期に失敗: $error';
+  }
+
+  @override
+  String get taskStatusPaused => '一時停止';
+
+  @override
+  String taskRateLimitActive(String limit) {
+    return '制限: $limit';
+  }
+
+  @override
+  String taskFailedItemsTitle(int count) {
+    return '失敗詳細 ($count 件)';
+  }
+
+  @override
+  String get taskRetryStarted => '失敗項目の再試行を開始しました。';
+
+  @override
+  String analyzerStatsSummary(int files, int folders) {
+    return '$files ファイル · $folders フォルダ';
+  }
+
+  @override
+  String get analyzerScanCancelled => '分析がキャンセルされました（部分結果）。';
+
+  @override
+  String get analyzerScanTruncated => 'スキャン上限に達しました。一部の深い階層は含まれません。';
+
+  @override
+  String get analyzerRescan => '再スキャン';
+
+  @override
+  String duplicatesGroupCount(int count) {
+    return '$count グループ';
+  }
+
+  @override
+  String duplicatesCopiesCount(int count) {
+    return '($count 件)';
+  }
+
+  @override
+  String duplicatesEachSize(String size) {
+    return '各 $size';
+  }
+
+  @override
+  String duplicatesDeleteFailed(int count) {
+    return '$count 件の削除に失敗しました';
+  }
+
+  @override
+  String duplicatesAllCopiesWarning(int count) {
+    return '警告: $count グループですべてのコピーが削除対象に選択されています！';
+  }
+
+  @override
+  String get duplicatesClearSelection => '選択クリア';
+
+  @override
+  String get duplicatesScanCancelled => '重複スキャンをキャンセルしました。';
+
+  @override
+  String duplicatesTrashConfirmBody(int count) {
+    return '選択した $count 件をごみ箱へ移動しますか？';
+  }
+
+  @override
+  String categoryTruncatedBanner(int count) {
+    return '最初の $count 件のみ表示しています（上限到達）。';
+  }
+
+  @override
+  String get galleryLocateInFolder => 'フォルダで開く';
+
+  @override
+  String get galleryUnsupportedFormatForPick => '要求された形式に一致しないファイルです。';
+
+  @override
+  String galleryExifSkippedNonJpeg(int count) {
+    return 'JPEG 以外の $count 枚をスキップしました。';
+  }
+
+  @override
+  String searchFiltersLabel(int count) {
+    return 'フィルター ($count)';
+  }
+
+  @override
+  String get searchAllTypes => 'すべて';
+
+  @override
+  String get pdfEncryptedError => 'この PDF は暗号化またはパスワード保護されています。';
+
+  @override
+  String pdfPageTextTitle(int page) {
+    return '$page ページのテキスト';
+  }
+
+  @override
+  String get pdfPageTextCopied => 'ページのテキストをクリップボードにコピーしました。';
+
+  @override
+  String get pdfNoSelectableText => '選択可能なテキストが見つかりません（スキャン画像の可能性があります）。';
+
+  @override
+  String get pdfSelectCopyPageText => 'テキストを選択 / コピー';
+
+  @override
+  String pdfRenderPageFailed(int page) {
+    return '$page ページのレンダリングに失敗しました。';
+  }
+
+  @override
+  String get structuredEmptyValue => '(空)';
+
+  @override
+  String structuredCsvTruncated(int shown, int total) {
+    return '全 $total 行のうち最初の $shown 行を表示しています。';
+  }
+
+  @override
+  String get copyXPath => 'XPath をコピー';
+
+  @override
+  String get subtitleLoadFailed => '非対応または読み込めない字幕ファイルです。';
+
+  @override
+  String get diffTruncatedNotice => 'ディレクトリ比較が上限に達したため一部省略されました。';
+
+  @override
+  String get diffSyncFoldersAction => '同期で開く';
+
+  @override
+  String get vaultHtmlBrowserWarning =>
+      'ゼロディスク保護のため、プライバシーフォルダ内の HTML は外部ブラウザで開けません。';
+
+  @override
+  String get poolStorageDirectory => '保存先ディレクトリ';
+
+  @override
+  String get poolPickDirectory => 'フォルダを選択';
+
+  @override
+  String poolReplicationBadge(int count) {
+    return '$count レプリカ';
+  }
+
+  @override
+  String get poolSetReplicationTitle => 'レプリカ数の設定';
+
+  @override
+  String get poolSetReplicationHint => '新規書き込みに即時適用されます。既存ファイルは「修復」で補完できます。';
+
+  @override
+  String poolNodeRealFreeWithTotal(String free, String total) {
+    return '空き $free / 合計 $total';
+  }
+
+  @override
+  String poolNodeRealFreeOnly(String free) {
+    return '空き $free';
+  }
+
+  @override
+  String get poolNodeSpaceUnavailable => '空き容量を取得できません';
+
+  @override
+  String get poolNodeSpaceProbing => '空き容量を確認中…';
+
+  @override
+  String poolNodePoolUsed(String used) {
+    return 'プール使用量: $used';
+  }
+
+  @override
+  String poolNodeDirectoryLabel(String dir) {
+    return 'ディレクトリ: $dir';
+  }
+
+  @override
+  String get remoteBatchExportAction => '暗号化一括エクスポート';
+
+  @override
+  String get remoteBatchImportAction => '暗号化一括インポート';
+
+  @override
+  String get remoteBatchExportTitle => 'リモート接続を一括エクスポート';
+
+  @override
+  String get remoteBatchExportSubtitle =>
+      '接続設定と資格情報は設定したパスワードで AES-256-GCM 暗号化されます。';
+
+  @override
+  String remoteBatchSelectCount(int selected, int total) {
+    return '$selected / $total 件を選択中';
+  }
+
+  @override
+  String get remoteBatchSelectAll => 'すべて選択';
+
+  @override
+  String get remoteBatchDeselectAll => '選択解除';
+
+  @override
+  String get remoteBatchUnreadableSkipped => '資格情報を読み取れないためエクスポート不可';
+
+  @override
+  String get remoteBatchNoReadableToExport => 'エクスポート可能なリモート接続がありません。';
+
+  @override
+  String get remoteBatchExportPasswordLabel => '暗号化パスワード（必須）';
+
+  @override
+  String remoteBatchExportPasswordHint(int min) {
+    return '$min 文字以上';
+  }
+
+  @override
+  String get remoteBatchExportPasswordConfirmLabel => '暗号化パスワード（確認）';
+
+  @override
+  String get remoteBatchPasswordRequiredNote =>
+      'このパスワードはインポート時の復号に必要です。忘れないように保管してください。';
+
+  @override
+  String remoteBatchPasswordTooShort(int min) {
+    return 'パスワードは $min 文字以上で入力してください。';
+  }
+
+  @override
+  String get remoteBatchPasswordMismatch => 'パスワードが一致しません。';
+
+  @override
+  String get remoteBatchSaveFileAction => '暗号化ファイルを保存';
+
+  @override
+  String get remoteBatchShareFileAction => 'ファイルを書き出し / 共有';
+
+  @override
+  String remoteBatchExportSavedNotice(int count, String path) {
+    return '$count 件の接続を $path に暗号化保存しました';
+  }
+
+  @override
+  String remoteBatchExportSharedNotice(int count) {
+    return '$count 件の接続の暗号化バックアップを作成しました。';
+  }
+
+  @override
+  String remoteBatchExportCopiedNotice(int count) {
+    return '$count 件の接続の暗号化バックアップをクリップボードにコピーしました。';
+  }
+
+  @override
+  String get remoteBatchImportTitle => 'リモート接続を一括インポート';
+
+  @override
+  String get remoteBatchChooseFile => 'バックアップファイルを選択';
+
+  @override
+  String get remoteBatchPasteClipboard => 'クリップボードから貼り付け';
+
+  @override
+  String get remoteBatchClipboardDetected => 'クリップボードから暗号化バックアップを検出しました。';
+
+  @override
+  String get remoteBatchClipboardEmpty => 'クリップボードは空です。';
+
+  @override
+  String remoteBatchSelectedFileLabel(String name) {
+    return '選択ファイル: $name';
+  }
+
+  @override
+  String get remoteBatchPasteFieldHint =>
+      'または暗号化された .fmremotes / .fmbak の内容を貼り付け…';
+
+  @override
+  String get remoteBatchImportPasswordLabel => '復号パスワード（必須）';
+
+  @override
+  String get remoteBatchImportPasswordHint => 'エクスポート時に設定したパスワードを入力';
+
+  @override
+  String get remoteBatchDecryptAction => '復号してプレビュー';
+
+  @override
+  String remoteBatchPreviewSummary(int count) {
+    return '復号完了（$count 件の接続）';
+  }
+
+  @override
+  String get remoteBatchConflictSectionLabel => '既存の接続と重複する場合:';
+
+  @override
+  String get remoteBatchConflictSkip => 'スキップ';
+
+  @override
+  String get remoteBatchConflictOverwrite => '上書き';
+
+  @override
+  String get remoteBatchConflictKeepBoth => '両方保持';
+
+  @override
+  String get remoteBatchBadgeNew => '新規';
+
+  @override
+  String get remoteBatchBadgeExists => '既存';
+
+  @override
+  String get remoteBatchAllSkippedHint =>
+      '選択した接続はすべて既に存在しスキップされます。「上書き」または「両方保持」を選択してください。';
+
+  @override
+  String remoteBatchImportConfirm(int count) {
+    return 'インポート ($count)';
+  }
+
+  @override
+  String remoteBatchImportSummary(
+    int imported,
+    int added,
+    int overwritten,
+    int duplicated,
+    int skipped,
+    String detail,
+  ) {
+    return '$imported 件の接続をインポートしました（新規 $added・更新 $overwritten・複製 $duplicated・スキップ $skipped）$detail';
+  }
+
+  @override
+  String get remoteBatchErrorNotEncrypted =>
+      '暗号化されていない平文データは利用できません。パスワード保護されたバックアップを選択してください。';
+
+  @override
+  String get remoteBatchErrorInvalidFormat => 'バックアップファイルの形式が無効です。';
+
+  @override
+  String get remoteBatchErrorWrongPassword =>
+      'パスワードが間違っているか、バックアップファイルが破損しています。';
+
+  @override
+  String get remoteBatchErrorEmptyBundle => 'このバックアップには有効なリモート接続が含まれていません。';
+
+  @override
+  String get remoteBatchErrorFileTooLarge => '選択したファイルが大きすぎるため読み込めません。';
+
+  @override
+  String get remoteBatchBackStep => '戻る';
 }

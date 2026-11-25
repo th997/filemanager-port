@@ -1304,6 +1304,7 @@ dependencies = [
  "async-trait",
  "fm-core",
  "fm-vfs",
+ "libc",
  "tempfile",
  "tokio",
 ]
@@ -1323,6 +1324,38 @@ dependencies = [
  "tokio",
  "tokio-util",
  "uuid",
+]
+
+[[package]]
+name = "fm-pool"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "async-trait",
+ "base64",
+ "flate2",
+ "fm-core",
+ "fm-local",
+ "fm-ops",
+ "fm-vault",
+ "fm-vfs",
+ "futures-util",
+ "hex",
+ "hkdf",
+ "hmac",
+ "parking_lot",
+ "rand_core 0.6.4",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1374,6 +1407,7 @@ dependencies = [
  "fm-local",
  "fm-vfs",
  "futures-util",
+ "libc",
  "mime_guess",
  "reqwest",
  "serde",
@@ -1438,6 +1472,7 @@ dependencies = [
  "fm-index",
  "fm-local",
  "fm-ops",
+ "fm-pool",
  "fm-remote",
  "fm-server",
  "fm-vault",

@@ -1072,7 +1072,7 @@
   "peerNoDevicesFound": "LAN 内に受信可能なデバイスが見つかりません",
   "peerSendFiles": "ファイルを送信",
   "peerSendClipboard": "クリップボードテキストを送信",
-  "peerManualAddressHint": "http://192.168.1.x:ポート",
+  "peerManualAddressHint": "http://<LAN IP>:ポート",
   "peerIncomingOfferTitle": "{sender} からの受信リクエスト",
   "peerAccept": "承認",
   "peerReject": "拒否",
@@ -1110,5 +1110,489 @@
   "photoBackupCompleted": "{count} 件の新規メディアをバックアップしました",
   "pinToHomeScreen": "ホーム画面に固定",
   "pinToHomeScreenSuccess": "ショートカット「{name}」をホーム画面に追加しました",
-  "pinToHomeScreenUnsupported": "このプラットフォームではホーム画面への固定に対応していません"
+  "pinToHomeScreenUnsupported": "このプラットフォームではホーム画面への固定に対応していません",
+  "storagePools": "ストレージプール",
+  "storagePoolsSubtitle": "SFTP・S3・WebDAV を 2 重化仮想ストレージに統合",
+  "createStoragePool": "ストレージプールを作成",
+  "editStoragePool": "ストレージプールを編集",
+  "noStoragePools": "ストレージプールはありません",
+  "noStoragePoolsDesc": "複数の SFTP・S3・WebDAV 接続を障害ドメイン分離の 2 レプリカ構成、チャンク分割、暗号化付き仮想ドライブとして統合します。",
+  "poolName": "プール名",
+  "poolNameHint": "例: メディア統合プール",
+  "poolChunkSize": "チャンクサイズ",
+  "poolEncryptEnable": "クライアント側 AES-GCM 暗号化を有効にする",
+  "poolEncryptSubtitle": "アップロード前にチャンクとメタデータスナップショットを暗号化",
+  "poolPassphrase": "暗号化パスフレーズ",
+  "poolPassphraseHint": "空欄のままにすると既存のパスフレーズを保持",
+  "poolSelectNodes": "メンバーノードを選択",
+  "poolNeedRemotesFirst": "先にリモート接続で SFTP・S3・WebDAV を追加してください。",
+  "poolFailureDomain": "障害ドメイン",
+  "poolQuotaGb": "クォータ (GB)",
+  "poolPrefix": "リモートプレフィックス",
+  "poolRoleRw": "読み書き (RW)",
+  "poolRoleRo": "読み取り専用",
+  "poolRoleDraining": "退避中 (Drain)",
+  "poolRoleOffline": "オフライン",
+  "poolMetaBackup": "メタデータバックアップ",
+  "poolBrowse": "ファイルを開く",
+  "poolProbeHealth": "ヘルス計測",
+  "poolSyncMeta": "メタ同期",
+  "poolHeal": "修復 (Heal)",
+  "poolGc": "GC 実行",
+  "poolDrainNode": "退避 (Drain)",
+  "poolLogicalCapacity": "実効論理容量",
+  "poolPhysicalCapacity": "物理クォータ合計",
+  "poolDegradedWarning": "{count} 個のチャンクが 2 レプリカ未満です — 修復 (Heal) を実行してください",
+  "@poolDegradedWarning": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "poolEncryptedBadge": "暗号化",
+  "poolPlaintextBadge": "標準",
+  "poolMetaVersionBadge": "メタ v{version}",
+  "@poolMetaVersionBadge": {
+    "placeholders": {
+      "version": { "type": "int" }
+    }
+  },
+  "poolDeleteConfirm": "ストレージプール「{name}」を削除しますか？リモートのチャンクデータは削除されません。",
+  "@poolDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "poolDrainConfirm": "ノード「{node}」のすべてのチャンクを他の健全なノードへ退避しますか？",
+  "@poolDrainConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolSyncDone": "メタ同期完了: {action} (v{version}, {uploaded} バックアップ, 競合 {conflicts})",
+  "@poolSyncDone": {
+    "placeholders": {
+      "action": { "type": "String" },
+      "version": { "type": "int" },
+      "uploaded": { "type": "int" },
+      "conflicts": { "type": "int" }
+    }
+  },
+  "poolNodesCount": "{count} ノード",
+  "@poolNodesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "lanTransferAndShareTitle": "LAN 転送と WebDAV 共有",
+  "lanTransferAndShareSubtitle": "LAN 直接転送・WebDAV マウント・ブラウザでのアップロード/ダウンロード",
+  "lanWebdavBrowserHint": "ブラウザで直接開いてアップロード/ダウンロードできるほか、Finder・エクスプローラー・Infuse・Kodi からマウント可能です。",
+  "lanWebdavReadOnlyHint": "読み取り専用をオフにすると、ブラウザからのアップロードや編集が可能になります",
+  "photoBackupSourceLabel": "バックアップ元フォルダ / アルバム",
+  "photoBackupSelectSource": "フォルダを追加",
+  "photoBackupSelectAlbums": "アルバムを選択",
+  "photoBackupDefaultSources": "デフォルトの写真フォルダ",
+  "photoBackupAllAlbums": "すべての写真と動画",
+  "photoBackupSelectedAlbumsCount": "{count} 件のアルバムを選択中",
+  "@photoBackupSelectedAlbumsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "photoBackupResetSources": "デフォルトに戻す",
+  "syncExcludeRulesTitle": "除外ルール",
+  "syncExcludeExtensionsLabel": "除外するファイル形式（拡張子）",
+  "syncExcludeExtensionsHint": "例: tmp, log, bak",
+  "syncExcludeNamesLabel": "除外するファイル名",
+  "syncExcludeNamesHint": "例: .DS_Store, Thumbs.db, ~$*",
+  "syncExcludeDirsLabel": "除外するフォルダ",
+  "syncExcludeDirsHint": "例: node_modules, .git, build/cache",
+  "syncExcludePresets": "よく使うプリセット",
+  "syncPickExcludeDir": "フォルダ選択",
+  "syncExcludedCount": "{count} 件を除外",
+  "@syncExcludedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "syncAddRule": "追加",
+  "peerManualAddressLabel": "送信先アドレス（手動入力）",
+  "peerManualAddressExample": "例: http://{hostPlaceholder}:ポート",
+  "@peerManualAddressExample": {
+    "placeholders": {
+      "hostPlaceholder": { "type": "String" }
+    }
+  },
+  "emptyLabel": "空",
+  "itemCountConnections": "{count} 件の接続",
+  "@itemCountConnections": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountPools": "{count} 個のプール",
+  "@itemCountPools": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountBookmarks": "{count} 件のブックマーク",
+  "@itemCountBookmarks": { "placeholders": { "count": { "type": "int" } } },
+  "itemCountLocations": "{count} 件の履歴",
+  "@itemCountLocations": { "placeholders": { "count": { "type": "int" } } },
+  "activeTasksRunningCount": "{count} 件実行中",
+  "@activeTasksRunningCount": { "placeholders": { "count": { "type": "int" } } },
+  "timeJustNow": "たった今",
+  "timeMinutesAgo": "{count} 分前",
+  "@timeMinutesAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeHoursAgo": "{count} 時間前",
+  "@timeHoursAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeDaysAgo": "{count} 日前",
+  "@timeDaysAgo": { "placeholders": { "count": { "type": "int" } } },
+  "deletedRelativeTime": "{time} に削除",
+  "@deletedRelativeTime": { "placeholders": { "time": { "type": "String" } } },
+  "stopSharing": "共有を停止",
+  "manageRemotes": "リモート管理",
+  "manageStoragePools": "ストレージプール管理",
+  "backupRestoreConfigTitle": "設定のバックアップと復元",
+  "backupRestoreConfigSubtitle": "リモート接続・ブックマーク・設定をエクスポートまたはインポート（AES-256 暗号化 .fmbak 対応）",
+  "exportAction": "エクスポート",
+  "importAction": "インポート",
+  "exportMigrationTitle": "移行用バックアップのエクスポート",
+  "exportMigrationPasswordLabel": "暗号化パスワード（推奨）",
+  "exportMigrationPasswordHint": "空欄の場合は資格情報なしの平文 JSON",
+  "exportIncludeCredentials": "パスワードと鍵を含める（暗号化必須）",
+  "copyJsonAction": "JSON をコピー",
+  "copyEncryptedAction": "暗号化データをコピー",
+  "saveBackupFileAction": ".fmbak を保存",
+  "saveJsonFileAction": ".json を保存",
+  "importMigrationTitle": "デバイス設定をインポート",
+  "chooseBackupFileAction": ".fmbak または .json を選択",
+  "importPasteHint": "または JSON / .fmbak テキストを貼り付け…",
+  "importPasswordLabel": "復号パスワード（暗号化時）",
+  "importPasswordHint": "資格情報付き .fmbak ファイルに必要",
+  "importPasswordRequiredError": "暗号化された .fmbak バックアップの復号パスワードを入力してください。",
+  "exportSavedNotice": "バックアップを {path} に保存しました",
+  "@exportSavedNotice": { "placeholders": { "path": { "type": "String" } } },
+  "exportCopiedNotice": "バックアップをクリップボードにコピーしました",
+  "importSummaryNotice": "{remotes} 件のリモート、{bookmarks} 件のブックマーク、{prefs} 件の設定をインポートしました",
+  "@importSummaryNotice": {
+    "placeholders": {
+      "remotes": { "type": "int" },
+      "bookmarks": { "type": "int" },
+      "prefs": { "type": "int" }
+    }
+  },
+  "unencryptedCredentialsBanner": "警告: OS キーチェーンが利用できないため、資格情報は平文で保存されます。",
+  "remoteTestTimedOut": "8 秒でタイムアウトしました",
+  "remoteImportFailedSummary": "；{count} 件失敗: {details}",
+  "@remoteImportFailedSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "details": { "type": "String" }
+    }
+  },
+  "remoteBucketLabel": "バケット: {bucket}",
+  "@remoteBucketLabel": { "placeholders": { "bucket": { "type": "String" } } },
+  "keyringUnavailableBanner": "OS キーチェーンが利用できません（{detail}）。資格情報が安全に保持されない場合があります。",
+  "@keyringUnavailableBanner": { "placeholders": { "detail": { "type": "String" } } },
+  "deleteRemotePoolWarning": "警告: このリモートはストレージプール ({pools}) で使用されています。削除するとプールが劣化・利用不可になります。",
+  "@deleteRemotePoolWarning": { "placeholders": { "pools": { "type": "String" } } },
+  "poolConfirmGcTitle": "ガベージコレクションを実行しますか？",
+  "poolConfirmGcBody": "プール「{name}」の未参照チャンクを完全に削除しますか？削除後は復元できません。",
+  "@poolConfirmGcBody": { "placeholders": { "name": { "type": "String" } } },
+  "poolReplicationFactorLabel": "レプリケーション数",
+  "poolMinNodesError": "{count} 倍レプリケーションには少なくとも {count} 個のノードが必要です。",
+  "@poolMinNodesError": { "placeholders": { "count": { "type": "int" } } },
+  "poolInvalidQuotaError": "有効なクォータ（0 GB 超）を入力してください。",
+  "poolPassphraseConfirmLabel": "暗号化パスフレーズ（確認）",
+  "poolPassphraseMismatchError": "パスフレーズが一致しません。",
+  "poolEditLockedHint": "チャンクサイズと暗号化設定は作成後に変更できません。",
+  "poolNodeHealthSummary": "健全性 {pct}% · {ms} ms · {state}",
+  "@poolNodeHealthSummary": {
+    "placeholders": {
+      "pct": { "type": "int" },
+      "ms": { "type": "int" },
+      "state": { "type": "String" }
+    }
+  },
+  "poolRoleShortRw": "読み書き",
+  "poolRoleShortRo": "読み取り専用",
+  "poolRoleShortDraining": "排出中",
+  "poolRoleShortOffline": "オフライン",
+  "poolCircuitClosed": "正常",
+  "poolCircuitOpen": "遮断",
+  "poolCircuitHalfOpen": "半開",
+  "cryptChooseBackingRemote": "既存のリモートまたはローカルフォルダを選択",
+  "cryptLocalFolderOption": "ローカルフォルダを選択…",
+  "fileConflictBody": "「{name}」はこのフォルダに既に存在します。どう処理しますか？",
+  "@fileConflictBody": { "placeholders": { "name": { "type": "String" } } },
+  "filesConflictBody": "{count} 件の同名の項目が既に存在します。どう処理しますか？",
+  "@filesConflictBody": { "placeholders": { "count": { "type": "int" } } },
+  "offlineOverwriteConfirmTitle": "リモートの変更を上書きしますか？",
+  "offlineOverwriteConfirmBody": "リモート側の「{name}」も更新されています。ローカルの変更で上書きしますか？",
+  "@offlineOverwriteConfirmBody": { "placeholders": { "name": { "type": "String" } } },
+  "offlineDiscardLocalConfirmTitle": "ローカルのオフライン編集を破棄しますか？",
+  "offlineDiscardLocalConfirmBody": "「{name}」には未同期のローカル変更または競合があります。続行すると上書きまたは削除されます。",
+  "@offlineDiscardLocalConfirmBody": { "placeholders": { "name": { "type": "String" } } },
+  "offlineUploadedNotice": "「{name}」をリモートへアップロードしました。",
+  "@offlineUploadedNotice": { "placeholders": { "name": { "type": "String" } } },
+  "offlineCheckUpdatesTooltip": "更新を確認",
+  "offlineSyncAllTooltip": "すべて同期",
+  "offlineLruCapTooltip": "LRU キャッシュ上限",
+  "offlineLruCapOption": "キャッシュ上限: {size}",
+  "@offlineLruCapOption": { "placeholders": { "size": { "type": "String" } } },
+  "offlineUploadLocalTooltip": "ローカル変更をリモートにアップロード",
+  "offlineBannerSummary": "固定 {count} 件 · {used} / {cap}",
+  "@offlineBannerSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "used": { "type": "String" },
+      "cap": { "type": "String" }
+    }
+  },
+  "offlineStatusLocalModified": "ローカル変更あり",
+  "offlineStatusRemoteNewer": "リモートに更新あり",
+  "offlineStatusConflict": "競合",
+  "offlineStatusSynced": "同期済み",
+  "offlineStatusMissingLocal": "ローカル欠損",
+  "offlineStatusOffline": "オフライン",
+  "browserSelectItemsFirst": "先に 1 つ以上の項目を選択してください。",
+  "clipboardReadOnlyHint": "クリップボード: {count} 件（読み取り専用フォルダ）",
+  "@clipboardReadOnlyHint": { "placeholders": { "count": { "type": "int" } } },
+  "peerTabDirectTransfer": "LAN ダイレクト転送",
+  "peerTabWebdavShare": "WebDAV / ブラウザ共有",
+  "peerPendingItemsToSend": "送信準備完了: {count} 件",
+  "@peerPendingItemsToSend": { "placeholders": { "count": { "type": "int" } } },
+  "peerReceiveFolderMustBeLocal": "受信フォルダはローカルストレージ上に設定してください。",
+  "peerOpenReceivedFolder": "フォルダを開く",
+  "peerCopyReceivedText": "テキストをコピー",
+  "peerTextCopied": "受信テキストをクリップボードにコピーしました。",
+  "peerWaitingForAccept": "送信中・相手の承認を待機しています…",
+  "peerOfferStatusAccepted": "承認済み",
+  "peerOfferStatusCompleted": "完了",
+  "peerOfferStatusRejected": "拒否",
+  "peerOfferStatusReceiving": "受信中",
+  "photoBackupScanning": "写真とフォルダをスキャン中…",
+  "photoBackupCancel": "キャンセル",
+  "photoBackupCancelledNotice": "バックアップをキャンセルしました（{count} 件アップロード済み）。",
+  "@photoBackupCancelledNotice": { "placeholders": { "count": { "type": "int" } } },
+  "photoBackupResetHistory": "バックアップ履歴をリセット",
+  "photoBackupResetHistoryConfirm": "ローカルのバックアップ履歴をクリアしますか？次回は再度チェック・アップロードされます。",
+  "photoBackupLastRun": "前回: {time}",
+  "@photoBackupLastRun": { "placeholders": { "time": { "type": "String" } } },
+  "photoBackupProgressCount": "{uploaded} / {total} 完了",
+  "@photoBackupProgressCount": {
+    "placeholders": {
+      "uploaded": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "photoBackupOpenDestination": "保存先を開く",
+  "photoBackupVaultLocked": "保存先のプライバシーフォルダがロックされています",
+  "photoBackupPermissionDeniedTitle": "写真ライブラリのアクセス許可が必要です",
+  "photoBackupPermissionDeniedBody": "システム設定で写真ライブラリへのアクセスを許可してください。",
+  "photoBackupOpenSettings": "設定を開く",
+  "syncSaveProfileTitle": "同期プロファイルを保存",
+  "syncProfileNameLabel": "プロファイル名",
+  "syncSourceLabel": "同期元",
+  "syncDestinationLabel": "同期先",
+  "syncScanLimitReached": "スキャン上限に達したためプレビューが省略されています。",
+  "syncSummaryChanges": "{changes} 件の変更 · {unchanged} 件変更なし",
+  "@syncSummaryChanges": {
+    "placeholders": {
+      "changes": { "type": "int" },
+      "unchanged": { "type": "int" }
+    }
+  },
+  "syncConfirmMirrorDeleteTitle": "ミラー削除の確認",
+  "syncConfirmMirrorDeleteBody": "同期により同期先の不要なファイル/フォルダ {count} 件が削除されます。続行しますか？",
+  "@syncConfirmMirrorDeleteBody": { "placeholders": { "count": { "type": "int" } } },
+  "syncConfirmDeleteProfileBody": "同期プロファイル「{name}」を削除しますか？",
+  "@syncConfirmDeleteProfileBody": { "placeholders": { "name": { "type": "String" } } },
+  "syncSwapFoldersTooltip": "同期元と同期先を入れ替え",
+  "syncSelectAll": "すべて選択",
+  "syncDeselectAll": "選択解除",
+  "syncActionCopy": "コピー",
+  "syncActionUpdate": "更新",
+  "syncActionDelete": "削除",
+  "syncActionPullUpdate": "プル更新",
+  "syncEditConfig": "フォルダ変更",
+  "syncAutoSyncFailed": "前回の自動同期に失敗: {error}",
+  "@syncAutoSyncFailed": { "placeholders": { "error": { "type": "String" } } },
+  "taskStatusPaused": "一時停止",
+  "taskRateLimitActive": "制限: {limit}",
+  "@taskRateLimitActive": { "placeholders": { "limit": { "type": "String" } } },
+  "taskFailedItemsTitle": "失敗詳細 ({count} 件)",
+  "@taskFailedItemsTitle": { "placeholders": { "count": { "type": "int" } } },
+  "taskRetryStarted": "失敗項目の再試行を開始しました。",
+  "analyzerStatsSummary": "{files} ファイル · {folders} フォルダ",
+  "@analyzerStatsSummary": {
+    "placeholders": {
+      "files": { "type": "int" },
+      "folders": { "type": "int" }
+    }
+  },
+  "analyzerScanCancelled": "分析がキャンセルされました（部分結果）。",
+  "analyzerScanTruncated": "スキャン上限に達しました。一部の深い階層は含まれません。",
+  "analyzerRescan": "再スキャン",
+  "duplicatesGroupCount": "{count} グループ",
+  "@duplicatesGroupCount": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesCopiesCount": "({count} 件)",
+  "@duplicatesCopiesCount": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesEachSize": "各 {size}",
+  "@duplicatesEachSize": { "placeholders": { "size": { "type": "String" } } },
+  "duplicatesDeleteFailed": "{count} 件の削除に失敗しました",
+  "@duplicatesDeleteFailed": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesAllCopiesWarning": "警告: {count} グループですべてのコピーが削除対象に選択されています！",
+  "@duplicatesAllCopiesWarning": { "placeholders": { "count": { "type": "int" } } },
+  "duplicatesClearSelection": "選択クリア",
+  "duplicatesScanCancelled": "重複スキャンをキャンセルしました。",
+  "duplicatesTrashConfirmBody": "選択した {count} 件をごみ箱へ移動しますか？",
+  "@duplicatesTrashConfirmBody": { "placeholders": { "count": { "type": "int" } } },
+  "categoryTruncatedBanner": "最初の {count} 件のみ表示しています（上限到達）。",
+  "@categoryTruncatedBanner": { "placeholders": { "count": { "type": "int" } } },
+  "galleryLocateInFolder": "フォルダで開く",
+  "galleryUnsupportedFormatForPick": "要求された形式に一致しないファイルです。",
+  "galleryExifSkippedNonJpeg": "JPEG 以外の {count} 枚をスキップしました。",
+  "@galleryExifSkippedNonJpeg": { "placeholders": { "count": { "type": "int" } } },
+  "searchFiltersLabel": "フィルター ({count})",
+  "@searchFiltersLabel": { "placeholders": { "count": { "type": "int" } } },
+  "searchAllTypes": "すべて",
+  "pdfEncryptedError": "この PDF は暗号化またはパスワード保護されています。",
+  "pdfPageTextTitle": "{page} ページのテキスト",
+  "@pdfPageTextTitle": { "placeholders": { "page": { "type": "int" } } },
+  "pdfPageTextCopied": "ページのテキストをクリップボードにコピーしました。",
+  "pdfNoSelectableText": "選択可能なテキストが見つかりません（スキャン画像の可能性があります）。",
+  "pdfSelectCopyPageText": "テキストを選択 / コピー",
+  "pdfRenderPageFailed": "{page} ページのレンダリングに失敗しました。",
+  "@pdfRenderPageFailed": { "placeholders": { "page": { "type": "int" } } },
+  "structuredEmptyValue": "(空)",
+  "structuredCsvTruncated": "全 {total} 行のうち最初の {shown} 行を表示しています。",
+  "@structuredCsvTruncated": {
+    "placeholders": {
+      "shown": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "copyXPath": "XPath をコピー",
+  "subtitleLoadFailed": "非対応または読み込めない字幕ファイルです。",
+  "diffTruncatedNotice": "ディレクトリ比較が上限に達したため一部省略されました。",
+  "diffSyncFoldersAction": "同期で開く",
+  "vaultHtmlBrowserWarning": "ゼロディスク保護のため、プライバシーフォルダ内の HTML は外部ブラウザで開けません。",
+  "poolStorageDirectory": "保存先ディレクトリ",
+  "poolPickDirectory": "フォルダを選択",
+  "poolReplicationBadge": "{count} レプリカ",
+  "@poolReplicationBadge": { "placeholders": { "count": { "type": "int" } } },
+  "poolSetReplicationTitle": "レプリカ数の設定",
+  "poolSetReplicationHint": "新規書き込みに即時適用されます。既存ファイルは「修復」で補完できます。",
+  "poolNodeRealFreeWithTotal": "空き {free} / 合計 {total}",
+  "@poolNodeRealFreeWithTotal": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "poolNodeRealFreeOnly": "空き {free}",
+  "@poolNodeRealFreeOnly": { "placeholders": { "free": { "type": "String" } } },
+  "poolNodeSpaceUnavailable": "空き容量を取得できません",
+  "poolNodeSpaceProbing": "空き容量を確認中…",
+  "poolNodePoolUsed": "プール使用量: {used}",
+  "@poolNodePoolUsed": { "placeholders": { "used": { "type": "String" } } },
+  "poolNodeDirectoryLabel": "ディレクトリ: {dir}",
+  "@poolNodeDirectoryLabel": { "placeholders": { "dir": { "type": "String" } } },
+  "remoteBatchExportAction": "暗号化一括エクスポート",
+  "remoteBatchImportAction": "暗号化一括インポート",
+  "remoteBatchExportTitle": "リモート接続を一括エクスポート",
+  "remoteBatchExportSubtitle": "接続設定と資格情報は設定したパスワードで AES-256-GCM 暗号化されます。",
+  "remoteBatchSelectCount": "{selected} / {total} 件を選択中",
+  "@remoteBatchSelectCount": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "remoteBatchSelectAll": "すべて選択",
+  "remoteBatchDeselectAll": "選択解除",
+  "remoteBatchUnreadableSkipped": "資格情報を読み取れないためエクスポート不可",
+  "remoteBatchNoReadableToExport": "エクスポート可能なリモート接続がありません。",
+  "remoteBatchExportPasswordLabel": "暗号化パスワード（必須）",
+  "remoteBatchExportPasswordHint": "{min} 文字以上",
+  "@remoteBatchExportPasswordHint": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+  },
+  "remoteBatchExportPasswordConfirmLabel": "暗号化パスワード（確認）",
+  "remoteBatchPasswordRequiredNote": "このパスワードはインポート時の復号に必要です。忘れないように保管してください。",
+  "remoteBatchPasswordTooShort": "パスワードは {min} 文字以上で入力してください。",
+  "@remoteBatchPasswordTooShort": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+  },
+  "remoteBatchPasswordMismatch": "パスワードが一致しません。",
+  "remoteBatchSaveFileAction": "暗号化ファイルを保存",
+  "remoteBatchShareFileAction": "ファイルを書き出し / 共有",
+  "remoteBatchExportSavedNotice": "{count} 件の接続を {path} に暗号化保存しました",
+  "@remoteBatchExportSavedNotice": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "path": { "type": "String" }
+    }
+  },
+  "remoteBatchExportSharedNotice": "{count} 件の接続の暗号化バックアップを作成しました。",
+  "@remoteBatchExportSharedNotice": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchExportCopiedNotice": "{count} 件の接続の暗号化バックアップをクリップボードにコピーしました。",
+  "@remoteBatchExportCopiedNotice": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchImportTitle": "リモート接続を一括インポート",
+  "remoteBatchChooseFile": "バックアップファイルを選択",
+  "remoteBatchPasteClipboard": "クリップボードから貼り付け",
+  "remoteBatchClipboardDetected": "クリップボードから暗号化バックアップを検出しました。",
+  "remoteBatchClipboardEmpty": "クリップボードは空です。",
+  "remoteBatchSelectedFileLabel": "選択ファイル: {name}",
+  "@remoteBatchSelectedFileLabel": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "remoteBatchPasteFieldHint": "または暗号化された .fmremotes / .fmbak の内容を貼り付け…",
+  "remoteBatchImportPasswordLabel": "復号パスワード（必須）",
+  "remoteBatchImportPasswordHint": "エクスポート時に設定したパスワードを入力",
+  "remoteBatchDecryptAction": "復号してプレビュー",
+  "remoteBatchPreviewSummary": "復号完了（{count} 件の接続）",
+  "@remoteBatchPreviewSummary": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchConflictSectionLabel": "既存の接続と重複する場合:",
+  "remoteBatchConflictSkip": "スキップ",
+  "remoteBatchConflictOverwrite": "上書き",
+  "remoteBatchConflictKeepBoth": "両方保持",
+  "remoteBatchBadgeNew": "新規",
+  "remoteBatchBadgeExists": "既存",
+  "remoteBatchAllSkippedHint": "選択した接続はすべて既に存在しスキップされます。「上書き」または「両方保持」を選択してください。",
+  "remoteBatchImportConfirm": "インポート ({count})",
+  "@remoteBatchImportConfirm": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "remoteBatchImportSummary": "{imported} 件の接続をインポートしました（新規 {added}・更新 {overwritten}・複製 {duplicated}・スキップ {skipped}）{detail}",
+  "@remoteBatchImportSummary": {
+    "placeholders": {
+      "imported": { "type": "int" },
+      "added": { "type": "int" },
+      "overwritten": { "type": "int" },
+      "duplicated": { "type": "int" },
+      "skipped": { "type": "int" },
+      "detail": { "type": "String" }
+    }
+  },
+  "remoteBatchErrorNotEncrypted": "暗号化されていない平文データは利用できません。パスワード保護されたバックアップを選択してください。",
+  "remoteBatchErrorInvalidFormat": "バックアップファイルの形式が無効です。",
+  "remoteBatchErrorWrongPassword": "パスワードが間違っているか、バックアップファイルが破損しています。",
+  "remoteBatchErrorEmptyBundle": "このバックアップには有効なリモート接続が含まれていません。",
+  "remoteBatchErrorFileTooLarge": "選択したファイルが大きすぎるため読み込めません。",
+  "remoteBatchBackStep": "戻る"
 }

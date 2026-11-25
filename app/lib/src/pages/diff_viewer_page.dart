@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../rust/api/file_manager.dart';
 import '../rust/api/sync.dart';
+import '../services/path_utils.dart';
+import '../services/semantic_colors.dart';
 import '../services/task_service.dart';
+import '../services/vault_service.dart';
+import '../theme/app_ui_tokens.dart';
+import 'sync_page.dart';
 
 enum DiffOp { equal, insert, delete }
 
@@ -146,7 +151,56 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
   @override
   void initState() {
     super.initState();
+    VaultService.instance.addListener(_onVaultChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
+    super.dispose();
+  }
+
+  void _onVaultChanged() {
+    final leftVid = vaultIdFromRoot(widget.leftRoot);
+    final rightVid = vaultIdFromRoot(widget.rightRoot);
+    final locked = (leftVid != null && !VaultService.instance.isUnlocked(leftVid)) ||
+        (rightVid != null && !VaultService.instance.isUnlocked(rightVid));
+    if (locked && mounted) {
+      setState(() {
+        _lines = const [];
+        _addedCount = 0;
+        _removedCount = 0;
+        _dirDiff = null;
+      });
+      final route = ModalRoute.of(context);
+      if (route != null && route.isActive && !route.isFirst) {
+        Navigator.of(context).removeRoute(route);
+      } else {
+        Navigator.of(context).maybePop();
+      }
+    }
+  }
+
+  String _joinRelPath(String base, String rel) {
+    final cleanBase = base.replaceAll('\\', '/').replaceAll(RegExp(r'^/+|/+$'), '');
+    final cleanRel = rel.replaceAll('\\', '/').replaceAll(RegExp(r'^/+|/+$'), '');
+    if (cleanBase.isEmpty) return cleanRel;
+    if (cleanRel.isEmpty) return cleanBase;
+    return '$cleanBase/$cleanRel';
+  }
+
+  void _openInSync() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SyncPage(
+          initialSrcRoot: widget.leftRoot,
+          initialSrcPath: widget.leftPath,
+          initialDstRoot: widget.rightRoot,
+          initialDstPath: widget.rightPath,
+        ),
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -199,54 +253,82 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.compareDiff),
-            Text(
-              '${widget.leftLabel} ↔ ${widget.rightLabel}',
-              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              overflow: TextOverflow.ellipsis,
-            ),
+    return AppSwipeBack(
+      child: Scaffold(
+        appBar: AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.compareDiff),
+              Text(
+                '${widget.leftLabel} ↔ ${widget.rightLabel}',
+                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          actions: [
+            if (widget.isDirectory && !_loading && _error == null)
+              IconButton(
+                icon: const Icon(Icons.sync),
+                tooltip: l10n.diffSyncFoldersAction,
+                onPressed: _openInSync,
+              ),
+            if (!widget.isDirectory)
+              SegmentedButton<bool>(
+                segments: [
+                  ButtonSegment(value: false, label: Text(l10n.diffUnified)),
+                  ButtonSegment(value: true, label: Text(l10n.diffSideBySide)),
+                ],
+                selected: {_sideBySide},
+                onSelectionChanged: (s) => setState(() => _sideBySide = s.first),
+              ),
+            const SizedBox(width: 8),
           ],
         ),
-        actions: [
-          if (!widget.isDirectory)
-            SegmentedButton<bool>(
-              segments: [
-                ButtonSegment(value: false, label: Text(l10n.diffUnified)),
-                ButtonSegment(value: true, label: Text(l10n.diffSideBySide)),
-              ],
-              selected: {_sideBySide},
-              onSelectionChanged: (s) => setState(() => _sideBySide = s.first),
-            ),
-          const SizedBox(width: 8),
-        ],
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _error!,
+                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton.tonal(
+                            onPressed: _load,
+                            child: Text(l10n.retry),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : widget.isDirectory
+                    ? _buildDirDiff(l10n)
+                    : _buildTextDiff(l10n),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)))
-              : widget.isDirectory
-                  ? _buildDirDiff(l10n)
-                  : _buildTextDiff(l10n),
     );
   }
 
   Widget _buildTextDiff(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          color: scheme.surfaceContainerLow,
           child: Row(
             children: [
-              Text('+$_addedCount', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              Text('+$_addedCount', style: TextStyle(color: scheme.success, fontWeight: FontWeight.bold)),
               const SizedBox(width: 12),
-              Text('-$_removedCount', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              Text('-$_removedCount', style: TextStyle(color: scheme.error, fontWeight: FontWeight.bold)),
               const SizedBox(width: 12),
               if (_addedCount == 0 && _removedCount == 0)
                 Text(l10n.diffIdentical, style: const TextStyle(fontSize: 12)),
@@ -254,57 +336,61 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: _lines.length,
-            itemBuilder: (_, i) {
-              final line = _lines[i];
-              final isDark = Theme.of(context).brightness == Brightness.dark;
-              Color? bg;
-              String prefix = ' ';
-              if (line.op == DiffOp.insert) {
-                bg = isDark ? Colors.green.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.12);
-                prefix = '+';
-              } else if (line.op == DiffOp.delete) {
-                bg = isDark ? Colors.red.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.12);
-                prefix = '-';
-              }
-              if (_sideBySide) {
+          child: SelectionArea(
+            child: ListView.builder(
+              itemCount: _lines.length,
+              itemBuilder: (_, i) {
+                final line = _lines[i];
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                Color? bg;
+                String prefix = ' ';
+                if (line.op == DiffOp.insert) {
+                  bg = isDark ? Colors.green.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.12);
+                  prefix = '+';
+                } else if (line.op == DiffOp.delete) {
+                  bg = isDark ? Colors.red.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.12);
+                  prefix = '-';
+                }
+                if (_sideBySide) {
+                  return Container(
+                    color: bg,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              line.op == DiffOp.insert
+                                  ? ''
+                                  : '${(line.leftLine ?? '').toString().padLeft(4)}  ${line.text}',
+                              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                            ),
+                          ),
+                          const VerticalDivider(width: 12),
+                          Expanded(
+                            child: Text(
+                              line.op == DiffOp.delete
+                                  ? ''
+                                  : '${(line.rightLine ?? '').toString().padLeft(4)}  ${line.text}',
+                              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 return Container(
                   color: bg,
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          line.op == DiffOp.insert
-                              ? ''
-                              : '${(line.leftLine ?? '').toString().padLeft(4)}  ${line.text}',
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                        ),
-                      ),
-                      const VerticalDivider(width: 12),
-                      Expanded(
-                        child: Text(
-                          line.op == DiffOp.delete
-                              ? ''
-                              : '${(line.rightLine ?? '').toString().padLeft(4)}  ${line.text}',
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '${(line.leftLine?.toString() ?? '').padLeft(4)} ${(line.rightLine?.toString() ?? '').padLeft(4)} $prefix ${line.text}',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                   ),
                 );
-              }
-              return Container(
-                color: bg,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                child: Text(
-                  '${(line.leftLine?.toString() ?? '').padLeft(4)} ${(line.rightLine?.toString() ?? '').padLeft(4)} $prefix ${line.text}',
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                ),
-              );
-            },
+              },
+            ),
           ),
         ),
       ],
@@ -312,30 +398,81 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
   }
 
   Widget _buildDirDiff(AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
     final plan = _dirDiff;
     if (plan == null || plan.items.isEmpty) {
       return Center(child: Text(l10n.diffIdentical));
     }
-    return ListView.separated(
-      itemCount: plan.items.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (_, i) {
-        final item = plan.items[i];
-        final (IconData icon, Color color, String badge) = switch (item.action) {
-          'add' => (Icons.arrow_forward, Colors.green, l10n.diffOnlyInLeft),
-          'delete' => (Icons.arrow_back, Colors.orange, l10n.diffOnlyInRight),
-          _ => (Icons.difference, Colors.blue, l10n.diffModified),
-        };
-        final sz = item.srcSize != null
-            ? formatBytes(item.srcSize!)
-            : (item.dstSize != null ? formatBytes(item.dstSize!) : '');
-        return ListTile(
-          dense: true,
-          leading: Icon(icon, color: color, size: 18),
-          title: Text(item.relPath, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text('$badge · $sz', style: const TextStyle(fontSize: 11)),
-        );
-      },
+    return Column(
+      children: [
+        if (plan.truncated)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: scheme.warning.withValues(alpha: 0.14),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 18, color: scheme.warning),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    l10n.diffTruncatedNotice,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _openInSync,
+                  child: Text(l10n.diffSyncFoldersAction),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: ListView.separated(
+            itemCount: plan.items.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final item = plan.items[i];
+              final isModified = item.action != 'add' && item.action != 'delete';
+              final (IconData icon, Color color, String badge) = switch (item.action) {
+                'add' => (Icons.arrow_forward, scheme.success, l10n.diffOnlyInLeft),
+                'delete' => (Icons.arrow_back, scheme.warning, l10n.diffOnlyInRight),
+                _ => (Icons.difference, scheme.primary, l10n.diffModified),
+              };
+              final sz = item.srcSize != null
+                  ? formatBytes(item.srcSize!)
+                  : (item.dstSize != null ? formatBytes(item.dstSize!) : '');
+              return ListTile(
+                dense: true,
+                leading: Icon(icon, color: color, size: 18),
+                title: Text(item.relPath, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  sz.isEmpty ? badge : '$badge · $sz',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: isModified ? const Icon(Icons.chevron_right, size: 18) : null,
+                onTap: isModified
+                    ? () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => DiffViewerPage(
+                              isDirectory: false,
+                              leftRoot: widget.leftRoot,
+                              leftPath: _joinRelPath(widget.leftPath, item.relPath),
+                              leftLabel: '${widget.leftLabel}/${item.relPath}',
+                              rightRoot: widget.rightRoot,
+                              rightPath: _joinRelPath(widget.rightPath, item.relPath),
+                              rightLabel: '${widget.rightLabel}/${item.relPath}',
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

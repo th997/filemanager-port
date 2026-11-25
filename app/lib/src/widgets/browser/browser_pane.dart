@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 /// drill into nested folders during drag-and-drop without releasing the drag.
 class HoverExpandDragTarget<T extends Object> extends StatefulWidget {
   final Widget Function(BuildContext context, bool isHovering) builder;
+  final bool Function(T data)? onWillAccept;
   final void Function(T data)? onAccept;
   final VoidCallback? onHoverExpand;
   final Duration expandDelay;
@@ -15,6 +16,7 @@ class HoverExpandDragTarget<T extends Object> extends StatefulWidget {
   const HoverExpandDragTarget({
     super.key,
     required this.builder,
+    this.onWillAccept,
     this.onAccept,
     this.onHoverExpand,
     this.expandDelay = const Duration(milliseconds: 750),
@@ -54,7 +56,13 @@ class _HoverExpandDragTargetState<T extends Object> extends State<HoverExpandDra
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     return DragTarget<T>(
-      onWillAcceptWithDetails: (_) {
+      onWillAcceptWithDetails: (details) {
+        final allowed = widget.onWillAccept?.call(details.data) ?? true;
+        if (!allowed) {
+          _cancelTimer();
+          if (_hovering) setState(() => _hovering = false);
+          return false;
+        }
         if (!_hovering) {
           setState(() => _hovering = true);
           _startTimer();

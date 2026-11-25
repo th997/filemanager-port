@@ -331,6 +331,10 @@ impl Vfs for OpendalFs {
         timed("rename", self.rename_impl(from, to)).await
     }
 
+    async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
+        self.space_info_impl(path).await
+    }
+
 }
 
 impl OpendalFs {
@@ -867,5 +871,121 @@ impl OpendalFs {
                 source: std::io::Error::other(e.to_string()),
             }),
         }
+    }
+
+    async fn space_info_impl(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
+        let Some(info) = &self.webdav_info else {
+            return Ok(None);
+        };
+        let body = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
+            <D:propfind xmlns:D=\"DAV:\"><D:prop>\
+            <D:quota-available-bytes/><D:quota-used-bytes/>\
+            </D:prop></D:propfind>";
+        let method = match reqwest::Method::from_bytes(b"PROPFIND") {
+            Ok(m) => m,
+            Err(_) => return Ok(None),
+        };
+
+        let mut candidates = Vec::with_capacity(2);
+        if let Ok(u) = info.build_url(path) {
+            candidates.push(u);
+        }
+        if !path.is_root() {
+            if let Ok(u) = info.build_url(&VfsPath::root()) {
+                candidates.push(u);
+            }
+        }
+
+        for url in candidates {
+            let mut req = info
+                .client
+                .request(method.clone(), url)
+                .timeout(std::time::Duration::from_secs(10))
+                .header("Depth", "0")
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/xml; charset=utf-8",
+                )
+                .body(body);
+            if let Some(ref auth) = info.auth_header {
+                req = req.header(reqwest::header::AUTHORIZATION, auth);
+            }
+            let Ok(resp) = req.send().await else {
+                continue;
+            };
+            let status = resp.status();
+            if status == reqwest::StatusCode::NOT_FOUND {
+                continue;
+            }
+            if !status.is_success() && status != reqwest::StatusCode::MULTI_STATUS {
+                return Ok(None);
+            }
+            let Ok(xml) = resp.text().await else {
+                return Ok(None);
+            };
+            return Ok(parse_webdav_quota_xml(&xml));
+        }
+
+        Ok(None)
+    }
+}
+
+pub(crate) fn parse_webdav_quota_xml(xml: &str) -> Option<fm_core::SpaceInfo> {
+    static AVAIL_RE: std::sync::OnceLock<Option<regex::Regex>> = std::sync::OnceLock::new();
+    static USED_RE: std::sync::OnceLock<Option<regex::Regex>> = std::sync::OnceLock::new();
+
+    let avail_re = AVAIL_RE
+        .get_or_init(|| {
+            regex::RegexBuilder::new(
+                r"<(?:[a-zA-Z0-9_-]+:)?quota-available-bytes[^>]*>\s*([+-]?\d+)\s*</(?:[a-zA-Z0-9_-]+:)?quota-available-bytes>",
+            )
+            .case_insensitive(true)
+            .build()
+            .ok()
+        })
+        .as_ref()?;
+    let used_re = USED_RE.get_or_init(|| {
+        regex::RegexBuilder::new(
+            r"<(?:[a-zA-Z0-9_-]+:)?quota-used-bytes[^>]*>\s*([+-]?\d+)\s*</(?:[a-zA-Z0-9_-]+:)?quota-used-bytes>",
+        )
+        .case_insensitive(true)
+        .build()
+        .ok()
+    });
+
+    let avail_cap = avail_re.captures(xml)?.get(1)?;
+    let free_bytes: u64 = avail_cap.as_str().parse().ok()?;
+    let used_bytes: Option<u64> = used_re
+        .as_ref()
+        .and_then(|re| re.captures(xml))
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<u64>().ok());
+    Some(fm_core::SpaceInfo {
+        total_bytes: used_bytes.map(|u| u.saturating_add(free_bytes)),
+        free_bytes,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_webdav_quota_xml_variants() {
+        let xml_both = r#"<D:multistatus xmlns:D="DAV:"><D:response><D:propstat><D:prop>
+            <D:quota-available-bytes>400000000000</D:quota-available-bytes>
+            <D:quota-used-bytes>100000000000</D:quota-used-bytes>
+        </D:prop></D:propstat></D:response></D:multistatus>"#;
+        let parsed = parse_webdav_quota_xml(xml_both).unwrap();
+        assert_eq!(parsed.free_bytes, 400_000_000_000);
+        assert_eq!(parsed.total_bytes, Some(500_000_000_000));
+
+        let xml_avail_only = r#"<quota-available-bytes>123456</quota-available-bytes>"#;
+        let parsed2 = parse_webdav_quota_xml(xml_avail_only).unwrap();
+        assert_eq!(parsed2.free_bytes, 123_456);
+        assert_eq!(parsed2.total_bytes, None);
+
+        let xml_sentinel = r#"<d:quota-available-bytes>-3</d:quota-available-bytes>"#;
+        assert!(parse_webdav_quota_xml(xml_sentinel).is_none());
     }
 }

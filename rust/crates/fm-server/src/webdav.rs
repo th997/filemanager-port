@@ -8,10 +8,10 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::extract::{DefaultBodyLimit, FromRequest, Multipart, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
@@ -20,9 +20,14 @@ use chrono::{DateTime, Utc};
 use fm_core::{Entry, EntryKind, VfsPath, WriteMode};
 use fm_vfs::{Vfs, VfsError};
 use futures_util::StreamExt;
+use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
+
+const WEBDAV_INDEX_HTML_TEMPLATE: &str = include_str!("../assets/webdav_index.html");
+const WEBDAV_APP_CSS: &str = include_str!("../assets/app.css");
+const WEBDAV_APP_JS: &str = include_str!("../assets/webdav_app.js");
 
 #[cfg(target_pointer_width = "64")]
 const MAX_PUT_BYTES: usize = 8 * 1024 * 1024 * 1024;
@@ -36,6 +41,26 @@ struct WebDavState {
     read_only: bool,
     username: Option<String>,
     password: Option<String>,
+    default_lang: Option<String>,
+    single_file_name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct WebDavListItem {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: Option<u64>,
+    modified_ms: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct WebDavListResponse {
+    read_only: bool,
+    lang: String,
+    path: String,
+    single_file: bool,
+    items: Vec<WebDavListItem>,
 }
 
 pub struct RunningWebDavServer {
@@ -52,11 +77,34 @@ pub async fn start_webdav_server(
     password: Option<String>,
     read_only: bool,
 ) -> Result<RunningWebDavServer, String> {
+    start_webdav_server_with_lang(vfs, base_prefix, port, username, password, read_only, None).await
+}
+
+/// Starts a WebDAV server exposing `vfs` at `base_prefix` with an explicit default web UI language.
+pub async fn start_webdav_server_with_lang(
+    vfs: Arc<dyn Vfs>,
+    base_prefix: VfsPath,
+    port: Option<u16>,
+    username: Option<String>,
+    password: Option<String>,
+    read_only: bool,
+    default_lang: Option<String>,
+) -> Result<RunningWebDavServer, String> {
     let username = username.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     let password = password.filter(|s| !s.is_empty());
     if username.is_some() && password.is_none() {
         return Err("WebDAV username requires a non-empty password".to_string());
     }
+
+    let single_file_name = if !base_prefix.is_root() {
+        match vfs.stat(&base_prefix).await {
+            Ok(e) if e.kind == EntryKind::File => Some(e.name),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let effective_read_only = read_only || single_file_name.is_some();
 
     let bind_port = port.unwrap_or(0);
     let addr: SocketAddr = format!("0.0.0.0:{bind_port}")
@@ -73,9 +121,11 @@ pub async fn start_webdav_server(
     let state = WebDavState {
         vfs,
         base_prefix,
-        read_only,
+        read_only: effective_read_only,
         username,
         password,
+        default_lang,
+        single_file_name,
     };
 
     let app = Router::new()
@@ -256,7 +306,11 @@ fn format_http_date(st: SystemTime) -> String {
     dt.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
 }
 
-fn build_propfind_response_xml(href_path: &str, entry: &Entry) -> String {
+fn build_propfind_response_xml(
+    href_path: &str,
+    entry: &Entry,
+    space: Option<fm_core::SpaceInfo>,
+) -> String {
     let is_dir = entry.kind == EntryKind::Dir;
     let mut href = percent_encode_path(href_path);
     if is_dir && !href.ends_with('/') {
@@ -301,6 +355,23 @@ fn build_propfind_response_xml(href_path: &str, entry: &Entry) -> String {
     } else {
         String::new()
     };
+    let quota_xml = if let Some(sp) = space {
+        let used_xml = sp
+            .total_bytes
+            .map(|total| {
+                format!(
+                    "<D:quota-used-bytes>{}</D:quota-used-bytes>",
+                    total.saturating_sub(sp.free_bytes)
+                )
+            })
+            .unwrap_or_default();
+        format!(
+            "<D:quota-available-bytes>{}</D:quota-available-bytes>{used_xml}",
+            sp.free_bytes
+        )
+    } else {
+        String::new()
+    };
 
     format!(
         "<D:response>\
@@ -312,6 +383,7 @@ fn build_propfind_response_xml(href_path: &str, entry: &Entry) -> String {
          {size_xml}\
          {mime_xml}\
          <D:getlastmodified>{last_mod}</D:getlastmodified>\
+         {quota_xml}\
          </D:prop>\
          <D:status>HTTP/1.1 200 OK</D:status>\
          </D:propstat>\
@@ -350,6 +422,152 @@ fn parse_byte_range(range_hdr: &str, total: u64) -> Option<(u64, u64)> {
     }
 }
 
+fn has_query_flag(query: Option<&str>, key: &str) -> bool {
+    let Some(q) = query else {
+        return false;
+    };
+    q.split('&').any(|pair| {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, "1"));
+        k == key && v != "0" && !v.eq_ignore_ascii_case("false")
+    })
+}
+
+fn percent_encode_component(s: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(s.len() + 8);
+    for &b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0F) as usize] as char);
+        }
+    }
+    out
+}
+
+fn attachment_disposition(file_name: &str) -> String {
+    let safe_ascii: String = file_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let encoded = percent_encode_component(file_name);
+    format!("attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{encoded}")
+}
+
+fn render_webdav_html(lang: &str) -> String {
+    let html_lang = match lang {
+        "zh" => "zh-CN",
+        "ja" => "ja",
+        _ => "en",
+    };
+    WEBDAV_INDEX_HTML_TEMPLATE
+        .replace("__HTML_LANG__", html_lang)
+        .replace("__SERVER_LANG__", lang)
+        .replace("/*__APP_CSS__*/", WEBDAV_APP_CSS)
+        .replace("/*__WEBDAV_APP_JS__*/", WEBDAV_APP_JS)
+}
+
+fn modified_millis(st: Option<SystemTime>) -> Option<i64> {
+    st.and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+}
+
+async fn ensure_vfs_parent_dirs(vfs: &dyn Vfs, base_prefix: &VfsPath, target: &VfsPath) {
+    let base_len = base_prefix.segments().len();
+    let segs = target.segments();
+    if segs.len() <= base_len + 1 {
+        return;
+    }
+    let mut cur = base_prefix.clone();
+    for seg in &segs[base_len..segs.len() - 1] {
+        cur = cur.join(seg);
+        if vfs.stat(&cur).await.is_err() {
+            let _ = vfs.mkdir(&cur).await;
+        }
+    }
+}
+
+async fn serve_vfs_file(
+    vfs: &dyn Vfs,
+    file_path: &VfsPath,
+    stat: Entry,
+    range_header: Option<&str>,
+    force_download: bool,
+    is_head: bool,
+) -> Response {
+    let mime = stat.mime.unwrap_or_else(|| {
+        mime_guess::from_path(&stat.name)
+            .first_or_octet_stream()
+            .essence_str()
+            .to_string()
+    });
+    let disposition = force_download.then(|| attachment_disposition(&stat.name));
+
+    if let (Some(total), Some(range_hdr)) = (stat.size, range_header) {
+        let Some((start, end)) = parse_byte_range(range_hdr, total) else {
+            return (
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                [(header::CONTENT_RANGE, format!("bytes */{total}"))],
+                "",
+            )
+                .into_response();
+        };
+        let len = end - start + 1;
+        let mut builder = Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONTENT_LENGTH, len.to_string())
+            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"));
+        if let Some(ref disp) = disposition {
+            builder = builder.header(header::CONTENT_DISPOSITION, disp.as_str());
+        }
+        if is_head {
+            return builder
+                .body(Body::empty())
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+        }
+        let reader = match vfs.open_read_range(file_path, start, Some(len)).await {
+            Ok(r) => r,
+            Err(e) => return vfs_err_to_status(e).into_response(),
+        };
+        return builder
+            .body(Body::from_stream(ReaderStream::new(reader)))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::ACCEPT_RANGES, "bytes");
+    if let Some(sz) = stat.size {
+        builder = builder.header(header::CONTENT_LENGTH, sz.to_string());
+    }
+    if let Some(ref disp) = disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, disp.as_str());
+    }
+    if is_head {
+        return builder
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+    let reader = match vfs.open_read(file_path).await {
+        Ok(r) => r,
+        Err(e) => return vfs_err_to_status(e).into_response(),
+    };
+    builder
+        .body(Body::from_stream(ReaderStream::new(reader)))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
 async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Response {
     if !check_basic_auth(&state, req.headers()) {
         return unauthorized_response();
@@ -362,7 +580,7 @@ async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Respon
         let allow = if state.read_only {
             "OPTIONS, GET, HEAD, PROPFIND"
         } else {
-            "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, MOVE, COPY, PROPFIND"
+            "OPTIONS, GET, HEAD, POST, PUT, DELETE, MKCOL, MOVE, COPY, PROPFIND"
         };
         return (
             StatusCode::OK,
@@ -392,7 +610,35 @@ async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Respon
                 .map(|s| s.trim().to_ascii_lowercase())
                 .unwrap_or_else(|| "1".to_string());
 
-            let entry = if rel_segments.is_empty() && state.base_prefix.is_root() {
+            let entry = if let Some(ref fname) = state.single_file_name {
+                if rel_segments.is_empty() {
+                    if depth == "0" {
+                        match state.vfs.stat(&state.base_prefix).await {
+                            Ok(e) => e,
+                            Err(e) => return vfs_err_to_status(e).into_response(),
+                        }
+                    } else {
+                        Entry {
+                            name: String::new(),
+                            path: VfsPath::root(),
+                            kind: EntryKind::Dir,
+                            size: None,
+                            modified: None,
+                            mode: None,
+                            hidden: false,
+                            is_symlink: false,
+                            mime: None,
+                        }
+                    }
+                } else if rel_segments.len() == 1 && &rel_segments[0] == fname {
+                    match state.vfs.stat(&state.base_prefix).await {
+                        Ok(e) => e,
+                        Err(e) => return vfs_err_to_status(e).into_response(),
+                    }
+                } else {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+            } else if rel_segments.is_empty() && state.base_prefix.is_root() {
                 Entry {
                     name: String::new(),
                     path: VfsPath::root(),
@@ -418,12 +664,32 @@ async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Respon
             };
 
             let mut responses_xml = String::new();
-            responses_xml.push_str(&build_propfind_response_xml(&base_href, &entry));
+            let space_path = if state.single_file_name.is_some() && rel_segments.is_empty() {
+                &state.base_prefix
+            } else {
+                &vfs_path
+            };
+            let root_space = if entry.kind == EntryKind::Dir {
+                state.vfs.space_info(space_path).await.ok().flatten()
+            } else {
+                None
+            };
+            responses_xml.push_str(&build_propfind_response_xml(&base_href, &entry, root_space));
 
             if depth != "0" && entry.kind == EntryKind::Dir {
-                let children = match state.vfs.list(&vfs_path).await {
-                    Ok(c) => c,
-                    Err(e) => return vfs_err_to_status(e).into_response(),
+                let children = if let Some(ref fname) = state.single_file_name {
+                    match state.vfs.stat(&state.base_prefix).await {
+                        Ok(mut f_entry) => {
+                            f_entry.name = fname.clone();
+                            vec![f_entry]
+                        }
+                        Err(e) => return vfs_err_to_status(e).into_response(),
+                    }
+                } else {
+                    match state.vfs.list(&vfs_path).await {
+                        Ok(c) => c,
+                        Err(e) => return vfs_err_to_status(e).into_response(),
+                    }
                 };
                 let mut seen = HashSet::new();
                 for child in children {
@@ -435,7 +701,7 @@ async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Respon
                     } else {
                         format!("{}/{}", base_href, child.name)
                     };
-                    responses_xml.push_str(&build_propfind_response_xml(&child_href, &child));
+                    responses_xml.push_str(&build_propfind_response_xml(&child_href, &child, None));
                 }
             }
 
@@ -452,68 +718,249 @@ async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Respon
         }
         "GET" | "HEAD" => {
             let is_head = method == "HEAD";
-            let stat = match state.vfs.stat(&vfs_path).await {
-                Ok(e) => e,
-                Err(e) => return vfs_err_to_status(e).into_response(),
-            };
-            if stat.kind == EntryKind::Dir {
-                return StatusCode::METHOD_NOT_ALLOWED.into_response();
-            }
-            let mime = stat.mime.unwrap_or_else(|| {
-                mime_guess::from_path(&stat.name)
-                    .first_or_octet_stream()
-                    .essence_str()
-                    .to_string()
-            });
+            let query_str = req.uri().query().map(str::to_string);
+            let want_json = has_query_flag(query_str.as_deref(), "fm_json");
+            let force_download = has_query_flag(query_str.as_deref(), "download");
+            let range_hdr = req
+                .headers()
+                .get(header::RANGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let lang = crate::http::pick_language(state.default_lang.as_deref(), req.headers());
 
-            if let (Some(total), Some(range_hdr)) = (
-                stat.size,
-                req.headers().get(header::RANGE).and_then(|v| v.to_str().ok()),
-            ) {
-                let Some((start, end)) = parse_byte_range(range_hdr, total) else {
-                    return (
-                        StatusCode::RANGE_NOT_SATISFIABLE,
-                        [(header::CONTENT_RANGE, format!("bytes */{total}"))],
-                        "",
+            if let Some(ref single_name) = state.single_file_name {
+                if rel_segments.is_empty() {
+                    if want_json {
+                        let stat = match state.vfs.stat(&state.base_prefix).await {
+                            Ok(s) => s,
+                            Err(e) => return vfs_err_to_status(e).into_response(),
+                        };
+                        let payload = WebDavListResponse {
+                            read_only: state.read_only,
+                            lang: lang.to_string(),
+                            path: String::new(),
+                            single_file: true,
+                            items: vec![WebDavListItem {
+                                name: single_name.clone(),
+                                path: single_name.clone(),
+                                is_dir: false,
+                                size: stat.size,
+                                modified_ms: modified_millis(stat.modified),
+                            }],
+                        };
+                        let json = serde_json::to_string(&payload)
+                            .unwrap_or_else(|_| "{}".to_string());
+                        let mut resp = Response::new(if is_head {
+                            Body::empty()
+                        } else {
+                            Body::from(json)
+                        });
+                        *resp.status_mut() = StatusCode::OK;
+                        resp.headers_mut().insert(
+                            header::CONTENT_TYPE,
+                            HeaderValue::from_static("application/json; charset=utf-8"),
+                        );
+                        return resp;
+                    }
+                    let html = render_webdav_html(lang);
+                    let mut resp = Response::new(if is_head {
+                        Body::empty()
+                    } else {
+                        Body::from(html)
+                    });
+                    *resp.status_mut() = StatusCode::OK;
+                    resp.headers_mut().insert(
+                        header::CONTENT_TYPE,
+                        HeaderValue::from_static("text/html; charset=utf-8"),
+                    );
+                    if let Ok(lv) = HeaderValue::from_str(lang) {
+                        resp.headers_mut().insert(header::CONTENT_LANGUAGE, lv);
+                    }
+                    return resp;
+                } else if rel_segments.len() == 1 && &rel_segments[0] == single_name {
+                    let stat = match state.vfs.stat(&state.base_prefix).await {
+                        Ok(s) => s,
+                        Err(e) => return vfs_err_to_status(e).into_response(),
+                    };
+                    return serve_vfs_file(
+                        state.vfs.as_ref(),
+                        &state.base_prefix,
+                        stat,
+                        range_hdr.as_deref(),
+                        force_download,
+                        is_head,
                     )
-                        .into_response();
-                };
-                let len = end - start + 1;
-                let builder = Response::builder()
-                    .status(StatusCode::PARTIAL_CONTENT)
-                    .header(header::CONTENT_TYPE, mime)
-                    .header(header::ACCEPT_RANGES, "bytes")
-                    .header(header::CONTENT_LENGTH, len.to_string())
-                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"));
-                if is_head {
-                    return builder.body(Body::empty()).unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                    .await;
+                } else {
+                    return StatusCode::NOT_FOUND.into_response();
                 }
-                let reader = match state.vfs.open_read_range(&vfs_path, start, Some(len)).await {
-                    Ok(r) => r,
+            }
+
+            let entry = if rel_segments.is_empty() && state.base_prefix.is_root() {
+                Entry {
+                    name: String::new(),
+                    path: VfsPath::root(),
+                    kind: EntryKind::Dir,
+                    size: None,
+                    modified: None,
+                    mode: None,
+                    hidden: false,
+                    is_symlink: false,
+                    mime: None,
+                }
+            } else {
+                match state.vfs.stat(&vfs_path).await {
+                    Ok(e) => e,
+                    Err(e) => return vfs_err_to_status(e).into_response(),
+                }
+            };
+
+            if entry.kind == EntryKind::Dir {
+                if want_json {
+                    let children = match state.vfs.list(&vfs_path).await {
+                        Ok(c) => c,
+                        Err(e) => return vfs_err_to_status(e).into_response(),
+                    };
+                    let base_rel = rel_segments.join("/");
+                    let mut seen = HashSet::new();
+                    let mut items = Vec::new();
+                    for child in children {
+                        if !seen.insert(child.name.clone()) {
+                            continue;
+                        }
+                        let is_dir = child.kind == EntryKind::Dir;
+                        let child_path = if base_rel.is_empty() {
+                            child.name.clone()
+                        } else {
+                            format!("{base_rel}/{}", child.name)
+                        };
+                        items.push(WebDavListItem {
+                            name: child.name,
+                            path: child_path,
+                            is_dir,
+                            size: if is_dir { None } else { child.size },
+                            modified_ms: modified_millis(child.modified),
+                        });
+                    }
+                    items.sort_by(|a, b| {
+                        b.is_dir
+                            .cmp(&a.is_dir)
+                            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                    });
+                    let payload = WebDavListResponse {
+                        read_only: state.read_only,
+                        lang: lang.to_string(),
+                        path: base_rel,
+                        single_file: false,
+                        items,
+                    };
+                    let json =
+                        serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+                    let mut resp = Response::new(if is_head {
+                        Body::empty()
+                    } else {
+                        Body::from(json)
+                    });
+                    *resp.status_mut() = StatusCode::OK;
+                    resp.headers_mut().insert(
+                        header::CONTENT_TYPE,
+                        HeaderValue::from_static("application/json; charset=utf-8"),
+                    );
+                    return resp;
+                }
+
+                let html = render_webdav_html(lang);
+                let mut resp = Response::new(if is_head {
+                    Body::empty()
+                } else {
+                    Body::from(html)
+                });
+                *resp.status_mut() = StatusCode::OK;
+                resp.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/html; charset=utf-8"),
+                );
+                if let Ok(lv) = HeaderValue::from_str(lang) {
+                    resp.headers_mut().insert(header::CONTENT_LANGUAGE, lv);
+                }
+                return resp;
+            }
+
+            serve_vfs_file(
+                state.vfs.as_ref(),
+                &vfs_path,
+                entry,
+                range_hdr.as_deref(),
+                force_download,
+                is_head,
+            )
+            .await
+        }
+        "POST" => {
+            if state.read_only || state.single_file_name.is_some() {
+                return StatusCode::FORBIDDEN.into_response();
+            }
+            if !(rel_segments.is_empty() && state.base_prefix.is_root()) {
+                match state.vfs.stat(&vfs_path).await {
+                    Ok(e) if e.kind == EntryKind::Dir => {}
+                    Ok(_) => return StatusCode::METHOD_NOT_ALLOWED.into_response(),
+                    Err(e) => return vfs_err_to_status(e).into_response(),
+                }
+            }
+            let Ok(mut multipart) = Multipart::from_request(req, &state).await else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            let mut uploaded_files = 0usize;
+            while let Ok(Some(mut field)) = multipart.next_field().await {
+                let Some(raw_name) = field.file_name().map(str::to_string) else {
+                    continue;
+                };
+                if raw_name.trim().is_empty() || raw_name.contains('\0') {
+                    return StatusCode::BAD_REQUEST.into_response();
+                }
+                let mut clean_segs = Vec::new();
+                for seg in raw_name.split(['/', '\\']) {
+                    if seg.is_empty() || seg == "." {
+                        continue;
+                    }
+                    if seg == ".." || seg.contains(':') {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+                    clean_segs.push(seg.to_string());
+                }
+                if clean_segs.is_empty() {
+                    continue;
+                }
+                let mut target = vfs_path.clone();
+                for seg in &clean_segs {
+                    target = target.join(seg);
+                }
+                ensure_vfs_parent_dirs(state.vfs.as_ref(), &state.base_prefix, &target).await;
+                let mut writer = match state.vfs.open_write(&target, WriteMode::Truncate).await {
+                    Ok(w) => w,
                     Err(e) => return vfs_err_to_status(e).into_response(),
                 };
-                return builder
-                    .body(Body::from_stream(ReaderStream::new(reader)))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                while let Ok(Some(chunk)) = field.chunk().await {
+                    if writer.write_all(&chunk).await.is_err() {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                }
+                if writer.shutdown().await.is_err() {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+                uploaded_files += 1;
             }
-
-            let mut builder = Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, mime)
-                .header(header::ACCEPT_RANGES, "bytes");
-            if let Some(sz) = stat.size {
-                builder = builder.header(header::CONTENT_LENGTH, sz.to_string());
-            }
-            if is_head {
-                return builder.body(Body::empty()).unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-            }
-            let reader = match state.vfs.open_read(&vfs_path).await {
-                Ok(r) => r,
-                Err(e) => return vfs_err_to_status(e).into_response(),
-            };
-            builder
-                .body(Body::from_stream(ReaderStream::new(reader)))
-                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+            let body = serde_json::json!({
+                "success": true,
+                "uploaded_files": uploaded_files,
+            })
+            .to_string();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+                body,
+            )
+                .into_response()
         }
         "PUT" => {
             if state.read_only {
@@ -521,6 +968,9 @@ async fn handle_webdav(State(state): State<WebDavState>, req: Request) -> Respon
             }
             if rel_segments.is_empty() {
                 return StatusCode::METHOD_NOT_ALLOWED.into_response();
+            }
+            if req.headers().get("x-fm-ensure-parents").is_some() {
+                ensure_vfs_parent_dirs(state.vfs.as_ref(), &state.base_prefix, &vfs_path).await;
             }
             let existed = state.vfs.stat(&vfs_path).await.is_ok();
             let mut writer = match state.vfs.open_write(&vfs_path, WriteMode::Truncate).await {

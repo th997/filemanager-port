@@ -5,8 +5,8 @@ use fm_server::{
     discover_lan_services as discover_lan_services_impl, get_lan_ip_addresses,
     send_peer_files as send_peer_files_impl, send_peer_text as send_peer_text_impl,
     start_http_share_with_lang, start_peer_receiver as start_peer_receiver_impl,
-    start_stream_server_with_options, start_webdav_server, PeerTransferOffer, RunningPeerReceiver,
-    RunningServer, RunningWebDavServer, StreamServer,
+    start_stream_server_with_options, start_webdav_server_with_lang, PeerTransferOffer,
+    RunningPeerReceiver, RunningServer, RunningWebDavServer, StreamServer,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -137,7 +137,17 @@ pub async fn start_media_stream(root: String) -> Result<String, String> {
         }
     }
 
-    let no_cache = root.starts_with("vault://") || root.starts_with("archive://vault://");
+    let is_encrypted_pool = root
+        .strip_prefix("pool://")
+        .or_else(|| {
+            root.strip_prefix("archive://pool://")
+                .map(|s| s.split('/').next().unwrap_or(s))
+        })
+        .map(|id| fm_pool::PoolManager::global().is_pool_encrypted(id.trim_end_matches('/')))
+        .unwrap_or(false);
+    let no_cache = root.starts_with("vault://")
+        || root.starts_with("archive://vault://")
+        || is_encrypted_pool;
     let server = start_stream_server_with_options(vfs, no_cache).await?;
     let url = format!(
         "http://127.0.0.1:{}/stream/{}/",
@@ -174,6 +184,33 @@ pub(crate) fn stop_media_streams_for_vault(vault_id: &str) {
                 .keys()
                 .filter(|k| {
                     *k == &vault_root || *k == &archive_exact || k.starts_with(&archive_prefix)
+                })
+                .cloned()
+                .collect();
+            for k in keys {
+                if let Some(server) = map.remove(&k) {
+                    removed.push(server);
+                }
+            }
+        }
+    }
+    for server in removed {
+        server.shutdown();
+    }
+}
+
+pub(crate) fn stop_media_streams_for_pool(pool_id: &str) {
+    let pool_root = format!("pool://{pool_id}");
+    let archive_exact = format!("archive://{pool_root}");
+    let archive_prefix = format!("{archive_exact}/");
+    let mut removed = Vec::new();
+    {
+        let mut guard = STREAMS.lock();
+        if let Some(map) = guard.as_mut() {
+            let keys: Vec<String> = map
+                .keys()
+                .filter(|k| {
+                    *k == &pool_root || *k == &archive_exact || k.starts_with(&archive_prefix)
                 })
                 .cloned()
                 .collect();
@@ -239,6 +276,7 @@ pub async fn start_lan_webdav_server(
     username: Option<String>,
     password: Option<String>,
     read_only: bool,
+    default_lang: Option<String>,
 ) -> Result<ServerStatusDto, String> {
     let existing = {
         let mut guard = WEBDAV_RUNNING.lock();
@@ -250,7 +288,16 @@ pub async fn start_lan_webdav_server(
 
     let vfs = VfsRegistry::global().get_or_create(&root).await?;
     let base_prefix = VfsPath::from_slash_path(&rel_path);
-    let server = start_webdav_server(vfs, base_prefix, port, username, password, read_only).await?;
+    let server = start_webdav_server_with_lang(
+        vfs,
+        base_prefix,
+        port,
+        username,
+        password,
+        read_only,
+        default_lang,
+    )
+    .await?;
     let actual_port = server.port;
     let addresses = get_lan_ip_addresses();
     let primary_ip = addresses

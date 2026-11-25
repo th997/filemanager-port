@@ -4,7 +4,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 use async_trait::async_trait;
-use fm_core::{Capabilities, Entry, VfsPath, WriteMode};
+use fm_core::{Capabilities, Entry, SpaceInfo, VfsPath, WriteMode};
 use std::io;
 use thiserror::Error;
 
@@ -149,5 +149,11 @@ pub trait Vfs: Send + Sync {
     /// (Unix local filesystem and SFTP).
     async fn set_mode(&self, _path: &VfsPath, _mode: u32) -> VfsResult<()> {
         Err(VfsError::Unsupported { operation: "chmod" })
+    }
+
+    /// Query total and remaining free bytes for the storage volume or quota
+    /// backing `path`, when the backend supports reporting it.
+    async fn space_info(&self, _path: &VfsPath) -> VfsResult<Option<SpaceInfo>> {
+        Ok(None)
     }
 }

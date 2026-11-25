@@ -11,7 +11,10 @@ use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Semaphore;
 
-use crate::http::get_lan_ip_addresses;
+use crate::net::{
+    get_lan_interfaces, is_unusable_lan_ip, select_best_peer_ip, set_udp_multicast_if_v4,
+    LanInterface,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredService {
@@ -147,7 +150,16 @@ fn protocol_for_service_name(name: &str) -> Option<(&'static str, u16)> {
 }
 
 /// Parse an mDNS response packet and extract discovered services.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<DiscoveredService> {
+    parse_mdns_response_with_ifaces(packet, src_ip, &get_lan_interfaces())
+}
+
+pub(crate) fn parse_mdns_response_with_ifaces(
+    packet: &[u8],
+    src_ip: IpAddr,
+    local_ifaces: &[LanInterface],
+) -> Vec<DiscoveredService> {
     if packet.len() < 12 {
         return Vec::new();
     }
@@ -170,7 +182,7 @@ pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<Discover
 
     let mut srv_records: Vec<(String, u16, String)> = Vec::new(); // (instance, port, target)
     let mut ptr_records: Vec<(String, String)> = Vec::new(); // (service_type, instance)
-    let mut a_records: BTreeMap<String, String> = BTreeMap::new(); // hostname -> ipv4
+    let mut a_records: BTreeMap<String, Vec<String>> = BTreeMap::new(); // hostname -> ipv4s
 
     for _ in 0..total_rrs {
         let Some((rr_name, next)) = read_dns_name(packet, offset) else {
@@ -195,7 +207,12 @@ pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<Discover
                     packet[rdata_start + 2],
                     packet[rdata_start + 3],
                 );
-                a_records.insert(rr_name.to_ascii_lowercase(), ip.to_string());
+                if !is_unusable_lan_ip(ip) {
+                    a_records
+                        .entry(rr_name.to_ascii_lowercase())
+                        .or_default()
+                        .push(ip.to_string());
+                }
             }
             12 => {
                 // PTR record
@@ -218,10 +235,23 @@ pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<Discover
     let mut results = Vec::new();
     for (instance, port, target) in srv_records {
         if let Some((protocol, default_port)) = protocol_for_service_name(&instance) {
-            let host = a_records
+            let candidates = a_records
                 .get(&target.to_ascii_lowercase())
-                .cloned()
-                .unwrap_or_else(|| src_ip.to_string());
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            let resolved = if !candidates.is_empty() {
+                select_best_peer_ip(
+                    IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                    candidates,
+                    local_ifaces,
+                )
+            } else {
+                select_best_peer_ip(src_ip, &[], local_ifaces)
+            };
+            let Some(host_ip) = resolved else {
+                continue;
+            };
+            let host = host_ip.to_string();
             let friendly = instance
                 .split("._")
                 .next()
@@ -241,6 +271,10 @@ pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<Discover
     if results.is_empty() {
         for (svc_type, instance) in ptr_records {
             if let Some((protocol, default_port)) = protocol_for_service_name(&svc_type) {
+                let Some(host_ip) = select_best_peer_ip(src_ip, &[], local_ifaces) else {
+                    continue;
+                };
+                let host = host_ip.to_string();
                 let friendly = instance
                     .split("._")
                     .next()
@@ -249,11 +283,11 @@ pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<Discover
                     .to_string();
                 results.push(DiscoveredService {
                     name: if friendly.is_empty() {
-                        src_ip.to_string()
+                        host.clone()
                     } else {
                         friendly
                     },
-                    host: src_ip.to_string(),
+                    host,
                     port: default_port,
                     protocol: protocol.to_string(),
                     source: "mdns".to_string(),
@@ -266,51 +300,88 @@ pub(crate) fn parse_mdns_response(packet: &[u8], src_ip: IpAddr) -> Vec<Discover
 }
 
 async fn query_mdns_services(budget: Duration) -> Vec<DiscoveredService> {
-    let socket = match UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let _ = socket.set_multicast_loop_v4(true);
+    let local_ifaces = get_lan_interfaces();
     let target = SocketAddr::V4(SocketAddrV4::new(MDNS_ADDR, MDNS_PORT));
+    let mut sockets = Vec::new();
 
-    for (svc, _, _) in MDNS_QUERIES {
-        let pkt = build_mdns_ptr_query(svc);
-        let _ = socket.send_to(&pkt, target).await;
+    for iface in local_ifaces.iter().filter(|i| !i.is_virtual) {
+        if let Ok(sock) = UdpSocket::bind(SocketAddrV4::new(iface.ip, 0)).await {
+            set_udp_multicast_if_v4(&sock, iface.ip);
+            let _ = sock.set_multicast_loop_v4(true);
+            sockets.push(sock);
+        }
+    }
+    if sockets.is_empty() {
+        if let Ok(sock) = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
+            let _ = sock.set_multicast_loop_v4(true);
+            sockets.push(sock);
+        }
+    }
+    if sockets.is_empty() {
+        return Vec::new();
+    }
+
+    for sock in &sockets {
+        for (svc, _, _) in MDNS_QUERIES {
+            let pkt = build_mdns_ptr_query(svc);
+            let _ = sock.send_to(&pkt, target).await;
+        }
+    }
+
+    let ifaces_arc = Arc::new(local_ifaces);
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut handles = Vec::with_capacity(sockets.len());
+    for sock in sockets {
+        let ifaces = Arc::clone(&ifaces_arc);
+        handles.push(tokio::spawn(async move {
+            let mut found = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let now = tokio::time::Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                let rem = deadline - now;
+                match tokio::time::timeout(rem, sock.recv_from(&mut buf)).await {
+                    Ok(Ok((n, peer))) => {
+                        found.extend(parse_mdns_response_with_ifaces(
+                            &buf[..n],
+                            peer.ip(),
+                            &ifaces,
+                        ));
+                    }
+                    _ => break,
+                }
+            }
+            found
+        }));
     }
 
     let mut found = Vec::new();
-    let deadline = tokio::time::Instant::now() + budget;
-    let mut buf = [0u8; 4096];
-    loop {
-        let now = tokio::time::Instant::now();
-        if now >= deadline {
-            break;
-        }
-        let rem = deadline - now;
-        match tokio::time::timeout(rem, socket.recv_from(&mut buf)).await {
-            Ok(Ok((n, peer))) => {
-                found.extend(parse_mdns_response(&buf[..n], peer.ip()));
-            }
-            _ => break,
+    for h in handles {
+        if let Ok(items) = h.await {
+            found.extend(items);
         }
     }
     found
 }
 
 async fn probe_local_subnets(budget: Duration) -> Vec<DiscoveredService> {
-    let lan_ips = get_lan_ip_addresses();
+    let local_ifaces = get_lan_interfaces();
+    let has_physical = local_ifaces.iter().any(|i| !i.is_virtual);
     let mut prefixes: HashSet<[u8; 3]> = HashSet::new();
     let mut self_ips: HashSet<Ipv4Addr> = HashSet::new();
 
-    for ip_str in lan_ips {
-        if let Ok(ip) = ip_str.parse::<Ipv4Addr>() {
-            if ip.is_loopback() || ip.is_link_local() {
-                continue;
-            }
-            self_ips.insert(ip);
-            let o = ip.octets();
-            prefixes.insert([o[0], o[1], o[2]]);
+    for iface in &local_ifaces {
+        if is_unusable_lan_ip(iface.ip) {
+            continue;
         }
+        self_ips.insert(iface.ip);
+        if has_physical && iface.is_virtual {
+            continue;
+        }
+        let o = iface.ip.octets();
+        prefixes.insert([o[0], o[1], o[2]]);
     }
 
     if prefixes.is_empty() {
@@ -424,5 +495,58 @@ mod tests {
         assert_eq!(parsed[0].port, 445);
         assert_eq!(parsed[0].protocol, "smb");
         assert_eq!(parsed[0].source, "mdns");
+    }
+
+    #[test]
+    fn mdns_prefers_physical_subnet_a_record_over_fake_ip() {
+        let mut pkt = vec![
+            0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
+        ];
+        // SRV
+        for l in ["MyNAS", "_smb", "_tcp", "local"] {
+            pkt.push(l.len() as u8);
+            pkt.extend_from_slice(l.as_bytes());
+        }
+        pkt.push(0);
+        pkt.extend_from_slice(&33u16.to_be_bytes());
+        pkt.extend_from_slice(&1u16.to_be_bytes());
+        pkt.extend_from_slice(&120u32.to_be_bytes());
+        let mut srv_rdata = vec![0, 0, 0, 0, 0x01, 0xBD];
+        for l in ["nas", "local"] {
+            srv_rdata.push(l.len() as u8);
+            srv_rdata.extend_from_slice(l.as_bytes());
+        }
+        srv_rdata.push(0);
+        pkt.extend_from_slice(&(srv_rdata.len() as u16).to_be_bytes());
+        pkt.extend_from_slice(&srv_rdata);
+
+        // A fake IP first, then A real LAN IP
+        for ip in [[198, 18, 0, 1], [10, 10, 10, 50]] {
+            for l in ["nas", "local"] {
+                pkt.push(l.len() as u8);
+                pkt.extend_from_slice(l.as_bytes());
+            }
+            pkt.push(0);
+            pkt.extend_from_slice(&1u16.to_be_bytes());
+            pkt.extend_from_slice(&1u16.to_be_bytes());
+            pkt.extend_from_slice(&120u32.to_be_bytes());
+            pkt.extend_from_slice(&4u16.to_be_bytes());
+            pkt.extend_from_slice(&ip);
+        }
+
+        let local_ifaces = vec![LanInterface {
+            name: "en0".to_string(),
+            ip: Ipv4Addr::new(10, 10, 10, 117),
+            netmask: Ipv4Addr::new(255, 255, 255, 0),
+            broadcast: Ipv4Addr::new(10, 10, 10, 255),
+            is_virtual: false,
+        }];
+        let parsed = parse_mdns_response_with_ifaces(
+            &pkt,
+            IpAddr::V4(Ipv4Addr::new(198, 18, 0, 1)),
+            &local_ifaces,
+        );
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].host, "10.10.10.50");
     }
 }

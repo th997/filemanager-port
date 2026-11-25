@@ -10,20 +10,6 @@ class SharingService {
   static final SharingService instance = SharingService._();
   SharingService._();
 
-  srv_api.ServerStatusDto? _currentStatus;
-  srv_api.ServerStatusDto? get currentStatus => _currentStatus;
-
-  bool get isRunning => _currentStatus?.running ?? false;
-
-  // The status DTO carries no share configuration, but the utilities page
-  // needs it back when it is re-entered while the server is running.
-  String? _rootDir;
-  String? get rootDir => _rootDir;
-  bool _readOnly = true;
-  bool get readOnly => _readOnly;
-  String? _password;
-  String? get password => _password;
-
   srv_api.ServerStatusDto? _webDavStatus;
   srv_api.ServerStatusDto? get webDavStatus => _webDavStatus;
   bool get isWebDavRunning => _webDavStatus?.running ?? false;
@@ -38,6 +24,26 @@ class SharingService {
   String? _webDavPassword;
   String? get webDavPassword => _webDavPassword;
 
+  static bool _isRfc1918(String ip) {
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    final a = int.tryParse(parts[0]);
+    final b = int.tryParse(parts[1]);
+    if (a == null || b == null) return false;
+    return a == 10 ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 192 && b == 168);
+  }
+
+  static bool _isCgnat(String ip) {
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    final a = int.tryParse(parts[0]);
+    final b = int.tryParse(parts[1]);
+    if (a == null || b == null) return false;
+    return a == 100 && (b & 0xC0) == 64;
+  }
+
   /// Discovers active LAN IPv4 addresses, strictly prioritizing physical
   /// Wi-Fi and Ethernet interfaces while filtering out Docker bridges,
   /// virtual hypervisor NICs and TUN/VPN proxies (such as Clash Meta 198.18.x.x).
@@ -48,20 +54,38 @@ class SharingService {
         includeLinkLocal: false,
         type: InternetAddressType.IPv4,
       );
-      final prioritized = <String>[];
+      final physicalPrivate = <String>[];
+      final physicalOther = <String>[];
+      final physicalCgnat = <String>[];
       final secondary = <String>[];
 
       for (final iface in interfaces) {
         final name = iface.name.toLowerCase();
         // Virtual / tunnel / container interfaces to deprioritize
-        final isVirtual = name.startsWith('docker') ||
-            name.startsWith('br-') ||
-            name.startsWith('veth') ||
-            name.startsWith('virbr') ||
+        final isVirtual = name.startsWith('lo') ||
+            name.startsWith('utun') ||
             name.startsWith('tun') ||
             name.startsWith('tap') ||
             name.startsWith('wg') ||
+            name.startsWith('awdl') ||
+            name.startsWith('llw') ||
+            name.startsWith('anpi') ||
+            name.startsWith('bridge') ||
+            name.startsWith('gif') ||
+            name.startsWith('stf') ||
+            name == 'ap1' ||
+            name.startsWith('docker') ||
+            name.startsWith('br-') ||
+            name.startsWith('veth') ||
+            name.startsWith('virbr') ||
             name.startsWith('meta') ||
+            name.startsWith('tailscale') ||
+            name.startsWith('zt') ||
+            name.startsWith('pdp_ip') ||
+            name.startsWith('rmnet') ||
+            name.startsWith('ccmni') ||
+            name.startsWith('wwan') ||
+            name.startsWith('cell') ||
             name.contains('virtual') ||
             name.contains('vmware') ||
             name.contains('vbox') ||
@@ -69,8 +93,9 @@ class SharingService {
 
         for (final addr in iface.addresses) {
           final ip = addr.address;
-          // Filter out loopback, link-local, and benchmark/fake-ip ranges
-          if (ip.startsWith('127.') ||
+          // Filter out loopback, link-local, unspecified, and benchmark/fake-ip ranges
+          if (ip == '0.0.0.0' ||
+              ip.startsWith('127.') ||
               ip.startsWith('169.254.') ||
               ip.startsWith('198.18.') ||
               ip.startsWith('198.19.')) {
@@ -78,76 +103,36 @@ class SharingService {
           }
           if (isVirtual) {
             secondary.add(ip);
+          } else if (_isRfc1918(ip)) {
+            physicalPrivate.add(ip);
+          } else if (_isCgnat(ip)) {
+            physicalCgnat.add(ip);
           } else {
-            prioritized.add(ip);
+            physicalOther.add(ip);
           }
         }
       }
 
-      if (prioritized.isNotEmpty) {
-        return prioritized;
+      final combined = <String>[
+        ...physicalPrivate,
+        ...physicalOther,
+        ...physicalCgnat,
+      ];
+      if (combined.isNotEmpty) {
+        return combined;
       }
       if (secondary.isNotEmpty) {
         return secondary;
       }
     } catch (_) {}
+    try {
+      final rustIps = srv_api
+          .getLanIpList()
+          .where((ip) => ip != '127.0.0.1' && !ip.startsWith('198.18.') && !ip.startsWith('198.19.'))
+          .toList();
+      if (rustIps.isNotEmpty) return rustIps;
+    } catch (_) {}
     return [];
-  }
-
-  Future<srv_api.ServerStatusDto> startHttp({
-    required String rootDir,
-    int? port,
-    String? password,
-    bool readOnly = true,
-    String? defaultLang,
-  }) async {
-    final savedLang = defaultLang ?? PreferencesService.instance.getString('app.language');
-    final effectiveLang = (savedLang == null || savedLang == 'system') ? null : savedLang;
-    final status = await srv_api.startLanHttpServerWithLang(
-      rootDir: rootDir,
-      port: port,
-      password: password,
-      readOnly: readOnly,
-      defaultLang: effectiveLang,
-    );
-
-    // Enrich and prioritize with true physical LAN IPs detected across OS interfaces
-    final accurateIps = await getAccurateLanIps();
-    final effectiveAddresses = accurateIps.isNotEmpty ? accurateIps : status.addresses;
-    final primaryIp = effectiveAddresses.isNotEmpty ? effectiveAddresses.first : '127.0.0.1';
-    final query = Uri.tryParse(status.url)?.query ?? '';
-    final effectiveUrl = 'http://$primaryIp:${status.port}${query.isEmpty ? '' : '?$query'}';
-
-    final effectiveStatus = srv_api.ServerStatusDto(
-      running: status.running,
-      port: status.port,
-      addresses: effectiveAddresses,
-      url: effectiveUrl,
-    );
-
-    _currentStatus = effectiveStatus;
-    _rootDir = rootDir;
-    _readOnly = readOnly;
-    _password = password;
-    unawaited(
-      BackgroundKeepAliveService.instance.acquire(
-        'lan_http_share',
-        title: 'LAN HTTP Share Active',
-        detail: 'Serving over LAN',
-      ),
-    );
-    return effectiveStatus;
-  }
-
-  bool stopHttp() {
-    final ok = srv_api.stopLanHttpServer();
-    if (ok) {
-    _currentStatus = null;
-      _rootDir = null;
-      _password = null;
-      unawaited(BackgroundKeepAliveService.instance.release('lan_http_share'));
-    }
-    return ok;
   }
 
   Future<srv_api.ServerStatusDto> startWebDav({
@@ -157,11 +142,14 @@ class SharingService {
     String? username,
     String? password,
     bool readOnly = true,
+    String? defaultLang,
   }) async {
     final cleanUsername =
         (username != null && username.trim().isNotEmpty) ? username.trim() : null;
     final cleanPassword =
         (password != null && password.trim().isNotEmpty) ? password.trim() : null;
+    final savedLang = defaultLang ?? PreferencesService.instance.getString('app.language');
+    final effectiveLang = (savedLang == null || savedLang == 'system') ? null : savedLang;
     final status = await srv_api.startLanWebdavServer(
       root: root,
       relPath: relPath,
@@ -169,6 +157,7 @@ class SharingService {
       username: cleanUsername,
       password: cleanPassword,
       readOnly: readOnly,
+      defaultLang: effectiveLang,
     );
 
     final accurateIps = await getAccurateLanIps();
@@ -216,7 +205,7 @@ class SharingService {
     return ok;
   }
 
-  /// Stops any active LAN HTTP / WebDAV shares backed by the locked or deleted
+  /// Stops any active LAN WebDAV shares backed by the locked or deleted
   /// privacy folder [vaultId] (or all vault-backed shares when [vaultId] is null).
   void stopSharesForVault(String? vaultId, {String? vaultDirPath}) {
     final webdavRoot = _webDavRoot;
@@ -224,22 +213,6 @@ class SharingService {
       final davVault = vaultIdFromRoot(webdavRoot);
       if (davVault != null && (vaultId == null || davVault == vaultId)) {
         stopWebDav();
-      }
-    }
-
-    final httpRoot = _rootDir;
-    if (httpRoot != null) {
-      final normHttp = httpRoot.replaceAll('\\', '/');
-      final normVaultDir = vaultDirPath?.replaceAll('\\', '/');
-      final matchesVaultDir = normVaultDir != null &&
-          normVaultDir.isNotEmpty &&
-          (normHttp == normVaultDir || normHttp.startsWith('$normVaultDir/'));
-      final matchesExportDir = vaultId == null
-          ? normHttp.contains('/open-with/vault_')
-          : (normHttp.endsWith('/open-with/vault_$vaultId') ||
-              normHttp.contains('/open-with/vault_$vaultId/'));
-      if (matchesVaultDir || matchesExportDir) {
-        stopHttp();
       }
     }
   }

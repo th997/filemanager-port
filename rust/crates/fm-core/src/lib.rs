@@ -36,6 +36,13 @@ pub enum LocationKind {
     Crypt,
 }
 
+/// Reported capacity and remaining space for a filesystem or remote storage backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpaceInfo {
+    pub total_bytes: Option<u64>,
+    pub free_bytes: u64,
+}
+
 /// A browsable root. `root` is the backend-native path of the location root.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {

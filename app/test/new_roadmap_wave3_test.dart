@@ -6,6 +6,10 @@ import 'dart:typed_data';
 import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:filemanager/src/dialogs/remote_wizard_dialog.dart';
 import 'package:filemanager/src/pages/image_viewer_page.dart';
+import 'package:filemanager/src/pages/peer_transfer_page.dart';
+import 'package:filemanager/src/pages/photo_backup_page.dart';
+import 'package:filemanager/src/pages/utilities_page.dart';
+import 'package:filemanager/src/services/auto_sync_service.dart';
 import 'package:filemanager/src/services/desktop_dev_actions.dart';
 import 'package:filemanager/src/services/error_text.dart';
 import 'package:filemanager/src/services/image_privacy_service.dart';
@@ -435,7 +439,8 @@ void main() {
       expect(prefs.getString('upload.recent_directories'), isNull);
     });
 
-    testWidgets('DesktopSidebarShell exposes create vault action even when zero vaults are unlocked or pinned',
+    testWidgets(
+        'DesktopSidebarShell hides privacy folders group when zero vaults are unlocked or pinned',
         (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
@@ -463,9 +468,167 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('sidebar_create_vault_btn')), findsOneWidget);
+      expect(
+          find.byKey(const ValueKey('sidebar_create_vault_btn')), findsNothing);
+      expect(find.text('Privacy Folders'), findsNothing);
+      expect(find.text('Open Privacy Folder'), findsNothing);
+      expect(find.text('Create Privacy Folder'), findsNothing);
+    });
+  });
+
+  group(
+      'Wave 4 fixes: privacy placement, webdav transfer, photo backup sources & sync exclusions',
+      () {
+    Widget wrapLocalized(Widget child) {
+      return MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
+        home: child,
+      );
+    }
+
+    testWidgets(
+        'UtilitiesPage exposes privacy folder tools and removes LAN HTTP sharing',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(wrapLocalized(const UtilitiesPage()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Privacy Folders'), findsAtLeastNWidgets(1));
       expect(find.text('Open Privacy Folder'), findsOneWidget);
       expect(find.text('Create Privacy Folder'), findsOneWidget);
+      expect(find.text('LAN Transfer & WebDAV Share'), findsOneWidget);
+      expect(find.text('LAN HTTP Web Sharing'), findsNothing);
+      expect(find.text('Web Sharing Server'), findsNothing);
+    });
+
+    testWidgets(
+        'PeerTransferPage integrates LAN Direct Transfer and LAN WebDAV Share',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(wrapLocalized(const PeerTransferPage()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LAN Transfer & WebDAV Share'), findsOneWidget);
+      expect(find.text('Receive Mode (Discoverable)'), findsOneWidget);
+      expect(find.text('Scan LAN Devices'), findsAtLeastNWidgets(1));
+      expect(find.text('Target Device Address (Manual)'), findsOneWidget);
+      expect(find.text('http://192.168.1.x:port'), findsNothing);
+
+      await tester.tap(find.text('WebDAV / Browser Share'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('LAN WebDAV Server'), findsAtLeastNWidgets(1));
+    });
+
+    test(
+        'PeerTransferPage.subnetHostPlaceholder derives subnet placeholder from usable IPv4',
+        () {
+      expect(
+        PeerTransferPage.subnetHostPlaceholder(
+          const ['198.18.0.1', '127.0.0.1', '10.10.10.117'],
+        ),
+        '10.10.10.x',
+      );
+      expect(
+        PeerTransferPage.subnetHostPlaceholder(
+          const ['169.254.1.2', '192.168.50.20'],
+        ),
+        '192.168.50.x',
+      );
+      expect(
+        PeerTransferPage.subnetHostPlaceholder(
+          const ['127.0.0.1', '198.18.0.1', 'fe80::1'],
+        ),
+        isNull,
+      );
+    });
+
+    testWidgets(
+        'PhotoBackupPage renders backup source selection alongside destination selection',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(wrapLocalized(const PhotoBackupPage()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Backup Source Folders'), findsOneWidget);
+      expect(find.text('Add Folder'), findsOneWidget);
+      expect(find.text('Backup Destination'), findsOneWidget);
+      expect(find.text('Select Destination'), findsOneWidget);
+    });
+
+    test(
+        'PhotoBackupService persists sourceDirs and sourceAlbumIds as device-local prefs',
+        () {
+      addTearDown(() {
+        PhotoBackupService.instance.setSourceDirs(const []);
+        PhotoBackupService.instance.setSourceAlbumIds(const []);
+        PreferencesService.instance.remove('photo_backup.source_dirs_v1');
+        PreferencesService.instance.remove('photo_backup.source_album_ids_v1');
+      });
+
+      final service = PhotoBackupService.instance;
+      service.setSourceDirs(const ['/tmp/cam', '/tmp/shots']);
+      service.addSourceDir('/tmp/extra');
+      service.addSourceDir('/tmp/cam');
+      expect(
+          service.sourceDirs, equals(['/tmp/cam', '/tmp/shots', '/tmp/extra']));
+      service.removeSourceDir('/tmp/shots');
+      expect(service.sourceDirs, equals(['/tmp/cam', '/tmp/extra']));
+
+      service.setSourceAlbumIds(const ['album-1', 'album-2']);
+      expect(service.sourceAlbumIds, equals(['album-1', 'album-2']));
+
+      final exported = PreferencesService.instance.exportPreferencesMap();
+      expect(exported.containsKey('photo_backup.source_dirs_v1'), isFalse);
+      expect(exported.containsKey('photo_backup.source_album_ids_v1'), isFalse);
+
+      final importedCount = PreferencesService.instance.importPreferencesMap({
+        'photo_backup.source_dirs_v1': jsonEncode(['/evil/override']),
+        'photo_backup.source_album_ids_v1': jsonEncode(['evil-album']),
+      });
+      expect(importedCount, 0);
+      expect(service.sourceDirs, equals(['/tmp/cam', '/tmp/extra']));
+      expect(service.sourceAlbumIds, equals(['album-1', 'album-2']));
+    });
+
+    test('SyncProfile serializes and deserializes exclusion rules cleanly', () {
+      const profile = SyncProfile(
+        name: 'Photos Sync',
+        srcRoot: 'local',
+        srcPath: '/src',
+        dstRoot: 'remote:nas',
+        dstPath: '/dst',
+        mode: 'mirror',
+        excludeExtensions: ['.tmp', 'log'],
+        excludeNames: ['Thumbs.db', '*.bak'],
+        excludeDirs: ['node_modules', '.git'],
+      );
+      final json = profile.toJson();
+      final roundTrip = SyncProfile.fromJson({
+        ...json,
+        'excludeExtensions': [' .tmp ', '', 'log'],
+        'excludeNames': ['Thumbs.db', '  ', '*.bak'],
+        'excludeDirs': ['node_modules', '.git', ''],
+      });
+      expect(roundTrip, isNotNull);
+      expect(roundTrip!.name, 'Photos Sync');
+      expect(roundTrip.excludeExtensions, equals(['.tmp', 'log']));
+      expect(roundTrip.excludeNames, equals(['Thumbs.db', '*.bak']));
+      expect(roundTrip.excludeDirs, equals(['node_modules', '.git']));
     });
   });
 }

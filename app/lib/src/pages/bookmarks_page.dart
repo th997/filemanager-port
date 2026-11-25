@@ -5,6 +5,7 @@ import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/preferences_service.dart';
 import '../services/platform_paths.dart';
+import '../services/pool_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
@@ -73,17 +74,55 @@ class _BookmarksPageState extends State<BookmarksPage> {
     PreferencesService.instance.setString(_prefOrderKey, jsonEncode(ids));
   }
 
-  Future<void> _loadBookmarks() async {
+  Future<void> _loadBookmarks({
+    String? remappedOldId,
+    String? matchRoot,
+    String? matchPath,
+    String? matchName,
+  }) async {
     try {
       final results = await Future.wait([
         StorageService.instance.getBookmarks(),
         StorageService.instance.getRemotes(),
       ]);
       if (!mounted) return;
+      final loadedBookmarks = results[0] as List<BookmarkDto>;
+      if (remappedOldId != null &&
+          matchRoot != null &&
+          matchPath != null &&
+          matchName != null) {
+        final raw = PreferencesService.instance.getString(_prefOrderKey);
+        if (raw != null && raw.isNotEmpty) {
+          try {
+            final orderList =
+                (jsonDecode(raw) as List<dynamic>).map((e) => e.toString()).toList();
+            final idx = orderList.indexOf(remappedOldId);
+            if (idx >= 0) {
+              BookmarkDto? replacement;
+              for (final b in loadedBookmarks) {
+                if (b.root == matchRoot && b.path == matchPath && b.name == matchName) {
+                  replacement = b;
+                  break;
+                }
+              }
+              if (replacement != null) {
+                orderList[idx] = replacement.id;
+                PreferencesService.instance
+                    .setString(_prefOrderKey, jsonEncode(orderList));
+              }
+            }
+          } catch (_) {}
+        }
+      }
       setState(() {
-        _bookmarks = results[0] as List<BookmarkDto>;
+        _bookmarks = loadedBookmarks;
         _remotes = results[1] as List<RemoteConfigDto>;
         _applyCustomOrder();
+        if (_bookmarks.isEmpty) {
+          _showSearch = false;
+          _searchQuery = '';
+          _searchController.clear();
+        }
         _loading = false;
       });
     } catch (e) {
@@ -153,6 +192,11 @@ class _BookmarksPageState extends State<BookmarksPage> {
       for (final r in _remotes) {
         if (r.id == id) return 'remote://${r.name}';
       }
+    }
+    if (root.startsWith('pool://')) {
+      final id = root.substring('pool://'.length);
+      final pool = PoolService.instance.findById(id);
+      if (pool != null) return 'pool://${pool.name}';
     }
     return root;
   }
@@ -309,7 +353,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
           root: bm.root,
           path: bm.path,
         );
-        await _loadBookmarks();
+        await _loadBookmarks(
+          remappedOldId: bm.id,
+          matchRoot: bm.root,
+          matchPath: bm.path,
+          matchName: newName,
+        );
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -365,7 +414,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 ),
               );
             }
-            await _loadBookmarks();
+            await _loadBookmarks(
+              remappedOldId: bm.id,
+              matchRoot: bm.root,
+              matchPath: bm.path,
+              matchName: bm.name,
+            );
           },
         ),
       ),
@@ -467,7 +521,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                if (_showSearch)
+                if (_showSearch && _bookmarks.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     child: TextField(
@@ -512,7 +566,9 @@ class _BookmarksPageState extends State<BookmarksPage> {
                         ),
                       ),
                     )
-                  : _searchQuery.isEmpty && _sortMode == BookmarkSortMode.custom
+                  : widget.pickRequest == null &&
+                          _searchQuery.isEmpty &&
+                          _sortMode == BookmarkSortMode.custom
                       ? ReorderableListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: AppUiTokens.pagePadding,

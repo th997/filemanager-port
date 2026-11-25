@@ -898,4 +898,46 @@ impl Vfs for SftpFs {
         })
         .await
     }
+
+    async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
+        let primary = self.resolve_path(path);
+        let fallback_root = if path.is_root() {
+            None
+        } else {
+            Some(self.resolve_path(&VfsPath::root()))
+        };
+        self.run(|session| {
+            let primary = primary.clone();
+            let fallback_root = fallback_root.clone();
+            async move {
+                let mut stat_opt = session.sftp.fs_info(&primary).await.ok().flatten();
+                if stat_opt.is_none() {
+                    if let Some(ref root_p) = fallback_root {
+                        stat_opt = session.sftp.fs_info(root_p).await.ok().flatten();
+                    }
+                }
+                if stat_opt.is_none() {
+                    stat_opt = session.sftp.fs_info(".").await.ok().flatten();
+                }
+                let Some(st) = stat_opt else {
+                    return Ok(None);
+                };
+                let unit = if st.fragment_size > 0 {
+                    st.fragment_size
+                } else {
+                    st.block_size
+                };
+                if unit == 0 {
+                    return Ok(None);
+                }
+                let total = st.blocks.saturating_mul(unit);
+                let free = st.blocks_avail.saturating_mul(unit);
+                Ok(Some(fm_core::SpaceInfo {
+                    total_bytes: (total > 0).then_some(total),
+                    free_bytes: free,
+                }))
+            }
+        })
+        .await
+    }
 }

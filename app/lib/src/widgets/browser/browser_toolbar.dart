@@ -91,7 +91,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               icon: const Icon(Icons.arrow_forward, size: 16, color: Colors.blue),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              constraints: const BoxConstraints(minWidth: 34, minHeight: 32),
               tooltip: l10n.toolbarJump,
               onPressed: () => onJumpToAddress(addressController.text),
             ),
@@ -99,7 +99,7 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
               icon: const Icon(Icons.close, size: 16),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              constraints: const BoxConstraints(minWidth: 34, minHeight: 32),
               tooltip: l10n.cancel,
               onPressed: onCancelEdit,
             ),
@@ -166,13 +166,16 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
             ),
           Expanded(
             child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
+              behavior: HitTestBehavior.opaque,
               onTap: onStartEdit,
-              child: SingleChildScrollView(
-                reverse: true,
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  reverse: true,
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                    child: Row(
+                      children: [
                   HoverExpandDragTarget<({String root, List<String> paths})>(
                     showDefaultDecoration: false,
                     onAccept: (d) => onAcceptDrop?.call(d, ''),
@@ -256,16 +259,18 @@ class BrowserUnifiedAddressBar extends StatelessWidget {
                       );
                     }(),
                   ],
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
-            ),
           ),
+        ),
           IconButton(
             icon: const Icon(Icons.edit_outlined, size: 15),
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 32),
             tooltip: l10n.toolbarEditAddress,
             onPressed: onStartEdit,
           ),

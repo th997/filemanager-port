@@ -11,11 +11,15 @@ extension SemanticColors on ColorScheme {
       ? const Color(0xFF2E7D32)
       : const Color(0xFF66BB6A);
 
-  Color get onSuccess => Colors.white;
+  Color get onSuccess => brightness == Brightness.light
+      ? Colors.white
+      : const Color(0xFF0A2E0D);
 
   Color get warning => brightness == Brightness.light
       ? const Color(0xFFEF6C00)
       : const Color(0xFFFFA726);
 
-  Color get onWarning => Colors.white;
+  Color get onWarning => brightness == Brightness.light
+      ? Colors.white
+      : const Color(0xFF2B1700);
 }

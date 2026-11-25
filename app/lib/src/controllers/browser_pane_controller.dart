@@ -164,9 +164,24 @@ class BrowserPaneController extends ChangeNotifier {
     required String currentRelPath,
     String? Function(String idOrName)? resolveRemoteId,
     String? Function(String idOrName)? resolveUnlockedVaultId,
+    String? Function(String idOrName)? resolvePoolId,
   }) {
     final path = input.trim();
     if (path.isEmpty) return null;
+
+    if (path.startsWith('pool://')) {
+      final withoutPrefix = path.substring('pool://'.length);
+      final slashIdx = withoutPrefix.indexOf('/');
+      final target = slashIdx != -1
+          ? withoutPrefix.substring(0, slashIdx)
+          : withoutPrefix;
+      final rel = slashIdx != -1
+          ? withoutPrefix.substring(slashIdx + 1).replaceAll(RegExp(r'^/+'), '')
+          : '';
+      final resolvedId = resolvePoolId?.call(target) ?? target;
+      if (resolvedId.isEmpty) return null;
+      return (root: 'pool://$resolvedId', relPath: rel);
+    }
 
     if (path.startsWith('remote://')) {
       final withoutPrefix = path.substring('remote://'.length);

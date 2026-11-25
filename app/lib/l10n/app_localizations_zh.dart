@@ -3660,7 +3660,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peerSendClipboard => '发送剪贴板文本';
 
   @override
-  String get peerManualAddressHint => 'http://192.168.1.x:端口';
+  String get peerManualAddressHint => 'http://<局域网IP>:端口';
 
   @override
   String peerIncomingOfferTitle(String sender) {
@@ -3791,4 +3791,989 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get pinToHomeScreenUnsupported => '当前平台不支持桌面快捷方式';
+
+  @override
+  String get storagePools => '分布式存储池';
+
+  @override
+  String get storagePoolsSubtitle => '聚合多个 SFTP / S3 / WebDAV 节点为统一 2 副本空间';
+
+  @override
+  String get createStoragePool => '新建存储池';
+
+  @override
+  String get editStoragePool => '编辑存储池';
+
+  @override
+  String get noStoragePools => '暂无分布式存储池';
+
+  @override
+  String get noStoragePoolsDesc =>
+      '可将多个 SFTP、S3 或 WebDAV 节点聚合成支持跨故障域 2 副本、固定分块与端到端加密的虚拟文件系统。';
+
+  @override
+  String get poolName => '存储池名称';
+
+  @override
+  String get poolNameHint => '例如：影音聚合存储池';
+
+  @override
+  String get poolChunkSize => '分块大小';
+
+  @override
+  String get poolEncryptEnable => '开启客户端透明 AES-GCM 加密';
+
+  @override
+  String get poolEncryptSubtitle => '上传前在本地加密所有分块内容与元数据快照';
+
+  @override
+  String get poolPassphrase => '加密口令';
+
+  @override
+  String get poolPassphraseHint => '编辑时留空则保留原口令';
+
+  @override
+  String get poolSelectNodes => '选择成员节点';
+
+  @override
+  String get poolNeedRemotesFirst => '请先在“远程连接”中配置 SFTP、S3 或 WebDAV 节点。';
+
+  @override
+  String get poolFailureDomain => '故障域标签';
+
+  @override
+  String get poolQuotaGb => '配额 (GB)';
+
+  @override
+  String get poolPrefix => '远端目录前缀';
+
+  @override
+  String get poolRoleRw => '读写 (RW)';
+
+  @override
+  String get poolRoleRo => '只读 (RO)';
+
+  @override
+  String get poolRoleDraining => '迁移下线中';
+
+  @override
+  String get poolRoleOffline => '已离线';
+
+  @override
+  String get poolMetaBackup => '元数据备份节点';
+
+  @override
+  String get poolBrowse => '浏览文件';
+
+  @override
+  String get poolProbeHealth => '探测健康度';
+
+  @override
+  String get poolSyncMeta => '同步元数据';
+
+  @override
+  String get poolHeal => '一键修复副本';
+
+  @override
+  String get poolGc => '清理孤儿块';
+
+  @override
+  String get poolDrainNode => '下线迁移';
+
+  @override
+  String get poolLogicalCapacity => '有效逻辑容量';
+
+  @override
+  String get poolPhysicalCapacity => '物理总配额';
+
+  @override
+  String poolDegradedWarning(int count) {
+    return '检测到 $count 个分块不足 2 副本，建议执行“一键修复副本”';
+  }
+
+  @override
+  String get poolEncryptedBadge => '已加密';
+
+  @override
+  String get poolPlaintextBadge => '明文模式';
+
+  @override
+  String poolMetaVersionBadge(int version) {
+    return '元数据 v$version';
+  }
+
+  @override
+  String poolDeleteConfirm(String name) {
+    return '确定移除存储池“$name”？默认仅删除本地配置，不会清理远端已写入的数据块。';
+  }
+
+  @override
+  String poolDrainConfirm(String node) {
+    return '确定将节点“$node”上的全部分块迁移至其他健康节点并下线？';
+  }
+
+  @override
+  String poolSyncDone(String action, int version, int uploaded, int conflicts) {
+    return '元数据同步：$action（v$version，备份 $uploaded 节点，冲突 $conflicts）';
+  }
+
+  @override
+  String poolNodesCount(int count) {
+    return '$count 个节点';
+  }
+
+  @override
+  String get lanTransferAndShareTitle => '局域网直传与 WebDAV 共享';
+
+  @override
+  String get lanTransferAndShareSubtitle => '局域网点对点直传、WebDAV 挂载与浏览器上传下载';
+
+  @override
+  String get lanWebdavBrowserHint =>
+      '支持浏览器直接打开上传/下载文件，也支持访达、资源管理器、Infuse、Kodi 挂载。';
+
+  @override
+  String get lanWebdavReadOnlyHint => '关闭只读模式后可允许浏览器上传、新建文件夹和修改文件';
+
+  @override
+  String get photoBackupSourceLabel => '要备份的目录 / 相册';
+
+  @override
+  String get photoBackupSelectSource => '添加备份目录';
+
+  @override
+  String get photoBackupSelectAlbums => '选择相册';
+
+  @override
+  String get photoBackupDefaultSources => '默认相册目录';
+
+  @override
+  String get photoBackupAllAlbums => '全部照片与视频';
+
+  @override
+  String photoBackupSelectedAlbumsCount(int count) {
+    return '已选 $count 个相册';
+  }
+
+  @override
+  String get photoBackupResetSources => '恢复默认';
+
+  @override
+  String get syncExcludeRulesTitle => '排除规则';
+
+  @override
+  String get syncExcludeExtensionsLabel => '排除的文件类型（扩展名）';
+
+  @override
+  String get syncExcludeExtensionsHint => '如 tmp, log, bak（逗号分隔）';
+
+  @override
+  String get syncExcludeNamesLabel => '排除的文件名称';
+
+  @override
+  String get syncExcludeNamesHint => '如 .DS_Store, Thumbs.db, ~\$*';
+
+  @override
+  String get syncExcludeDirsLabel => '排除的文件夹';
+
+  @override
+  String get syncExcludeDirsHint => '如 node_modules, .git, build/cache';
+
+  @override
+  String get syncExcludePresets => '常用预设';
+
+  @override
+  String get syncPickExcludeDir => '选择文件夹';
+
+  @override
+  String syncExcludedCount(int count) {
+    return '已排除 $count 项';
+  }
+
+  @override
+  String get syncAddRule => '添加';
+
+  @override
+  String get peerManualAddressLabel => '目标设备地址（可手动输入）';
+
+  @override
+  String peerManualAddressExample(String hostPlaceholder) {
+    return '例如 http://$hostPlaceholder:端口';
+  }
+
+  @override
+  String get emptyLabel => '空';
+
+  @override
+  String itemCountConnections(int count) {
+    return '$count 个连接';
+  }
+
+  @override
+  String itemCountPools(int count) {
+    return '$count 个存储池';
+  }
+
+  @override
+  String itemCountBookmarks(int count) {
+    return '$count 个书签';
+  }
+
+  @override
+  String itemCountLocations(int count) {
+    return '$count 个位置';
+  }
+
+  @override
+  String activeTasksRunningCount(int count) {
+    return '$count 个任务运行中';
+  }
+
+  @override
+  String get timeJustNow => '刚刚';
+
+  @override
+  String timeMinutesAgo(int count) {
+    return '$count 分钟前';
+  }
+
+  @override
+  String timeHoursAgo(int count) {
+    return '$count 小时前';
+  }
+
+  @override
+  String timeDaysAgo(int count) {
+    return '$count 天前';
+  }
+
+  @override
+  String deletedRelativeTime(String time) {
+    return '删除于 $time';
+  }
+
+  @override
+  String get stopSharing => '停止共享';
+
+  @override
+  String get manageRemotes => '管理远程连接';
+
+  @override
+  String get manageStoragePools => '管理存储池';
+
+  @override
+  String get backupRestoreConfigTitle => '备份与恢复配置';
+
+  @override
+  String get backupRestoreConfigSubtitle =>
+      '导出或导入远程连接、书签和偏好设置（支持 AES-256 加密 .fmbak）';
+
+  @override
+  String get exportAction => '导出';
+
+  @override
+  String get exportMigrationTitle => '导出设备迁移备份';
+
+  @override
+  String get exportMigrationPasswordLabel => '加密密码（建议设置）';
+
+  @override
+  String get exportMigrationPasswordHint => '留空将导出不含凭据的纯文本 JSON';
+
+  @override
+  String get exportIncludeCredentials => '包含密码与私钥（需设置加密密码）';
+
+  @override
+  String get copyJsonAction => '复制 JSON';
+
+  @override
+  String get copyEncryptedAction => '复制加密备份';
+
+  @override
+  String get saveBackupFileAction => '保存 .fmbak';
+
+  @override
+  String get saveJsonFileAction => '保存 .json';
+
+  @override
+  String get importMigrationTitle => '导入设备配置';
+
+  @override
+  String get chooseBackupFileAction => '选择 .fmbak 或 .json 文件';
+
+  @override
+  String get importPasteHint => '或直接粘贴 JSON / .fmbak 内容…';
+
+  @override
+  String get importPasswordLabel => '解密密码（如已加密）';
+
+  @override
+  String get importPasswordHint => '含凭据的 .fmbak 备份需要填写';
+
+  @override
+  String get importPasswordRequiredError => '请输入此加密 .fmbak 备份文件的解密密码。';
+
+  @override
+  String exportSavedNotice(String path) {
+    return '备份已保存到 $path';
+  }
+
+  @override
+  String get exportCopiedNotice => '备份内容已复制到剪贴板';
+
+  @override
+  String importSummaryNotice(int remotes, int bookmarks, int prefs) {
+    return '已导入 $remotes 个远程、$bookmarks 个书签、$prefs 项偏好设置';
+  }
+
+  @override
+  String get unencryptedCredentialsBanner => '警告：系统安全钥匙串不可用，远程密码将以明文保存。';
+
+  @override
+  String get remoteTestTimedOut => '连接测试超时（8 秒）';
+
+  @override
+  String remoteImportFailedSummary(int count, String details) {
+    return '；$count 项失败：$details';
+  }
+
+  @override
+  String remoteBucketLabel(String bucket) {
+    return '存储桶: $bucket';
+  }
+
+  @override
+  String keyringUnavailableBanner(String detail) {
+    return '系统钥匙串不可用（$detail），凭据可能无法安全持久化。';
+  }
+
+  @override
+  String deleteRemotePoolWarning(String pools) {
+    return '警告：以下存储池正在使用此远程连接：$pools。删除会导致存储池降级或不可用。';
+  }
+
+  @override
+  String get poolConfirmGcTitle => '执行垃圾回收？';
+
+  @override
+  String poolConfirmGcBody(String name) {
+    return '确认立即清理存储池“$name”中未引用或已删除的数据块？清理后无法恢复。';
+  }
+
+  @override
+  String get poolReplicationFactorLabel => '副本数（冗余份数）';
+
+  @override
+  String poolMinNodesError(int count) {
+    return '$count 副本模式至少需要选择 $count 个存储节点。';
+  }
+
+  @override
+  String get poolInvalidQuotaError => '请输入有效的节点配额（大于 0 GB）。';
+
+  @override
+  String get poolPassphraseConfirmLabel => '确认加密口令';
+
+  @override
+  String get poolPassphraseMismatchError => '两次输入的加密口令不一致。';
+
+  @override
+  String get poolEditLockedHint => '分块大小与加密开关在创建后不可修改。';
+
+  @override
+  String poolNodeHealthSummary(int pct, int ms, String state) {
+    return '健康度 $pct% · $ms ms · $state';
+  }
+
+  @override
+  String get poolRoleShortRw => '读写';
+
+  @override
+  String get poolRoleShortRo => '只读';
+
+  @override
+  String get poolRoleShortDraining => '排空中';
+
+  @override
+  String get poolRoleShortOffline => '离线';
+
+  @override
+  String get poolCircuitClosed => '正常';
+
+  @override
+  String get poolCircuitOpen => '熔断';
+
+  @override
+  String get poolCircuitHalfOpen => '半开探测';
+
+  @override
+  String get cryptChooseBackingRemote => '选择已有远程或本地目录';
+
+  @override
+  String get cryptLocalFolderOption => '选择本地文件夹…';
+
+  @override
+  String fileConflictBody(String name) {
+    return '当前目录已存在“$name”，请选择处理方式：';
+  }
+
+  @override
+  String filesConflictBody(int count) {
+    return '当前目录已存在 $count 个同名项目，请选择处理方式：';
+  }
+
+  @override
+  String get offlineOverwriteConfirmTitle => '覆盖远程更改？';
+
+  @override
+  String offlineOverwriteConfirmBody(String name) {
+    return '远程“$name”也有新版本，确定要用本地离线修改覆盖远程文件吗？';
+  }
+
+  @override
+  String get offlineDiscardLocalConfirmTitle => '丢弃本地离线修改？';
+
+  @override
+  String offlineDiscardLocalConfirmBody(String name) {
+    return '“$name”包含未同步的本地修改或冲突，继续操作将覆盖或删除这些更改。';
+  }
+
+  @override
+  String offlineUploadedNotice(String name) {
+    return '已将“$name”上传到远程。';
+  }
+
+  @override
+  String get offlineCheckUpdatesTooltip => '检查更新';
+
+  @override
+  String get offlineSyncAllTooltip => '全部同步';
+
+  @override
+  String get offlineLruCapTooltip => '缓存上限';
+
+  @override
+  String offlineLruCapOption(String size) {
+    return '缓存上限：$size';
+  }
+
+  @override
+  String get offlineUploadLocalTooltip => '上传本地修改到远程';
+
+  @override
+  String offlineBannerSummary(int count, String used, String cap) {
+    return '已固定 $count 项 · $used / $cap';
+  }
+
+  @override
+  String get offlineStatusLocalModified => '本地已修改';
+
+  @override
+  String get offlineStatusRemoteNewer => '远程有更新';
+
+  @override
+  String get offlineStatusConflict => '存在冲突';
+
+  @override
+  String get offlineStatusSynced => '已同步';
+
+  @override
+  String get offlineStatusMissingLocal => '本地缺失';
+
+  @override
+  String get offlineStatusOffline => '离线';
+
+  @override
+  String get browserSelectItemsFirst => '请先选择至少一个项目。';
+
+  @override
+  String clipboardReadOnlyHint(int count) {
+    return '剪贴板已有 $count 项（当前目录只读）';
+  }
+
+  @override
+  String get peerTabDirectTransfer => '局域网直传';
+
+  @override
+  String get peerTabWebdavShare => 'WebDAV / 网页共享';
+
+  @override
+  String peerPendingItemsToSend(int count) {
+    return '已准备发送 $count 个项目';
+  }
+
+  @override
+  String get peerReceiveFolderMustBeLocal => '接收保存目录必须位于本地存储。';
+
+  @override
+  String get peerOpenReceivedFolder => '打开目录';
+
+  @override
+  String get peerCopyReceivedText => '复制文本';
+
+  @override
+  String get peerTextCopied => '接收到的文本已复制到剪贴板。';
+
+  @override
+  String get peerWaitingForAccept => '正在发送，等待对方确认接收…';
+
+  @override
+  String get peerOfferStatusAccepted => '已同意';
+
+  @override
+  String get peerOfferStatusCompleted => '已完成';
+
+  @override
+  String get peerOfferStatusRejected => '已拒绝';
+
+  @override
+  String get peerOfferStatusReceiving => '接收中';
+
+  @override
+  String get photoBackupScanning => '正在扫描照片与目录…';
+
+  @override
+  String get photoBackupCancel => '取消';
+
+  @override
+  String photoBackupCancelledNotice(int count) {
+    return '已取消相册备份（已上传 $count 张）。';
+  }
+
+  @override
+  String get photoBackupResetHistory => '重置备份记录';
+
+  @override
+  String get photoBackupResetHistoryConfirm => '清空本地已备份记录？清空后下次备份将重新校验并上传照片。';
+
+  @override
+  String photoBackupLastRun(String time) {
+    return '上次备份：$time';
+  }
+
+  @override
+  String photoBackupProgressCount(int uploaded, int total) {
+    return '已上传 $uploaded / $total';
+  }
+
+  @override
+  String get photoBackupOpenDestination => '打开备份目录';
+
+  @override
+  String get photoBackupVaultLocked => '目标隐私文件夹尚未解锁';
+
+  @override
+  String get photoBackupPermissionDeniedTitle => '需要相册访问权限';
+
+  @override
+  String get photoBackupPermissionDeniedBody => '请在系统设置中允许访问照片图库，以选择相册或执行备份。';
+
+  @override
+  String get photoBackupOpenSettings => '前往设置';
+
+  @override
+  String get syncSaveProfileTitle => '保存同步配置';
+
+  @override
+  String get syncProfileNameLabel => '配置名称';
+
+  @override
+  String get syncSourceLabel => '源目录';
+
+  @override
+  String get syncDestinationLabel => '目标目录';
+
+  @override
+  String get syncScanLimitReached => '目录扫描达到上限，预览结果可能不完整。';
+
+  @override
+  String syncSummaryChanges(int changes, int unchanged) {
+    return '$changes 项变更 · $unchanged 项一致';
+  }
+
+  @override
+  String get syncConfirmMirrorDeleteTitle => '确认镜像删除';
+
+  @override
+  String syncConfirmMirrorDeleteBody(int count) {
+    return '本次同步将在目标端删除 $count 个多余的文件或文件夹，确认继续？';
+  }
+
+  @override
+  String syncConfirmDeleteProfileBody(String name) {
+    return '确定删除已保存的同步配置“$name”？';
+  }
+
+  @override
+  String get syncSwapFoldersTooltip => '交换源目录与目标目录';
+
+  @override
+  String get syncSelectAll => '全选';
+
+  @override
+  String get syncDeselectAll => '取消全选';
+
+  @override
+  String get syncActionCopy => '复制';
+
+  @override
+  String get syncActionUpdate => '更新';
+
+  @override
+  String get syncActionDelete => '删除';
+
+  @override
+  String get syncActionPullUpdate => '回拉更新';
+
+  @override
+  String get syncEditConfig => '调整目录';
+
+  @override
+  String syncAutoSyncFailed(String error) {
+    return '上次自动同步失败：$error';
+  }
+
+  @override
+  String get taskStatusPaused => '已暂停';
+
+  @override
+  String taskRateLimitActive(String limit) {
+    return '限速：$limit';
+  }
+
+  @override
+  String taskFailedItemsTitle(int count) {
+    return '失败详情（$count 项）';
+  }
+
+  @override
+  String get taskRetryStarted => '已重新提交失败项进行重试。';
+
+  @override
+  String analyzerStatsSummary(int files, int folders) {
+    return '$files 个文件 · $folders 个文件夹';
+  }
+
+  @override
+  String get analyzerScanCancelled => '扫描已取消（仅展示部分统计结果）。';
+
+  @override
+  String get analyzerScanTruncated => '扫描达到上限，更深层目录未计入统计。';
+
+  @override
+  String get analyzerRescan => '重新扫描';
+
+  @override
+  String duplicatesGroupCount(int count) {
+    return '$count 组重复';
+  }
+
+  @override
+  String duplicatesCopiesCount(int count) {
+    return '（$count 份）';
+  }
+
+  @override
+  String duplicatesEachSize(String size) {
+    return '每份 $size';
+  }
+
+  @override
+  String duplicatesDeleteFailed(int count) {
+    return '有 $count 项删除失败';
+  }
+
+  @override
+  String duplicatesAllCopiesWarning(int count) {
+    return '警告：有 $count 组重复文件选中了全部副本，删除后将不留备份！';
+  }
+
+  @override
+  String get duplicatesClearSelection => '清空选择';
+
+  @override
+  String get duplicatesScanCancelled => '重复文件扫描已取消。';
+
+  @override
+  String duplicatesTrashConfirmBody(int count) {
+    return '确认将选中的 $count 个重复项目移入回收站？';
+  }
+
+  @override
+  String categoryTruncatedBanner(int count) {
+    return '仅展示前 $count 个匹配文件（已达上限）。';
+  }
+
+  @override
+  String get galleryLocateInFolder => '在文件夹中定位';
+
+  @override
+  String get galleryUnsupportedFormatForPick => '当前选择的文件格式不符合外部请求要求。';
+
+  @override
+  String galleryExifSkippedNonJpeg(int count) {
+    return '已跳过 $count 张非 JPEG 图片（去 EXIF 仅支持 JPEG）。';
+  }
+
+  @override
+  String searchFiltersLabel(int count) {
+    return '筛选条件 ($count)';
+  }
+
+  @override
+  String get searchAllTypes => '全部类型';
+
+  @override
+  String get pdfEncryptedError => '该 PDF 已加密或受密码保护，无法直接渲染。';
+
+  @override
+  String pdfPageTextTitle(int page) {
+    return '第 $page 页文本';
+  }
+
+  @override
+  String get pdfPageTextCopied => '当前页文本已复制到剪贴板。';
+
+  @override
+  String get pdfNoSelectableText => '该页未检测到可选文本（可能是扫描图片）。';
+
+  @override
+  String get pdfSelectCopyPageText => '选择 / 复制本页文本';
+
+  @override
+  String pdfRenderPageFailed(int page) {
+    return '第 $page 页渲染失败。';
+  }
+
+  @override
+  String get structuredEmptyValue => '（空）';
+
+  @override
+  String structuredCsvTruncated(int shown, int total) {
+    return '当前展示前 $shown 行（共 $total 行）。';
+  }
+
+  @override
+  String get copyXPath => '复制 XPath';
+
+  @override
+  String get subtitleLoadFailed => '不支持或无法读取该字幕文件。';
+
+  @override
+  String get diffTruncatedNotice => '目录对比已达到条目上限，部分深层文件未显示。';
+
+  @override
+  String get diffSyncFoldersAction => '去同步目录';
+
+  @override
+  String get vaultHtmlBrowserWarning => '为遵守隐私空间零落盘原则，禁止在外部浏览器中打开解密后的 HTML。';
+
+  @override
+  String get poolStorageDirectory => '存储目录';
+
+  @override
+  String get poolPickDirectory => '选择目录';
+
+  @override
+  String poolReplicationBadge(int count) {
+    return '$count 副本';
+  }
+
+  @override
+  String get poolSetReplicationTitle => '设置副本数';
+
+  @override
+  String get poolSetReplicationHint => '新写入文件立即按此副本数存储；已有文件可通过“修复”补齐副本。';
+
+  @override
+  String poolNodeRealFreeWithTotal(String free, String total) {
+    return '剩余 $free / 共 $total';
+  }
+
+  @override
+  String poolNodeRealFreeOnly(String free) {
+    return '剩余 $free';
+  }
+
+  @override
+  String get poolNodeSpaceUnavailable => '剩余空间未知';
+
+  @override
+  String get poolNodeSpaceProbing => '正在探测剩余空间…';
+
+  @override
+  String poolNodePoolUsed(String used) {
+    return '存储池已用: $used';
+  }
+
+  @override
+  String poolNodeDirectoryLabel(String dir) {
+    return '目录: $dir';
+  }
+
+  @override
+  String get remoteBatchExportAction => '批量加密导出';
+
+  @override
+  String get remoteBatchImportAction => '批量加密导入';
+
+  @override
+  String get remoteBatchExportTitle => '批量导出远程连接';
+
+  @override
+  String get remoteBatchExportSubtitle =>
+      '连接配置与凭据将使用您设置的密码通过 AES-256-GCM 加密保护。';
+
+  @override
+  String remoteBatchSelectCount(int selected, int total) {
+    return '已选择 $selected / $total 个连接';
+  }
+
+  @override
+  String get remoteBatchSelectAll => '全选';
+
+  @override
+  String get remoteBatchDeselectAll => '取消全选';
+
+  @override
+  String get remoteBatchUnreadableSkipped => '凭据无法读取（不可导出）';
+
+  @override
+  String get remoteBatchNoReadableToExport => '当前没有可读取的远程连接可供导出。';
+
+  @override
+  String get remoteBatchExportPasswordLabel => '加密密码（必填）';
+
+  @override
+  String remoteBatchExportPasswordHint(int min) {
+    return '至少 $min 位字符';
+  }
+
+  @override
+  String get remoteBatchExportPasswordConfirmLabel => '确认加密密码';
+
+  @override
+  String get remoteBatchPasswordRequiredNote => '请牢记此密码，批量导入远程连接时必须输入同一密码解密。';
+
+  @override
+  String remoteBatchPasswordTooShort(int min) {
+    return '加密密码至少需要 $min 位字符。';
+  }
+
+  @override
+  String get remoteBatchPasswordMismatch => '两次输入的密码不一致。';
+
+  @override
+  String get remoteBatchSaveFileAction => '保存加密文件';
+
+  @override
+  String get remoteBatchShareFileAction => '导出 / 分享文件';
+
+  @override
+  String remoteBatchExportSavedNotice(int count, String path) {
+    return '已加密导出 $count 个连接到 $path';
+  }
+
+  @override
+  String remoteBatchExportSharedNotice(int count) {
+    return '已生成 $count 个连接的加密备份文件。';
+  }
+
+  @override
+  String remoteBatchExportCopiedNotice(int count) {
+    return '已复制 $count 个连接的加密备份到剪贴板。';
+  }
+
+  @override
+  String get remoteBatchImportTitle => '批量导入远程连接';
+
+  @override
+  String get remoteBatchChooseFile => '选择备份文件';
+
+  @override
+  String get remoteBatchPasteClipboard => '粘贴剪贴板';
+
+  @override
+  String get remoteBatchClipboardDetected => '已检测到剪贴板中的加密备份。';
+
+  @override
+  String get remoteBatchClipboardEmpty => '剪贴板为空。';
+
+  @override
+  String remoteBatchSelectedFileLabel(String name) {
+    return '已选文件：$name';
+  }
+
+  @override
+  String get remoteBatchPasteFieldHint => '或直接粘贴加密的 .fmremotes / .fmbak 备份内容…';
+
+  @override
+  String get remoteBatchImportPasswordLabel => '解密密码（必填）';
+
+  @override
+  String get remoteBatchImportPasswordHint => '请输入导出时设置的密码';
+
+  @override
+  String get remoteBatchDecryptAction => '解密并预览';
+
+  @override
+  String remoteBatchPreviewSummary(int count) {
+    return '解密成功，共 $count 个连接';
+  }
+
+  @override
+  String get remoteBatchConflictSectionLabel => '遇到同名 ID 已有连接时：';
+
+  @override
+  String get remoteBatchConflictSkip => '跳过已有';
+
+  @override
+  String get remoteBatchConflictOverwrite => '覆盖已有';
+
+  @override
+  String get remoteBatchConflictKeepBoth => '保留两者';
+
+  @override
+  String get remoteBatchBadgeNew => '新增';
+
+  @override
+  String get remoteBatchBadgeExists => '已存在';
+
+  @override
+  String get remoteBatchAllSkippedHint => '所选连接均已存在且将被跳过，可切换为“覆盖已有”或“保留两者”。';
+
+  @override
+  String remoteBatchImportConfirm(int count) {
+    return '导入 ($count)';
+  }
+
+  @override
+  String remoteBatchImportSummary(
+    int imported,
+    int added,
+    int overwritten,
+    int duplicated,
+    int skipped,
+    String detail,
+  ) {
+    return '已导入 $imported 个连接（新增 $added、更新 $overwritten、副本 $duplicated、跳过 $skipped）$detail';
+  }
+
+  @override
+  String get remoteBatchErrorNotEncrypted => '不支持明文数据，请选择使用密码加密导出的备份文件或内容。';
+
+  @override
+  String get remoteBatchErrorInvalidFormat => '备份文件格式无效，无法解析。';
+
+  @override
+  String get remoteBatchErrorWrongPassword => '密码错误或备份文件已损坏，请检查密码后重试。';
+
+  @override
+  String get remoteBatchErrorEmptyBundle => '该加密备份中不包含有效的远程连接。';
+
+  @override
+  String get remoteBatchErrorFileTooLarge => '所选文件过大，不是有效的远程连接备份文件。';
+
+  @override
+  String get remoteBatchBackStep => '返回上一步';
 }

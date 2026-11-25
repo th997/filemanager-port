@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../rust/api/metadata.dart';
 import '../rust/api/sync.dart';
 import '../rust/api/tasks.dart' as tasks_api;
@@ -22,6 +24,9 @@ class SyncProfile {
   final String mode;
   final int autoIntervalMinutes;
   final int lastAutoSyncMs;
+  final List<String> excludeExtensions;
+  final List<String> excludeNames;
+  final List<String> excludeDirs;
 
   const SyncProfile({
     required this.name,
@@ -32,6 +37,9 @@ class SyncProfile {
     required this.mode,
     this.autoIntervalMinutes = 0,
     this.lastAutoSyncMs = 0,
+    this.excludeExtensions = const [],
+    this.excludeNames = const [],
+    this.excludeDirs = const [],
   });
 
   SyncProfile copyWith({
@@ -43,6 +51,9 @@ class SyncProfile {
     String? mode,
     int? autoIntervalMinutes,
     int? lastAutoSyncMs,
+    List<String>? excludeExtensions,
+    List<String>? excludeNames,
+    List<String>? excludeDirs,
   }) {
     return SyncProfile(
       name: name ?? this.name,
@@ -53,6 +64,9 @@ class SyncProfile {
       mode: mode ?? this.mode,
       autoIntervalMinutes: autoIntervalMinutes ?? this.autoIntervalMinutes,
       lastAutoSyncMs: lastAutoSyncMs ?? this.lastAutoSyncMs,
+      excludeExtensions: excludeExtensions ?? this.excludeExtensions,
+      excludeNames: excludeNames ?? this.excludeNames,
+      excludeDirs: excludeDirs ?? this.excludeDirs,
     );
   }
 
@@ -65,7 +79,21 @@ class SyncProfile {
         'mode': mode,
         'autoIntervalMinutes': autoIntervalMinutes,
         'lastAutoSyncMs': lastAutoSyncMs,
+        if (excludeExtensions.isNotEmpty)
+          'excludeExtensions': excludeExtensions,
+        if (excludeNames.isNotEmpty) 'excludeNames': excludeNames,
+        if (excludeDirs.isNotEmpty) 'excludeDirs': excludeDirs,
       };
+
+  static List<String> _decodeStringList(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
 
   static SyncProfile? fromJson(dynamic raw) {
     if (raw is! Map) return null;
@@ -90,6 +118,9 @@ class SyncProfile {
       mode: raw['mode']?.toString() ?? 'incremental',
       autoIntervalMinutes: interval < 0 ? 0 : interval,
       lastAutoSyncMs: lastMs < 0 ? 0 : lastMs,
+      excludeExtensions: _decodeStringList(raw['excludeExtensions']),
+      excludeNames: _decodeStringList(raw['excludeNames']),
+      excludeDirs: _decodeStringList(raw['excludeDirs']),
     );
   }
 }
@@ -101,7 +132,7 @@ typedef OfflinePinSyncRunner = Future<({int pushed, int pulled, int conflicts})>
 /// Coordinates in-app scheduled directory sync profiles and automatic
 /// check/push/pull reconciliation for offline pinned files on app resume and
 /// periodic ticks.
-class AutoSyncService {
+class AutoSyncService with ChangeNotifier {
   AutoSyncService({
     this.profileRunner,
     this.offlinePinRunner,
@@ -122,6 +153,15 @@ class AutoSyncService {
   Timer? _timer;
   bool _runningTick = false;
   DateTime? _lastOfflineCheckAt;
+  String? _lastAutoSyncError;
+
+  String? get lastAutoSyncError => _lastAutoSyncError;
+
+  void clearLastAutoSyncError() {
+    if (_lastAutoSyncError == null) return;
+    _lastAutoSyncError = null;
+    notifyListeners();
+  }
 
   bool get isOfflineAutoSyncEnabled =>
       PreferencesService.instance.getBool(prefOfflineAutoSync) ?? true;
@@ -200,6 +240,8 @@ class AutoSyncService {
     final updated = List<SyncProfile>.of(profiles);
 
     final completedTimestamps = <String, int>{};
+    String? cycleError;
+    var ranAny = false;
 
     for (var i = 0; i < updated.length; i++) {
       final p = updated[i];
@@ -209,6 +251,7 @@ class AutoSyncService {
       if (_involvesLockedVault(p.srcRoot) || _involvesLockedVault(p.dstRoot)) {
         continue;
       }
+      ranAny = true;
       final key = '${p.name}|${p.srcRoot}|${p.srcPath}|${p.dstRoot}|${p.dstPath}|${p.mode}';
       try {
         final runner = profileRunner ?? _defaultProfileRunner;
@@ -216,10 +259,16 @@ class AutoSyncService {
         completedTimestamps[key] = _clock().millisecondsSinceEpoch;
         mutated = true;
         executed++;
-      } catch (_) {
+      } catch (e) {
+        cycleError = '${p.name}: $e';
         completedTimestamps[key] = nowMs;
         mutated = true;
       }
+    }
+
+    if (ranAny && cycleError != _lastAutoSyncError) {
+      _lastAutoSyncError = cycleError;
+      notifyListeners();
     }
 
     if (mutated) {
@@ -244,16 +293,31 @@ class AutoSyncService {
     return !VaultService.instance.unlockedVaults.any((v) => v.id == id);
   }
 
+  static SyncExcludeRulesDto? _rulesForProfile(SyncProfile profile) {
+    if (profile.excludeExtensions.isEmpty &&
+        profile.excludeNames.isEmpty &&
+        profile.excludeDirs.isEmpty) {
+      return null;
+    }
+    return SyncExcludeRulesDto(
+      excludeExtensions: profile.excludeExtensions,
+      excludeNames: profile.excludeNames,
+      excludeDirs: profile.excludeDirs,
+    );
+  }
+
   static Future<void> _defaultProfileRunner(SyncProfile profile) async {
     await BackgroundKeepAliveService.instance.runWithKeepAlive(
       'autosync:${profile.name}',
       () async {
+        final rules = _rulesForProfile(profile);
         final plan = await previewDirectorySync(
           srcRoot: profile.srcRoot,
           srcPath: profile.srcPath,
           dstRoot: profile.dstRoot,
           dstPath: profile.dstPath,
           mode: profile.mode,
+          excludeRules: rules,
         );
         if (plan.items.isEmpty) return;
         final taskId = await startDirectorySyncTask(
@@ -263,6 +327,7 @@ class AutoSyncService {
           dstPath: profile.dstPath,
           mode: profile.mode,
           selectedRelPaths: plan.items.map((e) => e.relPath).toList(),
+          excludeRules: rules,
         );
         tasks_api.TaskProgressDto? lastProgress;
         await for (final prog in TaskService.instance.watch(taskId)) {

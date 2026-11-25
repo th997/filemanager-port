@@ -38,10 +38,23 @@ pub(crate) fn invalidate_dir_cache_for_vault(vault_id: &str) {
     });
 }
 
+pub(crate) fn invalidate_dir_cache_for_pool(pool_id: &str) {
+    let pool_root = format!("pool://{pool_id}");
+    let archive_exact = format!("archive://{pool_root}");
+    let archive_prefix = format!("{archive_exact}/");
+    let mut cache = dir_cache().lock();
+    cache.retain(|(r, _, _, _), _| {
+        r != &pool_root && r != &archive_exact && !r.starts_with(&archive_prefix)
+    });
+}
+
 pub(crate) fn invalidate_local_dir_caches() {
     let mut cache = dir_cache().lock();
     cache.retain(|(r, _, _, _), _| {
-        r.starts_with("remote://") || r.starts_with("archive://") || r.starts_with("vault://")
+        r.starts_with("remote://")
+            || r.starts_with("archive://")
+            || r.starts_with("vault://")
+            || r.starts_with("pool://")
     });
 }
 
@@ -367,6 +380,7 @@ pub fn set_archive_password(archive_root: String, password: Option<String>) {
 pub async fn check_archive_encrypted(root: String, path: String) -> Result<bool, String> {
     let full = if root.starts_with("remote://")
         || root.starts_with("vault://")
+        || root.starts_with("pool://")
         || root.starts_with("archive://")
     {
         // For non-local archives, callers detect encryption on open/read error.

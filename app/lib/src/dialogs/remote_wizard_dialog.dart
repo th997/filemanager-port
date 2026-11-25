@@ -20,6 +20,16 @@ class RemoteWizardDialog extends StatefulWidget {
 }
 
 class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
+  static const Set<String> _supportedKinds = {
+    's3',
+    'oss',
+    'webdav',
+    'sftp',
+    'ftp',
+    'smb',
+    'crypt',
+  };
+
   final _formKey = GlobalKey<FormState>();
 
   late String _kind;
@@ -43,6 +53,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
   bool _obscurePassword = true;
   bool _obscureSecretKey = true;
   bool _obscurePassphrase = true;
+  List<RemoteConfigDto> _backingRemotes = const [];
 
   bool _testing = false;
   bool _scanningLan = false;
@@ -54,11 +65,24 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     final l10n = AppLocalizations.of(context);
     setState(() => _scanningLan = true);
     List<LanServiceDto> services = const [];
+    Object? scanError;
     try {
       services = await discoverLanServices(timeoutMs: 2500);
-    } catch (_) {}
+    } catch (e) {
+      scanError = e;
+    }
     if (!mounted) return;
     setState(() => _scanningLan = false);
+
+    if (scanError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyErrorText(scanError, l10n)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
 
     if (services.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,11 +119,13 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       ),
     );
     if (picked == null || !mounted) return;
+    final proto = picked.protocol.toLowerCase();
+    if (!_supportedKinds.contains(proto)) return;
     setState(() {
-      _kind = picked.protocol;
+      _applyKindSwitch(proto);
       _hostController.text = picked.host;
       _portController.text = '${picked.port}';
-      if (picked.protocol == 'webdav') {
+      if (proto == 'webdav') {
         final scheme = picked.port == 443 || picked.port == 5006 ? 'https' : 'http';
         _endpointController.text = '$scheme://${picked.host}:${picked.port}/';
       }
@@ -109,11 +135,74 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     });
   }
 
+  void _applyKindSwitch(String nextKind) {
+    final prev = _kind;
+    _kind = nextKind;
+    _testResult = null;
+    _testSuccess = false;
+    if (prev != nextKind) {
+      final isObj = nextKind == 's3' || nextKind == 'oss';
+      final isHostPort = nextKind == 'sftp' || nextKind == 'ftp' || nextKind == 'smb';
+      if (!isObj) {
+        _bucketController.clear();
+        _regionController.clear();
+        _keyIdController.clear();
+        _keySecretController.clear();
+        _pathStyle = false;
+      } else if (_regionController.text.trim().isEmpty) {
+        _regionController.text = 'us-east-1';
+      }
+      if (!isObj && nextKind != 'webdav' && nextKind != 'crypt') {
+        _endpointController.clear();
+      }
+      if (!isHostPort) {
+        _hostController.clear();
+        _portController.clear();
+      }
+      if (nextKind != 'sftp') {
+        _privateKeyController.clear();
+        _passphraseController.clear();
+      }
+      if (nextKind == 'crypt') {
+        _usernameController.clear();
+      }
+      if (nextKind == 'oss' && _endpointController.text.trim().isEmpty) {
+        _endpointController.text = 'https://oss-cn-hangzhou.aliyuncs.com';
+      } else if (nextKind != 'oss' &&
+          _endpointController.text.trim() == 'https://oss-cn-hangzhou.aliyuncs.com') {
+        _endpointController.clear();
+      }
+      if (nextKind == 'sftp') {
+        _portController.text = '22';
+      } else if (nextKind == 'ftp') {
+        _portController.text = '21';
+      } else if (nextKind == 'smb') {
+        _portController.text = '445';
+      }
+      if (!_idManuallyEdited && widget.initialConfig == null) {
+        _idController.text = _generateSlug(_nameController.text, _kind);
+      }
+    }
+  }
+
+  Future<void> _loadBackingRemotes() async {
+    try {
+      final list = await StorageService.instance.getRemotes();
+      if (!mounted) return;
+      setState(() {
+        _backingRemotes = list
+            .where((r) => r.kind != 'crypt' && r.id != widget.initialConfig?.id)
+            .toList();
+      });
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     final c = widget.initialConfig;
-    _kind = c?.kind ?? 's3';
+    final initialKind = c?.kind.toLowerCase() ?? 's3';
+    _kind = _supportedKinds.contains(initialKind) ? initialKind : 's3';
     final hasKey = c?.privateKey != null && c!.privateKey!.trim().isNotEmpty;
     _sftpAuthType = hasKey ? 'key' : 'password';
     _nameController = TextEditingController(text: c?.name ?? '');
@@ -125,7 +214,9 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
         _endpointController.text.trim().toLowerCase().startsWith('http://');
     _endpointController.addListener(_onEndpointChanged);
     _bucketController = TextEditingController(text: c?.bucket ?? '');
-    _regionController = TextEditingController(text: c?.region ?? 'us-east-1');
+    _regionController = TextEditingController(
+      text: c?.region ?? ((_kind == 's3' || _kind == 'oss') ? 'us-east-1' : ''),
+    );
     _keyIdController = TextEditingController(text: c?.accessKeyId ?? '');
     _keySecretController = TextEditingController(text: c?.secretAccessKey ?? '');
     _hostController = TextEditingController(text: c?.host ?? '');
@@ -136,6 +227,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     _passphraseController = TextEditingController(text: c?.passphrase ?? '');
     _rootPathController = TextEditingController(text: c?.rootPath ?? '/');
     _pathStyle = c?.pathStyle ?? false;
+    _loadBackingRemotes();
   }
 
   bool _endpointInsecure = false;
@@ -244,14 +336,19 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     if (id.isEmpty) {
       id = widget.initialConfig?.id ?? _generateSlug(_nameController.text, _kind);
     }
-    int? portInt = int.tryParse(_portController.text.trim());
-    if (portInt == null) {
-      if (_kind == 'sftp') {
-        portInt = 22;
-      } else if (_kind == 'ftp') {
-        portInt = 21;
-      } else if (_kind == 'smb') {
-        portInt = 445;
+    final isObject = _kind == 's3' || _kind == 'oss';
+    final isHostPort = _kind == 'sftp' || _kind == 'ftp' || _kind == 'smb';
+    int? portInt;
+    if (isHostPort) {
+      portInt = int.tryParse(_portController.text.trim());
+      if (portInt == null) {
+        if (_kind == 'sftp') {
+          portInt = 22;
+        } else if (_kind == 'ftp') {
+          portInt = 21;
+        } else if (_kind == 'smb') {
+          portInt = 445;
+        }
       }
     }
 
@@ -271,7 +368,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       passphrase = _passphraseController.text.trim().isEmpty
           ? null
           : _passphraseController.text.trim();
-    } else {
+    } else if (_kind == 'webdav' || _kind == 'ftp' || _kind == 'smb') {
       password = _passwordController.text.isEmpty ? null : _passwordController.text;
     }
 
@@ -279,23 +376,40 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
       id: id,
       name: _nameController.text.trim().isEmpty ? '$_kind Remote' : _nameController.text.trim(),
       kind: _kind,
-      endpoint: _endpointController.text.trim().isEmpty ? null : _endpointController.text.trim(),
-      bucket: _bucketController.text.trim().isEmpty ? null : _bucketController.text.trim(),
-      region: _regionController.text.trim().isEmpty ? null : _regionController.text.trim(),
-      accessKeyId: _keyIdController.text.trim().isEmpty ? null : _keyIdController.text.trim(),
-      secretAccessKey: _keySecretController.text.trim().isEmpty ? null : _keySecretController.text.trim(),
-      host: _hostController.text.trim().isEmpty ? null : _hostController.text.trim(),
+      endpoint: (isObject || _kind == 'webdav' || _kind == 'crypt') &&
+              _endpointController.text.trim().isNotEmpty
+          ? _endpointController.text.trim()
+          : null,
+      bucket: isObject && _bucketController.text.trim().isNotEmpty
+          ? _bucketController.text.trim()
+          : null,
+      region: isObject && _regionController.text.trim().isNotEmpty
+          ? _regionController.text.trim()
+          : null,
+      accessKeyId: isObject && _keyIdController.text.trim().isNotEmpty
+          ? _keyIdController.text.trim()
+          : null,
+      secretAccessKey: isObject && _keySecretController.text.trim().isNotEmpty
+          ? _keySecretController.text.trim()
+          : null,
+      host: isHostPort && _hostController.text.trim().isNotEmpty
+          ? _hostController.text.trim()
+          : null,
       port: portInt,
-      username: _usernameController.text.trim().isEmpty ? null : _usernameController.text.trim(),
+      username: (_kind == 'webdav' || isHostPort) &&
+              _usernameController.text.trim().isNotEmpty
+          ? _usernameController.text.trim()
+          : null,
       password: password,
       privateKey: privateKey,
       passphrase: passphrase,
       rootPath: _rootPathController.text.trim().isEmpty ? '/' : _rootPathController.text.trim(),
-      pathStyle: _pathStyle,
+      pathStyle: isObject ? _pathStyle : false,
     );
   }
 
   String? _validatePort(String? value) {
+    if (_kind != 'sftp' && _kind != 'ftp' && _kind != 'smb') return null;
     final l10n = AppLocalizations.of(context);
     final v = value?.trim() ?? '';
     if (v.isEmpty) return null;
@@ -307,6 +421,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
 
   Future<void> _testConnection() async {
     if (!_formKey.currentState!.validate()) return;
+    final config = _buildConfig();
     final portError = _validatePort(_portController.text);
     if (portError != null) {
       setState(() {
@@ -321,7 +436,6 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
     });
 
     try {
-      final config = _buildConfig();
       // A silent hang on a firewalled host blocks the dialog for the OS TCP
       // timeout (~2 min); match the remotes page's 8s probe.
       final ok = await StorageService.instance
@@ -437,17 +551,7 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                   onChanged: (val) {
                     if (val != null) {
                       setState(() {
-                        _kind = val;
-                        if (_kind == 'oss' && _endpointController.text.isEmpty) {
-                          _endpointController.text = 'https://oss-cn-hangzhou.aliyuncs.com';
-                        }
-                        if (_kind == 'sftp' && (_portController.text.isEmpty || _portController.text == '21' || _portController.text == '445')) {
-                          _portController.text = '22';
-                        } else if (_kind == 'ftp' && (_portController.text.isEmpty || _portController.text == '22' || _portController.text == '445')) {
-                          _portController.text = '21';
-                        } else if (_kind == 'smb' && (_portController.text.isEmpty || _portController.text == '22' || _portController.text == '21')) {
-                          _portController.text = '445';
-                        }
+                        _applyKindSwitch(val);
                       });
                     }
                   },
@@ -609,6 +713,44 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: null,
+                    decoration: InputDecoration(
+                      labelText: l10n.cryptChooseBackingRemote,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      for (final r in _backingRemotes)
+                        DropdownMenuItem(
+                          value: 'remote://${r.id}',
+                          child: Text(
+                            '${r.name} (${r.kind.toUpperCase()})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      DropdownMenuItem(
+                        value: '__local__',
+                        child: Text(
+                          l10n.cryptLocalFolderOption,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    onChanged: (picked) async {
+                      if (picked == null) return;
+                      if (picked == '__local__') {
+                        final dir = await getDirectoryPath();
+                        if (dir != null && mounted) {
+                          setState(() => _endpointController.text = dir);
+                        }
+                      } else {
+                        setState(() => _endpointController.text = picked);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
                   TextFormField(
                     controller: _endpointController,
                     decoration: InputDecoration(
@@ -683,8 +825,8 @@ class _RemoteWizardDialogState extends State<RemoteWizardDialog> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(
-                        flex: 1,
+                      SizedBox(
+                        width: 96,
                         child: TextFormField(
                           controller: _portController,
                           decoration: InputDecoration(

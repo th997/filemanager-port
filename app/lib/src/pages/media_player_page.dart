@@ -458,11 +458,12 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
         ? 0
         : widget.startIndex.clamp(0, widget.playlist.length - 1);
     final session = GlobalPlaybackService.instance;
-    if (session.hasActiveSession &&
+    final restored = session.hasActiveSession &&
         session.currentRoot == widget.root &&
         session.currentPath == _track.path &&
         session.desktopPlayer != null &&
-        session.desktopVideoController != null) {
+        session.desktopVideoController != null;
+    if (restored) {
       _player = session.desktopPlayer!;
       _controller = session.desktopVideoController!;
       _startedStream = session.startedStream;
@@ -487,6 +488,7 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
       );
     }
     _volume = _player.state.volume;
+    _playbackSpeed = _player.state.rate;
     _playingSub = _player.stream.playing.listen((playing) {
       if (playing) {
         WakelockPlus.enable().catchError((_) {});
@@ -494,29 +496,31 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
         WakelockPlus.disable().catchError((_) {});
       }
     });
-    final savedSpeed = loadSavedPlaybackSpeed();
-    if (savedSpeed != 1.0) {
-      _playbackSpeed = savedSpeed;
-      _player.setRate(savedSpeed);
+    if (!restored) {
+      final savedSpeed = loadSavedPlaybackSpeed();
+      if (savedSpeed != 1.0) {
+        _playbackSpeed = savedSpeed;
+        _player.setRate(savedSpeed);
+      }
+      // Volume is a user preference, so a muted-then-closed player does not come
+      // back silent next time.
+      final savedVolume = double.tryParse(
+        PreferencesService.instance.getString(_prefVolume) ?? '',
+      );
+      if (savedVolume != null) {
+        _volume = savedVolume.clamp(0.0, 100.0);
+        _player.setVolume(_volume);
+      }
     }
     _rateSub = _player.stream.rate.listen((rate) {
       if (mounted && !_isSpeedBoosting && _playbackSpeed != rate) {
         setState(() => _playbackSpeed = rate);
       }
     });
-    // Volume is a user preference, so a muted-then-closed player does not come
-    // back silent next time.
-    final savedVolume = double.tryParse(
-      PreferencesService.instance.getString(_prefVolume) ?? '',
-    );
-    if (savedVolume != null) {
-      _volume = savedVolume.clamp(0.0, 100.0);
-      _player.setVolume(_volume);
-    }
     // Loop is a preference too: someone who loops one clip usually keeps
     // looping the next one.
     _isLooping = PreferencesService.instance.getBool(_prefLoop) ?? false;
-    if (_isLooping) _player.setPlaylistMode(PlaylistMode.single);
+    if (!restored && _isLooping) _player.setPlaylistMode(PlaylistMode.single);
     _autoNext = PreferencesService.instance.getBool(_prefAutoNext) ?? true;
     _volumeSub = _player.stream.volume.listen((vol) {
       if (mounted) setState(() => _volume = vol);
@@ -720,23 +724,25 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
   /// for the first non-zero duration before deciding whether the saved spot is
   /// past the end.
   Future<void> _autoLoadExternalSubtitle(int generation) async {
-    final loaded = await SubtitleService.findMatchingSubtitle(
-      root: widget.root,
-      mediaPath: _track.path,
-    );
-    if (loaded == null || !mounted || generation != _openGeneration) return;
-    await _player.setSubtitleTrack(
-      SubtitleTrack.data(loaded.rawContent, title: loaded.name),
-    );
-    if (mounted) {
-      final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.subtitleAutoLoaded(loaded.name)),
-          duration: const Duration(seconds: 2),
-        ),
+    try {
+      final loaded = await SubtitleService.findMatchingSubtitle(
+        root: widget.root,
+        mediaPath: _track.path,
       );
-    }
+      if (loaded == null || !mounted || generation != _openGeneration) return;
+      await _player.setSubtitleTrack(
+        SubtitleTrack.data(loaded.rawContent, title: loaded.name),
+      );
+      if (mounted) {
+        final l10n = AppLocalizations.of(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.subtitleAutoLoaded(loaded.name)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _pickExternalSubtitle() async {
@@ -758,19 +764,26 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
         path: subPath,
         name: subName,
       );
-      if (loaded != null && mounted) {
-        await _player.setSubtitleTrack(
-          SubtitleTrack.data(loaded.rawContent, title: loaded.name),
+      if (!mounted) return;
+      if (loaded == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.subtitleLoadFailed)),
         );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.subtitleAutoLoaded(loaded.name))),
-          );
-        }
+        return;
       }
-    } catch (e) {
+      await _player.setSubtitleTrack(
+        SubtitleTrack.data(loaded.rawContent, title: loaded.name),
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.subtitleAutoLoaded(loaded.name))),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.subtitleLoadFailed)),
+        );
       }
     }
   }
@@ -1091,38 +1104,40 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                     tooltip: AppLocalizations.of(context).playlistProgress(_index + 1, widget.playlist.length),
                     onPressed: _showPlaylist,
                   ),
+                  if (MediaQuery.sizeOf(context).width >= 600)
+                    IconButton(
+                      icon: Icon(_autoNext ? Icons.playlist_play : Icons.playlist_remove),
+                      tooltip: _autoNext ? AppLocalizations.of(context).autoNextOn : AppLocalizations.of(context).autoNextOff,
+                      color: _autoNext ? Colors.blueAccent : Colors.white60,
+                      onPressed: () {
+                        setState(() {
+                          _autoNext = !_autoNext;
+                          PreferencesService.instance.setBool(_prefAutoNext, _autoNext);
+                        });
+                      },
+                    ),
+                ],
+                if (MediaQuery.sizeOf(context).width >= 600)
                   IconButton(
-                    icon: Icon(_autoNext ? Icons.playlist_play : Icons.playlist_remove),
-                    tooltip: _autoNext ? AppLocalizations.of(context).autoNextOn : AppLocalizations.of(context).autoNextOff,
-                    color: _autoNext ? Colors.blueAccent : Colors.white60,
+                    icon: Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
+                    tooltip: _isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff,
+                    color: _isLooping ? Colors.blueAccent : Colors.white,
                     onPressed: () {
                       setState(() {
-                        _autoNext = !_autoNext;
-                        PreferencesService.instance.setBool(_prefAutoNext, _autoNext);
+                        _isLooping = !_isLooping;
+                        _player.setPlaylistMode(
+                          _isLooping ? PlaylistMode.single : PlaylistMode.none,
+                        );
+                        PreferencesService.instance.setBool(_prefLoop, _isLooping);
                       });
                     },
                   ),
-                ],
-                IconButton(
-                  icon: Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
-                  tooltip: _isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff,
-                  color: _isLooping ? Colors.blueAccent : Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      _isLooping = !_isLooping;
-                      _player.setPlaylistMode(
-                        _isLooping ? PlaylistMode.single : PlaylistMode.none,
-                      );
-                      PreferencesService.instance.setBool(_prefLoop, _isLooping);
-                    });
-                  },
-                ),
                 _SpeedButton(
                   player: _player,
                   currentRate: _playbackSpeed,
                   onSelected: _setSpeed,
                 ),
-                if (!_track.isAudio)
+                if (!_track.isAudio && MediaQuery.sizeOf(context).width >= 600)
                   IconButton(
                     icon: const Icon(Icons.aspect_ratio),
                     tooltip: AppLocalizations.of(context).videoFitLabel,
@@ -1145,6 +1160,15 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                         break;
                       case 'next':
                         if (_hasNext) _openTrack(_index + 1);
+                        break;
+                      case 'loop':
+                        setState(() {
+                          _isLooping = !_isLooping;
+                          _player.setPlaylistMode(
+                            _isLooping ? PlaylistMode.single : PlaylistMode.none,
+                          );
+                          PreferencesService.instance.setBool(_prefLoop, _isLooping);
+                        });
                         break;
                       case 'auto_next':
                         setState(() {
@@ -1176,6 +1200,20 @@ class _MediaKitPlayerPageState extends State<_MediaKitPlayerPage> {
                     }
                   },
                   itemBuilder: (ctx) => [
+                    PopupMenuItem(
+                      value: 'loop',
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isLooping ? Icons.repeat_one : Icons.repeat,
+                            size: 20,
+                            color: _isLooping ? Colors.blueAccent : null,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(_isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff),
+                        ],
+                      ),
+                    ),
                     PopupMenuItem(
                       value: 'mute',
                       child: Row(
@@ -1457,9 +1495,12 @@ class _SpeedButtonState extends State<_SpeedButton> {
       rates: kMediaPlaybackSpeeds,
       onSelected: (rate) async {
         if (mounted) setState(() => _rate = rate);
-        onSelected?.call(rate);
-        await player.setRate(rate);
-        savePlaybackSpeed(rate);
+        if (onSelected != null) {
+          onSelected(rate);
+        } else {
+          await player.setRate(rate);
+          savePlaybackSpeed(rate);
+        }
       },
     );
     if (selected != null && mounted) {

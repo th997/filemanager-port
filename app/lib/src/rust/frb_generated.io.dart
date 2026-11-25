@@ -6,6 +6,7 @@
 import 'api/file_manager.dart';
 import 'api/inspect.dart';
 import 'api/metadata.dart';
+import 'api/pool.dart';
 import 'api/remotes.dart';
 import 'api/search.dart';
 import 'api/servers.dart';
@@ -53,10 +54,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  PoolConfigDto dco_decode_box_autoadd_pool_config_dto(dynamic raw);
+
+  @protected
   RemoteConfigDto dco_decode_box_autoadd_remote_config_dto(dynamic raw);
 
   @protected
   ServerStatusDto dco_decode_box_autoadd_server_status_dto(dynamic raw);
+
+  @protected
+  SyncExcludeRulesDto dco_decode_box_autoadd_sync_exclude_rules_dto(
+    dynamic raw,
+  );
 
   @protected
   TaskProgressDto dco_decode_box_autoadd_task_progress_dto(dynamic raw);
@@ -102,6 +111,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_f_32(dynamic raw);
+
+  @protected
+  double dco_decode_f_64(dynamic raw);
 
   @protected
   FailedTaskItemDto dco_decode_failed_task_item_dto(dynamic raw);
@@ -166,6 +178,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PinnedFileDto> dco_decode_list_pinned_file_dto(dynamic raw);
 
   @protected
+  List<PoolNodeConfigDto> dco_decode_list_pool_node_config_dto(dynamic raw);
+
+  @protected
+  List<PoolNodeStatusDto> dco_decode_list_pool_node_status_dto(dynamic raw);
+
+  @protected
+  List<PoolSummaryDto> dco_decode_list_pool_summary_dto(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
@@ -213,6 +234,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerStatusDto? dco_decode_opt_box_autoadd_server_status_dto(dynamic raw);
 
   @protected
+  SyncExcludeRulesDto? dco_decode_opt_box_autoadd_sync_exclude_rules_dto(
+    dynamic raw,
+  );
+
+  @protected
   TaskProgressDto? dco_decode_opt_box_autoadd_task_progress_dto(dynamic raw);
 
   @protected
@@ -255,6 +281,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PinnedSyncStatusDto dco_decode_pinned_sync_status_dto(dynamic raw);
 
   @protected
+  PoolConfigDto dco_decode_pool_config_dto(dynamic raw);
+
+  @protected
+  PoolNodeConfigDto dco_decode_pool_node_config_dto(dynamic raw);
+
+  @protected
+  PoolNodeStatusDto dco_decode_pool_node_status_dto(dynamic raw);
+
+  @protected
+  PoolSummaryDto dco_decode_pool_summary_dto(dynamic raw);
+
+  @protected
+  PoolSyncReportDto dco_decode_pool_sync_report_dto(dynamic raw);
+
+  @protected
   RemoteConfigDto dco_decode_remote_config_dto(dynamic raw);
 
   @protected
@@ -277,6 +318,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncDiffItemDto dco_decode_sync_diff_item_dto(dynamic raw);
+
+  @protected
+  SyncExcludeRulesDto dco_decode_sync_exclude_rules_dto(dynamic raw);
 
   @protected
   SyncPlanDto dco_decode_sync_plan_dto(dynamic raw);
@@ -357,12 +401,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  PoolConfigDto sse_decode_box_autoadd_pool_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RemoteConfigDto sse_decode_box_autoadd_remote_config_dto(
     SseDeserializer deserializer,
   );
 
   @protected
   ServerStatusDto sse_decode_box_autoadd_server_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SyncExcludeRulesDto sse_decode_box_autoadd_sync_exclude_rules_dto(
     SseDeserializer deserializer,
   );
 
@@ -422,6 +476,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_32(SseDeserializer deserializer);
+
+  @protected
+  double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
   FailedTaskItemDto sse_decode_failed_task_item_dto(
@@ -504,6 +561,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PoolNodeConfigDto> sse_decode_list_pool_node_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PoolNodeStatusDto> sse_decode_list_pool_node_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PoolSummaryDto> sse_decode_list_pool_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
@@ -569,6 +641,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SyncExcludeRulesDto? sse_decode_opt_box_autoadd_sync_exclude_rules_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TaskProgressDto? sse_decode_opt_box_autoadd_task_progress_dto(
     SseDeserializer deserializer,
   );
@@ -617,6 +694,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PoolConfigDto sse_decode_pool_config_dto(SseDeserializer deserializer);
+
+  @protected
+  PoolNodeConfigDto sse_decode_pool_node_config_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PoolNodeStatusDto sse_decode_pool_node_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PoolSummaryDto sse_decode_pool_summary_dto(SseDeserializer deserializer);
+
+  @protected
+  PoolSyncReportDto sse_decode_pool_sync_report_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RemoteConfigDto sse_decode_remote_config_dto(SseDeserializer deserializer);
 
   @protected
@@ -649,6 +747,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncDiffItemDto sse_decode_sync_diff_item_dto(SseDeserializer deserializer);
+
+  @protected
+  SyncExcludeRulesDto sse_decode_sync_exclude_rules_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SyncPlanDto sse_decode_sync_plan_dto(SseDeserializer deserializer);
@@ -743,6 +846,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_pool_config_dto(
+    PoolConfigDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_remote_config_dto(
     RemoteConfigDto self,
     SseSerializer serializer,
@@ -751,6 +860,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_server_status_dto(
     ServerStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_sync_exclude_rules_dto(
+    SyncExcludeRulesDto self,
     SseSerializer serializer,
   );
 
@@ -819,6 +934,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_32(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
   void sse_encode_failed_task_item_dto(
@@ -920,6 +1038,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pool_node_config_dto(
+    List<PoolNodeConfigDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_pool_node_status_dto(
+    List<PoolNodeStatusDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_pool_summary_dto(
+    List<PoolSummaryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
@@ -1001,6 +1137,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_sync_exclude_rules_dto(
+    SyncExcludeRulesDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_task_progress_dto(
     TaskProgressDto? self,
     SseSerializer serializer,
@@ -1058,6 +1200,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_pool_config_dto(PoolConfigDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pool_node_config_dto(
+    PoolNodeConfigDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pool_node_status_dto(
+    PoolNodeStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pool_summary_dto(
+    PoolSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pool_sync_report_dto(
+    PoolSyncReportDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_remote_config_dto(
     RemoteConfigDto self,
     SseSerializer serializer,
@@ -1102,6 +1271,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_sync_diff_item_dto(
     SyncDiffItemDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sync_exclude_rules_dto(
+    SyncExcludeRulesDto self,
     SseSerializer serializer,
   );
 

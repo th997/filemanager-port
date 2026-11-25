@@ -671,6 +671,28 @@ impl Vfs for SmbFs {
                 })
         })
     }
+
+    async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
+        let (share_opt, _) = self.split_path(path);
+        let Some(share) = share_opt else {
+            return Ok(None);
+        };
+        run_smb!(self, session => async {
+            let mut tree = Self::get_share_tree(session, &share).await?;
+            let info = session
+                .client
+                .fs_info(&mut tree)
+                .await
+                .map_err(|e| VfsError::Backend {
+                    path: path.clone(),
+                    source: std::io::Error::other(e.to_string()),
+                })?;
+            Ok(Some(fm_core::SpaceInfo {
+                total_bytes: (info.total_bytes > 0).then_some(info.total_bytes),
+                free_bytes: info.free_bytes,
+            }))
+        })
+    }
 }
 
 #[cfg(test)]

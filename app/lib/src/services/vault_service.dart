@@ -121,6 +121,7 @@ class VaultService extends ChangeNotifier {
     required String vaultId,
     required String name,
     required bool alwaysVisible,
+    bool notify = true,
   }) {
     final current = pinnedVaults.toList();
     final idx = current.indexWhere((e) => e.id == vaultId);
@@ -137,16 +138,16 @@ class VaultService extends ChangeNotifier {
       current.removeAt(idx);
     }
     _savePinnedVaults(current);
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
-  void unpinVault(String vaultId) {
+  void unpinVault(String vaultId, {bool notify = true}) {
     final current = pinnedVaults.toList();
     final before = current.length;
     current.removeWhere((e) => e.id == vaultId);
     if (current.length == before) return;
     _savePinnedVaults(current);
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   void _syncPinnedNameIfPresent(String vaultId, String newName) {
@@ -420,6 +421,7 @@ class VaultService extends ChangeNotifier {
         vaultId: created.vault.id,
         name: created.vault.name,
         alwaysVisible: true,
+        notify: false,
       );
     }
     _refreshUnlocked();
@@ -775,7 +777,7 @@ class VaultService extends ChangeNotifier {
     }
     await vaultDelete(vaultId: vaultId);
     await _deleteSystemDek(vaultId);
-    unpinVault(vaultId);
+    unpinVault(vaultId, notify: false);
     SharingService.instance.stopSharesForVault(
       vaultId,
       vaultDirPath: vaultDirPath,

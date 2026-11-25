@@ -1,0 +1,36 @@
+[package]
+name = "fm-pool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fm-core.workspace = true
+fm-vfs.workspace = true
+fm-vault.workspace = true
+fm-ops.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+flate2.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+hkdf.workspace = true
+aes-gcm.workspace = true
+argon2.workspace = true
+zeroize.workspace = true
+rand_core.workspace = true
+hex.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+fm-local.workspace = true
+tempfile = "3"

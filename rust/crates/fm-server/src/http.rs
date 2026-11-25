@@ -842,68 +842,7 @@ fn resolve_path_inner(root: &Path, canonical_root: Option<&Path>, rel: &str) -> 
 }
 
 pub fn get_lan_ip_addresses() -> Vec<String> {
-    let mut ips = Vec::new();
-
-    // 1. On Linux, check default gateway from /proc/net/route to avoid being hijacked by TUN/VPN fake-ip (e.g. Clash Meta 198.18.x.x)
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(content) = std::fs::read_to_string("/proc/net/route") {
-            for line in content.lines() {
-                let fields: Vec<&str> = line.split_whitespace().collect();
-                if fields.len() >= 3 && fields[1] == "00000000" {
-                    if let Ok(hex_val) = u32::from_str_radix(fields[2], 16) {
-                        if hex_val != 0 {
-                            let ip_bytes = hex_val.to_le_bytes();
-                            let gw_ip = std::net::Ipv4Addr::from(ip_bytes);
-                            if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-                                if socket.connect((gw_ip, 80)).is_ok() {
-                                    if let Ok(local_addr) = socket.local_addr() {
-                                        let ip = local_addr.ip().to_string();
-                                        if ip != "0.0.0.0" && ip != "127.0.0.1" && !ip.starts_with("198.18.") && !ips.contains(&ip) {
-                                            ips.push(ip);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Standard UDP route probe, filtering out loopback and CGNAT/TUN fake IPs (198.18.x.x / 198.19.x.x)
-    if let Ok(interfaces) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if interfaces.connect("8.8.8.8:80").is_ok() {
-            if let Ok(local_addr) = interfaces.local_addr() {
-                let ip = local_addr.ip().to_string();
-                if ip != "0.0.0.0" && ip != "127.0.0.1" && !ip.starts_with("198.18.") && !ip.starts_with("198.19.") && !ips.contains(&ip) {
-                    ips.push(ip);
-                }
-            }
-        }
-    }
-
-    // 3. Fallback probes for common LAN gateways if empty
-    if ips.is_empty() {
-        for target in ["192.168.1.1:80", "192.168.0.1:80", "10.0.0.1:80", "172.16.0.1:80"] {
-            if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-                if socket.connect(target).is_ok() {
-                    if let Ok(local_addr) = socket.local_addr() {
-                        let ip = local_addr.ip().to_string();
-                        if ip != "0.0.0.0" && ip != "127.0.0.1" && !ip.starts_with("198.18.") && !ips.contains(&ip) {
-                            ips.push(ip);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if ips.is_empty() {
-        ips.push("127.0.0.1".to_string());
-    }
-    ips
+    crate::net::get_lan_ip_addresses()
 }
 
 #[cfg(test)]

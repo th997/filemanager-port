@@ -12,3 +12,6 @@ PRODUCT_BUNDLE_IDENTIFIER = com.github.th997.filemanager
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.github.th997. All rights reserved.
+
+// Optional machine-local code signing override (git-ignored; CI falls back to ad-hoc).
+#include? "LocalSigning.xcconfig"

@@ -4,8 +4,9 @@ use fm_archive::ArchiveFs;
 use fm_core::VfsPath;
 use fm_index::Database;
 use fm_local::LocalFs;
+use fm_pool::{PoolConfig, PoolManager, PoolState};
 use fm_remote::RemoteConfig;
-use fm_vfs::Vfs;
+use fm_vfs::{Vfs, VfsError, VfsResult};
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -95,7 +96,20 @@ impl VfsRegistry {
 
     pub fn set_database_path(&self, path: String) {
         *self.db_path.write() = Some(path.clone());
-        let _ = self.open_database(&path);
+        let pools_dir = PathBuf::from(&path)
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("pools");
+        PoolManager::global().init(pools_dir, Arc::new(RegistryNodeResolver));
+        if let Ok(db) = self.open_database(&path) {
+            if let Ok(records) = db.list_pools() {
+                for rec in records {
+                    if let Ok(cfg) = serde_json::from_str::<PoolConfig>(&rec.config_json) {
+                        let _ = PoolManager::global().register_or_reload_pool(cfg);
+                    }
+                }
+            }
+        }
         // Clean up any leftover plaintext vault archive caches or half-written
         // temp files that may have survived an abnormal crash or OS kill.
         self.clear_all_vault_archive_caches();
@@ -231,10 +245,49 @@ impl VfsRegistry {
         Ok(Arc::new(fs))
     }
 
+    pub fn ensure_pool_loaded(&self, pool_id: &str) -> Result<Arc<PoolState>, String> {
+        if let Ok(state) = PoolManager::global().get_pool(pool_id) {
+            return Ok(state);
+        }
+        let db_p = self
+            .db_path
+            .read()
+            .clone()
+            .ok_or_else(|| "database path not set for pool resolution".to_string())?;
+        let db = self.open_database(&db_p)?;
+        let rec = db
+            .get_pool(pool_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("storage pool '{pool_id}' not found"))?;
+        let cfg: PoolConfig =
+            serde_json::from_str(&rec.config_json).map_err(|e| e.to_string())?;
+        PoolManager::global()
+            .register_or_reload_pool(cfg)
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn invalidate_pool(&self, pool_id: &str) {
+        let pool_root = format!("pool://{pool_id}");
+        let archive_prefix = format!("archive://pool://{pool_id}/");
+        self.cached.write().retain(|root, _| {
+            root != &pool_root
+                && !root.starts_with(&archive_prefix)
+                && root != &format!("archive://{pool_root}")
+        });
+    }
+
     pub async fn get_or_create(&self, root: &str) -> Result<Arc<dyn Vfs>, String> {
         if let Some(vault_id) = root.strip_prefix("vault://") {
             return fm_vault::VaultManager::global()
                 .get_vfs(vault_id)
+                .map_err(|e| e.to_string());
+        }
+
+        if let Some(pool_id) = root.strip_prefix("pool://") {
+            let clean_id = pool_id.trim_end_matches('/');
+            let _ = self.ensure_pool_loaded(clean_id)?;
+            return PoolManager::global()
+                .get_vfs(clean_id)
                 .map_err(|e| e.to_string());
         }
 
@@ -295,6 +348,29 @@ impl VfsRegistry {
                     .map_err(|e| e.to_string())?;
                     Arc::new(archive_fs)
                 }
+            } else if let Some(pool_spec) = archive_path.strip_prefix("pool://") {
+                let (pool_id, rel_path) = match pool_spec.find('/') {
+                    Some(idx) => (&pool_spec[..idx], &pool_spec[idx + 1..]),
+                    None => return Err(format!("invalid pool archive path: {pool_spec}")),
+                };
+                let _ = self.ensure_pool_loaded(pool_id)?;
+                let pool_vfs = PoolManager::global()
+                    .get_vfs(pool_id)
+                    .map_err(|e| e.to_string())?;
+                let local_path = cache_vfs_archive(
+                    pool_vfs.as_ref(),
+                    &format!("pool_{pool_id}"),
+                    pool_id,
+                    rel_path,
+                )
+                .await?;
+                let archive_fs = tokio::task::spawn_blocking(move || {
+                    ArchiveFs::open_with_password(local_path, password)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                Arc::new(archive_fs)
             } else {
                 let local_path = if let Some(remote_spec) = archive_path.strip_prefix("remote://") {
                     let (remote_id, rel_path) = match remote_spec.find('/') {
@@ -362,6 +438,7 @@ impl VfsRegistry {
         self.cached
             .write()
             .retain(|root, _| !root.starts_with("remote://") && !root.starts_with("archive://remote://"));
+        PoolManager::global().invalidate_remote_caches();
     }
 
     pub fn invalidate_vault(&self, vault_id: &str) {
@@ -437,6 +514,19 @@ impl VfsRegistry {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
+    }
+}
+
+struct RegistryNodeResolver;
+
+#[async_trait::async_trait]
+impl fm_pool::NodeVfsResolver for RegistryNodeResolver {
+    async fn resolve(&self, remote_id: &str) -> VfsResult<Arc<dyn Vfs>> {
+        let root = format!("remote://{remote_id}");
+        VfsRegistry::global()
+            .get_or_create(&root)
+            .await
+            .map_err(|msg| VfsError::Connection { message: msg })
     }
 }
 

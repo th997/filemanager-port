@@ -40,7 +40,7 @@ class StorageService {
     // field empty (only id/name/kind survive). Restoring from the backup
     // re-saves those ids with the current key, which repairs them. One
     // unreadable row is enough: a mixed list must not skip the repair.
-    if (rems.isEmpty || rems.any(_isUnreadableRemote)) {
+    if (rems.isEmpty || rems.any(isUnreadableRemote)) {
       final restored = await _restoreRemotesFromBackup();
       if (restored.isNotEmpty) {
         rems = restored;
@@ -52,7 +52,7 @@ class StorageService {
   /// A remote whose stored config could not be decrypted. The Rust side
   /// always fills `rootPath` for a readable config, so a null root with no
   /// host, endpoint or bucket cannot be a real connection.
-  static bool _isUnreadableRemote(rem_api.RemoteConfigDto r) =>
+  static bool isUnreadableRemote(rem_api.RemoteConfigDto r) =>
       r.rootPath == null &&
       r.host == null &&
       r.endpoint == null &&
@@ -64,6 +64,35 @@ class StorageService {
     // Must finish before callers re-read: getRemotes() restores from backup
     // when the DB is empty, so a stale backup would resurrect deleted rows.
     await _syncRemotesBackup();
+  }
+
+  /// Saves multiple remote configurations in one pass and syncs the local
+  /// backup a single time at the end. Returns the count saved, failed IDs,
+  /// and failed display names without aborting remaining items on an error.
+  Future<({int saved, List<String> failedIds, List<String> failures})>
+      saveRemotesBatch(List<rem_api.RemoteConfigDto> configs) async {
+    ensureInitialized();
+    lastImportFailures = [];
+    if (configs.isEmpty) {
+      return (saved: 0, failedIds: const <String>[], failures: const <String>[]);
+    }
+    var saved = 0;
+    final failedIds = <String>[];
+    final failures = <String>[];
+    for (final config in configs) {
+      try {
+        await rem_api.saveRemote(dbPath: dbPath, config: config);
+        saved++;
+      } catch (_) {
+        failedIds.add(config.id);
+        failures.add(config.name);
+      }
+    }
+    lastImportFailures = failures;
+    if (saved > 0) {
+      await _syncRemotesBackup();
+    }
+    return (saved: saved, failedIds: failedIds, failures: failures);
   }
 
   Future<void> deleteRemote(String id) async {
@@ -87,8 +116,8 @@ class StorageService {
       }
       final entries = <Map<String, dynamic>>[];
       for (final r in list) {
-        if (!_isUnreadableRemote(r)) {
-          entries.add(_remoteConfigToMap(r));
+        if (!isUnreadableRemote(r)) {
+          entries.add(remoteConfigToMap(r));
           continue;
         }
         // An unreadable row carries no credentials, so its previous backup
@@ -96,7 +125,7 @@ class StorageService {
         // writing an empty shell over it.
         final matches = previous.where((p) => p.id == r.id).toList();
         if (matches.isNotEmpty) {
-          entries.add(_remoteConfigToMap(matches.first));
+          entries.add(remoteConfigToMap(matches.first));
         }
       }
       // Written even when empty: ids absent from `list` were deleted, and
@@ -160,7 +189,7 @@ class StorageService {
       final current = await rem_api.listRemotes(dbPath: dbPath);
       final healthy = <String>{
         for (final r in current)
-          if (!_isUnreadableRemote(r)) r.id,
+          if (!isUnreadableRemote(r)) r.id,
       };
       var repaired = false;
       for (final r in backup) {
@@ -183,7 +212,7 @@ class StorageService {
 
   Future<String> exportRemotesJson() async {
     final list = await getRemotes();
-    final data = list.map(_remoteConfigToMap).toList();
+    final data = list.map(remoteConfigToMap).toList();
     return const JsonEncoder.withIndent('  ').convert(data);
   }
 
@@ -227,7 +256,7 @@ class StorageService {
     final payload = <String, dynamic>{
       'version': 2,
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
-      'remotes': remotes.map(_remoteConfigToMap).toList(),
+      'remotes': remotes.map(remoteConfigToMap).toList(),
       'bookmarks': bookmarks.map(_bookmarkToMap).toList(),
       'preferences': preferences,
     };
@@ -587,11 +616,11 @@ class StorageService {
       if (decoded is List) {
         return decoded
             .whereType<Map>()
-            .map((m) => _remoteConfigFromMap(m.cast<String, dynamic>()))
+            .map((m) => remoteConfigFromMap(m.cast<String, dynamic>()))
             .toList();
       }
       if (decoded is Map) {
-        return [_remoteConfigFromMap(decoded.cast<String, dynamic>())];
+        return [remoteConfigFromMap(decoded.cast<String, dynamic>())];
       }
       if (strict) {
         throw const FormatException('Expected a JSON array or object of remote connections');
@@ -602,7 +631,7 @@ class StorageService {
     return [];
   }
 
-  static Map<String, dynamic> _remoteConfigToMap(rem_api.RemoteConfigDto c) => {
+  static Map<String, dynamic> remoteConfigToMap(rem_api.RemoteConfigDto c) => {
     'id': c.id,
     'name': c.name,
     'kind': c.kind,
@@ -621,7 +650,7 @@ class StorageService {
     'pathStyle': c.pathStyle,
   };
 
-  static rem_api.RemoteConfigDto _remoteConfigFromMap(Map<String, dynamic> m) =>
+  static rem_api.RemoteConfigDto remoteConfigFromMap(Map<String, dynamic> m) =>
       rem_api.RemoteConfigDto(
         id: m['id'] as String? ?? '',
         name: m['name'] as String? ?? '',

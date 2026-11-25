@@ -80,14 +80,14 @@ final _windowBoundsSaver = _WindowBoundsSaver();
 
 Future<void> _initDesktopWindow() async {
   await windowManager.ensureInitialized();
-  await windowManager.setMinimumSize(const Size(800, 500));
+  await windowManager.setMinimumSize(const Size(900, 560));
   final prefs = PreferencesService.instance;
   double? read(String key) => double.tryParse(prefs.getString(key) ?? '');
   final w = read('window.width');
   final h = read('window.height');
   final x = read('window.x');
   final y = read('window.y');
-  if (w != null && h != null && w >= 800 && h >= 500) {
+  if (w != null && h != null && w >= 900 && h >= 560) {
     var rect = Rect.fromLTWH(x ?? 0, y ?? 0, w, h);
     // A display unplugged since the last run leaves the saved bounds off
     // every current screen; the window then opens invisible.
@@ -179,7 +179,6 @@ class _FileManagerAppState extends State<FileManagerApp>
       AutoSyncService.instance.onAppResumed();
     } else if (state == AppLifecycleState.detached) {
       VaultService.instance.lockAll();
-      SharingService.instance.stopHttp();
       SharingService.instance.stopWebDav();
       unawaited(BackgroundKeepAliveService.instance.releaseAll());
     }

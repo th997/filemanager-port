@@ -1,6 +1,7 @@
 pub mod file_manager;
 pub mod inspect;
 pub mod metadata;
+pub mod pool;
 pub mod remotes;
 pub mod search;
 pub mod servers;

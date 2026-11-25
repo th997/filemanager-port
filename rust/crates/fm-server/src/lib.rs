@@ -10,17 +10,19 @@ use fm_core::VfsPath;
 
 pub mod discovery;
 pub mod http;
+pub mod net;
 pub mod peer_transfer;
 pub mod stream;
 pub mod webdav;
 pub use discovery::{discover_lan_services, DiscoveredService};
-pub use http::{get_lan_ip_addresses, start_http_share, start_http_share_with_lang, RunningServer};
+pub use net::get_lan_ip_addresses;
+pub use http::{start_http_share, start_http_share_with_lang, RunningServer};
 pub use peer_transfer::{
     discover_lan_peers, send_peer_files, send_peer_text, start_peer_receiver, PeerDeviceInfo,
     PeerTransferOffer, RunningPeerReceiver,
 };
 pub use stream::{start_stream_server, start_stream_server_with_options, StreamServer};
-pub use webdav::{start_webdav_server, RunningWebDavServer};
+pub use webdav::{start_webdav_server, start_webdav_server_with_lang, RunningWebDavServer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {

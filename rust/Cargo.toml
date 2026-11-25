@@ -10,6 +10,7 @@ members = [
     "crates/fm-index",
     "crates/fm-ops",
     "crates/fm-vault",
+    "crates/fm-pool",
     "crates/fm-ffi",
 ]
 
@@ -29,6 +30,7 @@ fm-server = { path = "crates/fm-server" }
 fm-index = { path = "crates/fm-index" }
 fm-ops = { path = "crates/fm-ops" }
 fm-vault = { path = "crates/fm-vault" }
+fm-pool = { path = "crates/fm-pool" }
 
 async-trait = "0.1"
 thiserror = "2"

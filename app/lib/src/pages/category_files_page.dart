@@ -12,6 +12,8 @@ import '../rust/api/search.dart';
 import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
 import '../services/platform_capabilities.dart';
+import '../services/semantic_colors.dart';
+import '../services/storage_service.dart';
 import '../services/task_service.dart';
 import '../theme/app_ui_tokens.dart';
 import '../widgets/entry_thumbnail.dart';
@@ -81,6 +83,20 @@ class _CategoryVisual {
           color: const Color(0xFF00ACC1),
           defaultGridView: false,
         );
+      case 'image':
+        return _CategoryVisual(
+          title: l10n.gallery,
+          icon: Icons.photo_library_outlined,
+          color: const Color(0xFF43A047),
+          defaultGridView: true,
+        );
+      case 'code':
+        return _CategoryVisual(
+          title: l10n.searchCategoryCode,
+          icon: Icons.code_rounded,
+          color: const Color(0xFF3949AB),
+          defaultGridView: false,
+        );
       default:
         return _CategoryVisual(
           title: l10n.searchFilesAndFolders,
@@ -136,6 +152,7 @@ class _CategoryFilesPageState extends State<CategoryFilesPage> {
 
   List<EntryItem> _allItems = const [];
   bool _loading = true;
+  bool _truncated = false;
   String? _error;
 
   String? _selectedExtension;
@@ -190,6 +207,7 @@ class _CategoryFilesPageState extends State<CategoryFilesPage> {
           .toList(growable: false);
       setState(() {
         _allItems = files;
+        _truncated = dtos.length >= 1000;
         _loading = false;
         if (_selectedExtension != null &&
             !files.any((e) => e.extension.toUpperCase() == _selectedExtension)) {
@@ -417,11 +435,18 @@ class _CategoryFilesPageState extends State<CategoryFilesPage> {
       return;
     }
 
-    final result = await FileOpenService.instance.openWith(widget.root, item.path);
-    if (!mounted) return;
-    if (result.type != ResultType.done && result.message.isNotEmpty) {
+    try {
+      final result = await FileOpenService.instance.openWith(widget.root, item.path);
+      if (!mounted) return;
+      if (result.type != ResultType.done && result.message.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
+        SnackBar(content: Text('$e')),
       );
     }
   }
@@ -461,10 +486,12 @@ class _CategoryFilesPageState extends State<CategoryFilesPage> {
   }
 
   Future<void> _deleteLocalFile(EntryItem item) async {
-    final nativePath = joinNative(widget.root, item.path);
-    final file = File(nativePath);
-    if (await file.exists()) {
-      await file.delete();
+    if (isNativeRoot(widget.root)) {
+      await StorageService.instance.moveToTrash(
+        joinNative(widget.root, item.path),
+      );
+    } else {
+      await removeEntry(root: widget.root, path: item.path);
     }
   }
 
@@ -476,7 +503,11 @@ class _CategoryFilesPageState extends State<CategoryFilesPage> {
         final scheme = Theme.of(ctx).colorScheme;
         return AlertDialog(
           title: Text(l10n.deleteSingleConfirmTitle(item.name)),
-          content: Text(l10n.deletePermanentWarning),
+          content: Text(
+            isNativeRoot(widget.root)
+                ? l10n.deleteChoiceTrashOrPermanent
+                : l10n.deleteRemotePermanentWarning,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -1214,6 +1245,37 @@ class _CategoryFilesPageState extends State<CategoryFilesPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildHeaderCard(context, visual, l10n, visible),
+                if (_truncated)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .warning
+                          .withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.warning,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l10n.categoryTruncatedBanner(_allItems.length),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (_allItems.isNotEmpty)
                   _buildExtensionChips(context, visual, l10n, stats),
               ],

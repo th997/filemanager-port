@@ -108,6 +108,27 @@ bool isValidFileName(String name) {
 /// Whether [root] addresses an unlocked privacy folder (`vault://<id>`).
 bool isVaultRoot(String root) => root.startsWith('vault://');
 
+/// Whether [root] addresses a distributed storage pool (`pool://<id>`).
+bool isPoolRoot(String root) => root.startsWith('pool://');
+
+/// Extracts the pool ID from `pool://<id>` or `archive://pool://<id>/...`,
+/// returning null for any non-pool root.
+String? poolIdFromRoot(String root) {
+  if (root.startsWith('pool://')) {
+    final rest = root.substring('pool://'.length);
+    final slash = rest.indexOf('/');
+    final id = slash >= 0 ? rest.substring(0, slash) : rest;
+    return id.isEmpty ? null : id;
+  }
+  if (root.startsWith('archive://pool://')) {
+    final rest = root.substring('archive://pool://'.length);
+    final slash = rest.indexOf('/');
+    final id = slash >= 0 ? rest.substring(0, slash) : rest;
+    return id.isEmpty ? null : id;
+  }
+  return null;
+}
+
 /// Extracts the vault ID from `vault://<id>` or `archive://vault://<id>/...`,
 /// returning null for any non-vault root.
 String? vaultIdFromRoot(String root) {

@@ -228,25 +228,33 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
     final savedVol = double.tryParse(
       PreferencesService.instance.getString(_prefVolume) ?? '',
     );
-    if (savedVol != null) {
-      _volume = (savedVol / 100.0).clamp(0.0, 1.0);
-      _lastNonZeroVolume = _volume > 0 ? _volume : 1.0;
-    }
 
     final session = GlobalPlaybackService.instance;
-    if (session.hasActiveSession &&
+    final restored = session.hasActiveSession &&
         session.currentRoot == widget.root &&
         session.currentPath == _track.path &&
-        session.videoPlayerController != null) {
+        session.videoPlayerController != null;
+    if (restored) {
       _controller = session.videoPlayerController;
       _initialized = _controller!.value.isInitialized;
       _startedStream = session.startedStream;
       _index = session.currentIndex;
       _playbackSpeed = session.playbackSpeed;
+      _volume = _controller!.value.volume.clamp(0.0, 1.0);
+      _lastNonZeroVolume = _volume > 0 ? _volume : _lastNonZeroVolume;
+      _isLooping = _controller!.value.isLooping;
       _controller!.addListener(_onControllerUpdate);
       session.setFullScreen(true);
       _resetControlsTimer();
+      if (!_track.isAudio) {
+        unawaited(_autoLoadExternalSubtitle(_openGeneration));
+        unawaited(_loadEmbeddedSubtitles(_openGeneration));
+      }
     } else {
+      if (savedVol != null) {
+        _volume = (savedVol / 100.0).clamp(0.0, 1.0);
+        _lastNonZeroVolume = _volume > 0 ? _volume : 1.0;
+      }
       if (session.hasActiveSession) {
         session.stop();
       }
@@ -763,12 +771,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
       'title': GlobalPlaybackService.instance.redactedNowPlayingTitle(
         root: widget.root,
         fileName: _track.fileName,
-        isAudio: widget.isAudio,
+        isAudio: _track.isAudio,
       ),
       'duration': durationSec,
       'position': val.position.inMilliseconds / 1000.0,
       'rate': currentRate,
-      'isAudio': widget.isAudio,
+      'isAudio': _track.isAudio,
       'hasNext': _hasNext,
       'hasPrev': _hasPrev,
     }).catchError((_) {});
@@ -1144,21 +1152,22 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           },
                         ),
                       ],
-                      IconButton(
-                        icon: Icon(
-                          _isLooping ? Icons.repeat_one : Icons.repeat,
-                          color: _isLooping ? Colors.blueAccent : Colors.white,
+                      if (MediaQuery.sizeOf(context).width >= 600)
+                        IconButton(
+                          icon: Icon(
+                            _isLooping ? Icons.repeat_one : Icons.repeat,
+                            color: _isLooping ? Colors.blueAccent : Colors.white,
+                          ),
+                          tooltip: _isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff,
+                          onPressed: () {
+                            setState(() {
+                              _isLooping = !_isLooping;
+                              _controller?.setLooping(_isLooping);
+                              PreferencesService.instance
+                                  .setBool(_prefLoop, _isLooping);
+                            });
+                          },
                         ),
-                        tooltip: _isLooping ? AppLocalizations.of(context).loopSingle : AppLocalizations.of(context).loopOff,
-                        onPressed: () {
-                          setState(() {
-                            _isLooping = !_isLooping;
-                            _controller?.setLooping(_isLooping);
-                            PreferencesService.instance
-                                .setBool(_prefLoop, _isLooping);
-                          });
-                        },
-                      ),
                       if (!_track.isAudio) ...[
                         IconButton(
                           icon: Icon(
@@ -1174,17 +1183,18 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           tooltip: AppLocalizations.of(context).subtitles,
                           onPressed: _showSubtitleSheet,
                         ),
-                        if (Platform.isIOS)
+                        if (Platform.isIOS && MediaQuery.sizeOf(context).width >= 600)
                           IconButton(
                             icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white),
                             tooltip: AppLocalizations.of(context).pictureInPicture,
                             onPressed: () => NativePipService.start(),
                           ),
-                        IconButton(
-                          icon: const Icon(Icons.aspect_ratio, color: Colors.white),
-                          tooltip: AppLocalizations.of(context).videoFitLabel,
-                          onPressed: _cycleVideoFit,
-                        ),
+                        if (MediaQuery.sizeOf(context).width >= 600)
+                          IconButton(
+                            icon: const Icon(Icons.aspect_ratio, color: Colors.white),
+                            tooltip: AppLocalizations.of(context).videoFitLabel,
+                            onPressed: _cycleVideoFit,
+                          ),
                       ],
                       IconButton(
                         icon: Icon(
@@ -1208,6 +1218,17 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                               break;
                             case 'next':
                               if (_hasNext) _openTrack(_index + 1);
+                              break;
+                            case 'loop':
+                              setState(() {
+                                _isLooping = !_isLooping;
+                                _controller?.setLooping(_isLooping);
+                                PreferencesService.instance
+                                    .setBool(_prefLoop, _isLooping);
+                              });
+                              break;
+                            case 'pip':
+                              if (Platform.isIOS) NativePipService.start();
                               break;
                             case 'auto_next':
                               setState(() {
@@ -1234,6 +1255,33 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                           }
                         },
                         itemBuilder: (ctx) => [
+                          PopupMenuItem(
+                            value: 'loop',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _isLooping ? Icons.repeat_one : Icons.repeat,
+                                  size: 20,
+                                  color: _isLooping ? Colors.blueAccent : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(_isLooping
+                                    ? AppLocalizations.of(context).loopSingle
+                                    : AppLocalizations.of(context).loopOff),
+                              ],
+                            ),
+                          ),
+                          if (!_track.isAudio && Platform.isIOS)
+                            PopupMenuItem(
+                              value: 'pip',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.picture_in_picture_alt, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text(AppLocalizations.of(context).pictureInPicture),
+                                ],
+                              ),
+                            ),
                           PopupMenuItem(
                             value: 'mute',
                             child: Row(
@@ -1473,34 +1521,38 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
   }
 
   Future<void> _autoLoadExternalSubtitle(int gen) async {
-    final loaded = await SubtitleService.findMatchingSubtitle(
-      root: widget.root,
-      mediaPath: _track.path,
-    );
-    if (!mounted || gen != _openGeneration) return;
-    if (loaded != null) {
-      await NativePipService.selectEmbeddedSubtitle(null);
+    try {
+      final loaded = await SubtitleService.findMatchingSubtitle(
+        root: widget.root,
+        mediaPath: _track.path,
+      );
       if (!mounted || gen != _openGeneration) return;
-    }
-    setState(() {
-      _externalSubtitle = loaded;
-      _subtitlesEnabled = loaded != null;
       if (loaded != null) {
-        _activeEmbeddedSubtitleIndex = null;
+        await NativePipService.selectEmbeddedSubtitle(null);
+        if (!mounted || gen != _openGeneration) return;
       }
-    });
+      setState(() {
+        _externalSubtitle = loaded;
+        _subtitlesEnabled = loaded != null;
+        if (loaded != null) {
+          _activeEmbeddedSubtitleIndex = null;
+        }
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadEmbeddedSubtitles(int gen) async {
-    final tracks = await NativePipService.listEmbeddedSubtitles();
-    if (!mounted || gen != _openGeneration) return;
-    final selectedIdx = tracks.where((t) => t.selected).firstOrNull?.index;
-    setState(() {
-      _embeddedSubtitles = tracks;
-      if (!(_subtitlesEnabled && _externalSubtitle != null)) {
-        _activeEmbeddedSubtitleIndex = selectedIdx;
-      }
-    });
+    try {
+      final tracks = await NativePipService.listEmbeddedSubtitles();
+      if (!mounted || gen != _openGeneration) return;
+      final selectedIdx = tracks.where((t) => t.selected).firstOrNull?.index;
+      setState(() {
+        _embeddedSubtitles = tracks;
+        if (!(_subtitlesEnabled && _externalSubtitle != null)) {
+          _activeEmbeddedSubtitleIndex = selectedIdx;
+        }
+      });
+    } catch (_) {}
   }
 
   Future<void> _showSubtitleSheet() async {
@@ -1576,6 +1628,7 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
               leading: const Icon(Icons.folder_open_outlined),
               title: Text(l10n.loadExternalSubtitle),
               onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(ctx).pop();
                 final slash = _track.path.lastIndexOf('/');
                 final dir = slash >= 0 ? _track.path.substring(0, slash) : '';
@@ -1588,12 +1641,19 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                 if (picked == null || picked.paths.isEmpty || !mounted) return;
                 final subPath = picked.paths.first;
                 final subName = subPath.split('/').last;
-                final loaded = await SubtitleService.loadFromVfs(
-                  root: picked.root,
-                  path: subPath,
-                  name: subName,
-                );
-                if (loaded != null && mounted) {
+                try {
+                  final loaded = await SubtitleService.loadFromVfs(
+                    root: picked.root,
+                    path: subPath,
+                    name: subName,
+                  );
+                  if (!mounted) return;
+                  if (loaded == null) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(l10n.subtitleLoadFailed)),
+                    );
+                    return;
+                  }
                   await NativePipService.selectEmbeddedSubtitle(null);
                   if (!mounted) return;
                   setState(() {
@@ -1601,6 +1661,12 @@ class _NativeMediaPlayerPageState extends State<NativeMediaPlayerPage>
                     _subtitlesEnabled = true;
                     _activeEmbeddedSubtitleIndex = null;
                   });
+                } catch (_) {
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(l10n.subtitleLoadFailed)),
+                    );
+                  }
                 }
               },
             ),

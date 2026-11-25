@@ -72,7 +72,9 @@ class BrowserWorkspacePage extends StatefulWidget {
       return cleanRel.last;
     }
     if (root == '/') return '/';
-    if (root.startsWith('remote://') || root.startsWith('vault://')) {
+    if (root.startsWith('remote://') ||
+        root.startsWith('vault://') ||
+        root.startsWith('pool://')) {
       return fallbackTitle;
     }
     final cleanRoot =
@@ -423,8 +425,14 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
 
     final srcCtrl = _rightPaneActive ? rightCtrl : leftCtrl;
     final dstCtrl = _rightPaneActive ? leftCtrl : rightCtrl;
+    final l10n = AppLocalizations.of(context);
     final selected = srcCtrl.selectedPaths.toList(growable: false);
-    if (selected.isEmpty) return;
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.browserSelectItemsFirst)),
+      );
+      return;
+    }
 
     final ok = await BrowserFileOps.transferToOtherPane(
       context,
@@ -570,7 +578,7 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
                       onPressed: () => _transferToOppositePane(isMove: true),
                     ),
                   ],
-                  if (canSplit)
+                  if (_dualPane || canSplit)
                     IconButton(
                       icon: Icon(
                         _dualPane ? Icons.view_agenda_outlined : Icons.vertical_split_outlined,
@@ -641,7 +649,7 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
                       ),
                     ),
                   ),
-                  if (_dualPane && _rightPane != null) ...[
+                  if (_dualPane && _rightPane != null && canSplit) ...[
                     VerticalDivider(width: 1, color: Theme.of(context).dividerColor),
                     Expanded(
                       child: Listener(
@@ -672,7 +680,7 @@ class BrowserWorkspacePageState extends State<BrowserWorkspacePage> {
                                 final nextTitle = BrowserWorkspacePage.deriveTabTitle(
                                   r,
                                   p,
-                                  widget.initialTitle,
+                                  _rightPane!.rootLabel,
                                 );
                                 final nextTooltip = r.startsWith('vault://')
                                     ? ''

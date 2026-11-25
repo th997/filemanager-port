@@ -106,6 +106,8 @@ impl RunningPeerReceiver {
     }
 }
 
+use crate::net::{get_lan_interfaces, get_lan_ip_addresses, select_best_peer_ip, LanInterface};
+
 #[derive(Debug, Serialize, Deserialize)]
 struct UdpBeacon {
     device_id: String,
@@ -113,6 +115,8 @@ struct UdpBeacon {
     platform: String,
     port: u16,
     version: u8,
+    #[serde(default)]
+    ips: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,6 +143,37 @@ struct CreateOfferResponse {
 #[derive(Debug, Serialize, Deserialize)]
 struct OfferStatusResponse {
     status: String,
+}
+
+async fn broadcast_beacon_payload(payload: &[u8], main_sock: &UdpSocket) {
+    let bcast_global = SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), PEER_DISCOVERY_PORT);
+    let _ = main_sock.send_to(payload, bcast_global).await;
+
+    for iface in get_lan_interfaces().into_iter().filter(|i| !i.is_virtual) {
+        let target = SocketAddr::new(IpAddr::V4(iface.broadcast), PEER_DISCOVERY_PORT);
+        // Send from an ephemeral socket bound to the physical interface IP so
+        // TUN/VPN default routes cannot hijack directed LAN broadcasts.
+        if let Ok(nic_sock) = UdpSocket::bind((iface.ip, 0)).await {
+            let _ = nic_sock.set_broadcast(true);
+            let _ = nic_sock.send_to(payload, target).await;
+        }
+        let _ = main_sock.send_to(payload, target).await;
+    }
+}
+
+fn beacon_to_peer_info(
+    beacon: UdpBeacon,
+    src_ip: IpAddr,
+    local_ifaces: &[LanInterface],
+) -> Option<PeerDeviceInfo> {
+    let ip = select_best_peer_ip(src_ip, &beacon.ips, local_ifaces)?;
+    Some(PeerDeviceInfo {
+        device_id: beacon.device_id,
+        device_name: beacon.device_name,
+        platform: beacon.platform,
+        host: ip.to_string(),
+        port: beacon.port,
+    })
 }
 
 pub async fn start_peer_receiver(
@@ -205,6 +240,7 @@ pub async fn start_peer_receiver(
         platform,
         port: actual_port,
         version: 1,
+        ips: get_lan_ip_addresses(),
     };
     tokio::spawn(async move {
         let Ok(sock) = UdpSocket::bind(("0.0.0.0", PEER_DISCOVERY_PORT)).await else {
@@ -215,8 +251,7 @@ pub async fn start_peer_receiver(
         let Ok(payload) = serde_json::to_vec(&beacon) else {
             return;
         };
-        let bcast = SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), PEER_DISCOVERY_PORT);
-        let _ = sock.send_to(&payload, bcast).await;
+        broadcast_beacon_payload(&payload, &sock).await;
 
         let mut buf = [0u8; 512];
         let mut interval = tokio::time::interval(Duration::from_secs(2));
@@ -224,7 +259,7 @@ pub async fn start_peer_receiver(
             tokio::select! {
                 _ = &mut udp_stop_rx => break,
                 _ = interval.tick() => {
-                    let _ = sock.send_to(&payload, bcast).await;
+                    broadcast_beacon_payload(&payload, &sock).await;
                 }
                 recv = sock.recv_from(&mut buf) => {
                     if let Ok((n, src)) = recv {
@@ -252,42 +287,74 @@ pub async fn discover_lan_peers(
     self_device_id: Option<&str>,
 ) -> Vec<PeerDeviceInfo> {
     let budget = Duration::from_millis(timeout_ms.clamp(400, 5000) as u64);
-    let Ok(sock) = UdpSocket::bind(("0.0.0.0", 0)).await else {
-        return Vec::new();
-    };
-    let _ = sock.set_broadcast(true);
-    let bcast = SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), PEER_DISCOVERY_PORT);
-    let _ = sock.send_to(br#"{"probe":true}"#, bcast).await;
+    let local_ifaces = get_lan_interfaces();
+    let mut sockets = Vec::new();
 
-    let mut peers: BTreeMap<String, PeerDeviceInfo> = BTreeMap::new();
-    let deadline = tokio::time::Instant::now() + budget;
-    let mut buf = [0u8; 1024];
-    loop {
-        let now = tokio::time::Instant::now();
-        if now >= deadline {
-            break;
+    for iface in local_ifaces.iter().filter(|i| !i.is_virtual) {
+        if let Ok(sock) = UdpSocket::bind((iface.ip, 0)).await {
+            let _ = sock.set_broadcast(true);
+            let bcast_iface = SocketAddr::new(IpAddr::V4(iface.broadcast), PEER_DISCOVERY_PORT);
+            let bcast_global = SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), PEER_DISCOVERY_PORT);
+            let _ = sock.send_to(br#"{"probe":true}"#, bcast_iface).await;
+            let _ = sock.send_to(br#"{"probe":true}"#, bcast_global).await;
+            sockets.push(sock);
         }
-        let remain = deadline.saturating_duration_since(now);
-        match tokio::time::timeout(remain, sock.recv_from(&mut buf)).await {
-            Ok(Ok((n, src))) => {
-                if let Ok(beacon) = serde_json::from_slice::<UdpBeacon>(&buf[..n]) {
-                    if self_device_id == Some(beacon.device_id.as_str()) {
-                        continue;
+    }
+
+    if let Ok(sock) = UdpSocket::bind(("0.0.0.0", 0)).await {
+        let _ = sock.set_broadcast(true);
+        let bcast_global = SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), PEER_DISCOVERY_PORT);
+        let _ = sock.send_to(br#"{"probe":true}"#, bcast_global).await;
+        for iface in local_ifaces.iter().filter(|i| !i.is_virtual) {
+            let bcast_iface = SocketAddr::new(IpAddr::V4(iface.broadcast), PEER_DISCOVERY_PORT);
+            let _ = sock.send_to(br#"{"probe":true}"#, bcast_iface).await;
+        }
+        sockets.push(sock);
+    }
+
+    if sockets.is_empty() {
+        return Vec::new();
+    }
+
+    let deadline = tokio::time::Instant::now() + budget;
+    let ifaces_arc = Arc::new(local_ifaces);
+    let self_id_owned = self_device_id.map(str::to_string);
+    let mut handles = Vec::with_capacity(sockets.len());
+    for sock in sockets {
+        let ifaces = Arc::clone(&ifaces_arc);
+        let self_id = self_id_owned.clone();
+        handles.push(tokio::spawn(async move {
+            let mut local_peers: BTreeMap<String, PeerDeviceInfo> = BTreeMap::new();
+            let mut buf = [0u8; 1024];
+            loop {
+                let now = tokio::time::Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                let remain = deadline.saturating_duration_since(now);
+                match tokio::time::timeout(remain, sock.recv_from(&mut buf)).await {
+                    Ok(Ok((n, src))) => {
+                        if let Ok(beacon) = serde_json::from_slice::<UdpBeacon>(&buf[..n]) {
+                            if self_id.as_deref() == Some(beacon.device_id.as_str()) {
+                                continue;
+                            }
+                            if let Some(info) = beacon_to_peer_info(beacon, src.ip(), &ifaces) {
+                                local_peers.insert(info.device_id.clone(), info);
+                            }
+                        }
                     }
-                    peers.insert(
-                        beacon.device_id.clone(),
-                        PeerDeviceInfo {
-                            device_id: beacon.device_id,
-                            device_name: beacon.device_name,
-                            platform: beacon.platform,
-                            host: src.ip().to_string(),
-                            port: beacon.port,
-                        },
-                    );
+                    Ok(Err(_)) => continue,
+                    Err(_) => break,
                 }
             }
-            Ok(Err(_)) => continue,
-            Err(_) => break,
+            local_peers
+        }));
+    }
+
+    let mut peers: BTreeMap<String, PeerDeviceInfo> = BTreeMap::new();
+    for h in handles {
+        if let Ok(part) = h.await {
+            peers.extend(part);
         }
     }
     peers.into_values().collect()
@@ -672,4 +739,39 @@ pub async fn send_peer_files(
         sent += 1;
     }
     Ok(sent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn beacon_json_backwards_compatible_and_prefers_lan_ip() {
+        let old_json = br#"{"device_id":"d1","device_name":"iPhone","platform":"ios","port":1234,"version":1}"#;
+        let parsed: UdpBeacon = serde_json::from_slice(old_json).unwrap();
+        assert!(parsed.ips.is_empty());
+
+        let local = vec![LanInterface {
+            name: "en0".to_string(),
+            ip: Ipv4Addr::new(10, 10, 10, 117),
+            netmask: Ipv4Addr::new(255, 255, 255, 0),
+            broadcast: Ipv4Addr::new(10, 10, 10, 255),
+            is_virtual: false,
+        }];
+        let beacon = UdpBeacon {
+            device_id: "d2".into(),
+            device_name: "Phone".into(),
+            platform: "ios".into(),
+            port: 9000,
+            version: 1,
+            ips: vec!["198.18.0.1".into(), "10.10.10.22".into()],
+        };
+        let info = beacon_to_peer_info(
+            beacon,
+            IpAddr::V4(Ipv4Addr::new(198, 18, 0, 1)),
+            &local,
+        )
+        .unwrap();
+        assert_eq!(info.host, "10.10.10.22");
+    }
 }

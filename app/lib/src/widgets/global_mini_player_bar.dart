@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -27,9 +28,13 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
   double? _pillBottom;
 
   String _formatDuration(Duration d) {
-    final m = d.inMinutes;
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
     final s = d.inSeconds % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${d.inMinutes.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -149,18 +154,23 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
                 ),
                 const SizedBox(width: 4),
                 // Tap chevron specifically to expand mini controls bar instead of fullscreen
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    service.expandMiniPlayer();
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Icon(
-                      Icons.keyboard_arrow_up,
-                      size: 18,
-                      color: colorScheme.onSurfaceVariant,
+                Tooltip(
+                  message: AppLocalizations.of(context).open,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      service.expandMiniPlayer();
+                    },
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                      child: Center(
+                        child: Icon(
+                          Icons.keyboard_arrow_up,
+                          size: 20,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -177,19 +187,25 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
     GlobalPlaybackService service,
     double baseBottomOffset,
   ) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final screenHeight = MediaQuery.sizeOf(context).height;
+    final mediaSize = MediaQuery.sizeOf(context);
+    final screenWidth = mediaSize.width;
+    final screenHeight = mediaSize.height;
     final safeTop = MediaQuery.paddingOf(context).top;
     final maxOffsetY = math.max(0.0, screenHeight - baseBottomOffset - safeTop - 90.0);
     final clampedOffsetY = _barDragOffsetY.clamp(0.0, maxOffsetY);
     final effectiveBottom = baseBottomOffset + clampedOffsetY;
+    final isWide = screenWidth >= 600;
+    final leftPos = isWide ? math.max(10.0, screenWidth - 456.0) : 10.0;
+    final rightPos = isWide ? 16.0 : 10.0;
 
     return AnimatedPositioned(
       duration: _isDragging ? Duration.zero : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       key: const ValueKey('mini_player_expanded_positioned'),
-      left: 10,
-      right: 10,
+      left: leftPos,
+      right: rightPos,
       bottom: effectiveBottom,
       child: Dismissible(
         key: ValueKey('mini_player_dismiss_${service.currentPath ?? "active"}'),
@@ -329,6 +345,7 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
                     IconButton(
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                      tooltip: service.isPlaying ? l10n.pauseTask : l10n.resumeTask,
                       icon: Icon(
                         service.isPlaying ? Icons.pause : Icons.play_arrow,
                         size: 24,
@@ -342,6 +359,7 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
                     IconButton(
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                      tooltip: l10n.minimize,
                       icon: Icon(
                         Icons.keyboard_arrow_down,
                         size: 22,
@@ -355,6 +373,7 @@ class _GlobalMiniPlayerBarState extends State<GlobalMiniPlayerBar> {
                     IconButton(
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                      tooltip: l10n.close,
                       icon: Icon(
                         Icons.close,
                         size: 22,

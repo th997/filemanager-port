@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 
 import '../rust/api/file_manager.dart';
+import '../services/global_playback_service.dart';
 import '../services/path_utils.dart';
 import '../services/vault_service.dart';
 
@@ -751,6 +752,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   double _dpi = 144.0;
 
   final Map<int, ui.Image> _renderedPages = {};
+  final Map<int, String> _pageErrors = {};
   final Set<int> _renderingPages = {};
   final PageController _pageController = PageController();
   final TransformationController _transformController = TransformationController();
@@ -768,12 +770,15 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   void initState() {
     super.initState();
     VaultService.instance.addListener(_onVaultChanged);
+    _transformController.addListener(_onTransformChanged);
     _loadPdf();
   }
 
   @override
   void dispose() {
+    GlobalPlaybackService.instance.setNamedBottomInset('pdf_viewer', 0.0);
     VaultService.instance.removeListener(_onVaultChanged);
+    _transformController.removeListener(_onTransformChanged);
     _pageController.dispose();
     _transformController.dispose();
     _searchController.dispose();
@@ -781,13 +786,43 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
       img.dispose();
     }
     _renderedPages.clear();
+    _pdfBytes = null;
     super.dispose();
+  }
+
+  void _onTransformChanged() {
+    final s = _transformController.value.getMaxScaleOnAxis().clamp(0.5, 4.0);
+    if ((s - _zoomScale).abs() > 0.01) {
+      if (mounted) {
+        setState(() => _zoomScale = s);
+      } else {
+        _zoomScale = s;
+      }
+      final targetDpi = s > 1.8 ? 216.0 : 144.0;
+      if ((targetDpi - _dpi).abs() > 10) {
+        _dpi = targetDpi;
+        unawaited(_ensurePageRendered(_currentPage, force: true));
+      }
+    }
   }
 
   void _onVaultChanged() {
     final vid = vaultIdFromRoot(widget.root);
     if (vid != null && !VaultService.instance.isUnlocked(vid) && mounted) {
-      Navigator.of(context).maybePop();
+      _pdfBytes = null;
+      _pageTexts = const [];
+      _outline = const [];
+      for (final img in _renderedPages.values) {
+        img.dispose();
+      }
+      _renderedPages.clear();
+      _pageErrors.clear();
+      final route = ModalRoute.of(context);
+      if (route != null && route.isActive && !route.isFirst) {
+        Navigator.of(context).removeRoute(route);
+      } else {
+        Navigator.of(context).maybePop();
+      }
     }
   }
 
@@ -834,6 +869,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
       return;
     }
     _renderingPages.add(pageIndex);
+    _pageErrors.remove(pageIndex);
     try {
       await for (final page in Printing.raster(bytes, pages: [pageIndex], dpi: _dpi)) {
         final img = await page.toImage();
@@ -843,6 +879,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         }
         final old = _renderedPages[pageIndex];
         _renderedPages[pageIndex] = img;
+        _pageErrors.remove(pageIndex);
         old?.dispose();
         // Evict distant pages to keep memory bounded on large PDFs (max 6 cached).
         if (_renderedPages.length > 6) {
@@ -859,14 +896,16 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         }
         if (mounted) setState(() {});
       }
-    } catch (_) {
-      if (mounted &&
-          pageIndex == 0 &&
-          _renderedPages.isEmpty &&
-          PdfDocumentInspector.isEncrypted(bytes)) {
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          _error =
-              'This PDF is encrypted or password-protected and cannot be opened with the built-in viewer.';
+          if (pageIndex == 0 &&
+              _renderedPages.isEmpty &&
+              PdfDocumentInspector.isEncrypted(bytes)) {
+            _error = AppLocalizations.of(context).pdfEncryptedError;
+          } else {
+            _pageErrors[pageIndex] = '$e';
+          }
         });
       }
     } finally {
@@ -875,6 +914,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   }
 
   void _showPageTextSheet() {
+    final l10n = AppLocalizations.of(context);
     final text = (_currentPage >= 0 && _currentPage < _pageTexts.length)
         ? _pageTexts[_currentPage].trim()
         : '';
@@ -896,7 +936,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Page ${_currentPage + 1} Text',
+                        l10n.pdfPageTextTitle(_currentPage + 1),
                         style: Theme.of(ctx).textTheme.titleMedium,
                       ),
                     ),
@@ -908,14 +948,14 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                           Navigator.of(ctx).pop();
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Page text copied to clipboard.'),
+                              SnackBar(
+                                content: Text(l10n.pdfPageTextCopied),
                               ),
                             );
                           }
                         },
                         icon: const Icon(Icons.copy, size: 16),
-                        label: const Text('Copy'),
+                        label: Text(l10n.copy),
                       ),
                   ],
                 ),
@@ -925,7 +965,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                     child: SelectableText(
                       text.isNotEmpty
                           ? text
-                          : 'No selectable text detected on this page (scanned or image-only PDF).',
+                          : l10n.pdfNoSelectableText,
                       style: const TextStyle(height: 1.45),
                     ),
                   ),
@@ -941,7 +981,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   void _goToPage(int index) {
     if (_totalPages <= 0) return;
     final clamped = index.clamp(0, _totalPages - 1);
-    setState(() => _currentPage = clamped);
+    setState(() {
+      _currentPage = clamped;
+      _zoomScale = 1.0;
+      _transformController.value = Matrix4.identity();
+    });
     if (_pageController.hasClients) {
       _pageController.jumpToPage(clamped);
     }
@@ -1095,6 +1139,12 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    final hasBottomBar = !_loading && _error == null && _totalPages > 0;
+    GlobalPlaybackService.instance.setNamedBottomInset(
+      'pdf_viewer',
+      hasBottomBar ? 56.0 : 0.0,
+    );
 
     return CallbackShortcuts(
       bindings: {
@@ -1130,7 +1180,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
               IconButton(
                 key: const ValueKey('pdf_copy_text_btn'),
                 icon: const Icon(Icons.content_copy_outlined),
-                tooltip: 'Select / Copy Page Text',
+                tooltip: l10n.pdfSelectCopyPageText,
                 onPressed:
                     (!_loading && _error == null) ? _showPageTextSheet : null,
               ),
@@ -1144,18 +1194,59 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                 tooltip: l10n.pdfOutline,
                 onPressed: _showOutlineSheet,
               ),
-              IconButton(
-                icon: const Icon(Icons.zoom_out),
-                onPressed: () => _setZoom(_zoomScale - 0.25),
-              ),
-              TextButton(
-                onPressed: () => _setZoom(1.0),
-                child: Text('${(_zoomScale * 100).round()}%'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.zoom_in),
-                onPressed: () => _setZoom(_zoomScale + 0.25),
-              ),
+              if (isCompact)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.zoom_in),
+                  tooltip: '${(_zoomScale * 100).round()}%',
+                  onSelected: (v) {
+                    if (v == 'out') _setZoom(_zoomScale - 0.25);
+                    if (v == 'reset') _setZoom(1.0);
+                    if (v == 'in') _setZoom(_zoomScale + 0.25);
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'in',
+                      child: ListTile(
+                        leading: Icon(Icons.zoom_in, size: 18),
+                        title: Text('+25%'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'reset',
+                      child: ListTile(
+                        leading: const Icon(Icons.center_focus_strong, size: 18),
+                        title: Text('${(_zoomScale * 100).round()}% -> 100%'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'out',
+                      child: ListTile(
+                        leading: Icon(Icons.zoom_out, size: 18),
+                        title: Text('-25%'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                IconButton(
+                  icon: const Icon(Icons.zoom_out),
+                  onPressed: () => _setZoom(_zoomScale - 0.25),
+                ),
+                TextButton(
+                  onPressed: () => _setZoom(1.0),
+                  child: Text('${(_zoomScale * 100).round()}%'),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.zoom_in),
+                  onPressed: () => _setZoom(_zoomScale + 0.25),
+                ),
+              ],
             ],
           ),
           body: Column(
@@ -1209,15 +1300,53 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                           )
                         : PageView.builder(
                             controller: _pageController,
+                            physics: _zoomScale > 1.05
+                                ? const NeverScrollableScrollPhysics()
+                                : const PageScrollPhysics(),
                             itemCount: _totalPages,
                             onPageChanged: (idx) {
-                              setState(() => _currentPage = idx);
+                              setState(() {
+                                _currentPage = idx;
+                                _zoomScale = 1.0;
+                                _transformController.value = Matrix4.identity();
+                              });
                               unawaited(_ensurePageRendered(idx));
                               if (idx + 1 < _totalPages) {
                                 unawaited(_ensurePageRendered(idx + 1));
                               }
                             },
                             itemBuilder: (_, index) {
+                              final pageErr = _pageErrors[index];
+                              if (pageErr != null) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.broken_image_outlined,
+                                          size: 40,
+                                          color: scheme.error,
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          l10n.pdfRenderPageFailed(index + 1),
+                                          style: TextStyle(color: scheme.error),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        FilledButton.tonal(
+                                          onPressed: () => _ensurePageRendered(
+                                            index,
+                                            force: true,
+                                          ),
+                                          child: Text(l10n.retry),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
                               final img = _renderedPages[index];
                               if (img == null) {
                                 unawaited(_ensurePageRendered(index));
@@ -1249,41 +1378,44 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                             },
                           ),
               ),
-              if (!_loading && _error == null && _totalPages > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLow,
-                    border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.first_page),
-                        onPressed: _currentPage > 0 ? () => _goToPage(0) : null,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: _currentPage > 0 ? () => _goToPage(_currentPage - 1) : null,
-                      ),
-                      TextButton(
-                        onPressed: _showJumpToPageDialog,
-                        child: Text(l10n.pdfPageOf(_currentPage + 1, _totalPages)),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: _currentPage + 1 < _totalPages
-                            ? () => _goToPage(_currentPage + 1)
-                            : null,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.last_page),
-                        onPressed: _currentPage + 1 < _totalPages
-                            ? () => _goToPage(_totalPages - 1)
-                            : null,
-                      ),
-                    ],
+              if (hasBottomBar)
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.first_page),
+                          onPressed: _currentPage > 0 ? () => _goToPage(0) : null,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left),
+                          onPressed: _currentPage > 0 ? () => _goToPage(_currentPage - 1) : null,
+                        ),
+                        TextButton(
+                          onPressed: _showJumpToPageDialog,
+                          child: Text(l10n.pdfPageOf(_currentPage + 1, _totalPages)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: _currentPage + 1 < _totalPages
+                              ? () => _goToPage(_currentPage + 1)
+                              : null,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.last_page),
+                          onPressed: _currentPage + 1 < _totalPages
+                              ? () => _goToPage(_totalPages - 1)
+                              : null,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
             ],

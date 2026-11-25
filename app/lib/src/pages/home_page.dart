@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../rust/api/inspect.dart';
 import '../rust/api/metadata.dart';
+import '../rust/api/pool.dart';
 import '../rust/api/remotes.dart';
 import '../rust/api/vault.dart';
 import '../dialogs/advanced_search_dialog.dart';
 import '../dialogs/vault_dialogs.dart';
+import '../services/app_route_observer.dart';
+import '../services/global_playback_service.dart';
 import '../services/permission_service.dart';
+import '../services/pool_service.dart';
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
 import '../services/platform_paths.dart';
@@ -26,6 +31,7 @@ import 'gallery_page.dart';
 import 'offline_pinned_page.dart';
 import 'peer_transfer_page.dart';
 import 'photo_backup_page.dart';
+import 'pool_dashboard_page.dart';
 import 'recent_page.dart';
 import 'remotes_page.dart';
 import 'settings_page.dart';
@@ -77,6 +83,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   static const _prefWelcomeDismissed = 'home.welcome_dismissed';
   StreamSubscription<ShortcutTarget>? _shortcutSub;
+  Timer? _taskBadgeTimer;
 
   @override
   void initState() {
@@ -85,6 +92,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         PreferencesService.instance.getBool(_prefWelcomeDismissed) ?? false;
     WidgetsBinding.instance.addObserver(this);
     VaultService.instance.addListener(_onVaultChanged);
+    PoolService.instance.addListener(_onPoolChanged);
     _loadMetadata();
     _checkStorageAccess();
     _shortcutSub = ShortcutService.instance.onShortcutOpened.listen((target) {
@@ -122,13 +130,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _taskBadgeTimer?.cancel();
     _shortcutSub?.cancel();
     VaultService.instance.removeListener(_onVaultChanged);
+    PoolService.instance.removeListener(_onPoolChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   void _onVaultChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onPoolChanged() {
     if (mounted) setState(() {});
   }
 
@@ -209,6 +223,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           .list()
           .where((t) => t.state == 'pending' || t.state == 'running')
           .length;
+      if (active > 0) {
+        _taskBadgeTimer ??= Timer.periodic(
+          const Duration(seconds: 2),
+          (_) => _refreshTaskCount(),
+        );
+      } else {
+        _taskBadgeTimer?.cancel();
+        _taskBadgeTimer = null;
+      }
       if (mounted && active != _activeTaskCount) {
         setState(() => _activeTaskCount = active);
       }
@@ -284,6 +307,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     _refreshTaskCount();
     try {
+      await PoolService.instance.refresh();
+    } catch (_) {}
+    try {
       final space = getDiskSpace(path: PlatformPaths.defaultRoot());
       if (mounted) setState(() => _diskSpace = space);
     } catch (_) {}
@@ -308,7 +334,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     for (final bm in _bookmarks) {
       if (localBookmarkScopes >= 5) break;
       final r = bm.root;
-      if (r.startsWith('remote://') || r.startsWith('vault://')) continue;
+      if (r.startsWith('remote://') || r.startsWith('vault://') || r.startsWith('pool://')) continue;
       final normRoot = r.replaceAll('\\', '/');
       final isBare = bm.path.isEmpty &&
           (normRoot == '/' || RegExp(r'^[A-Za-z]:/?$').hasMatch(normRoot));
@@ -321,6 +347,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       bookmarks: _bookmarks,
       history: _history,
       remotes: _remotes,
+      pools: PoolService.instance.pools,
       quickTargets: PlatformPaths.quickTargets(),
       unlockedVaults: VaultService.instance.unlockedVaults,
       lockedPinnedVaults: VaultService.instance.lockedPinnedVaults,
@@ -368,6 +395,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         final r = picked.remote;
         if (r == null) return;
         navigate('remote://${r.id}', '', r.name);
+      case AdvancedSearchSelectionKind.pool:
+        final pool = picked.pool;
+        if (pool == null) return;
+        navigate('pool://${pool.id}', '', pool.name);
       case AdvancedSearchSelectionKind.quickTarget:
         final t = picked.quickTarget;
         if (t == null) return;
@@ -451,7 +482,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     final l10n = AppLocalizations.of(context);
     final effectiveDomain = _pickMode ? _domainIndex.clamp(0, 1) : _domainIndex.clamp(0, 2);
-    return Scaffold(
+    return _HomeBottomInsetReporter(
+      inset: 80.0,
+      child: Scaffold(
       appBar: AppBar(
         leading: _pickMode
             ? IconButton(
@@ -502,7 +535,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: effectiveDomain,
-        onDestinationSelected: (idx) => setState(() => _domainIndex = idx),
+        onDestinationSelected: (idx) {
+          setState(() => _domainIndex = idx);
+          _refreshTaskCount();
+        },
         destinations: [
           NavigationDestination(
             key: const ValueKey('home_nav_storage'),
@@ -532,6 +568,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               label: l10n.navDomainTools,
             ),
         ],
+      ),
       ),
     );
   }
@@ -572,14 +609,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return InkWell(
       borderRadius: AppUiTokens.borderRadiusMd,
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => StorageAnalyzerPage(
-              root: PlatformPaths.defaultRoot(),
-              title: l10n.localStorage,
-            ),
-          ),
-        );
+        Navigator.of(context)
+            .push(
+              MaterialPageRoute(
+                builder: (_) => StorageAnalyzerPage(
+                  root: PlatformPaths.defaultRoot(),
+                  title: l10n.localStorage,
+                ),
+              ),
+            )
+            .then((_) => _loadMetadata());
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -678,19 +717,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required List<Widget> children,
     double childAspectRatio = 2.8,
   }) {
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final mainExtent = (60.0 * textScale).clamp(60.0, 96.0);
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 800
             ? 4
             : (constraints.maxWidth > 520 ? 3 : 2);
-        return GridView.count(
+        return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: 6,
-          mainAxisSpacing: 6,
-          childAspectRatio: childAspectRatio,
-          children: children,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: 6,
+            mainAxisSpacing: 6,
+            mainAxisExtent: math.max(mainExtent, 150 / childAspectRatio),
+          ),
+          itemCount: children.length,
+          itemBuilder: (_, i) => children[i],
         );
       },
     );
@@ -765,6 +809,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .toList();
     final unlocked = VaultService.instance.unlockedVaults;
     final lockedPinned = VaultService.instance.lockedPinnedVaults;
+    final pools = PoolService.instance.pools;
 
     return [
       if (!_hasStorageAccess) ...[
@@ -836,10 +881,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _buildGridCard(
             icon: Icons.cloud,
             iconColor: const Color(0xFF1E88E5),
-            title: l10n.remote,
+            title: l10n.manageRemotes,
             subtitle: _remotes.isEmpty
                 ? l10n.remoteProtocolsSubtitle
-                : '${_remotes.length} connection${_remotes.length > 1 ? "s" : ""}',
+                : l10n.itemCountConnections(_remotes.length),
             onTap: () async {
               final picked = await Navigator.of(context).push<List<String>>(
                 MaterialPageRoute(
@@ -857,53 +902,62 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       if (!_pickMode) ...[
         const SizedBox(height: 12),
-        _sectionHeader(l10n.privacyFolders),
+        _sectionHeader(l10n.storagePools),
         _buildSectionGrid(
           children: [
-            for (final vault in unlocked)
+            for (final PoolSummaryDto p in pools)
               _buildGridCard(
-                icon: Icons.lock_open_rounded,
-                iconColor: Colors.indigo,
-                title: vault.name,
-                subtitle: l10n.unlockedBadge,
-                onTap: () => _openTarget('vault://${vault.id}', ''),
-                onLongPress: () => _showUnlockedVaultActions(vault),
-              ),
-            for (final pinned in lockedPinned)
-              _buildGridCard(
-                icon: Icons.lock_outline,
-                iconColor: Colors.blueGrey,
-                title: pinned.name,
-                subtitle: l10n.lockedBadge,
-                onTap: () => _openLockedPinnedVault(pinned),
-                onLongPress: () => _showLockedPinnedVaultActions(pinned),
+                icon: Icons.hub_rounded,
+                iconColor: p.degradedChunks > BigInt.zero
+                    ? Colors.orange
+                    : const Color(0xFF00897B),
+                title: p.name,
+                subtitle: p.degradedChunks > BigInt.zero
+                    ? '${l10n.poolNodesCount(p.nodes.length)} · ⚠ ${p.degradedChunks}'
+                    : '${l10n.poolNodesCount(p.nodes.length)} · ${formatBytes(p.effectiveLogicalCapacity)}',
+                onTap: () => _openTarget('pool://${p.id}', ''),
               ),
             _buildGridCard(
-              icon: Icons.enhanced_encryption_outlined,
-              iconColor: Colors.indigo,
-              title: l10n.openPrivacyFolder,
-              subtitle: l10n.privacyFoldersDesc,
-              onTap: () async {
-                final v = await OpenVaultDialog.show(context);
-                if (v != null && mounted) {
-                  _openTarget('vault://${v.id}', '');
-                }
-              },
-            ),
-            _buildGridCard(
-              icon: Icons.create_new_folder_outlined,
-              iconColor: Colors.teal,
-              title: l10n.createPrivacyFolder,
-              subtitle: l10n.privacyFolders,
-              onTap: () async {
-                final v = await CreateVaultDialog.show(context);
-                if (v != null && mounted) {
-                  _openTarget('vault://${v.id}', '');
-                }
+              icon: Icons.hub_outlined,
+              iconColor: const Color(0xFF00897B),
+              title: l10n.manageStoragePools,
+              subtitle: pools.isEmpty
+                  ? l10n.storagePoolsSubtitle
+                  : l10n.itemCountPools(pools.length),
+              onTap: () {
+                Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const PoolDashboardPage()))
+                    .then((_) => _loadMetadata());
               },
             ),
           ],
         ),
+        if (unlocked.isNotEmpty || lockedPinned.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _sectionHeader(l10n.privacyFolders),
+          _buildSectionGrid(
+            children: [
+              for (final vault in unlocked)
+                _buildGridCard(
+                  icon: Icons.lock_open_rounded,
+                  iconColor: Colors.indigo,
+                  title: vault.name,
+                  subtitle: l10n.unlockedBadge,
+                  onTap: () => _openTarget('vault://${vault.id}', ''),
+                  onLongPress: () => _showUnlockedVaultActions(vault),
+                ),
+              for (final pinned in lockedPinned)
+                _buildGridCard(
+                  icon: Icons.lock_outline,
+                  iconColor: Colors.blueGrey,
+                  title: pinned.name,
+                  subtitle: l10n.lockedBadge,
+                  onTap: () => _openLockedPinnedVault(pinned),
+                  onLongPress: () => _showLockedPinnedVaultActions(pinned),
+                ),
+            ],
+          ),
+        ],
       ],
       const SizedBox(height: 16),
     ];
@@ -931,7 +985,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               );
               if (picked != null && picked.isNotEmpty && mounted) {
                 Navigator.of(context).pop(picked);
+                return;
               }
+              _loadMetadata();
             },
           ),
           if (!_pickMode &&
@@ -979,7 +1035,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: l10n.bookmarks,
             subtitle: _bookmarks.isEmpty
                 ? l10n.bookmarksDefaultSubtitle
-                : '${_bookmarks.length} bookmark${_bookmarks.length > 1 ? "s" : ""}',
+                : l10n.itemCountBookmarks(_bookmarks.length),
             onTap: () async {
               final picked = await Navigator.of(context).push<List<String>>(
                 MaterialPageRoute(
@@ -999,7 +1055,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: l10n.recent,
             subtitle: _history.isEmpty
                 ? l10n.recentDefaultSubtitle
-                : '${_history.length} location${_history.length > 1 ? "s" : ""}',
+                : l10n.itemCountLocations(_history.length),
             onTap: () async {
               final picked = await Navigator.of(context).push<List<String>>(
                 MaterialPageRoute(
@@ -1043,14 +1099,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: l10n.storageAnalyzer,
             subtitle: l10n.localStorage,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => StorageAnalyzerPage(
-                    root: defaultRoot,
-                    title: l10n.localStorage,
-                  ),
-                ),
-              );
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(
+                      builder: (_) => StorageAnalyzerPage(
+                        root: defaultRoot,
+                        title: l10n.localStorage,
+                      ),
+                    ),
+                  )
+                  .then((_) => _loadMetadata());
             },
           ),
           _buildGridCard(
@@ -1059,14 +1117,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: l10n.duplicateFinder,
             subtitle: l10n.localStorage,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => DuplicateFinderPage(
-                    root: defaultRoot,
-                    title: l10n.localStorage,
-                  ),
-                ),
-              );
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(
+                      builder: (_) => DuplicateFinderPage(
+                        root: defaultRoot,
+                        title: l10n.localStorage,
+                      ),
+                    ),
+                  )
+                  .then((_) => _loadMetadata());
             },
           ),
           _buildGridCard(
@@ -1075,38 +1135,46 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: l10n.directorySync,
             subtitle: l10n.directorySyncSubtitle,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncPage()),
-              );
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(builder: (_) => const SyncPage()),
+                  )
+                  .then((_) => _loadMetadata());
             },
           ),
           _buildGridCard(
             icon: Icons.swap_horiz,
             iconColor: Colors.indigo,
-            title: l10n.lanPeerTransferTitle,
-            subtitle: l10n.lanPeerTransferSubtitle,
+            title: l10n.lanTransferAndShareTitle,
+            subtitle: l10n.lanTransferAndShareSubtitle,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PeerTransferPage()),
-              );
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(builder: (_) => const PeerTransferPage()),
+                  )
+                  .then((_) => _loadMetadata());
             },
           ),
           _buildGridCard(
-            icon: Icons.backup_outlined,
+            icon: Icons.cloud_upload_outlined,
             iconColor: Colors.green,
             title: l10n.photoBackupTitle,
             subtitle: l10n.photoBackupSubtitle,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PhotoBackupPage()),
-              );
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(builder: (_) => const PhotoBackupPage()),
+                  )
+                  .then((_) => _loadMetadata());
             },
           ),
           _buildGridCard(
             icon: Icons.build_outlined,
             iconColor: const Color(0xFF5E35B1),
             title: l10n.utilities,
-            subtitle: l10n.lanSharing,
+            subtitle: _trashCount > 0
+                ? l10n.utilitiesTrashSubtitle(_trashCount)
+                : l10n.utilitiesDefaultSubtitle,
             onTap: () {
               Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const UtilitiesPage()))
@@ -1118,7 +1186,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             iconColor: const Color(0xFF00897B),
             title: l10n.tasks,
             subtitle: _activeTaskCount > 0
-                ? '$_activeTaskCount running'
+                ? l10n.activeTasksRunningCount(_activeTaskCount)
                 : l10n.tasksDefaultSubtitle,
             onTap: () {
               Navigator.of(context)
@@ -1132,7 +1200,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: l10n.recycleBin,
             subtitle: _trashCount > 0
                 ? l10n.utilitiesTrashSubtitle(_trashCount)
-                : l10n.recycleBin,
+                : l10n.emptyLabel,
             onTap: () {
               Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const TrashPage()))
@@ -1155,6 +1223,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         onLocaleChanged: widget.onLocaleChanged ?? (_) {},
                         accentCode: widget.accentCode ?? 'dynamic',
                         onAccentChanged: widget.onAccentChanged ?? (_) {},
+                        onConfigImported: _loadMetadata,
                       ),
                     ),
                   )
@@ -1335,4 +1404,83 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+class _HomeBottomInsetReporter extends StatefulWidget {
+  final double inset;
+  final Widget child;
+
+  const _HomeBottomInsetReporter({
+    required this.inset,
+    required this.child,
+  });
+
+  @override
+  State<_HomeBottomInsetReporter> createState() =>
+      _HomeBottomInsetReporterState();
+}
+
+class _HomeBottomInsetReporterState extends State<_HomeBottomInsetReporter>
+    with RouteAware {
+  ModalRoute<dynamic>? _subscribedRoute;
+  bool _routeObscured = false;
+
+  void _syncInset() {
+    GlobalPlaybackService.instance.setNamedBottomInset(
+      'home_nav',
+      _routeObscured ? 0.0 : widget.inset,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncInset();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != _subscribedRoute) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      if (route != null) {
+        appRouteObserver.subscribe(this, route);
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeBottomInsetReporter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.inset != widget.inset) {
+      _syncInset();
+    }
+  }
+
+  @override
+  void didPushNext() {
+    _routeObscured = true;
+    _syncInset();
+  }
+
+  @override
+  void didPopNext() {
+    _routeObscured = false;
+    _syncInset();
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    _subscribedRoute = null;
+    GlobalPlaybackService.instance.setNamedBottomInset('home_nav', 0.0);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

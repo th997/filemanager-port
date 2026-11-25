@@ -539,7 +539,9 @@ fn is_vault_protected_root(root: &str) -> bool {
 fn normalize_index_root(raw: &str) -> String {
     let mut s = raw.trim().to_string();
     while s.len() > 1 && s.ends_with('/') {
-        if s.starts_with("remote://") && s == "remote://" {
+        if (s.starts_with("remote://") && s == "remote://")
+            || (s.starts_with("pool://") && s == "pool://")
+        {
             break;
         }
         // Keep bare Windows drive root like C:/ or C:\ intact.

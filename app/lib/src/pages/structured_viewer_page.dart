@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../rust/api/file_manager.dart';
+import '../services/path_utils.dart';
+import '../services/semantic_colors.dart';
+import '../services/vault_service.dart';
+import '../theme/app_ui_tokens.dart';
 import '../widgets/json_formatted_preview.dart';
 import 'text_editor_page.dart';
 
@@ -216,7 +220,50 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
   void initState() {
     super.initState();
     _jsonMode = widget.initialJsonMode;
+    VaultService.instance.addListener(_onVaultChanged);
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant StructuredViewerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.root != oldWidget.root ||
+        widget.path != oldWidget.path ||
+        widget.fileName != oldWidget.fileName ||
+        widget.initialContent != oldWidget.initialContent) {
+      _filter = '';
+      _jsonMode = widget.initialJsonMode;
+      _expandedPaths
+        ..clear()
+        ..add(r'$');
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    VaultService.instance.removeListener(_onVaultChanged);
+    super.dispose();
+  }
+
+  void _onVaultChanged() {
+    final vid = vaultIdFromRoot(widget.root);
+    if (vid != null && !VaultService.instance.isUnlocked(vid) && mounted) {
+      setState(() {
+        _rawText = '';
+        _headers = const [];
+        _rows = const [];
+        _jsonData = null;
+        _xmlRoots = const [];
+        _expandedPaths.clear();
+      });
+      final route = ModalRoute.of(context);
+      if (route != null && route.isActive && !route.isFirst) {
+        Navigator.of(context).removeRoute(route);
+      } else {
+        Navigator.of(context).maybePop();
+      }
+    }
   }
 
   void _collectAllJsonPaths(String path, dynamic value, Set<String> out) {
@@ -256,6 +303,9 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
         _jsonData = jsonDecode(text);
       } else if (_ext == 'xml') {
         _xmlRoots = XmlTreeNode.parse(text);
+        _expandedPaths
+          ..clear()
+          ..addAll(_xmlRoots.map((r) => '/${r.tag}'));
       }
       setState(() => _loading = false);
     } catch (e) {
@@ -294,7 +344,8 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
+    return AppSwipeBack(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(widget.fileName, overflow: TextOverflow.ellipsis),
         actions: [
@@ -451,12 +502,17 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
                     ),
                   ],
                 ),
+      ),
     );
   }
 
   Widget _buildCsvView() {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     if (_headers.isEmpty) {
-      return Center(child: Text(_rawText.isEmpty ? '(empty)' : _rawText));
+      return Center(
+        child: Text(_rawText.isEmpty ? l10n.structuredEmptyValue : _rawText),
+      );
     }
     var visible = _rows.where((row) {
       if (_filter.isEmpty) return true;
@@ -476,7 +532,7 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
     }
 
     final displayRows = visible.take(1000).toList();
-    return Scrollbar(
+    final table = Scrollbar(
       child: SingleChildScrollView(
         scrollDirection: Axis.vertical,
         child: SingleChildScrollView(
@@ -512,6 +568,21 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
         ),
       ),
     );
+    if (visible.length <= displayRows.length) return table;
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          color: scheme.warning.withValues(alpha: 0.14),
+          child: Text(
+            l10n.structuredCsvTruncated(displayRows.length, visible.length),
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        Expanded(child: table),
+      ],
+    );
   }
 
   Widget _buildJsonView() {
@@ -521,30 +592,53 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
     );
   }
 
+  bool _jsonNodeMatches(String path, String? keyLabel, dynamic value) {
+    if (_filter.isEmpty) return true;
+    if ((keyLabel?.toLowerCase().contains(_filter) ?? false) ||
+        path.toLowerCase().contains(_filter)) {
+      return true;
+    }
+    if (value is Map) {
+      for (final entry in value.entries) {
+        final k = '${entry.key}';
+        final childPath =
+            RegExp(r'^[a-zA-Z_]\w*$').hasMatch(k) ? '$path.$k' : '$path["$k"]';
+        if (_jsonNodeMatches(childPath, k, entry.value)) return true;
+      }
+      return false;
+    }
+    if (value is List) {
+      for (int i = 0; i < value.length; i++) {
+        if (_jsonNodeMatches('$path[$i]', '[$i]', value[i])) return true;
+      }
+      return false;
+    }
+    final valStr = value == null ? 'null' : '$value';
+    return valStr.toLowerCase().contains(_filter);
+  }
+
   List<Widget> _buildJsonNodes(String path, String? keyLabel, dynamic value, int depth) {
+    if (!_jsonNodeMatches(path, keyLabel, value)) {
+      return const [];
+    }
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMap = value is Map;
     final isList = value is List;
     final isContainer = isMap || isList;
 
     if (!isContainer) {
       final valStr = value == null ? 'null' : '$value';
-      if (_filter.isNotEmpty &&
-          !(keyLabel?.toLowerCase().contains(_filter) ?? false) &&
-          !valStr.toLowerCase().contains(_filter) &&
-          !path.toLowerCase().contains(_filter)) {
-        return const [];
-      }
       final Color valueColor;
       if (value is num) {
-        valueColor = Colors.blue;
+        valueColor = isDark ? Colors.lightBlue.shade300 : Colors.blue.shade700;
       } else if (value is bool) {
-        valueColor = Colors.purple;
+        valueColor = isDark ? Colors.purple.shade200 : Colors.purple.shade700;
       } else if (value == null) {
-        valueColor = Colors.grey;
+        valueColor = scheme.onSurfaceVariant;
       } else {
-        valueColor = Colors.green.shade700;
+        valueColor = isDark ? Colors.lightGreen.shade300 : Colors.green.shade700;
       }
       return [
         InkWell(
@@ -639,8 +733,11 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
   }
 
   Widget _buildXmlView() {
+    final l10n = AppLocalizations.of(context);
     if (_xmlRoots.isEmpty) {
-      return Center(child: Text(_rawText));
+      return Center(
+        child: Text(_rawText.isEmpty ? l10n.structuredEmptyValue : _rawText),
+      );
     }
     return ListView(
       padding: const EdgeInsets.all(10),
@@ -651,9 +748,29 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
     );
   }
 
+  bool _xmlNodeMatches(String xpath, XmlTreeNode node) {
+    if (_filter.isEmpty) return true;
+    final attrStr =
+        node.attributes.entries.map((e) => '${e.key}="${e.value}"').join(' ');
+    if (node.tag.toLowerCase().contains(_filter) ||
+        node.text.toLowerCase().contains(_filter) ||
+        attrStr.toLowerCase().contains(_filter) ||
+        xpath.toLowerCase().contains(_filter)) {
+      return true;
+    }
+    for (int i = 0; i < node.children.length; i++) {
+      final child = node.children[i];
+      if (_xmlNodeMatches('$xpath/${child.tag}[${i + 1}]', child)) return true;
+    }
+    return false;
+  }
+
   List<Widget> _buildXmlNodes(String xpath, XmlTreeNode node, int depth) {
+    if (!_xmlNodeMatches(xpath, node)) {
+      return const [];
+    }
     final l10n = AppLocalizations.of(context);
-    final expanded = _expandedPaths.contains(xpath) || depth == 0 || _filter.isNotEmpty;
+    final expanded = _expandedPaths.contains(xpath) || _filter.isNotEmpty;
     final hasChildren = node.children.isNotEmpty;
     final attrSummary = node.attributes.entries.map((e) => '${e.key}="${e.value}"').join(' ');
 
@@ -668,7 +785,7 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
                 }
               });
             }
-          : () => _copyText(xpath, label: '${l10n.copyJsonPath}: $xpath'),
+          : () => _copyText(xpath, label: '${l10n.copyXPath}: $xpath'),
       child: Padding(
         padding: EdgeInsets.only(left: depth * 16.0, top: 4, bottom: 4, right: 8),
         child: Row(
@@ -700,9 +817,9 @@ class _StructuredViewerPageState extends State<StructuredViewerPage> {
             ),
             IconButton(
               icon: const Icon(Icons.copy, size: 14),
-              tooltip: l10n.copyJsonPath,
+              tooltip: l10n.copyXPath,
               visualDensity: VisualDensity.compact,
-              onPressed: () => _copyText(xpath, label: '${l10n.copyJsonPath}: $xpath'),
+              onPressed: () => _copyText(xpath, label: '${l10n.copyXPath}: $xpath'),
             ),
           ],
         ),

@@ -35,8 +35,8 @@ import '../services/path_utils.dart';
 import '../services/permission_service.dart';
 import '../services/platform_capabilities.dart';
 import '../services/platform_paths.dart';
+import '../services/pool_service.dart';
 import '../services/preferences_service.dart';
-import '../services/sharing_service.dart';
 import '../services/shortcut_service.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
@@ -234,6 +234,12 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       final vault = vid == null ? null : VaultService.instance.findUnlockedById(vid);
       if (vault != null) {
         rootPart = 'vault://${vault.name}';
+      }
+    } else if (isPoolRoot(_root)) {
+      final pid = poolIdFromRoot(_root);
+      final pool = pid == null ? null : PoolService.instance.findById(pid);
+      if (pool != null) {
+        rootPart = 'pool://${pool.name}';
       }
     }
     if (_relPath.isEmpty) return rootPart;
@@ -496,12 +502,19 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     _loadViewPreferences();
     _scrollController.addListener(_onScroll);
     PreferencesService.toolbarAtBottom.addListener(_onToolbarPositionChanged);
+    BrowserClipboardService.instance.addListener(_onClipboardChanged);
     _lastHasMiniPlayer = _hasVisibleMiniPlayer;
     GlobalPlaybackService.instance.addListener(_onPlaybackChanged);
     VaultService.instance.addListener(_onVaultChanged);
     _syncSecureScreen();
     _loadRemotesMetadata();
     _load();
+  }
+
+  void _onClipboardChanged() {
+    if (!mounted) return;
+    _syncBottomBarInset();
+    setState(() {});
   }
 
   void _onToolbarPositionChanged() {
@@ -591,6 +604,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
     GlobalPlaybackService.instance.removeListener(_onPlaybackChanged);
     GlobalPlaybackService.instance.setBottomBarInset(0.0);
+    BrowserClipboardService.instance.removeListener(_onClipboardChanged);
     PreferencesService.toolbarAtBottom.removeListener(_onToolbarPositionChanged);
     _scrollController.dispose();
     _searchDebounce?.cancel();
@@ -751,7 +765,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   void _handleSwipeBack() {
-    if (_isSelecting) {
+    if (_isSelecting || _selectedPaths.isNotEmpty) {
       HapticFeedback.lightImpact();
       _clearSelection();
       return;
@@ -833,6 +847,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         }
         return null;
       },
+      resolvePoolId: (target) =>
+          PoolService.instance.findByIdOrName(target)?.id ?? target,
     );
     if (resolved != null) {
       navigateTo(resolved.root, resolved.relPath);
@@ -894,7 +910,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _totalCount = paged.total;
         _loading = false;
         _refreshing = false;
+        if (refresh && !paged.hasMore && _selectedPaths.isNotEmpty) {
+          final validPaths = {for (final e in items) _fullEntryPath(e)};
+          _selectedPaths.removeWhere((p) => !validPaths.contains(p));
+          if (_selectedPaths.isEmpty && _isSelecting) {
+            _isSelecting = false;
+          }
+        }
       });
+      _syncBottomBarInset();
       if (!refresh && _scrollController.hasClients) {
         _scrollController.jumpTo(0);
       }
@@ -1030,6 +1054,21 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           return;
         } else {
           navigateTo('vault://$withoutPrefix', '');
+          return;
+        }
+      }
+      if (archiveHost.startsWith('pool://')) {
+        final withoutPrefix = archiveHost.substring('pool://'.length);
+        final slashIdx = withoutPrefix.indexOf('/');
+        if (slashIdx != -1) {
+          final poolId = withoutPrefix.substring(0, slashIdx);
+          final fullPoolPath = withoutPrefix.substring(slashIdx + 1);
+          final segments = fullPoolPath.split('/').where((s) => s.isNotEmpty).toList();
+          if (segments.isNotEmpty) segments.removeLast();
+          navigateTo('pool://$poolId', segments.join('/'));
+          return;
+        } else {
+          navigateTo('pool://$withoutPrefix', '');
           return;
         }
       }
@@ -1265,7 +1304,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   static const int _downloadPromptThreshold = 10 * 1024 * 1024;
 
   bool _isRemoteOrArchive(String root) =>
-      root.startsWith('remote://') || root.startsWith('archive://');
+      root.startsWith('remote://') ||
+      root.startsWith('pool://') ||
+      root.startsWith('archive://');
 
   bool get _canExportToLocal => _isRemoteOrArchive(_root) || _isInVault;
 
@@ -1636,6 +1677,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   /// Rust side finds matches inside subfolders (2+ chars). The recursive
   /// results take over the body; the old behaviour — filtering only what
   /// was already fetched — made files in subfolders unfindable.
+  bool get _isRecursiveSearchActive {
+    final q = _filterQuery.trim();
+    return _isSearching && (q.length >= 2 || q.runes.any((r) => r > 127));
+  }
+
   void _onFilterChanged(String value) {
     // The anchor is an index into the visible list; the filter reorders that
     // list, so a stale anchor made the next Shift-click select the wrong span.
@@ -1903,6 +1949,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       canArchive: _canArchive,
       canBookmark: !_isInVault,
       canShareLan: isNativeRoot(_root),
+      canShare: PlatformCapabilities.supportsNativeShareSheet && !_isInVault,
       canPinOffline: _root.startsWith('remote://'),
       canOpenInNewTab: widget.onOpenInNewTab != null ||
           PlatformCapabilities.supportsMultiTab(context),
@@ -1967,7 +2014,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _openAsText(item);
         break;
       case 'download':
-        _downloadSingle(item);
+        if (isMultiSelected) {
+          _downloadSelected();
+        } else {
+          _downloadSingle(item);
+        }
         break;
       case 'bookmark':
         _bookmarkFolder(item);
@@ -2011,7 +2062,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         });
         break;
       case 'rename':
-        _renameSingle(item);
+        if (isMultiSelected) {
+          _renameSelected();
+        } else {
+          _renameSingle(item);
+        }
         break;
       case 'duplicate':
         _duplicateEntry(item);
@@ -2043,7 +2098,11 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         _copyEntryPath(item);
         break;
       case 'info':
-        _showFileInfo(item);
+        if (isMultiSelected) {
+          _showSelectedInfo();
+        } else {
+          _showFileInfo(item);
+        }
         break;
     }
   }
@@ -2121,7 +2180,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   double get _gridMaxCrossAxisExtent =>
       PlatformCapabilities.isDesktop ? 124.0 : 104.0;
   double get _gridChildAspectRatio =>
-      PlatformCapabilities.isDesktop ? 0.88 : 0.86;
+      PlatformCapabilities.isDesktop ? 0.88 : 0.68;
 
   /// Tile tap with native desktop & mobile selection semantics:
   /// - Shift extends range, Ctrl/Cmd toggles one item.
@@ -2602,10 +2661,13 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
 
     if (picked.relPath.isNotEmpty) {
       srcPaths = [picked.relPath];
+    } else if (!isNativeRoot(srcRoot)) {
+      _showError(AppLocalizations.of(context).pleaseSelectSpecificFolder);
+      return;
     } else {
       final isWindows = srcRoot.contains('\\') || RegExp(r'^[a-zA-Z]:').hasMatch(srcRoot);
       final parts = srcRoot.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).toList();
-      if (parts.isEmpty || srcRoot == PlatformPaths.defaultRoot() || (isNativeRoot(srcRoot) && parts.length <= 2)) {
+      if (parts.isEmpty || srcRoot == PlatformPaths.defaultRoot() || parts.length <= 2) {
         _showError(AppLocalizations.of(context).pleaseSelectSpecificFolder);
         return;
       }
@@ -2619,7 +2681,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       srcPaths = [folderName];
     }
 
-    PreferencesService.instance.addRecentUploadDir(picked.path);
+    if (isNativeRoot(picked.root)) {
+      PreferencesService.instance.addRecentUploadDir(picked.path);
+    }
 
     await _transfer(
       srcRoot: srcRoot,
@@ -2649,6 +2713,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
             srcPaths: _selectedPaths.toList(),
             dstRoot: dest.root,
             dstDir: dest.relPath,
+            conflictPolicy: 'rename',
           );
       final taskId = await startTask();
       if (!mounted) return;
@@ -2846,16 +2911,25 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   void _copySelected({required bool isCut}) {
+    final paths = _selectedPaths.toList();
+    if (paths.isEmpty) return;
+    final count = paths.length;
     setState(() {
       _clipboard = ClipboardState(
         srcRoot: _root,
-        paths: _selectedPaths.toList(),
+        paths: paths,
         isCut: isCut,
       );
       _clearSelection();
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(isCut ? AppLocalizations.of(context).cutItemsCount(_clipboard!.paths.length) : AppLocalizations.of(context).copiedItemsCount(_clipboard!.paths.length))),
+      SnackBar(
+        content: Text(
+          isCut
+              ? AppLocalizations.of(context).cutItemsCount(count)
+              : AppLocalizations.of(context).copiedItemsCount(count),
+        ),
+      ),
     );
   }
 
@@ -2921,8 +2995,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           actionsOverflowButtonSpacing: 6,
           content: Text(
             conflicts.length == 1
-                ? '"${conflicts.first}" already exists in this folder. What should happen to it?'
-                : '${conflicts.length} items already exist in this folder. What should happen to them?',
+                ? AppLocalizations.of(context).fileConflictBody(conflicts.first)
+                : AppLocalizations.of(context).filesConflictBody(conflicts.length),
           ),
           actions: [
             TextButton(
@@ -3144,6 +3218,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     if (item.isDir && _canWrite) {
       final dragSource = draggable;
       draggable = HoverExpandDragTarget<({String root, List<String> paths})>(
+        onWillAccept: (d) {
+          if (d.root == _root &&
+              (d.paths.contains(path) ||
+                  d.paths.any((p) => path.startsWith('$p/')))) {
+            return false;
+          }
+          return true;
+        },
         onAccept: (d) {
           if (d.paths.contains(path)) return;
           if (d.root == _root && d.paths.any((p) => path.startsWith('$p/'))) return;
@@ -3151,7 +3233,15 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         },
         onHoverExpand: () {
           if (!mounted) return;
-          navigateTo(_root, path);
+          _pushHistory();
+          setState(() {
+            _relPath = path;
+            _isSelecting = false;
+            _selectedPaths.clear();
+            _selectionAnchor = null;
+          });
+          if (_scrollController.hasClients) _scrollController.jumpTo(0);
+          _load();
         },
         builder: (ctx, _) => dragSource,
       );
@@ -3401,6 +3491,14 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       final existingSiblingNames = <String>{
         for (final e in _entries) e.name,
       };
+      if (_hasMore) {
+        try {
+          existingSiblingNames.addAll(
+            (await listDir(root: _root, path: _relPath)).map((e) => e.name),
+          );
+        } catch (_) {}
+      }
+      if (!mounted) return;
 
       final outcome = await BatchRenameDialog.show(
         context,
@@ -3621,6 +3719,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   Future<void> _compressSelected() async {
+    if (_selectedPaths.isEmpty) return;
     String defaultName = 'archive.zip';
     if (_selectedPaths.length == 1) {
       final only = _selectedPaths.first.split('/').last;
@@ -3769,7 +3868,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     }
     final segments = path.split('/').where((s) => s.isNotEmpty).toList();
     final name = segments.isEmpty
-        ? (root.split('/').last.isEmpty ? AppLocalizations.of(context).rootLabel : root.split('/').last)
+        ? _resolveRootLabelFor(root, includeEmoji: false)
         : segments.last;
     final bookmarks = await StorageService.instance.getBookmarks();
     final exists = bookmarks.any((b) => b.root == root && b.path == path);
@@ -4007,7 +4106,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           }
         },
         const SingleActivator(LogicalKeyboardKey.f2): () {
-          if (!_isTyping && _selectedPaths.length == 1 && _canWrite) {
+          if (!_isTyping && _selectedPaths.isNotEmpty && _canWrite) {
             _renameSelected();
           }
         },
@@ -4031,7 +4130,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           setState(() => _isGrid = !_isGrid);
           _saveViewPreferences();
         },
-        const SingleActivator(LogicalKeyboardKey.f5): () => _load(refresh: true),
+        if (!widget.embedded)
+          const SingleActivator(LogicalKeyboardKey.f5): () => _load(refresh: true),
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): () => _load(refresh: true),
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () => _load(refresh: true),
         const SingleActivator(LogicalKeyboardKey.keyH, control: true): () {
@@ -4207,7 +4307,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         builder: (ctx, show, _) {
           if (!show) return const SizedBox.shrink();
           return FloatingActionButton.small(
-            heroTag: 'browser_scroll_to_top',
+            heroTag: null,
             onPressed: () {
               HapticFeedback.lightImpact();
               _scrollController.animateTo(
@@ -4223,35 +4323,45 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onHorizontalDragDown: (details) {
-          _swipeDownX = details.globalPosition.dx;
-        },
-        onHorizontalDragStart: (details) {
-          _swipeStartX = _swipeDownX ?? details.globalPosition.dx;
-          _swipeDeltaX = 0;
-        },
-        onHorizontalDragUpdate: (details) {
-          _swipeDeltaX = details.globalPosition.dx - _swipeStartX;
-        },
-        onHorizontalDragEnd: (details) {
-          final velocity = details.primaryVelocity ?? 0;
-          final edgeThreshold = (MediaQuery.sizeOf(context).width * 0.45).clamp(140.0, 220.0);
-          final fromLeftEdge = _swipeStartX < edgeThreshold;
-          if (fromLeftEdge && (_swipeDeltaX > 35 || (velocity > 220 && _swipeDeltaX > 15))) {
-            _handleSwipeBack();
-          } else if ((velocity < -220 && _swipeDeltaX < -25) && _forwardStack.isNotEmpty) {
-            HapticFeedback.lightImpact();
-            _goForward();
-          }
-          _swipeDownX = null;
-          _swipeStartX = 0;
-          _swipeDeltaX = 0;
-        },
-        onHorizontalDragCancel: () {
-          _swipeDownX = null;
-          _swipeStartX = 0;
-          _swipeDeltaX = 0;
-        },
+        onHorizontalDragDown: PlatformCapabilities.isDesktop
+            ? null
+            : (details) {
+                _swipeDownX = details.globalPosition.dx;
+              },
+        onHorizontalDragStart: PlatformCapabilities.isDesktop
+            ? null
+            : (details) {
+                _swipeStartX = _swipeDownX ?? details.globalPosition.dx;
+                _swipeDeltaX = 0;
+              },
+        onHorizontalDragUpdate: PlatformCapabilities.isDesktop
+            ? null
+            : (details) {
+                _swipeDeltaX = details.globalPosition.dx - _swipeStartX;
+              },
+        onHorizontalDragEnd: PlatformCapabilities.isDesktop
+            ? null
+            : (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                final edgeThreshold = (MediaQuery.sizeOf(context).width * 0.45).clamp(140.0, 220.0);
+                final fromLeftEdge = _swipeStartX < edgeThreshold;
+                if (fromLeftEdge && (_swipeDeltaX > 35 || (velocity > 220 && _swipeDeltaX > 15))) {
+                  _handleSwipeBack();
+                } else if ((velocity < -220 && _swipeDeltaX < -25) && _forwardStack.isNotEmpty) {
+                  HapticFeedback.lightImpact();
+                  _goForward();
+                }
+                _swipeDownX = null;
+                _swipeStartX = 0;
+                _swipeDeltaX = 0;
+              },
+        onHorizontalDragCancel: PlatformCapabilities.isDesktop
+            ? null
+            : () {
+                _swipeDownX = null;
+                _swipeStartX = 0;
+                _swipeDeltaX = 0;
+              },
         child: SafeArea(
           // With the toolbar moved to the bottom there is no AppBar to consume
           // the status-bar inset, so the body starts under it otherwise.
@@ -4311,7 +4421,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            _filterQuery.trim().length >= 2 ? AppLocalizations.of(context).searchFoundCount(_searchResults.length) : '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
+                            _isRecursiveSearchActive ? AppLocalizations.of(context).searchFoundCount(_searchResults.length) : '${_filteredAndSortedEntries.length}/${_entries.where((e) => _showHidden || !e.hidden).length}',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -4933,53 +5043,16 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   }
 
   Future<void> _startWebDavForCurrentFolder() async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      final status = await SharingService.instance.startWebDav(
-        root: _root,
-        relPath: _relPath,
-        readOnly: true,
-      );
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(l10n.lanWebdavShareTitle),
-          content: SelectableText(l10n.webdavServerRunning(status.url)),
-          actions: [
-            TextButton.icon(
-              onPressed: () {
-                SharingService.instance.stopWebDav();
-                Navigator.of(ctx).pop();
-              },
-              icon: const Icon(Icons.stop_circle_outlined, size: 16),
-              label: Text(l10n.stopped),
-            ),
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: status.url));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(l10n.webdavUrlCopied)),
-                );
-              },
-              child: Text(l10n.copyUrl),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.close),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
+    final name = _relPath.isNotEmpty
+        ? _relPath.split('/').where((s) => s.isNotEmpty).last
+        : _rootTitle;
+    await BrowserFileOps.shareViaLanWebDav(
+      context,
+      root: _root,
+      relPath: _relPath,
+      displayName: name,
+      readOnly: true,
+    );
   }
 
   static String _fnv1aHex(String input) {
@@ -5085,28 +5158,34 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
     );
   }
 
-  Widget _buildUnifiedAddressBar(List<String> segments) {
-    String rootLabel;
-    if (_root == '/') {
-      rootLabel = '/';
-    } else if (_root.startsWith('remote://')) {
-      final remoteId = _root.substring('remote://'.length);
-      final remote = _findRemote(remoteId);
-      rootLabel = remote != null ? '☁️ ${remote.name}' : AppLocalizations.of(context).remote;
-    } else if (isVaultRoot(_root)) {
-      final vid = vaultIdFromRoot(_root);
-      final vault = vid == null ? null : VaultService.instance.findUnlockedById(vid);
-      rootLabel = vault != null ? '🔒 ${vault.name}' : AppLocalizations.of(context).privacyFolder;
-    } else if (_root.startsWith('archive://')) {
-      rootLabel = AppLocalizations.of(context).archiveLabel;
-    } else if (PlatformPaths.isPrivateInboxRoot(_root)) {
-      rootLabel = AppLocalizations.of(context).quickInbox;
-    } else if (_root == '/storage/emulated/0') {
-      // Last segment of this path is "0", which reads as a drive letter.
-      rootLabel = AppLocalizations.of(context).internalStorage;
-    } else {
-      rootLabel = _root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? _root;
+  String _resolveRootLabelFor(String root, {bool includeEmoji = true}) {
+    final l10n = AppLocalizations.of(context);
+    if (root == '/') return '/';
+    if (root.startsWith('remote://')) {
+      final remote = _findRemote(root.substring('remote://'.length));
+      if (remote == null) return l10n.remote;
+      return includeEmoji ? '☁️ ${remote.name}' : remote.name;
     }
+    if (isVaultRoot(root)) {
+      final vid = vaultIdFromRoot(root);
+      final vault = vid == null ? null : VaultService.instance.findUnlockedById(vid);
+      if (vault == null) return l10n.privacyFolder;
+      return includeEmoji ? '🔒 ${vault.name}' : vault.name;
+    }
+    if (isPoolRoot(root)) {
+      final pid = poolIdFromRoot(root);
+      final pool = pid == null ? null : PoolService.instance.findById(pid);
+      if (pool == null) return l10n.storagePools;
+      return includeEmoji ? '🧩 ${pool.name}' : pool.name;
+    }
+    if (root.startsWith('archive://')) return l10n.archiveLabel;
+    if (PlatformPaths.isPrivateInboxRoot(root)) return l10n.quickInbox;
+    if (root == '/storage/emulated/0') return l10n.internalStorage;
+    return root.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).lastOrNull ?? root;
+  }
+
+  Widget _buildUnifiedAddressBar(List<String> segments) {
+    final rootLabel = _resolveRootLabelFor(_root);
 
     return BrowserUnifiedAddressBar(
       isEditingAddress: _isEditingAddress,
@@ -5127,7 +5206,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       onGoForward: _goForward,
       canNavigateUp: _canNavigateUp,
       onNavigateUp: _navigateUp,
-      onRefresh: _load,
+      onRefresh: () => _load(refresh: true),
       onSegmentTap: (targetRelPath) {
         if (targetRelPath != _relPath) {
           _pushHistory();
@@ -5380,6 +5459,28 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                         navigateTo(PlatformPaths.defaultRoot(), '');
                       },
                     ),
+                    if (!_pickMode && PoolService.instance.pools.isNotEmpty) ...[
+                      const Divider(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Text(
+                          l10n.storagePools,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ),
+                      for (final p in PoolService.instance.pools)
+                        ListTile(
+                          leading: const Icon(Icons.hub_rounded),
+                          title: Text(p.name),
+                          subtitle: Text(l10n.poolNodesCount(p.nodes.length)),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            navigateTo('pool://${p.id}', '');
+                          },
+                        ),
+                    ],
                     if (!_pickMode && VaultService.instance.unlockedVaults.isNotEmpty) ...[
                       const Divider(),
                       Padding(
@@ -5413,7 +5514,9 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                               ),
                         ),
                       ),
-                      for (final b in bookmarks)
+                      for (final b in bookmarks.where(
+                        (b) => !_pickMode || !PlatformPaths.isInsidePrivateInbox(b.root),
+                      ))
                         ListTile(
                           leading: const Icon(Icons.bookmark_outline),
                           title: Text(b.name),
@@ -5725,9 +5828,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       );
     }
 
-    // Recursive search results take over the body while a 2+ character
-    // query is active.
-    if (_isSearching && _filterQuery.trim().length >= 2) {
+    // Recursive search results take over the body while active (2+ chars or CJK).
+    if (_isRecursiveSearchActive) {
       return _buildSearchResults();
     }
 
@@ -5939,7 +6041,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                                   root: _root,
                                   relPath: _fullEntryPath(item),
                                   item: item,
-                                  size: PlatformCapabilities.isDesktop ? 68 : 56,
+                                  size: PlatformCapabilities.isDesktop ? 68 : 52,
                                 ),
                               )
                             else

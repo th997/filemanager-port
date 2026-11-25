@@ -5,9 +5,14 @@ import 'package:flutter/material.dart';
 
 import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/inspect.dart';
+import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
+import '../services/semantic_colors.dart';
+import '../services/storage_service.dart';
 import '../services/task_service.dart';
+import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
+import 'category_files_page.dart';
 
 /// Visual storage space analyzer showing disk capacity, folder size ranking,
 /// file-type breakdown, and Top N largest files with drill-down & cleanup.
@@ -105,11 +110,14 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
 
   Future<void> _deleteFile(StorageFileRankDto file) async {
     final l10n = AppLocalizations.of(context);
+    final native = isNativeRoot(widget.root);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.deleteSingleConfirmTitle(file.name)),
-        content: Text(l10n.deletePermanentWarning),
+        content: Text(
+          native ? l10n.deleteChoiceTrashOrPermanent : l10n.deleteRemotePermanentWarning,
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(l10n.cancel)),
           FilledButton(
@@ -122,7 +130,13 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
     );
     if (ok != true || !mounted) return;
     try {
-      await fm_api.removeEntry(root: widget.root, path: file.path);
+      if (native) {
+        await StorageService.instance.moveToTrash(
+          joinNative(widget.root, file.path),
+        );
+      } else {
+        await fm_api.removeEntry(root: widget.root, path: file.path);
+      }
       if (mounted) {
         unawaited(_runAnalysis());
       }
@@ -131,6 +145,29 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
+  }
+
+  Future<void> _openRankedFile(StorageFileRankDto f) async {
+    try {
+      await FileOpenService.instance.openWith(widget.root, f.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  void _openCategoryFiles(String category) {
+    final targetRoot =
+        _relPath.isEmpty || !isNativeRoot(widget.root) ? widget.root : joinNative(widget.root, _relPath);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryFilesPage(
+          category: category,
+          root: targetRoot,
+        ),
+      ),
+    );
   }
 
   void _openInBrowser(String relPath) {
@@ -169,81 +206,115 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
     final scheme = Theme.of(context).colorScheme;
     final analysis = _analysis;
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.storageAnalyzer),
-              Text(
-                _relPath.isEmpty ? widget.title : '${widget.title}/$_relPath',
-                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-          actions: [
-            if (_relPath.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.arrow_upward),
-                tooltip: l10n.rootLabel,
-                onPressed: () {
-                  final parts = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-                  if (parts.isNotEmpty) parts.removeLast();
-                  setState(() => _relPath = parts.join('/'));
-                  unawaited(_runAnalysis());
-                },
-              ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _runAnalysis,
-            ),
-          ],
-          bottom: TabBar(
-            tabs: [
-              Tab(text: l10n.topFolders),
-              Tab(text: l10n.fileTypesBreakdown),
-              Tab(text: l10n.topFiles),
-            ],
-          ),
-        ),
-        body: _loading
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () {
-                        final op = _activeOpId;
-                        if (op != null) cancelInspectOp(opId: op);
-                      },
-                      child: Text(l10n.cancel),
-                    ),
-                  ],
+    return AppSwipeBack(
+      child: DefaultTabController(
+        length: 3,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.storageAnalyzer),
+                Text(
+                  _relPath.isEmpty ? widget.title : '${widget.title}/$_relPath',
+                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              )
-            : _error != null
-                ? Center(child: Text(_error!, style: TextStyle(color: scheme.error)))
-                : analysis == null
-                    ? const SizedBox.shrink()
-                    : Column(
-                        children: [
-                          _buildSummaryHeader(context, analysis, l10n),
-                          Expanded(
-                            child: TabBarView(
-                              children: [
-                                _buildFoldersTab(analysis),
-                                _buildCategoriesTab(analysis, l10n),
-                                _buildFilesTab(analysis),
-                              ],
-                            ),
-                          ),
-                        ],
+              ],
+            ),
+            actions: [
+              if (_relPath.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.arrow_upward),
+                  tooltip: l10n.parentFolderTooltip,
+                  onPressed: () {
+                    final parts = _relPath.split('/').where((s) => s.isNotEmpty).toList();
+                    if (parts.isNotEmpty) parts.removeLast();
+                    setState(() => _relPath = parts.join('/'));
+                    unawaited(_runAnalysis());
+                  },
+                ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: l10n.refresh,
+                onPressed: _runAnalysis,
+              ),
+            ],
+            bottom: TabBar(
+              tabs: [
+                Tab(text: l10n.topFolders),
+                Tab(text: l10n.fileTypesBreakdown),
+                Tab(text: l10n.topFiles),
+              ],
+            ),
+          ),
+          body: _loading
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () {
+                          final op = _activeOpId;
+                          if (op != null) cancelInspectOp(opId: op);
+                        },
+                        child: Text(l10n.cancel),
                       ),
+                    ],
+                  ),
+                )
+              : _error != null
+                  ? Center(child: Text(_error!, style: TextStyle(color: scheme.error)))
+                  : analysis == null
+                      ? const SizedBox.shrink()
+                      : Column(
+                          children: [
+                            if (analysis.cancelled || analysis.truncated)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                color: scheme.warning.withValues(alpha: 0.14),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.warning_amber_rounded,
+                                      size: 18,
+                                      color: scheme.warning,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        analysis.cancelled
+                                            ? l10n.analyzerScanCancelled
+                                            : l10n.analyzerScanTruncated,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: _runAnalysis,
+                                      child: Text(l10n.analyzerRescan),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            _buildSummaryHeader(context, analysis, l10n),
+                            Expanded(
+                              child: TabBarView(
+                                children: [
+                                  _buildFoldersTab(analysis),
+                                  _buildCategoriesTab(analysis, l10n),
+                                  _buildFilesTab(analysis),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+        ),
       ),
     );
   }
@@ -271,7 +342,10 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
               ),
               const SizedBox(width: 12),
               Text(
-                '${analysis.totalFiles} files · ${analysis.totalDirs} folders',
+                l10n.analyzerStatsSummary(
+                  analysis.totalFiles.toInt(),
+                  analysis.totalDirs.toInt(),
+                ),
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ],
@@ -352,6 +426,7 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
               Text(formatBytes(f.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600)),
               IconButton(
                 icon: const Icon(Icons.open_in_new, size: 18),
+                tooltip: AppLocalizations.of(context).open,
                 onPressed: () => _openInBrowser(f.path),
               ),
             ],
@@ -394,6 +469,7 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
             ],
           ),
           trailing: Text(formatBytes(c.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600)),
+          onTap: () => _openCategoryFiles(c.category),
         );
       },
     );
@@ -413,21 +489,24 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
           leading: const Icon(Icons.insert_drive_file_outlined),
           title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(f.path, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(formatBytes(f.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600)),
-              IconButton(
-                icon: const Icon(Icons.folder_open, size: 18),
-                onPressed: () => _openInBrowser(parent),
-              ),
-              IconButton(
-                icon: Icon(Icons.delete_outline, size: 18, color: Theme.of(context).colorScheme.error),
-                onPressed: () => _deleteFile(f),
-              ),
-            ],
-          ),
-        );
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(formatBytes(f.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600)),
+                IconButton(
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  tooltip: AppLocalizations.of(context).locateInFolder,
+                  onPressed: () => _openInBrowser(parent),
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete_outline, size: 18, color: Theme.of(context).colorScheme.error),
+                  tooltip: AppLocalizations.of(context).delete,
+                  onPressed: () => _deleteFile(f),
+                ),
+              ],
+            ),
+            onTap: () => _openRankedFile(f),
+          );
       },
     );
   }

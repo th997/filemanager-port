@@ -8,7 +8,7 @@ import 'file_manager.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `contains_ignore_case`, `extension_of`, `file_category_of`, `is_noisy_dir`, `is_searchable_text_file`, `open_registry_db`, `search_entries_impl`, `wildcard_to_regex`
+// These functions are ignored because they are not marked as `pub`: `contains_ignore_case`, `extension_of`, `file_category_of`, `is_noisy_dir`, `is_searchable_text_file`, `is_vault_protected_root`, `normalize_index_root`, `open_registry_db`, `search_entries_impl`, `wildcard_to_regex`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Multi-dimensional recursive search supporting category, size range, modified

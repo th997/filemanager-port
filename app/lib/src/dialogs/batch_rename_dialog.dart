@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -141,8 +144,10 @@ class BatchRenameDialog extends StatefulWidget {
     required List<String> paths,
     required List<String> newNames,
     Set<String> existingSiblingNames = const {},
+    bool caseInsensitive = false,
   }) {
     assert(paths.length == newNames.length);
+    String normKey(String value) => caseInsensitive ? value.toLowerCase() : value;
     final entries = <_PlannedEntry>[];
     final invalidIndices = <int>{};
     BatchRenameValidationErrorKind? firstError;
@@ -172,12 +177,13 @@ class BatchRenameDialog extends StatefulWidget {
       }
 
       if (newName.isNotEmpty) {
-        final prevIdx = seenTargetPaths[newPath];
+        final targetKey = normKey(newPath);
+        final prevIdx = seenTargetPaths[targetKey];
         if (prevIdx != null) {
           invalidIndices.add(prevIdx);
           recordError(BatchRenameValidationErrorKind.duplicateTarget, newName, i);
         } else {
-          seenTargetPaths[newPath] = i;
+          seenTargetPaths[targetKey] = i;
         }
       }
 
@@ -192,13 +198,14 @@ class BatchRenameDialog extends StatefulWidget {
     }
 
     final changing = entries.where((e) => e.newPath != e.oldPath).toList();
-    final movingAwayOldPaths = {for (final e in changing) e.oldPath};
+    final movingAwayOldPaths = {for (final e in changing) normKey(e.oldPath)};
+    final existingNormNames = {for (final n in existingSiblingNames) normKey(n)};
 
     if (existingSiblingNames.isNotEmpty) {
       for (final e in changing) {
         if (e.newName.isNotEmpty &&
-            existingSiblingNames.contains(e.newName) &&
-            !movingAwayOldPaths.contains(e.newPath)) {
+            existingNormNames.contains(normKey(e.newName)) &&
+            !movingAwayOldPaths.contains(normKey(e.newPath))) {
           recordError(BatchRenameValidationErrorKind.targetExists, e.newName, e.index);
         }
       }
@@ -217,7 +224,16 @@ class BatchRenameDialog extends StatefulWidget {
       return const BatchRenameValidation(steps: [], changedCount: 0);
     }
 
-    final hasOverlap = changing.any((e) => movingAwayOldPaths.contains(e.newPath));
+    // Include exact same-path case-only renames on case-insensitive FS? No, if oldKey == newKey (case change)
+    // and only 1 file does it, `a.txt -> A.txt` conflicts against itself only if `oldKey == newKey`?
+    // Wait: if file 0 renames `a.txt -> b.txt` while file 1 renames `B.txt -> c.txt`,
+    // normKey(newPath) hits movingAwayOldPaths AND needs two-phase staging!
+    final hasOverlap = changing.any((e) {
+      final newKey = normKey(e.newPath);
+      final oldKey = normKey(e.oldPath);
+      if (newKey == oldKey) return false; // In-place case rename of same entry.
+      return movingAwayOldPaths.contains(newKey);
+    });
     if (!hasOverlap) {
       return BatchRenameValidation(
         steps: [for (final e in changing) RenameStep(e.oldPath, e.newPath)],
@@ -228,15 +244,15 @@ class BatchRenameDialog extends StatefulWidget {
     // Two-phase rename via unique temporary names so shifting/swapping names
     // never overwrite one another on filesystems with replacing rename semantics.
     final forbiddenNames = <String>{
-      ...existingSiblingNames,
-      for (final e in entries) e.oldName,
-      for (final e in entries) e.newName,
+      for (final n in existingSiblingNames) normKey(n),
+      for (final e in entries) normKey(e.oldName),
+      for (final e in entries) normKey(e.newName),
     };
 
     int nonce = 0;
     while (true) {
       final candidateConflict = changing.any(
-        (e) => forbiddenNames.contains('.__fm_br_${nonce}_${e.index}'),
+        (e) => forbiddenNames.contains(normKey('.__fm_br_${nonce}_${e.index}')),
       );
       if (!candidateConflict) break;
       nonce++;
@@ -342,12 +358,12 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
       _errorMessage = null;
     });
 
-    var renamedAny = false;
+    final completed = <RenameStep>[];
     try {
       for (int i = 0; i < plan.steps.length; i++) {
         final step = plan.steps[i];
         await renameEntry(root: widget.root, from: step.from, to: step.to);
-        renamedAny = true;
+        completed.add(step);
         if (mounted) {
           setState(() => _processedCount = i + 1);
         }
@@ -357,10 +373,18 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
         Navigator.of(context).pop(BatchRenameOutcome.completed);
       }
     } catch (e) {
+      var rollbackFailed = false;
+      for (final step in completed.reversed) {
+        try {
+          await renameEntry(root: widget.root, from: step.to, to: step.from);
+        } catch (_) {
+          rollbackFailed = true;
+        }
+      }
       if (mounted) {
         setState(() {
           _isProcessing = false;
-          _hasPartialFailure = renamedAny;
+          _hasPartialFailure = completed.isNotEmpty && rollbackFailed;
           _errorMessage = '$e';
         });
       }
@@ -371,6 +395,14 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final media = MediaQuery.of(context);
+    final availHeight = math.max(
+      260.0,
+      media.size.height - media.viewInsets.bottom - 48,
+    );
+    final previewMaxHeight = math.min(240.0, math.max(96.0, availHeight * 0.34));
+    final caseInsensitive =
+        isNativeRoot(widget.root) && (Platform.isMacOS || Platform.isWindows);
 
     final computedNames = [
       for (int i = 0; i < widget.paths.length; i++)
@@ -380,6 +412,7 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
       paths: widget.paths,
       newNames: computedNames,
       existingSiblingNames: widget.existingSiblingNames,
+      caseInsensitive: caseInsensitive,
     );
     final validationMsg = plan.localizedMessage(l10n);
 
@@ -389,13 +422,17 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
+          constraints: BoxConstraints(
+            maxWidth: 540,
+            maxHeight: math.min(680.0, availHeight),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 // Header
                 Row(
                   children: [
@@ -430,18 +467,34 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
 
                 // Segmented Button for Mode
                 SegmentedButton<BatchRenameMode>(
+                  showSelectedIcon: false,
                   segments: [
                     ButtonSegment(
                       value: BatchRenameMode.prefixSuffix,
-                      label: Text(l10n.batchRenameModePrefixSuffix, style: const TextStyle(fontSize: 12)),
+                      label: Text(
+                        l10n.batchRenameModePrefixSuffix,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                     ButtonSegment(
                       value: BatchRenameMode.findReplace,
-                      label: Text(l10n.batchRenameModeFindReplace, style: const TextStyle(fontSize: 12)),
+                      label: Text(
+                        l10n.batchRenameModeFindReplace,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                     ButtonSegment(
                       value: BatchRenameMode.numbering,
-                      label: Text(l10n.batchRenameModeNumbering, style: const TextStyle(fontSize: 12)),
+                      label: Text(
+                        l10n.batchRenameModeNumbering,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                   ],
                   selected: {_mode},
@@ -644,7 +697,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                 ),
 
                 // Live preview list
-                Expanded(
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: previewMaxHeight),
                   child: Container(
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surfaceContainerLow,
@@ -656,6 +710,7 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                       ),
                     ),
                     child: ListView.separated(
+                      shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       itemCount: widget.paths.length,
                       separatorBuilder: (_, _) => const Divider(height: 1),
@@ -756,7 +811,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                       ),
                     ],
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

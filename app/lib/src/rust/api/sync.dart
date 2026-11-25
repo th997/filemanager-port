@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `collect_files`, `differs`, `ensure_parent_dirs`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FileMeta`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
 /// Compute a dry-run diff plan between `(src_root, src_path)` and `(dst_root, dst_path)`.
 /// `mode`: `"incremental"` (copy new & newer), `"mirror"` (also delete extra dst files),
@@ -20,12 +20,14 @@ Future<SyncPlanDto> previewDirectorySync({
   required String dstRoot,
   required String dstPath,
   required String mode,
+  SyncExcludeRulesDto? excludeRules,
 }) => RustLib.instance.api.crateApiSyncPreviewDirectorySync(
   srcRoot: srcRoot,
   srcPath: srcPath,
   dstRoot: dstRoot,
   dstPath: dstPath,
   mode: mode,
+  excludeRules: excludeRules,
 );
 
 /// Execute a directory sync plan in the background task manager, returning the task ID.
@@ -36,6 +38,7 @@ Future<String> startDirectorySyncTask({
   required String dstPath,
   required String mode,
   List<String>? selectedRelPaths,
+  SyncExcludeRulesDto? excludeRules,
 }) => RustLib.instance.api.crateApiSyncStartDirectorySyncTask(
   srcRoot: srcRoot,
   srcPath: srcPath,
@@ -43,6 +46,7 @@ Future<String> startDirectorySyncTask({
   dstPath: dstPath,
   mode: mode,
   selectedRelPaths: selectedRelPaths,
+  excludeRules: excludeRules,
 );
 
 class SyncDiffItemDto {
@@ -87,6 +91,34 @@ class SyncDiffItemDto {
           dstModifiedMillis == other.dstModifiedMillis;
 }
 
+class SyncExcludeRulesDto {
+  final List<String> excludeExtensions;
+  final List<String> excludeNames;
+  final List<String> excludeDirs;
+
+  const SyncExcludeRulesDto({
+    required this.excludeExtensions,
+    required this.excludeNames,
+    required this.excludeDirs,
+  });
+
+  static Future<SyncExcludeRulesDto> default_() =>
+      RustLib.instance.api.crateApiSyncSyncExcludeRulesDtoDefault();
+
+  @override
+  int get hashCode =>
+      excludeExtensions.hashCode ^ excludeNames.hashCode ^ excludeDirs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SyncExcludeRulesDto &&
+          runtimeType == other.runtimeType &&
+          excludeExtensions == other.excludeExtensions &&
+          excludeNames == other.excludeNames &&
+          excludeDirs == other.excludeDirs;
+}
+
 class SyncPlanDto {
   final String mode;
   final List<SyncDiffItemDto> items;
@@ -94,6 +126,7 @@ class SyncPlanDto {
   final BigInt transferBytes;
   final bool truncated;
   final BigInt scannedFiles;
+  final BigInt excludedCount;
 
   const SyncPlanDto({
     required this.mode,
@@ -102,6 +135,7 @@ class SyncPlanDto {
     required this.transferBytes,
     required this.truncated,
     required this.scannedFiles,
+    required this.excludedCount,
   });
 
   @override
@@ -111,7 +145,8 @@ class SyncPlanDto {
       unchangedCount.hashCode ^
       transferBytes.hashCode ^
       truncated.hashCode ^
-      scannedFiles.hashCode;
+      scannedFiles.hashCode ^
+      excludedCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -123,5 +158,6 @@ class SyncPlanDto {
           unchangedCount == other.unchangedCount &&
           transferBytes == other.transferBytes &&
           truncated == other.truncated &&
-          scannedFiles == other.scannedFiles;
+          scannedFiles == other.scannedFiles &&
+          excludedCount == other.excludedCount;
 }

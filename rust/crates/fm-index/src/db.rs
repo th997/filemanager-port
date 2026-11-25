@@ -18,6 +18,14 @@ pub struct RemoteRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PoolRecord {
+    pub id: String,
+    pub name: String,
+    pub config_json: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PinnedFileRecord {
     pub id: i64,
     pub remote_root: String,
@@ -217,6 +225,13 @@ impl Database {
                             created_at INTEGER NOT NULL
                         );
 
+                        CREATE TABLE IF NOT EXISTS pools (
+                            id TEXT PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            config_json TEXT NOT NULL,
+                            created_at INTEGER NOT NULL
+                        );
+
                         CREATE TABLE IF NOT EXISTS bookmarks (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             location TEXT NOT NULL,
@@ -346,6 +361,72 @@ impl Database {
     pub fn delete_remote(&self, id: &str) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute("DELETE FROM remotes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // Storage pools CRUD
+    pub fn save_pool(&self, pool: &PoolRecord) -> Result<(), rusqlite::Error> {
+        let stored = crate::secret::encrypt_config(&pool.config_json, &self.data_dir);
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "INSERT OR REPLACE INTO pools (id, name, config_json, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![pool.id, pool.name, stored, pool.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_pools(&self) -> Result<Vec<PoolRecord>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, name, config_json, created_at FROM pools ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(PoolRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                config_json: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?;
+
+        let mut pools = Vec::new();
+        for r in rows {
+            let mut record = r?;
+            record.config_json =
+                crate::secret::decrypt_config(&record.config_json, &self.data_dir);
+            pools.push(record);
+        }
+        Ok(pools)
+    }
+
+    pub fn get_pool(&self, id: &str) -> Result<Option<PoolRecord>, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = conn.prepare(
+            "SELECT id, name, config_json, created_at FROM pools WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], |row| {
+            Ok(PoolRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                config_json: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(mut record)) => {
+                record.config_json =
+                    crate::secret::decrypt_config(&record.config_json, &self.data_dir);
+                Ok(Some(record))
+            }
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }
+    }
+
+    pub fn delete_pool(&self, id: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute("DELETE FROM pools WHERE id = ?1", params![id])?;
         Ok(())
     }
 

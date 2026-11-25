@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="__HTML_LANG__" data-server-lang="__SERVER_LANG__">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FP File Manager - WebDAV</title>
+    <style>
+/*__APP_CSS__*/
+.btn-danger-ghost {
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-danger-ghost:hover {
+    background: rgba(239, 68, 68, 0.12);
+}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 id="page-title">🌐 WebDAV</h1>
+            <div class="header-right">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="filter-input" class="search-input" placeholder="Filter files in current folder..." />
+                </div>
+                <select id="lang-select" class="lang-select" aria-label="Language">
+                    <option value="zh">简体中文</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                </select>
+                <div class="upload-buttons" id="upload-buttons">
+                    <button class="btn-secondary" id="btn-new-folder" title="New Folder">
+                        <span id="btn-new-folder-text">📂 New Folder</span>
+                    </button>
+                    <button class="btn-primary" id="btn-upload-file" title="Upload Files">
+                        <span id="btn-upload-file-text">📄 Upload Files</span>
+                    </button>
+                    <button class="btn-secondary" id="btn-upload-folder" title="Upload Folder">
+                        <span id="btn-upload-folder-text">📁 Upload Folder</span>
+                    </button>
+                    <input type="file" id="file-input" multiple style="display:none;" />
+                    <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none;" />
+                </div>
+            </div>
+        </header>
+
+        <div class="upload-status" id="upload-status" style="display:none;">
+            <div class="upload-status-info">
+                <span id="upload-status-text">Uploading...</span>
+                <span id="upload-status-percent">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
+
+        <div class="breadcrumb" id="breadcrumb-bar">
+            <span class="breadcrumb-item" data-path="" id="breadcrumb-root">Root</span>
+        </div>
+
+        <ul class="file-list" id="file-list">
+            <li class="empty-state" id="loading-state">Loading files...</li>
+        </ul>
+
+        <div class="footer-info">
+            <span id="item-count-text">0 items</span>
+            <span>FP File Manager WebDAV</span>
+        </div>
+    </div>
+
+    <div id="drop-overlay" class="drop-overlay">
+        <div class="drop-overlay-box">
+            <span class="drop-icon">📥</span>
+            <span class="drop-text" id="drop-overlay-text">Drop files or folders to upload here</span>
+        </div>
+    </div>
+
+    <script>
+/*__WEBDAV_APP_JS__*/
+    </script>
+</body>
+</html>

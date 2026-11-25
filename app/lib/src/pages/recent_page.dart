@@ -4,6 +4,7 @@ import '../dialogs/history_retention_dialog.dart';
 import '../rust/api/metadata.dart';
 import '../rust/api/remotes.dart';
 import '../services/platform_paths.dart';
+import '../services/pool_service.dart';
 import '../services/preferences_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
@@ -102,6 +103,11 @@ class _RecentPageState extends State<RecentPage> {
         setState(() {
           _history = history;
           _remotes = const [];
+          if (_history.isEmpty) {
+            _showSearch = false;
+            _searchQuery = '';
+            _searchController.clear();
+          }
           _loading = false;
         });
         return;
@@ -114,6 +120,11 @@ class _RecentPageState extends State<RecentPage> {
       setState(() {
         _history = results[0] as List<HistoryDto>;
         _remotes = results[1] as List<RemoteConfigDto>;
+        if (_history.isEmpty) {
+          _showSearch = false;
+          _searchQuery = '';
+          _searchController.clear();
+        }
         _loading = false;
       });
     } catch (e) {
@@ -139,6 +150,11 @@ class _RecentPageState extends State<RecentPage> {
       for (final r in _remotes) {
         if (r.id == id) return 'remote://${r.name}';
       }
+    }
+    if (root.startsWith('pool://')) {
+      final id = root.substring('pool://'.length);
+      final pool = PoolService.instance.findById(id);
+      if (pool != null) return 'pool://${pool.name}';
     }
     return root;
   }
@@ -280,12 +296,13 @@ class _RecentPageState extends State<RecentPage> {
 
   /// Compact relative time, so the list reads as "when", not a timestamp.
   String _relativeTime(int millis) {
+    final l10n = AppLocalizations.of(context);
     final then = DateTime.fromMillisecondsSinceEpoch(millis);
     final diff = DateTime.now().difference(then);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inHours < 1) return '${diff.inMinutes} min ago';
-    if (diff.inDays < 1) return '${diff.inHours} h ago';
-    if (diff.inDays < 7) return '${diff.inDays} d ago';
+    if (diff.inMinutes < 1) return l10n.timeJustNow;
+    if (diff.inHours < 1) return l10n.timeMinutesAgo(diff.inMinutes);
+    if (diff.inDays < 1) return l10n.timeHoursAgo(diff.inHours);
+    if (diff.inDays < 7) return l10n.timeDaysAgo(diff.inDays);
     return '${then.year}-${then.month.toString().padLeft(2, '0')}-${then.day.toString().padLeft(2, '0')}';
   }
 
@@ -414,6 +431,7 @@ class _RecentPageState extends State<RecentPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final visibleHistory = _visibleHistory;
+    final isCompact = MediaQuery.sizeOf(context).width < 480;
     return AppSwipeBack(
       child: Scaffold(
       appBar: AppBar(
@@ -433,10 +451,11 @@ class _RecentPageState extends State<RecentPage> {
                 });
               },
             ),
-            TextButton(
-              onPressed: _clearHistory,
-              child: Text(l10n.clear, style: const TextStyle(fontSize: 12)),
-            ),
+            if (!isCompact)
+              TextButton(
+                onPressed: _clearHistory,
+                child: Text(l10n.clear, style: const TextStyle(fontSize: 12)),
+              ),
           ],
           TextButton.icon(
             key: const ValueKey('recent_retention_btn'),
@@ -449,18 +468,47 @@ class _RecentPageState extends State<RecentPage> {
             ),
             onPressed: _configureRetention,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: l10n.refresh,
-            onPressed: _loadHistory,
-          ),
+          if (isCompact)
+            PopupMenuButton<String>(
+              onSelected: (action) {
+                if (action == 'refresh') _loadHistory();
+                if (action == 'clear') _clearHistory();
+              },
+              itemBuilder: (_) => [
+                if (_history.isNotEmpty)
+                  PopupMenuItem(
+                    value: 'clear',
+                    child: ListTile(
+                      leading: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      title: Text(l10n.clear),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                PopupMenuItem(
+                  value: 'refresh',
+                  child: ListTile(
+                    leading: const Icon(Icons.refresh, size: 18),
+                    title: Text(l10n.refresh),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: l10n.refresh,
+              onPressed: _loadHistory,
+            ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                if (_showSearch)
+                if (_showSearch && _history.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     child: TextField(
