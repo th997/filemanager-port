@@ -26,7 +26,6 @@ import 'package:filemanager/l10n/app_localizations.dart';
 import 'bookmarks_page.dart';
 import 'browser_page.dart';
 import 'category_files_page.dart';
-import 'duplicate_finder_page.dart';
 import 'gallery_page.dart';
 import 'offline_pinned_page.dart';
 import 'peer_transfer_page.dart';
@@ -34,8 +33,8 @@ import 'photo_backup_page.dart';
 import 'pool_dashboard_page.dart';
 import 'recent_page.dart';
 import 'remotes_page.dart';
-import 'settings_page.dart';
 import 'storage_analyzer_page.dart';
+import 'settings_page.dart';
 import 'sync_page.dart';
 import 'tasks_page.dart';
 import 'trash_page.dart';
@@ -1088,47 +1087,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   List<Widget> _buildToolsDomainChildren(AppLocalizations l10n) {
-    final defaultRoot = PlatformPaths.defaultRoot();
     return [
       _sectionHeader(l10n.navDomainTools),
       _buildSectionGrid(
         children: [
-          _buildGridCard(
-            icon: Icons.pie_chart_outline,
-            iconColor: Colors.teal,
-            title: l10n.storageAnalyzer,
-            subtitle: l10n.localStorage,
-            onTap: () {
-              Navigator.of(context)
-                  .push(
-                    MaterialPageRoute(
-                      builder: (_) => StorageAnalyzerPage(
-                        root: defaultRoot,
-                        title: l10n.localStorage,
-                      ),
-                    ),
-                  )
-                  .then((_) => _loadMetadata());
-            },
-          ),
-          _buildGridCard(
-            icon: Icons.file_copy_outlined,
-            iconColor: Colors.deepOrange,
-            title: l10n.duplicateFinder,
-            subtitle: l10n.localStorage,
-            onTap: () {
-              Navigator.of(context)
-                  .push(
-                    MaterialPageRoute(
-                      builder: (_) => DuplicateFinderPage(
-                        root: defaultRoot,
-                        title: l10n.localStorage,
-                      ),
-                    ),
-                  )
-                  .then((_) => _loadMetadata());
-            },
-          ),
           _buildGridCard(
             icon: Icons.sync,
             iconColor: Colors.blue,
@@ -1172,9 +1134,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             icon: Icons.build_outlined,
             iconColor: const Color(0xFF5E35B1),
             title: l10n.utilities,
-            subtitle: _trashCount > 0
-                ? l10n.utilitiesTrashSubtitle(_trashCount)
-                : l10n.utilitiesDefaultSubtitle,
+            subtitle: l10n.utilitiesDefaultSubtitle,
             onTap: () {
               Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const UtilitiesPage()))

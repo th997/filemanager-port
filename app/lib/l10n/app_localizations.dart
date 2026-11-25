@@ -2095,7 +2095,7 @@ abstract class AppLocalizations {
   /// No description provided for @utilitiesDefaultSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Recycle bin, Web share, Cache'**
+  /// **'Privacy folders & cache cleanup'**
   String get utilitiesDefaultSubtitle;
 
   /// No description provided for @tasksDefaultSubtitle.
@@ -8428,6 +8428,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back'**
   String get remoteBatchBackStep;
+
+  /// No description provided for @poolNodeWeightLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Weight'**
+  String get poolNodeWeightLabel;
+
+  /// No description provided for @poolNodeWeightBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Weight {weight}'**
+  String poolNodeWeightBadge(int weight);
+
+  /// No description provided for @poolSetNodeWeightTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Node Weight'**
+  String get poolSetNodeWeightTitle;
+
+  /// No description provided for @poolSetNodeWeightHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Higher weight (1–1000) receives more write traffic when free space and health are similar.'**
+  String get poolSetNodeWeightHint;
+
+  /// No description provided for @poolInvalidWeightError.
+  ///
+  /// In en, this message translates to:
+  /// **'Weight must be an integer between 1 and 1000.'**
+  String get poolInvalidWeightError;
+
+  /// No description provided for @poolNodeUsedAndQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'Used {used} / Quota {quota}'**
+  String poolNodeUsedAndQuota(String used, String quota);
+
+  /// No description provided for @poolNodeSystemFreeWithTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'System free {free} / {total}'**
+  String poolNodeSystemFreeWithTotal(String free, String total);
+
+  /// No description provided for @poolNodeSystemFreeOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'System free {free}'**
+  String poolNodeSystemFreeOnly(String free);
+
+  /// No description provided for @poolNodeSystemSpaceUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'System free space: not supported by protocol'**
+  String get poolNodeSystemSpaceUnsupported;
+
+  /// No description provided for @poolNodeSystemSpaceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'System free space: unavailable'**
+  String get poolNodeSystemSpaceUnavailable;
+
+  /// No description provided for @poolNodeSystemSpaceProbing.
+  ///
+  /// In en, this message translates to:
+  /// **'System free space: checking…'**
+  String get poolNodeSystemSpaceProbing;
+
+  /// No description provided for @poolDeleteRemoteDataOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Also delete remote pool data on member nodes'**
+  String get poolDeleteRemoteDataOption;
+
+  /// No description provided for @poolDeleteRemoteDataWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently deletes blobs/ and meta/ folders under each node\'s storage directory. This cannot be undone.'**
+  String get poolDeleteRemoteDataWarning;
+
+  /// No description provided for @poolDeleteNodeRemoteDataOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Also delete remote data on this node'**
+  String get poolDeleteNodeRemoteDataOption;
+
+  /// No description provided for @poolDeleteNodeRemoteDataWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Permanently removes pool chunks and metadata backups stored on this node.'**
+  String get poolDeleteNodeRemoteDataWarning;
+
+  /// No description provided for @poolOfflineNode.
+  ///
+  /// In en, this message translates to:
+  /// **'Take Offline'**
+  String get poolOfflineNode;
+
+  /// No description provided for @poolOnlineNode.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring Online'**
+  String get poolOnlineNode;
+
+  /// No description provided for @poolRemoveNode.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove Node'**
+  String get poolRemoveNode;
+
+  /// No description provided for @poolOfflineConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Take node \"{node}\" offline immediately? Active chunks on this node will no longer be served until brought back online or healed.'**
+  String poolOfflineConfirm(String node);
+
+  /// No description provided for @poolRemoveNodeConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove node \"{node}\" from this storage pool?'**
+  String poolRemoveNodeConfirm(String node);
+
+  /// No description provided for @poolRemoteCleanupDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted {deleted} remote item(s).'**
+  String poolRemoteCleanupDone(int deleted);
+
+  /// No description provided for @poolRemoteCleanupPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted {deleted} remote item(s); {failed} failed ({nodes}).'**
+  String poolRemoteCleanupPartial(int deleted, int failed, String nodes);
+
+  /// No description provided for @analyzerSelectedCountAndSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} selected ({size})'**
+  String analyzerSelectedCountAndSize(int count, String size);
+
+  /// No description provided for @analyzerBatchDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} file(s)?'**
+  String analyzerBatchDeleteConfirmTitle(int count);
+
+  /// No description provided for @analyzerBatchDeleteDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted {count} file(s), freed {size}.'**
+  String analyzerBatchDeleteDone(int count, String size);
+
+  /// No description provided for @analyzerBatchDeletePartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted {deleted} file(s); {failed} failed.'**
+  String analyzerBatchDeletePartial(int deleted, int failed);
+
+  /// No description provided for @analyzerMultiSelectTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Select files'**
+  String get analyzerMultiSelectTooltip;
 }
 
 class _AppLocalizationsDelegate

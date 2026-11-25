@@ -332,7 +332,7 @@
   "grant": "授权",
   "remoteProtocolsSubtitle": "S3、OSS、SFTP、WebDAV...",
   "utilitiesTrashSubtitle": "回收站 {count} 项 • 局域网共享",
-  "utilitiesDefaultSubtitle": "回收站、局域网共享、缓存",
+  "utilitiesDefaultSubtitle": "隐私文件夹与缓存清理",
   "tasksDefaultSubtitle": "传输与文件操作",
   "bookmarksDefaultSubtitle": "已收藏的文件夹",
   "recentDefaultSubtitle": "浏览历史记录",
@@ -1594,5 +1594,99 @@
   "remoteBatchErrorWrongPassword": "密码错误或备份文件已损坏，请检查密码后重试。",
   "remoteBatchErrorEmptyBundle": "该加密备份中不包含有效的远程连接。",
   "remoteBatchErrorFileTooLarge": "所选文件过大，不是有效的远程连接备份文件。",
-  "remoteBatchBackStep": "返回上一步"
+  "remoteBatchBackStep": "返回上一步",
+  "poolNodeWeightLabel": "权重",
+  "poolNodeWeightBadge": "权重 {weight}",
+  "@poolNodeWeightBadge": {
+    "placeholders": {
+      "weight": { "type": "int" }
+    }
+  },
+  "poolSetNodeWeightTitle": "设置节点权重",
+  "poolSetNodeWeightHint": "权重越高（1–1000），在剩余空间与健康度相近时优先写入更多数据。",
+  "poolInvalidWeightError": "节点权重必须是 1 到 1000 之间的整数。",
+  "poolNodeUsedAndQuota": "已用 {used} / 配额 {quota}",
+  "@poolNodeUsedAndQuota": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "quota": { "type": "String" }
+    }
+  },
+  "poolNodeSystemFreeWithTotal": "系统剩余 {free} / 共 {total}",
+  "@poolNodeSystemFreeWithTotal": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "poolNodeSystemFreeOnly": "系统剩余 {free}",
+  "@poolNodeSystemFreeOnly": {
+    "placeholders": {
+      "free": { "type": "String" }
+    }
+  },
+  "poolNodeSystemSpaceUnsupported": "系统剩余：当前协议不支持查询",
+  "poolNodeSystemSpaceUnavailable": "系统剩余：暂未获取",
+  "poolNodeSystemSpaceProbing": "系统剩余：正在探测…",
+  "poolDeleteRemoteDataOption": "同时删除远程节点上的存储池数据",
+  "poolDeleteRemoteDataWarning": "将永久删除各节点存储目录下的 blobs/ 与 meta/ 数据，删除后无法恢复。",
+  "poolDeleteNodeRemoteDataOption": "同时删除该节点的远程数据",
+  "poolDeleteNodeRemoteDataWarning": "将永久删除存储在该节点上的分块数据与元数据备份。",
+  "poolOfflineNode": "直接下线",
+  "poolOnlineNode": "重新上线",
+  "poolRemoveNode": "移除节点",
+  "poolOfflineConfirm": "确定立即将节点“{node}”下线？该节点上的分块在重新上线或修复前将不可读写。",
+  "@poolOfflineConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolRemoveNodeConfirm": "确定将节点“{node}”从当前存储池中移除？",
+  "@poolRemoveNodeConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolRemoteCleanupDone": "已删除 {deleted} 个远程对象。",
+  "@poolRemoteCleanupDone": {
+    "placeholders": {
+      "deleted": { "type": "int" }
+    }
+  },
+  "poolRemoteCleanupPartial": "已删除 {deleted} 个远程对象，{failed} 项失败（{nodes}）。",
+  "@poolRemoteCleanupPartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "failed": { "type": "int" },
+      "nodes": { "type": "String" }
+    }
+  },
+  "analyzerSelectedCountAndSize": "已选 {count} 项（{size}）",
+  "@analyzerSelectedCountAndSize": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "analyzerBatchDeleteConfirmTitle": "删除所选 {count} 个文件？",
+  "@analyzerBatchDeleteConfirmTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "analyzerBatchDeleteDone": "已删除 {count} 个文件，释放 {size}。",
+  "@analyzerBatchDeleteDone": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "analyzerBatchDeletePartial": "已删除 {deleted} 个文件，{failed} 个失败。",
+  "@analyzerBatchDeletePartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "failed": { "type": "int" }
+    }
+  },
+  "analyzerMultiSelectTooltip": "多选文件"
 }

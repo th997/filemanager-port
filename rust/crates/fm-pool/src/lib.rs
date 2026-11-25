@@ -40,6 +40,13 @@ pub const DEFAULT_CHUNK_SIZE: u32 = 16 * 1024 * 1024;
 pub const MIN_CHUNK_SIZE: u32 = 1024 * 1024;
 pub const MAX_CHUNK_SIZE: u32 = 64 * 1024 * 1024;
 pub const MAX_REPLICATION_FACTOR: usize = 16;
+pub const DEFAULT_NODE_WEIGHT: u32 = 100;
+pub const MIN_NODE_WEIGHT: u32 = 1;
+pub const MAX_NODE_WEIGHT: u32 = 1000;
+
+pub(crate) fn default_node_weight() -> u32 {
+    DEFAULT_NODE_WEIGHT
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolNodeConfig {
@@ -49,6 +56,8 @@ pub struct PoolNodeConfig {
     pub base_prefix: String,
     pub failure_domain: String,
     pub quota_bytes: u64,
+    #[serde(default = "default_node_weight")]
+    pub weight: u32,
     #[serde(default)]
     pub role: NodeRole,
     #[serde(default)]
@@ -162,10 +171,14 @@ pub struct PoolNodeStatus {
     pub failure_domain: String,
     pub quota_bytes: u64,
     pub used_bytes: u64,
+    #[serde(default = "default_node_weight")]
+    pub weight: u32,
     #[serde(default)]
     pub remote_free_bytes: Option<u64>,
     #[serde(default)]
     pub remote_total_bytes: Option<u64>,
+    #[serde(default)]
+    pub space_supported: Option<bool>,
     pub role: String,
     pub is_meta_backup: bool,
     pub health_score: f64,
@@ -173,6 +186,13 @@ pub struct PoolNodeStatus {
     pub circuit_state: String,
     pub last_checked_ms: Option<i64>,
     pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PoolRemoteCleanupReport {
+    pub deleted_objects: u64,
+    pub failed_objects: u64,
+    pub failed_nodes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,6 +275,7 @@ impl PoolState {
                 },
                 failure_domain: n.failure_domain.clone(),
                 quota_bytes: n.quota_bytes,
+                weight: n.weight.clamp(MIN_NODE_WEIGHT, MAX_NODE_WEIGHT),
                 role: n.role,
                 is_meta_backup: n.is_meta_backup,
             })
@@ -343,6 +364,7 @@ impl PoolState {
                 },
                 failure_domain: n.failure_domain.clone(),
                 quota_bytes: n.quota_bytes,
+                weight: n.weight.clamp(MIN_NODE_WEIGHT, MAX_NODE_WEIGHT),
                 role: n.role,
                 is_meta_backup: n.is_meta_backup,
             })
@@ -408,6 +430,43 @@ impl PoolState {
         self.sync_notify.notify_one();
     }
 
+    fn build_node_statuses(
+        &self,
+        nodes: Vec<scheduler::NodePlacementInfo>,
+        errors: Option<&HashMap<String, Option<String>>>,
+    ) -> Vec<PoolNodeStatus> {
+        nodes
+            .into_iter()
+            .map(|n| {
+                let snap = self.health.snapshot(&n.node_id);
+                let circuit = match snap.circuit_state {
+                    CircuitState::Closed => "closed",
+                    CircuitState::Open { .. } => "open",
+                    CircuitState::HalfOpen => "half_open",
+                };
+                PoolNodeStatus {
+                    last_error: errors.and_then(|map| map.get(&n.node_id).cloned().flatten()),
+                    node_id: n.node_id,
+                    remote_id: n.remote_id,
+                    base_prefix: n.base_prefix,
+                    failure_domain: n.failure_domain,
+                    quota_bytes: n.quota_bytes,
+                    used_bytes: n.used_bytes,
+                    weight: n.weight.clamp(MIN_NODE_WEIGHT, MAX_NODE_WEIGHT),
+                    remote_free_bytes: n.remote_free_bytes,
+                    remote_total_bytes: n.remote_total_bytes,
+                    space_supported: n.space_supported,
+                    role: n.role.as_str().to_string(),
+                    is_meta_backup: n.is_meta_backup,
+                    health_score: snap.health_score,
+                    avg_latency_ms: snap.avg_latency_ms,
+                    circuit_state: circuit.to_string(),
+                    last_checked_ms: snap.last_checked_ms,
+                }
+            })
+            .collect()
+    }
+
     pub async fn probe_all_nodes(&self) -> PoolResult<Vec<PoolNodeStatus>> {
         let nodes = self.meta.list_nodes()?;
         let futs = nodes.iter().map(|node| async {
@@ -422,63 +481,77 @@ impl PoolState {
         let errors: HashMap<String, Option<String>> = probe_results.into_iter().collect();
 
         let refreshed_nodes = self.meta.list_nodes()?;
-        Ok(refreshed_nodes
+        Ok(self.build_node_statuses(refreshed_nodes, Some(&errors)))
+    }
+
+    /// Refresh free-space metrics only for non-offline nodes whose storage
+    /// protocol is not already known to lack `space_info` support.
+    pub async fn probe_space_nodes(&self) -> PoolResult<Vec<PoolNodeStatus>> {
+        let nodes = self.meta.list_nodes()?;
+        let eligible: Vec<_> = nodes
             .into_iter()
-            .map(|n| {
-                let snap = self.health.snapshot(&n.node_id);
-                let circuit = match snap.circuit_state {
-                    CircuitState::Closed => "closed",
-                    CircuitState::Open { .. } => "open",
-                    CircuitState::HalfOpen => "half_open",
-                };
-                PoolNodeStatus {
-                    last_error: errors.get(&n.node_id).cloned().flatten(),
-                    node_id: n.node_id,
-                    remote_id: n.remote_id,
-                    base_prefix: n.base_prefix,
-                    failure_domain: n.failure_domain,
-                    quota_bytes: n.quota_bytes,
-                    used_bytes: n.used_bytes,
-                    remote_free_bytes: n.remote_free_bytes,
-                    remote_total_bytes: n.remote_total_bytes,
-                    role: n.role.as_str().to_string(),
-                    is_meta_backup: n.is_meta_backup,
-                    health_score: snap.health_score,
-                    avg_latency_ms: snap.avg_latency_ms,
-                    circuit_state: circuit.to_string(),
-                    last_checked_ms: snap.last_checked_ms,
-                }
-            })
-            .collect())
+            .filter(|n| n.role != NodeRole::Offline && n.space_supported != Some(false))
+            .collect();
+        let futs = eligible
+            .iter()
+            .map(|node| self.io.probe_node_space_only(node));
+        let _ = futures_util::future::join_all(futs).await;
+
+        let refreshed_nodes = self.meta.list_nodes()?;
+        Ok(self.build_node_statuses(refreshed_nodes, None))
+    }
+
+    pub async fn purge_node_remote_data(&self, node_id: &str) -> PoolResult<PoolRemoteCleanupReport> {
+        let nodes = self.meta.list_nodes()?;
+        let Some(node) = nodes.into_iter().find(|n| n.node_id == node_id) else {
+            return Ok(PoolRemoteCleanupReport::default());
+        };
+        let relpaths = self.meta.list_node_remote_relpaths(node_id)?;
+        let (deleted, failed, node_ok) = self.io.purge_node_pool_data(&node, &relpaths).await;
+        Ok(PoolRemoteCleanupReport {
+            deleted_objects: deleted,
+            failed_objects: failed,
+            failed_nodes: if node_ok && failed == 0 {
+                Vec::new()
+            } else {
+                vec![node.remote_id]
+            },
+        })
+    }
+
+    pub async fn purge_all_nodes_remote_data(&self) -> PoolRemoteCleanupReport {
+        let Ok(nodes) = self.meta.list_nodes() else {
+            return PoolRemoteCleanupReport::default();
+        };
+        let mut items = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            let relpaths = self
+                .meta
+                .list_node_remote_relpaths(&node.node_id)
+                .unwrap_or_default();
+            items.push((node, relpaths));
+        }
+        let futs = items.iter().map(|(node, relpaths)| async {
+            let (deleted, failed, node_ok) = self.io.purge_node_pool_data(node, relpaths).await;
+            (node.remote_id.clone(), deleted, failed, node_ok)
+        });
+        let results = futures_util::future::join_all(futs).await;
+        let mut report = PoolRemoteCleanupReport::default();
+        for (remote_id, deleted, failed, node_ok) in results {
+            report.deleted_objects = report.deleted_objects.saturating_add(deleted);
+            report.failed_objects = report.failed_objects.saturating_add(failed);
+            if !node_ok || failed > 0 {
+                report.failed_nodes.push(remote_id);
+            }
+        }
+        report
     }
 
     pub fn summary(&self) -> PoolResult<PoolSummary> {
         let cfg = self.config.read().clone();
         let db_stats = self.meta.compute_stats(cfg.normalized_replication())?;
         let db_nodes = self.meta.list_nodes()?;
-        let nodes = db_nodes
-            .into_iter()
-            .map(|n| {
-                let snap = self.health.snapshot(&n.node_id);
-                PoolNodeStatus {
-                    node_id: n.node_id,
-                    remote_id: n.remote_id,
-                    base_prefix: n.base_prefix,
-                    failure_domain: n.failure_domain,
-                    quota_bytes: n.quota_bytes,
-                    used_bytes: n.used_bytes,
-                    remote_free_bytes: n.remote_free_bytes,
-                    remote_total_bytes: n.remote_total_bytes,
-                    role: n.role.as_str().to_string(),
-                    is_meta_backup: n.is_meta_backup,
-                    health_score: snap.health_score,
-                    avg_latency_ms: snap.avg_latency_ms,
-                    circuit_state: snap.circuit_state.as_str().to_string(),
-                    last_checked_ms: snap.last_checked_ms,
-                    last_error: None,
-                }
-            })
-            .collect();
+        let nodes = self.build_node_statuses(db_nodes, None);
 
         let chunk_size = cfg.normalized_chunk_size();
         let replication_factor = cfg.normalized_replication();

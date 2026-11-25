@@ -331,6 +331,10 @@ impl Vfs for OpendalFs {
         timed("rename", self.rename_impl(from, to)).await
     }
 
+    fn supports_space_info(&self) -> bool {
+        self.webdav_info.is_some()
+    }
+
     async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
         self.space_info_impl(path).await
     }

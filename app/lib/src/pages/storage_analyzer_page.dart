@@ -2,11 +2,15 @@ import 'dart:async';
 
 import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../dialogs/folder_picker_dialog.dart';
+import '../dialogs/task_progress_dialog.dart';
 import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/inspect.dart';
 import '../services/file_open_service.dart';
 import '../services/path_utils.dart';
+import '../services/platform_capabilities.dart';
 import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
 import '../services/task_service.dart';
@@ -20,25 +24,69 @@ class StorageAnalyzerPage extends StatefulWidget {
   final String root;
   final String initialPath;
   final String title;
+  @visibleForTesting
+  final StorageAnalysisDto? initialAnalysisOverride;
+  @visibleForTesting
+  final Future<void> Function(List<String> paths)? onBatchDeleteOverride;
 
   const StorageAnalyzerPage({
     super.key,
     required this.root,
     this.initialPath = '',
     required this.title,
+    this.initialAnalysisOverride,
+    this.onBatchDeleteOverride,
   });
+
+  /// Normalizes a relative VFS path by stripping leading, trailing, and
+  /// duplicate slashes (`"/Docs/"` -> `"Docs"`, `"/"` -> `""`).
+  static String normalizeRelPath(String raw) {
+    return raw.split('/').where((s) => s.isNotEmpty).join('/');
+  }
+
+  /// Formats the human-readable path shown under the Storage Analyzer AppBar
+  /// without duplicating the relative path or introducing double slashes (`//`).
+  static String formatDisplayPath({
+    required String root,
+    required String title,
+    required String relPath,
+  }) {
+    final cleanRel = normalizeRelPath(relPath);
+    final cleanTitle = title.trim();
+    if (isNativeRoot(root)) {
+      final looksLikePath = cleanTitle.isEmpty ||
+          cleanTitle == root ||
+          cleanTitle.startsWith('/') ||
+          isNativeRoot(cleanTitle);
+      if (looksLikePath) {
+        final base = cleanTitle.isEmpty ? root : cleanTitle;
+        return cleanRel.isEmpty ? base : joinNative(base, cleanRel);
+      }
+      return cleanRel.isEmpty ? cleanTitle : '$cleanTitle/$cleanRel';
+    }
+    var base = cleanTitle.isNotEmpty ? cleanTitle : root;
+    while (base.endsWith('/') && base != '/' && !base.endsWith('://')) {
+      base = base.substring(0, base.length - 1);
+    }
+    if (cleanRel.isEmpty) return base;
+    return base.endsWith('://') ? '$base$cleanRel' : '$base/$cleanRel';
+  }
 
   @override
   State<StorageAnalyzerPage> createState() => _StorageAnalyzerPageState();
 }
 
-class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
+class _StorageAnalyzerPageState extends State<StorageAnalyzerPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   late String _relPath;
   StorageAnalysisDto? _analysis;
   DiskSpaceDto? _diskSpace;
   bool _loading = true;
   String? _error;
   String? _activeOpId;
+  bool _selectionMode = false;
+  final Set<String> _selectedFilePaths = <String>{};
 
   static const _categoryColors = <String, Color>{
     'video': Color(0xFFE53935),
@@ -54,12 +102,32 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
   @override
   void initState() {
     super.initState();
-    _relPath = widget.initialPath;
-    _runAnalysis();
+    _relPath = StorageAnalyzerPage.normalizeRelPath(widget.initialPath);
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+    final override = widget.initialAnalysisOverride;
+    if (override != null) {
+      _analysis = override;
+      _loading = false;
+    } else {
+      _runAnalysis();
+    }
+  }
+
+  void _onTabChanged() {
+    if (!mounted) return;
+    setState(() {
+      if (_tabController.index != 2) {
+        _selectionMode = false;
+        _selectedFilePaths.clear();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
     final op = _activeOpId;
     if (op != null) {
       cancelInspectOp(opId: op);
@@ -76,7 +144,14 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _selectionMode = false;
+      _selectedFilePaths.clear();
     });
+
+    if (widget.initialAnalysisOverride != null) {
+      setState(() => _loading = false);
+      return;
+    }
 
     DiskSpaceDto? disk;
     if (isNativeRoot(widget.root)) {
@@ -175,10 +250,230 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
       MaterialPageRoute(
         builder: (_) => BrowserPage(
           initialRoot: widget.root,
-          initialPath: relPath,
+          initialPath: StorageAnalyzerPage.normalizeRelPath(relPath),
         ),
       ),
     );
+  }
+
+  void _toggleSelectionMode([bool? enabled]) {
+    setState(() {
+      final next = enabled ?? !_selectionMode;
+      _selectionMode = next;
+      if (!next) {
+        _selectedFilePaths.clear();
+      }
+    });
+  }
+
+  void _enterSelectionWith(String path) {
+    setState(() {
+      _selectionMode = true;
+      _selectedFilePaths.add(path);
+    });
+  }
+
+  void _toggleFileSelected(String path) {
+    setState(() {
+      if (!_selectedFilePaths.remove(path)) {
+        _selectedFilePaths.add(path);
+      }
+    });
+  }
+
+  void _applyLocalDeletionResult(Set<String> deletedPaths, BigInt freedBytes) {
+    final cur = _analysis;
+    setState(() {
+      if (cur != null && deletedPaths.isNotEmpty) {
+        final remaining = cur.largestFiles
+            .where((f) => !deletedPaths.contains(f.path))
+            .toList();
+        final deletedCount = BigInt.from(deletedPaths.length);
+        _analysis = StorageAnalysisDto(
+          totalBytes:
+              cur.totalBytes > freedBytes ? cur.totalBytes - freedBytes : BigInt.zero,
+          totalFiles:
+              cur.totalFiles >= deletedCount ? cur.totalFiles - deletedCount : BigInt.zero,
+          totalDirs: cur.totalDirs,
+          truncated: cur.truncated,
+          cancelled: cur.cancelled,
+          folders: cur.folders,
+          largestFiles: remaining,
+          categories: cur.categories,
+        );
+      }
+      _selectionMode = false;
+      _selectedFilePaths.clear();
+    });
+  }
+
+  Future<void> _batchMoveOrCopy({required bool isMove}) async {
+    final paths = _selectedFilePaths.toList();
+    if (paths.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final dest = await FolderPickerDialog.show(
+      context,
+      title: isMove ? l10n.taskMove : l10n.copy,
+      initialRoot: widget.root,
+      initialPath: _relPath,
+    );
+    if (dest == null || !mounted) return;
+    try {
+      final normalizedPaths = paths.map(StorageAnalyzerPage.normalizeRelPath).toList();
+      Future<String> startTask() => isMove
+          ? TaskService.instance.move(
+              srcRoot: widget.root,
+              srcPaths: normalizedPaths,
+              dstRoot: dest.root,
+              dstDir: dest.relPath,
+              conflictPolicy: 'rename',
+            )
+          : TaskService.instance.copy(
+              srcRoot: widget.root,
+              srcPaths: normalizedPaths,
+              dstRoot: dest.root,
+              dstDir: dest.relPath,
+              conflictPolicy: 'rename',
+            );
+      final taskId = await startTask();
+      if (!mounted) return;
+      final completed = await TaskProgressDialog.show(
+        context,
+        taskId,
+        isMove ? l10n.movingFiles : l10n.copyingFiles,
+        onRetry: startTask,
+      );
+      if (!mounted) return;
+      _toggleSelectionMode(false);
+      if (completed == true && isMove) {
+        unawaited(_runAnalysis());
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isMove ? l10n.moveFailed('$e') : l10n.copyFailed('$e')),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _batchShareSelected() async {
+    if (!isNativeRoot(widget.root) || !PlatformCapabilities.supportsNativeShareSheet) {
+      return;
+    }
+    final paths = _selectedFilePaths.toList();
+    if (paths.isEmpty) return;
+    try {
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box != null && box.hasSize && !box.size.isEmpty
+          ? box.localToGlobal(Offset.zero) & box.size
+          : null;
+      final xfiles = paths.map((p) => XFile(joinNative(widget.root, p))).toList();
+      await SharePlus.instance.share(
+        ShareParams(files: xfiles, sharePositionOrigin: origin),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).cannotShareFile('$e'))),
+        );
+      }
+    }
+  }
+
+  Future<void> _batchDeleteSelected() async {
+    final analysis = _analysis;
+    final selected = _selectedFilePaths.toList();
+    if (analysis == null || selected.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final native = isNativeRoot(widget.root);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.analyzerBatchDeleteConfirmTitle(selected.length)),
+        content: Text(
+          native ? l10n.deleteChoiceTrashOrPermanent : l10n.deleteRemotePermanentWarning,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final sizeByPath = <String, BigInt>{
+      for (final f in analysis.largestFiles) f.path: f.sizeBytes,
+    };
+
+    if (widget.onBatchDeleteOverride != null) {
+      try {
+        await widget.onBatchDeleteOverride!(selected);
+        if (!mounted) return;
+        var freed = BigInt.zero;
+        for (final p in selected) {
+          freed += sizeByPath[p] ?? BigInt.zero;
+        }
+        _applyLocalDeletionResult(selected.toSet(), freed);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.analyzerBatchDeleteDone(selected.length, formatBytes(freed))),
+          ),
+        );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        }
+      }
+      return;
+    }
+
+    var deleted = 0;
+    var failed = 0;
+    var freed = BigInt.zero;
+    final deletedPaths = <String>{};
+    for (final path in selected) {
+      try {
+        if (native) {
+          await StorageService.instance.moveToTrash(joinNative(widget.root, path));
+        } else {
+          await fm_api.removeEntry(
+            root: widget.root,
+            path: StorageAnalyzerPage.normalizeRelPath(path),
+          );
+        }
+        deleted++;
+        deletedPaths.add(path);
+        freed += sizeByPath[path] ?? BigInt.zero;
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    _applyLocalDeletionResult(deletedPaths, freed);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failed == 0
+              ? l10n.analyzerBatchDeleteDone(deleted, formatBytes(freed))
+              : l10n.analyzerBatchDeletePartial(deleted, failed),
+        ),
+      ),
+    );
+    if (widget.initialAnalysisOverride == null) {
+      unawaited(_runAnalysis());
+    }
   }
 
   String _categoryLabel(String cat, AppLocalizations l10n) {
@@ -206,48 +501,107 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
     final scheme = Theme.of(context).colorScheme;
     final analysis = _analysis;
 
+    final files = analysis?.largestFiles ?? const <StorageFileRankDto>[];
+    final allSelected = files.isNotEmpty && _selectedFilePaths.length == files.length;
+    var selectedBytes = BigInt.zero;
+    if (_selectionMode && _selectedFilePaths.isNotEmpty) {
+      for (final f in files) {
+        if (_selectedFilePaths.contains(f.path)) {
+          selectedBytes += f.sizeBytes;
+        }
+      }
+    }
+
     return AppSwipeBack(
-      child: DefaultTabController(
-        length: 3,
-        child: Scaffold(
-          appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(l10n.storageAnalyzer),
-                Text(
-                  _relPath.isEmpty ? widget.title : '${widget.title}/$_relPath',
-                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
+      child: Scaffold(
+        appBar: _selectionMode
+            ? AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: l10n.cancel,
+                  onPressed: () => _toggleSelectionMode(false),
                 ),
-              ],
-            ),
-            actions: [
-              if (_relPath.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward),
-                  tooltip: l10n.parentFolderTooltip,
-                  onPressed: () {
-                    final parts = _relPath.split('/').where((s) => s.isNotEmpty).toList();
-                    if (parts.isNotEmpty) parts.removeLast();
-                    setState(() => _relPath = parts.join('/'));
-                    unawaited(_runAnalysis());
-                  },
+                title: Text(
+                  l10n.analyzerSelectedCountAndSize(
+                    _selectedFilePaths.length,
+                    formatBytes(selectedBytes),
+                  ),
                 ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: l10n.refresh,
-                onPressed: _runAnalysis,
+                actions: [
+                  IconButton(
+                    icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
+                    tooltip: allSelected ? l10n.deselectAll : l10n.selectAll,
+                    onPressed: files.isEmpty
+                        ? null
+                        : () {
+                            setState(() {
+                              if (allSelected) {
+                                _selectedFilePaths.clear();
+                              } else {
+                                _selectedFilePaths.addAll(files.map((f) => f.path));
+                              }
+                            });
+                          },
+                  ),
+                ],
+                bottom: TabBar(
+                  controller: _tabController,
+                  tabs: [
+                    Tab(text: l10n.topFolders),
+                    Tab(text: l10n.fileTypesBreakdown),
+                    Tab(text: l10n.topFiles),
+                  ],
+                ),
+              )
+            : AppBar(
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(l10n.storageAnalyzer),
+                    Text(
+                      StorageAnalyzerPage.formatDisplayPath(
+                        root: widget.root,
+                        title: widget.title,
+                        relPath: _relPath,
+                      ),
+                      style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+                actions: [
+                  if (_tabController.index == 2 && files.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.checklist),
+                      tooltip: l10n.analyzerMultiSelectTooltip,
+                      onPressed: () => _toggleSelectionMode(true),
+                    ),
+                  if (_relPath.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.arrow_upward),
+                      tooltip: l10n.parentFolderTooltip,
+                      onPressed: () {
+                        final parts = _relPath.split('/').where((s) => s.isNotEmpty).toList();
+                        if (parts.isNotEmpty) parts.removeLast();
+                        setState(() => _relPath = parts.join('/'));
+                        unawaited(_runAnalysis());
+                      },
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: l10n.refresh,
+                    onPressed: _runAnalysis,
+                  ),
+                ],
+                bottom: TabBar(
+                  controller: _tabController,
+                  tabs: [
+                    Tab(text: l10n.topFolders),
+                    Tab(text: l10n.fileTypesBreakdown),
+                    Tab(text: l10n.topFiles),
+                  ],
+                ),
               ),
-            ],
-            bottom: TabBar(
-              tabs: [
-                Tab(text: l10n.topFolders),
-                Tab(text: l10n.fileTypesBreakdown),
-                Tab(text: l10n.topFiles),
-              ],
-            ),
-          ),
           body: _loading
               ? Center(
                   child: Column(
@@ -305,6 +659,7 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
                             _buildSummaryHeader(context, analysis, l10n),
                             Expanded(
                               child: TabBarView(
+                                controller: _tabController,
                                 children: [
                                   _buildFoldersTab(analysis),
                                   _buildCategoriesTab(analysis, l10n),
@@ -314,6 +669,100 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
                             ),
                           ],
                         ),
+        bottomNavigationBar: _selectionMode && _tabController.index == 2
+            ? _buildSelectionBottomBar(context, l10n, scheme)
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildSelectionBottomBar(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme scheme,
+  ) {
+    final hasSelection = _selectedFilePaths.isNotEmpty;
+    final canShare = isNativeRoot(widget.root) && PlatformCapabilities.supportsNativeShareSheet;
+    return Material(
+      elevation: 4,
+      color: scheme.surfaceContainerHigh,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildActionBarButton(
+                  icon: Icons.drive_file_move_outlined,
+                  label: l10n.taskMove,
+                  onPressed: hasSelection ? () => _batchMoveOrCopy(isMove: true) : null,
+                ),
+              ),
+              Expanded(
+                child: _buildActionBarButton(
+                  icon: Icons.file_copy_outlined,
+                  label: l10n.copy,
+                  onPressed: hasSelection ? () => _batchMoveOrCopy(isMove: false) : null,
+                ),
+              ),
+              if (canShare)
+                Expanded(
+                  child: _buildActionBarButton(
+                    icon: Icons.share_outlined,
+                    label: l10n.share,
+                    onPressed: hasSelection ? _batchShareSelected : null,
+                  ),
+                ),
+              Expanded(
+                child: _buildActionBarButton(
+                  icon: Icons.delete_outline,
+                  label: l10n.delete,
+                  color: hasSelection ? scheme.error : null,
+                  onPressed: hasSelection ? _batchDeleteSelected : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionBarButton({
+    required IconData icon,
+    required String label,
+    Color? color,
+    VoidCallback? onPressed,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: onPressed == null
+                  ? Theme.of(context).disabledColor
+                  : (color ?? Theme.of(context).colorScheme.onSurface),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: onPressed == null
+                    ? Theme.of(context).disabledColor
+                    : (color ?? Theme.of(context).colorScheme.onSurface),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -432,7 +881,7 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
             ],
           ),
           onTap: () {
-            setState(() => _relPath = f.path);
+            setState(() => _relPath = StorageAnalyzerPage.normalizeRelPath(f.path));
             unawaited(_runAnalysis());
           },
         );
@@ -476,37 +925,64 @@ class _StorageAnalyzerPageState extends State<StorageAnalyzerPage> {
   }
 
   Widget _buildFilesTab(StorageAnalysisDto analysis) {
+    final l10n = AppLocalizations.of(context);
     if (analysis.largestFiles.isEmpty) {
-      return Center(child: Text(AppLocalizations.of(context).directoryIsEmpty));
+      return Center(child: Text(l10n.directoryIsEmpty));
     }
     return ListView.separated(
       itemCount: analysis.largestFiles.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (_, i) {
         final f = analysis.largestFiles[i];
-        final parent = f.path.contains('/') ? f.path.substring(0, f.path.lastIndexOf('/')) : '';
+        final cleanPath = StorageAnalyzerPage.normalizeRelPath(f.path);
+        final slashIdx = cleanPath.lastIndexOf('/');
+        final parentDir = slashIdx > 0 ? cleanPath.substring(0, slashIdx) : '';
+        final subtitlePath = StorageAnalyzerPage.formatDisplayPath(
+          root: widget.root,
+          title: widget.title,
+          relPath: parentDir,
+        );
+        final selected = _selectedFilePaths.contains(f.path);
         return ListTile(
-          leading: const Icon(Icons.insert_drive_file_outlined),
+          selected: _selectionMode && selected,
+          leading: _selectionMode
+              ? Checkbox(
+                  value: selected,
+                  onChanged: (_) => _toggleFileSelected(f.path),
+                )
+              : const Icon(Icons.insert_drive_file_outlined),
           title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(f.path, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(formatBytes(f.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600)),
-                IconButton(
-                  icon: const Icon(Icons.folder_open, size: 18),
-                  tooltip: AppLocalizations.of(context).locateInFolder,
-                  onPressed: () => _openInBrowser(parent),
+          subtitle: Text(
+            subtitlePath,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11),
+          ),
+          trailing: _selectionMode
+              ? Text(formatBytes(f.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600))
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(formatBytes(f.sizeBytes), style: const TextStyle(fontWeight: FontWeight.w600)),
+                    IconButton(
+                      icon: const Icon(Icons.folder_open, size: 18),
+                      tooltip: l10n.locateInFolder,
+                      onPressed: () => _openInBrowser(parentDir),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete_outline, size: 18, color: Theme.of(context).colorScheme.error),
+                      tooltip: l10n.delete,
+                      onPressed: () => _deleteFile(f),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: Icon(Icons.delete_outline, size: 18, color: Theme.of(context).colorScheme.error),
-                  tooltip: AppLocalizations.of(context).delete,
-                  onPressed: () => _deleteFile(f),
-                ),
-              ],
-            ),
-            onTap: () => _openRankedFile(f),
-          );
+          onTap: _selectionMode
+              ? () => _toggleFileSelected(f.path)
+              : () => _openRankedFile(f),
+          onLongPress: _selectionMode
+              ? () => _toggleFileSelected(f.path)
+              : () => _enterSelectionWith(f.path),
+        );
       },
     );
   }

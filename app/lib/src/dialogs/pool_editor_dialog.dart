@@ -10,6 +10,7 @@ class _EditableNodeEntry {
   bool selected;
   final TextEditingController domainCtrl;
   final TextEditingController quotaGbCtrl;
+  final TextEditingController weightCtrl;
   final TextEditingController prefixCtrl;
   String role;
   bool isMetaBackup;
@@ -19,6 +20,7 @@ class _EditableNodeEntry {
     required this.selected,
     required String domain,
     required double quotaGb,
+    required int weight,
     required String prefix,
     required this.role,
     required this.isMetaBackup,
@@ -28,11 +30,13 @@ class _EditableNodeEntry {
              ? quotaGb.toInt().toString()
              : quotaGb.toStringAsFixed(1),
        ),
+       weightCtrl = TextEditingController(text: weight.toString()),
        prefixCtrl = TextEditingController(text: prefix);
 
   void dispose() {
     domainCtrl.dispose();
     quotaGbCtrl.dispose();
+    weightCtrl.dispose();
     prefixCtrl.dispose();
   }
 }
@@ -165,6 +169,7 @@ class _PoolEditorDialogState extends State<PoolEditorDialog> {
             selected: match != null,
             domain: match?.failureDomain ?? defaultDomain,
             quotaGb: quotaGb,
+            weight: (match?.weight ?? 100).clamp(1, 1000),
             prefix: match?.basePrefix ?? 'fm_pool',
             role: match?.role ?? 'rw',
             isMetaBackup: match?.isMetaBackup ?? false,
@@ -205,6 +210,11 @@ class _PoolEditorDialogState extends State<PoolEditorDialog> {
         setState(() => _errorText = l10n.poolInvalidQuotaError);
         return;
       }
+      final weight = int.tryParse(entry.weightCtrl.text.trim());
+      if (weight == null || weight < 1 || weight > 1000) {
+        setState(() => _errorText = l10n.poolInvalidWeightError);
+        return;
+      }
       final quotaBytes = BigInt.from(
         (quotaGb.clamp(0.01, 1000000.0) * _bytesPerGb).round(),
       );
@@ -221,6 +231,7 @@ class _PoolEditorDialogState extends State<PoolEditorDialog> {
           basePrefix: prefix,
           failureDomain: domain,
           quotaBytes: quotaBytes,
+          weight: weight,
           role: entry.role,
           isMetaBackup: entry.isMetaBackup,
         ),
@@ -452,6 +463,18 @@ class _PoolEditorDialogState extends State<PoolEditorDialog> {
                                     ),
                                     decoration: InputDecoration(
                                       labelText: l10n.poolQuotaGb,
+                                      border: const OutlineInputBorder(),
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: entry.weightCtrl,
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: l10n.poolNodeWeightLabel,
                                       border: const OutlineInputBorder(),
                                       isDense: true,
                                     ),

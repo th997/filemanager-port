@@ -1112,7 +1112,7 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get utilitiesDefaultSubtitle => 'ゴミ箱、Web 共有、キャッシュ';
+  String get utilitiesDefaultSubtitle => 'プライバシーフォルダとキャッシュ管理';
 
   @override
   String get tasksDefaultSubtitle => '転送と操作';
@@ -4806,4 +4806,112 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get remoteBatchBackStep => '戻る';
+
+  @override
+  String get poolNodeWeightLabel => '重み';
+
+  @override
+  String poolNodeWeightBadge(int weight) {
+    return '重み $weight';
+  }
+
+  @override
+  String get poolSetNodeWeightTitle => 'ノードの重みを設定';
+
+  @override
+  String get poolSetNodeWeightHint =>
+      '値が大きいほど（1〜1000）、空き容量や健全性が同等のノードより優先的に書き込まれます。';
+
+  @override
+  String get poolInvalidWeightError => '重みは 1〜1000 の整数で入力してください。';
+
+  @override
+  String poolNodeUsedAndQuota(String used, String quota) {
+    return '使用 $used / クォータ $quota';
+  }
+
+  @override
+  String poolNodeSystemFreeWithTotal(String free, String total) {
+    return 'システム空き $free / $total';
+  }
+
+  @override
+  String poolNodeSystemFreeOnly(String free) {
+    return 'システム空き $free';
+  }
+
+  @override
+  String get poolNodeSystemSpaceUnsupported => 'システム空き: このプロトコルは非対応';
+
+  @override
+  String get poolNodeSystemSpaceUnavailable => 'システム空き: 未取得';
+
+  @override
+  String get poolNodeSystemSpaceProbing => 'システム空き: 確認中…';
+
+  @override
+  String get poolDeleteRemoteDataOption => 'リモートノード上のプールデータも削除する';
+
+  @override
+  String get poolDeleteRemoteDataWarning =>
+      '各ノードの保存ディレクトリ内の blobs/ および meta/ を完全に削除します（復元不可）。';
+
+  @override
+  String get poolDeleteNodeRemoteDataOption => 'このノードのリモートデータも削除する';
+
+  @override
+  String get poolDeleteNodeRemoteDataWarning =>
+      'このノードに保存されたチャンクとメタデータバックアップを完全に削除します。';
+
+  @override
+  String get poolOfflineNode => 'オフラインにする';
+
+  @override
+  String get poolOnlineNode => 'オンラインに戻す';
+
+  @override
+  String get poolRemoveNode => 'ノードを削除';
+
+  @override
+  String poolOfflineConfirm(String node) {
+    return 'ノード「$node」を直ちにオフラインにしますか？オンラインに戻すか修復するまでこのノードのデータは利用できません。';
+  }
+
+  @override
+  String poolRemoveNodeConfirm(String node) {
+    return 'ノード「$node」をこのストレージプールから削除しますか？';
+  }
+
+  @override
+  String poolRemoteCleanupDone(int deleted) {
+    return '$deleted 件のリモートデータを削除しました。';
+  }
+
+  @override
+  String poolRemoteCleanupPartial(int deleted, int failed, String nodes) {
+    return '$deleted 件を削除しましたが、$failed 件失敗しました（$nodes）。';
+  }
+
+  @override
+  String analyzerSelectedCountAndSize(int count, String size) {
+    return '$count 件選択中（$size）';
+  }
+
+  @override
+  String analyzerBatchDeleteConfirmTitle(int count) {
+    return '$count 件のファイルを削除しますか？';
+  }
+
+  @override
+  String analyzerBatchDeleteDone(int count, String size) {
+    return '$count 件のファイルを削除し、$size を解放しました。';
+  }
+
+  @override
+  String analyzerBatchDeletePartial(int deleted, int failed) {
+    return '$deleted 件削除しました（$failed 件失敗）。';
+  }
+
+  @override
+  String get analyzerMultiSelectTooltip => 'ファイルを選択';
 }

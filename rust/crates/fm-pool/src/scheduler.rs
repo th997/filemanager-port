@@ -50,8 +50,10 @@ pub struct NodePlacementInfo {
     pub failure_domain: String,
     pub quota_bytes: u64,
     pub used_bytes: u64,
+    pub weight: u32,
     pub remote_free_bytes: Option<u64>,
     pub remote_total_bytes: Option<u64>,
+    pub space_supported: Option<bool>,
     pub role: NodeRole,
     pub is_meta_backup: bool,
     pub db_health_score: f64,
@@ -69,7 +71,7 @@ impl NodePlacementInfo {
 }
 
 /// Compute placement score for writing a chunk onto `node`:
-/// `(free / quota)^1.5 * health_score / (1 + latency_ms / 1000)`
+/// `(free / quota)^1.5 * health_score * (weight / 100) / (1 + latency_ms / 1000)`
 pub fn score_node(
     node: &NodePlacementInfo,
     health: &HealthTracker,
@@ -78,8 +80,11 @@ pub fn score_node(
     let free = node.free_bytes() as f64;
     let quota = (node.quota_bytes.max(1)) as f64;
     let free_ratio = (free / quota).clamp(0.0, 1.0);
+    let weight_factor = (node.weight.clamp(crate::MIN_NODE_WEIGHT, crate::MAX_NODE_WEIGHT) as f64)
+        / (crate::DEFAULT_NODE_WEIGHT as f64);
     let latency_factor = 1.0 / (1.0 + (snap.avg_latency_ms as f64) / 1000.0);
-    let score = free_ratio.powf(1.5) * snap.health_score.clamp(0.05, 1.0) * latency_factor;
+    let score =
+        free_ratio.powf(1.5) * snap.health_score.clamp(0.05, 1.0) * weight_factor * latency_factor;
     if score <= 0.0 {
         0.0001
     } else {
@@ -205,6 +210,7 @@ pub fn rank_read_replicas(
             .then_with(|| a.1.cmp(&b.1))
             .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
             .then_with(|| a.3.cmp(&b.3))
+            .then_with(|| b.5.weight.cmp(&a.5.weight))
             .then_with(|| a.5.node_id.cmp(&b.5.node_id))
     });
 
@@ -226,8 +232,10 @@ mod tests {
             failure_domain: domain.into(),
             quota_bytes: quota,
             used_bytes: used,
+            weight: crate::DEFAULT_NODE_WEIGHT,
             remote_free_bytes: None,
             remote_total_bytes: None,
+            space_supported: None,
             role: NodeRole::Rw,
             is_meta_backup: false,
             db_health_score: health,
@@ -308,5 +316,22 @@ mod tests {
         assert_eq!(node.free_bytes(), 150);
         node.remote_free_bytes = Some(5000);
         assert_eq!(node.free_bytes(), 800);
+    }
+
+    #[test]
+    fn weight_biases_placement_score_when_other_metrics_equal() {
+        let tracker = HealthTracker::default();
+        let mut n_low = mk_node("n-low", "d1", 1000, 0, 20, 1.0);
+        n_low.weight = 50;
+        let mut n_high = mk_node("n-high", "d2", 1000, 0, 20, 1.0);
+        n_high.weight = 300;
+        let nodes = vec![n_low, n_high];
+        for n in &nodes {
+            tracker.seed_node(&n.node_id, n.db_health_score, n.db_avg_latency_ms, None);
+        }
+
+        let picked = select_write_nodes(&nodes, &tracker, 100, 1, &HashSet::new(), &HashSet::new());
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].node_id, "n-high");
     }
 }

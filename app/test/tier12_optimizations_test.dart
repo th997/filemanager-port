@@ -164,11 +164,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('离线固定文件'), findsOneWidget);
 
-      // Switch to Tools & Tasks domain -> shows Directory Sync & Storage Analyzer.
+      // Switch to Tools & Tasks domain -> shows Directory Sync & Utilities without duplicate Storage Analyzer / Duplicate Finder.
       await tester.tap(find.byKey(const ValueKey('home_nav_tools')));
       await tester.pumpAndSettle();
       expect(find.text('目录同步与备份'), findsOneWidget);
-      expect(find.text('存储空间分析'), findsOneWidget);
+      expect(find.text('存储空间分析'), findsNothing);
+      expect(find.text('重复文件清理'), findsNothing);
     });
   });
 

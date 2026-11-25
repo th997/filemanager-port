@@ -53,15 +53,29 @@ class PoolService extends ChangeNotifier {
     return summary;
   }
 
-  Future<void> deletePool(String poolId) async {
+  Future<pool_api.PoolRemoteCleanupReportDto> deletePool(
+    String poolId, {
+    bool deleteRemoteData = false,
+  }) async {
     StorageService.instance.ensureInitialized();
-    await pool_api.deletePool(dbPath: _dbPath, poolId: poolId);
+    final report = await pool_api.deletePool(
+      dbPath: _dbPath,
+      poolId: poolId,
+      deleteRemoteData: deleteRemoteData,
+    );
     _pools = _pools.where((p) => p.id != poolId).toList();
     notifyListeners();
+    return report;
   }
 
   Future<List<pool_api.PoolNodeStatusDto>> probeHealth(String poolId) async {
     final statuses = await pool_api.probePoolHealth(poolId: poolId);
+    await refresh();
+    return statuses;
+  }
+
+  Future<List<pool_api.PoolNodeStatusDto>> probeSpace(String poolId) async {
+    final statuses = await pool_api.probePoolSpace(poolId: poolId);
     await refresh();
     return statuses;
   }
@@ -76,8 +90,64 @@ class PoolService extends ChangeNotifier {
     return pool_api.startPoolHealTask(poolId: poolId);
   }
 
-  Future<String> startDrain(String poolId, String nodeId) {
-    return pool_api.startPoolDrainTask(poolId: poolId, nodeId: nodeId);
+  Future<String> startDrain(
+    String poolId,
+    String nodeId, {
+    bool deleteRemoteData = false,
+  }) {
+    StorageService.instance.ensureInitialized();
+    return pool_api.startPoolDrainTask(
+      dbPath: _dbPath,
+      poolId: poolId,
+      nodeId: nodeId,
+      deleteRemoteData: deleteRemoteData,
+    );
+  }
+
+  Future<pool_api.PoolRemoteCleanupReportDto> setNodeOffline(
+    String poolId,
+    String nodeId, {
+    bool deleteRemoteData = false,
+  }) async {
+    StorageService.instance.ensureInitialized();
+    final report = await pool_api.setPoolNodeOffline(
+      dbPath: _dbPath,
+      poolId: poolId,
+      nodeId: nodeId,
+      deleteRemoteData: deleteRemoteData,
+    );
+    await refresh();
+    return report;
+  }
+
+  Future<pool_api.PoolSummaryDto> setNodeOnline(
+    String poolId,
+    String nodeId,
+  ) async {
+    StorageService.instance.ensureInitialized();
+    final summary = await pool_api.setPoolNodeOnline(
+      dbPath: _dbPath,
+      poolId: poolId,
+      nodeId: nodeId,
+    );
+    await refresh();
+    return summary;
+  }
+
+  Future<pool_api.PoolRemoteCleanupReportDto> removeNode(
+    String poolId,
+    String nodeId, {
+    bool deleteRemoteData = false,
+  }) async {
+    StorageService.instance.ensureInitialized();
+    final report = await pool_api.removePoolNode(
+      dbPath: _dbPath,
+      poolId: poolId,
+      nodeId: nodeId,
+      deleteRemoteData: deleteRemoteData,
+    );
+    await refresh();
+    return report;
   }
 
   Future<String> startGc(String poolId, {bool purgeImmediately = false}) {

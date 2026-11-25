@@ -178,6 +178,8 @@ pub struct PoolNodeSyncState {
     pub base_prefix: String,
     pub failure_domain: String,
     pub quota_bytes: u64,
+    #[serde(default = "crate::default_node_weight")]
+    pub weight: u32,
     pub role: NodeRole,
     pub is_meta_backup: bool,
 }
@@ -225,8 +227,10 @@ impl PoolMetaDb {
                 failure_domain     TEXT NOT NULL,
                 quota_bytes        INTEGER NOT NULL,
                 used_bytes         INTEGER NOT NULL DEFAULT 0,
+                weight             INTEGER NOT NULL DEFAULT 100,
                 remote_free_bytes  INTEGER,
                 remote_total_bytes INTEGER,
+                space_supported    INTEGER,
                 role               TEXT NOT NULL DEFAULT 'rw',
                 is_meta_backup     INTEGER NOT NULL DEFAULT 0,
                 health_score       REAL NOT NULL DEFAULT 1.0,
@@ -296,20 +300,30 @@ impl PoolMetaDb {
         set_meta_default(&conn, "last_synced_version", "0")?;
         set_meta_default(&conn, "dirty", "0")?;
 
-        // Idempotent migration for pools created before remote disk space tracking.
+        // Idempotent migration for pools created before weight / remote space tracking.
         {
             let mut has_free = false;
             let mut has_total = false;
+            let mut has_weight = false;
+            let mut has_space_supported = false;
             let mut stmt = conn.prepare("PRAGMA table_info(pool_nodes)")?;
             let cols = stmt.query_map([], |r| r.get::<_, String>(1))?;
             for col in cols {
                 match col?.as_str() {
                     "remote_free_bytes" => has_free = true,
                     "remote_total_bytes" => has_total = true,
+                    "weight" => has_weight = true,
+                    "space_supported" => has_space_supported = true,
                     _ => {}
                 }
             }
             drop(stmt);
+            if !has_weight {
+                conn.execute(
+                    "ALTER TABLE pool_nodes ADD COLUMN weight INTEGER NOT NULL DEFAULT 100",
+                    [],
+                )?;
+            }
             if !has_free {
                 conn.execute(
                     "ALTER TABLE pool_nodes ADD COLUMN remote_free_bytes INTEGER",
@@ -319,6 +333,12 @@ impl PoolMetaDb {
             if !has_total {
                 conn.execute(
                     "ALTER TABLE pool_nodes ADD COLUMN remote_total_bytes INTEGER",
+                    [],
+                )?;
+            }
+            if !has_space_supported {
+                conn.execute(
+                    "ALTER TABLE pool_nodes ADD COLUMN space_supported INTEGER",
                     [],
                 )?;
             }
@@ -355,13 +375,29 @@ impl PoolMetaDb {
         for node in configured {
             tx.execute(
                 "INSERT INTO pool_nodes
-                    (node_id, remote_id, base_prefix, failure_domain, quota_bytes, role, is_meta_backup)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    (node_id, remote_id, base_prefix, failure_domain, quota_bytes, weight, role, is_meta_backup)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(node_id) DO UPDATE SET
+                    remote_free_bytes = CASE
+                        WHEN pool_nodes.remote_id != excluded.remote_id
+                          OR pool_nodes.base_prefix != excluded.base_prefix THEN NULL
+                        ELSE pool_nodes.remote_free_bytes
+                    END,
+                    remote_total_bytes = CASE
+                        WHEN pool_nodes.remote_id != excluded.remote_id
+                          OR pool_nodes.base_prefix != excluded.base_prefix THEN NULL
+                        ELSE pool_nodes.remote_total_bytes
+                    END,
+                    space_supported = CASE
+                        WHEN pool_nodes.remote_id != excluded.remote_id
+                          OR pool_nodes.base_prefix != excluded.base_prefix THEN NULL
+                        ELSE pool_nodes.space_supported
+                    END,
                     remote_id = excluded.remote_id,
                     base_prefix = excluded.base_prefix,
                     failure_domain = excluded.failure_domain,
                     quota_bytes = excluded.quota_bytes,
+                    weight = excluded.weight,
                     role = excluded.role,
                     is_meta_backup = excluded.is_meta_backup",
                 params![
@@ -370,6 +406,7 @@ impl PoolMetaDb {
                     node.base_prefix,
                     node.failure_domain,
                     node.quota_bytes.min(i64::MAX as u64) as i64,
+                    node.weight.clamp(crate::MIN_NODE_WEIGHT, crate::MAX_NODE_WEIGHT) as i64,
                     node.role.as_str(),
                     if node.is_meta_backup { 1i64 } else { 0i64 },
                 ],
@@ -410,11 +447,14 @@ impl PoolMetaDb {
         let mut stmt = conn.prepare(
             "SELECT node_id, remote_id, base_prefix, failure_domain, quota_bytes, used_bytes,
                     role, is_meta_backup, health_score, avg_latency_ms,
-                    remote_free_bytes, remote_total_bytes
+                    remote_free_bytes, remote_total_bytes, weight, space_supported
              FROM pool_nodes ORDER BY node_id ASC",
         )?;
         let rows = stmt.query_map([], |row| {
             let role_str: String = row.get(6)?;
+            let raw_weight = row.get::<_, i64>(12)?.max(crate::MIN_NODE_WEIGHT as i64);
+            let clamped_weight =
+                (raw_weight.min(crate::MAX_NODE_WEIGHT as i64)) as u32;
             Ok(NodePlacementInfo {
                 node_id: row.get(0)?,
                 remote_id: row.get(1)?,
@@ -422,8 +462,10 @@ impl PoolMetaDb {
                 failure_domain: row.get(3)?,
                 quota_bytes: row.get::<_, i64>(4)?.max(0) as u64,
                 used_bytes: row.get::<_, i64>(5)?.max(0) as u64,
+                weight: clamped_weight,
                 remote_free_bytes: row.get::<_, Option<i64>>(10)?.map(|v| v.max(0) as u64),
                 remote_total_bytes: row.get::<_, Option<i64>>(11)?.map(|v| v.max(0) as u64),
+                space_supported: row.get::<_, Option<i64>>(13)?.map(|v| v != 0),
                 role: NodeRole::parse(&role_str),
                 is_meta_backup: row.get::<_, i64>(7)? != 0,
                 db_health_score: row.get(8)?,
@@ -438,17 +480,65 @@ impl PoolMetaDb {
         node_id: &str,
         free_bytes: Option<u64>,
         total_bytes: Option<u64>,
+        space_supported: Option<bool>,
     ) -> PoolResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE pool_nodes SET remote_free_bytes = ?1, remote_total_bytes = ?2
-             WHERE node_id = ?3",
+            "UPDATE pool_nodes
+             SET remote_free_bytes = ?1,
+                 remote_total_bytes = ?2,
+                 space_supported = COALESCE(?3, space_supported)
+             WHERE node_id = ?4",
             params![
                 free_bytes.map(|v| v.min(i64::MAX as u64) as i64),
                 total_bytes.map(|v| v.min(i64::MAX as u64) as i64),
+                space_supported.map(|b| if b { 1i64 } else { 0i64 }),
                 node_id
             ],
         )?;
+        Ok(())
+    }
+
+    pub fn list_node_remote_relpaths(&self, node_id: &str) -> PoolResult<Vec<String>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT remote_relpath FROM chunk_replicas WHERE node_id = ?1
+             UNION
+             SELECT DISTINCT remote_relpath FROM gc_queue WHERE node_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![node_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn clear_node_replicas_and_gc(&self, node_id: &str) -> PoolResult<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM gc_queue WHERE node_id = ?1", params![node_id])?;
+        tx.execute(
+            "DELETE FROM chunk_replicas WHERE node_id = ?1",
+            params![node_id],
+        )?;
+        let _ = bump_meta_version_tx(&tx)?;
+        recompute_node_usage_tx(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn remove_node_completely(&self, node_id: &str) -> PoolResult<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM gc_queue WHERE node_id = ?1", params![node_id])?;
+        tx.execute(
+            "DELETE FROM chunk_replicas WHERE node_id = ?1",
+            params![node_id],
+        )?;
+        tx.execute(
+            "DELETE FROM pool_nodes WHERE node_id = ?1",
+            params![node_id],
+        )?;
+        let _ = bump_meta_version_tx(&tx)?;
+        recompute_node_usage_tx(&tx)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1193,12 +1283,13 @@ impl PoolMetaDb {
             tx.execute(
                 "INSERT INTO pool_nodes
                     (node_id, remote_id, base_prefix, failure_domain, quota_bytes, used_bytes,
-                     role, is_meta_backup, health_score, avg_latency_ms, last_checked)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                     weight, role, is_meta_backup, health_score, avg_latency_ms, last_checked)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT(node_id) DO UPDATE SET
                     base_prefix = excluded.base_prefix,
                     failure_domain = excluded.failure_domain,
                     quota_bytes = excluded.quota_bytes,
+                    weight = excluded.weight,
                     role = excluded.role,
                     is_meta_backup = excluded.is_meta_backup",
                 params![
@@ -1208,6 +1299,7 @@ impl PoolMetaDb {
                     node.failure_domain,
                     node.quota_bytes,
                     node.used_bytes,
+                    node.weight,
                     node.role,
                     node.is_meta_backup,
                     node.health_score,
@@ -1528,8 +1620,8 @@ impl PoolMetaDb {
             tx.execute(
                 "INSERT OR IGNORE INTO pool_nodes
                     (node_id, remote_id, base_prefix, failure_domain, quota_bytes, used_bytes,
-                     role, is_meta_backup, health_score, avg_latency_ms, last_checked)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     weight, role, is_meta_backup, health_score, avg_latency_ms, last_checked)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     rn.node_id,
                     rn.remote_id,
@@ -1537,6 +1629,7 @@ impl PoolMetaDb {
                     rn.failure_domain,
                     rn.quota_bytes,
                     rn.used_bytes,
+                    rn.weight,
                     rn.role,
                     rn.is_meta_backup,
                     rn.health_score,
@@ -1745,6 +1838,7 @@ struct SnapshotNode {
     failure_domain: String,
     quota_bytes: i64,
     used_bytes: i64,
+    weight: i64,
     role: String,
     is_meta_backup: i64,
     health_score: f64,
@@ -1781,11 +1875,27 @@ struct SnapshotGc {
 }
 
 fn load_all_nodes(conn: &Connection) -> PoolResult<Vec<SnapshotNode>> {
-    let mut stmt = conn.prepare(
+    let mut has_weight = false;
+    {
+        let mut info_stmt = conn.prepare("PRAGMA table_info(pool_nodes)")?;
+        let cols = info_stmt.query_map([], |r| r.get::<_, String>(1))?;
+        for col in cols {
+            if col? == "weight" {
+                has_weight = true;
+                break;
+            }
+        }
+    }
+    let sql = if has_weight {
         "SELECT node_id, remote_id, base_prefix, failure_domain, quota_bytes, used_bytes,
-                role, is_meta_backup, health_score, avg_latency_ms, last_checked
-         FROM pool_nodes",
-    )?;
+                role, is_meta_backup, health_score, avg_latency_ms, last_checked, weight
+         FROM pool_nodes"
+    } else {
+        "SELECT node_id, remote_id, base_prefix, failure_domain, quota_bytes, used_bytes,
+                role, is_meta_backup, health_score, avg_latency_ms, last_checked, 100
+         FROM pool_nodes"
+    };
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |r| {
         Ok(SnapshotNode {
             node_id: r.get(0)?,
@@ -1799,6 +1909,7 @@ fn load_all_nodes(conn: &Connection) -> PoolResult<Vec<SnapshotNode>> {
             health_score: r.get(8)?,
             avg_latency_ms: r.get(9)?,
             last_checked: r.get(10)?,
+            weight: r.get(11)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2021,12 +2132,16 @@ mod tests {
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].node_id, "n1");
         assert_eq!(nodes[0].used_bytes, 250);
+        assert_eq!(nodes[0].weight, 100);
         assert_eq!(nodes[0].remote_free_bytes, None);
         assert_eq!(nodes[0].remote_total_bytes, None);
+        assert_eq!(nodes[0].space_supported, None);
 
-        db.update_node_space_db("n1", Some(400), Some(500)).unwrap();
+        db.update_node_space_db("n1", Some(400), Some(500), Some(true))
+            .unwrap();
         let after = db.list_nodes().unwrap();
         assert_eq!(after[0].remote_free_bytes, Some(400));
         assert_eq!(after[0].remote_total_bytes, Some(500));
+        assert_eq!(after[0].space_supported, Some(true));
     }
 }

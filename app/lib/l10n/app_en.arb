@@ -686,7 +686,7 @@
       }
     }
   },
-  "utilitiesDefaultSubtitle": "Recycle bin, Web share, Cache",
+  "utilitiesDefaultSubtitle": "Privacy folders & cache cleanup",
   "tasksDefaultSubtitle": "Transfers and operations",
   "bookmarksDefaultSubtitle": "Saved folders",
   "recentDefaultSubtitle": "Browsing history",
@@ -3156,5 +3156,99 @@
   "remoteBatchErrorWrongPassword": "Incorrect password or corrupted backup file.",
   "remoteBatchErrorEmptyBundle": "This backup contains no valid remote connections.",
   "remoteBatchErrorFileTooLarge": "Selected file is too large to be a connection backup.",
-  "remoteBatchBackStep": "Back"
+  "remoteBatchBackStep": "Back",
+  "poolNodeWeightLabel": "Weight",
+  "poolNodeWeightBadge": "Weight {weight}",
+  "@poolNodeWeightBadge": {
+    "placeholders": {
+      "weight": { "type": "int" }
+    }
+  },
+  "poolSetNodeWeightTitle": "Set Node Weight",
+  "poolSetNodeWeightHint": "Higher weight (1–1000) receives more write traffic when free space and health are similar.",
+  "poolInvalidWeightError": "Weight must be an integer between 1 and 1000.",
+  "poolNodeUsedAndQuota": "Used {used} / Quota {quota}",
+  "@poolNodeUsedAndQuota": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "quota": { "type": "String" }
+    }
+  },
+  "poolNodeSystemFreeWithTotal": "System free {free} / {total}",
+  "@poolNodeSystemFreeWithTotal": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "poolNodeSystemFreeOnly": "System free {free}",
+  "@poolNodeSystemFreeOnly": {
+    "placeholders": {
+      "free": { "type": "String" }
+    }
+  },
+  "poolNodeSystemSpaceUnsupported": "System free space: not supported by protocol",
+  "poolNodeSystemSpaceUnavailable": "System free space: unavailable",
+  "poolNodeSystemSpaceProbing": "System free space: checking…",
+  "poolDeleteRemoteDataOption": "Also delete remote pool data on member nodes",
+  "poolDeleteRemoteDataWarning": "Permanently deletes blobs/ and meta/ folders under each node's storage directory. This cannot be undone.",
+  "poolDeleteNodeRemoteDataOption": "Also delete remote data on this node",
+  "poolDeleteNodeRemoteDataWarning": "Permanently removes pool chunks and metadata backups stored on this node.",
+  "poolOfflineNode": "Take Offline",
+  "poolOnlineNode": "Bring Online",
+  "poolRemoveNode": "Remove Node",
+  "poolOfflineConfirm": "Take node \"{node}\" offline immediately? Active chunks on this node will no longer be served until brought back online or healed.",
+  "@poolOfflineConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolRemoveNodeConfirm": "Remove node \"{node}\" from this storage pool?",
+  "@poolRemoveNodeConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolRemoteCleanupDone": "Deleted {deleted} remote item(s).",
+  "@poolRemoteCleanupDone": {
+    "placeholders": {
+      "deleted": { "type": "int" }
+    }
+  },
+  "poolRemoteCleanupPartial": "Deleted {deleted} remote item(s); {failed} failed ({nodes}).",
+  "@poolRemoteCleanupPartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "failed": { "type": "int" },
+      "nodes": { "type": "String" }
+    }
+  },
+  "analyzerSelectedCountAndSize": "{count} selected ({size})",
+  "@analyzerSelectedCountAndSize": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "analyzerBatchDeleteConfirmTitle": "Delete {count} file(s)?",
+  "@analyzerBatchDeleteConfirmTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "analyzerBatchDeleteDone": "Deleted {count} file(s), freed {size}.",
+  "@analyzerBatchDeleteDone": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "analyzerBatchDeletePartial": "Deleted {deleted} file(s); {failed} failed.",
+  "@analyzerBatchDeletePartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "failed": { "type": "int" }
+    }
+  },
+  "analyzerMultiSelectTooltip": "Select files"
 }

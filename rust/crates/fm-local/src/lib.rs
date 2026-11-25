@@ -510,6 +510,10 @@ impl Vfs for LocalFs {
         }
     }
 
+    fn supports_space_info(&self) -> bool {
+        true
+    }
+
     async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
         let native = self.join_lexical(path)?;
         self.check_contained(path, &native, false)?;

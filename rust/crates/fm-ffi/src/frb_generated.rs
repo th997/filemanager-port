@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 143892627;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -844766509;
 
 // Section: executor
 
@@ -612,12 +612,17 @@ fn wire__crate__api__pool__delete_pool_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_pool_id = <String>::sse_decode(&mut deserializer);
+            let api_delete_remote_data = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::pool::delete_pool(api_db_path, api_pool_id).await?;
+                        let output_ok = crate::api::pool::delete_pool(
+                            api_db_path,
+                            api_pool_id,
+                            api_delete_remote_data,
+                        )
+                        .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -1986,6 +1991,39 @@ fn wire__crate__api__tasks__poll_task_progress_impl(
         },
     )
 }
+fn wire__crate__api__pool__pool_remote_cleanup_report_dto_default_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pool_remote_cleanup_report_dto_default",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Ok::<_, ()>(crate::api::pool::PoolRemoteCleanupReportDto::default())?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__sync__preview_directory_sync_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2064,6 +2102,42 @@ fn wire__crate__api__pool__probe_pool_health_impl(
                 transform_result_sse::<_, String>(
                     (move || async move {
                         let output_ok = crate::api::pool::probe_pool_health(api_pool_id).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__pool__probe_pool_space_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "probe_pool_space",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pool_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::pool::probe_pool_space(api_pool_id).await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -2445,6 +2519,51 @@ fn wire__crate__api__metadata__remove_history_impl(
                         let output_ok =
                             crate::api::metadata::remove_history(api_db_path, api_root, api_path)
                                 .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__pool__remove_pool_node_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "remove_pool_node",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_pool_id = <String>::sse_decode(&mut deserializer);
+            let api_node_id = <String>::sse_decode(&mut deserializer);
+            let api_delete_remote_data = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::pool::remove_pool_node(
+                            api_db_path,
+                            api_pool_id,
+                            api_node_id,
+                            api_delete_remote_data,
+                        )
+                        .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -2917,6 +3036,94 @@ fn wire__crate__api__file_manager__set_archive_password_impl(
                 })?;
                 std::result::Result::Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__pool__set_pool_node_offline_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_pool_node_offline",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_pool_id = <String>::sse_decode(&mut deserializer);
+            let api_node_id = <String>::sse_decode(&mut deserializer);
+            let api_delete_remote_data = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::pool::set_pool_node_offline(
+                            api_db_path,
+                            api_pool_id,
+                            api_node_id,
+                            api_delete_remote_data,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__pool__set_pool_node_online_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_pool_node_online",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_pool_id = <String>::sse_decode(&mut deserializer);
+            let api_node_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::pool::set_pool_node_online(
+                            api_db_path,
+                            api_pool_id,
+                            api_node_id,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
         },
     )
 }
@@ -3594,15 +3801,21 @@ fn wire__crate__api__pool__start_pool_drain_task_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_pool_id = <String>::sse_decode(&mut deserializer);
             let api_node_id = <String>::sse_decode(&mut deserializer);
+            let api_delete_remote_data = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::pool::start_pool_drain_task(api_pool_id, api_node_id)
-                                .await?;
+                        let output_ok = crate::api::pool::start_pool_drain_task(
+                            api_db_path,
+                            api_pool_id,
+                            api_node_id,
+                            api_delete_remote_data,
+                        )
+                        .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -5774,6 +5987,17 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<bool>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<f32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6062,6 +6286,7 @@ impl SseDecode for crate::api::pool::PoolNodeConfigDto {
         let mut var_basePrefix = <String>::sse_decode(deserializer);
         let mut var_failureDomain = <String>::sse_decode(deserializer);
         let mut var_quotaBytes = <u64>::sse_decode(deserializer);
+        let mut var_weight = <u32>::sse_decode(deserializer);
         let mut var_role = <String>::sse_decode(deserializer);
         let mut var_isMetaBackup = <bool>::sse_decode(deserializer);
         return crate::api::pool::PoolNodeConfigDto {
@@ -6070,6 +6295,7 @@ impl SseDecode for crate::api::pool::PoolNodeConfigDto {
             base_prefix: var_basePrefix,
             failure_domain: var_failureDomain,
             quota_bytes: var_quotaBytes,
+            weight: var_weight,
             role: var_role,
             is_meta_backup: var_isMetaBackup,
         };
@@ -6085,8 +6311,10 @@ impl SseDecode for crate::api::pool::PoolNodeStatusDto {
         let mut var_failureDomain = <String>::sse_decode(deserializer);
         let mut var_quotaBytes = <u64>::sse_decode(deserializer);
         let mut var_usedBytes = <u64>::sse_decode(deserializer);
+        let mut var_weight = <u32>::sse_decode(deserializer);
         let mut var_remoteFreeBytes = <Option<u64>>::sse_decode(deserializer);
         let mut var_remoteTotalBytes = <Option<u64>>::sse_decode(deserializer);
+        let mut var_spaceSupported = <Option<bool>>::sse_decode(deserializer);
         let mut var_role = <String>::sse_decode(deserializer);
         let mut var_isMetaBackup = <bool>::sse_decode(deserializer);
         let mut var_healthScore = <f64>::sse_decode(deserializer);
@@ -6101,8 +6329,10 @@ impl SseDecode for crate::api::pool::PoolNodeStatusDto {
             failure_domain: var_failureDomain,
             quota_bytes: var_quotaBytes,
             used_bytes: var_usedBytes,
+            weight: var_weight,
             remote_free_bytes: var_remoteFreeBytes,
             remote_total_bytes: var_remoteTotalBytes,
+            space_supported: var_spaceSupported,
             role: var_role,
             is_meta_backup: var_isMetaBackup,
             health_score: var_healthScore,
@@ -6110,6 +6340,20 @@ impl SseDecode for crate::api::pool::PoolNodeStatusDto {
             circuit_state: var_circuitState,
             last_checked_ms: var_lastCheckedMs,
             last_error: var_lastError,
+        };
+    }
+}
+
+impl SseDecode for crate::api::pool::PoolRemoteCleanupReportDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_deletedObjects = <u64>::sse_decode(deserializer);
+        let mut var_failedObjects = <u64>::sse_decode(deserializer);
+        let mut var_failedNodes = <Vec<String>>::sse_decode(deserializer);
+        return crate::api::pool::PoolRemoteCleanupReportDto {
+            deleted_objects: var_deletedObjects,
+            failed_objects: var_failedObjects,
+            failed_nodes: var_failedNodes,
         };
     }
 }
@@ -6691,184 +6935,194 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         49 => wire__crate__api__metadata__move_to_trash_impl(port, ptr, rust_vec_len, data_len),
         52 => wire__crate__api__metadata__pin_remote_file_impl(port, ptr, rust_vec_len, data_len),
-        55 => {
+        55 => wire__crate__api__pool__pool_remote_cleanup_report_dto_default_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        56 => {
             wire__crate__api__sync__preview_directory_sync_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__pool__probe_pool_health_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__metadata__push_pinned_file_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__search__query_search_index_impl(port, ptr, rust_vec_len, data_len),
-        59 => {
+        57 => wire__crate__api__pool__probe_pool_health_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__pool__probe_pool_space_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__metadata__push_pinned_file_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__search__query_search_index_impl(port, ptr, rust_vec_len, data_len),
+        61 => {
             wire__crate__api__file_manager__read_file_bytes_impl(port, ptr, rust_vec_len, data_len)
         }
-        60 => {
+        62 => {
             wire__crate__api__file_manager__read_text_chunk_impl(port, ptr, rust_vec_len, data_len)
         }
-        61 => {
+        63 => {
             wire__crate__api__file_manager__read_text_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        62 => {
+        64 => {
             wire__crate__api__search__rebuild_search_index_impl(port, ptr, rust_vec_len, data_len)
         }
-        63 => wire__crate__api__metadata__record_history_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__file_manager__remove_entry_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__metadata__remove_history_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__file_manager__rename_entry_impl(port, ptr, rust_vec_len, data_len),
-        68 => {
+        65 => wire__crate__api__metadata__record_history_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__file_manager__remove_entry_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__metadata__remove_history_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__pool__remove_pool_node_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__file_manager__rename_entry_impl(port, ptr, rust_vec_len, data_len),
+        71 => {
             wire__crate__api__metadata__restore_trash_item_impl(port, ptr, rust_vec_len, data_len)
         }
-        70 => {
+        73 => {
             wire__crate__api__tasks__retry_failed_task_items_impl(port, ptr, rust_vec_len, data_len)
         }
-        71 => wire__crate__api__pool__save_pool_config_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__remotes__save_remote_impl(port, ptr, rust_vec_len, data_len),
-        73 => {
+        74 => wire__crate__api__pool__save_pool_config_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__remotes__save_remote_impl(port, ptr, rust_vec_len, data_len),
+        76 => {
             wire__crate__api__file_manager__search_entries_impl(port, ptr, rust_vec_len, data_len)
         }
-        74 => wire__crate__api__search__search_entries_advanced_impl(
+        77 => wire__crate__api__search__search_entries_advanced_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        75 => wire__crate__api__servers__send_peer_files_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__servers__send_peer_text_impl(port, ptr, rust_vec_len, data_len),
-        79 => {
+        78 => wire__crate__api__servers__send_peer_files_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__servers__send_peer_text_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__pool__set_pool_node_offline_impl(port, ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__pool__set_pool_node_online_impl(port, ptr, rust_vec_len, data_len),
+        84 => {
             wire__crate__api__inspect__set_unix_permissions_impl(port, ptr, rust_vec_len, data_len)
         }
-        80 => wire__crate__api__tasks__start_compress_task_impl(port, ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__tasks__start_compress_with_password_task_impl(
+        85 => wire__crate__api__tasks__start_compress_task_impl(port, ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__tasks__start_compress_with_password_task_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        82 => wire__crate__api__tasks__start_copy_task_impl(port, ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__tasks__start_delete_task_impl(port, ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__sync__start_directory_sync_task_impl(
+        87 => wire__crate__api__tasks__start_copy_task_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__tasks__start_delete_task_impl(port, ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__sync__start_directory_sync_task_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        85 => wire__crate__api__tasks__start_extract_task_impl(port, ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__tasks__start_extract_with_password_task_impl(
+        90 => wire__crate__api__tasks__start_extract_task_impl(port, ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__tasks__start_extract_with_password_task_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        87 => {
+        92 => {
             wire__crate__api__servers__start_lan_http_server_impl(port, ptr, rust_vec_len, data_len)
         }
-        88 => wire__crate__api__servers__start_lan_http_server_with_lang_impl(
+        93 => wire__crate__api__servers__start_lan_http_server_with_lang_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        89 => wire__crate__api__servers__start_lan_webdav_server_impl(
+        94 => wire__crate__api__servers__start_lan_webdav_server_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        90 => wire__crate__api__servers__start_media_stream_impl(port, ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__tasks__start_move_task_impl(port, ptr, rust_vec_len, data_len),
-        92 => {
+        95 => wire__crate__api__servers__start_media_stream_impl(port, ptr, rust_vec_len, data_len),
+        96 => wire__crate__api__tasks__start_move_task_impl(port, ptr, rust_vec_len, data_len),
+        97 => {
             wire__crate__api__servers__start_peer_receiver_impl(port, ptr, rust_vec_len, data_len)
         }
-        93 => wire__crate__api__pool__start_pool_drain_task_impl(port, ptr, rust_vec_len, data_len),
-        94 => wire__crate__api__pool__start_pool_gc_task_impl(port, ptr, rust_vec_len, data_len),
-        95 => wire__crate__api__pool__start_pool_heal_task_impl(port, ptr, rust_vec_len, data_len),
-        96 => wire__crate__api__file_manager__stat_entry_impl(port, ptr, rust_vec_len, data_len),
-        101 => wire__crate__api__sync__sync_exclude_rules_dto_default_impl(
+        98 => wire__crate__api__pool__start_pool_drain_task_impl(port, ptr, rust_vec_len, data_len),
+        99 => wire__crate__api__pool__start_pool_gc_task_impl(port, ptr, rust_vec_len, data_len),
+        100 => wire__crate__api__pool__start_pool_heal_task_impl(port, ptr, rust_vec_len, data_len),
+        101 => wire__crate__api__file_manager__stat_entry_impl(port, ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__sync__sync_exclude_rules_dto_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        102 => wire__crate__api__pool__sync_pool_metadata_impl(port, ptr, rust_vec_len, data_len),
-        103 => wire__crate__api__remotes__test_remote_connection_impl(
+        107 => wire__crate__api__pool__sync_pool_metadata_impl(port, ptr, rust_vec_len, data_len),
+        108 => wire__crate__api__remotes__test_remote_connection_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        107 => {
+        112 => {
             wire__crate__api__vault__vault_change_password_impl(port, ptr, rust_vec_len, data_len)
         }
-        108 => wire__crate__api__vault__vault_commit_switch_to_system_impl(
+        113 => wire__crate__api__vault__vault_commit_switch_to_system_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        109 => wire__crate__api__vault__vault_create_impl(port, ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__vault__vault_delete_impl(port, ptr, rust_vec_len, data_len),
-        111 => wire__crate__api__vault__vault_desktop_keystore_delete_impl(
+        114 => wire__crate__api__vault__vault_create_impl(port, ptr, rust_vec_len, data_len),
+        115 => wire__crate__api__vault__vault_delete_impl(port, ptr, rust_vec_len, data_len),
+        116 => wire__crate__api__vault__vault_desktop_keystore_delete_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        112 => wire__crate__api__vault__vault_desktop_keystore_read_impl(
+        117 => wire__crate__api__vault__vault_desktop_keystore_read_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        113 => wire__crate__api__vault__vault_desktop_keystore_save_impl(
+        118 => wire__crate__api__vault__vault_desktop_keystore_save_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        114 => wire__crate__api__vault__vault_export_backup_impl(port, ptr, rust_vec_len, data_len),
-        115 => wire__crate__api__vault__vault_gc_impl(port, ptr, rust_vec_len, data_len),
-        116 => wire__crate__api__vault__vault_import_backup_impl(port, ptr, rust_vec_len, data_len),
-        118 => {
+        119 => wire__crate__api__vault__vault_export_backup_impl(port, ptr, rust_vec_len, data_len),
+        120 => wire__crate__api__vault__vault_gc_impl(port, ptr, rust_vec_len, data_len),
+        121 => wire__crate__api__vault__vault_import_backup_impl(port, ptr, rust_vec_len, data_len),
+        123 => {
             wire__crate__api__vault__vault_inspect_backup_impl(port, ptr, rust_vec_len, data_len)
         }
-        122 => wire__crate__api__vault__vault_lookup_impl(port, ptr, rust_vec_len, data_len),
-        123 => wire__crate__api__vault__vault_prepare_switch_to_system_impl(
+        127 => wire__crate__api__vault__vault_lookup_impl(port, ptr, rust_vec_len, data_len),
+        128 => wire__crate__api__vault__vault_prepare_switch_to_system_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        124 => {
+        129 => {
             wire__crate__api__vault__vault_read_thumbnail_impl(port, ptr, rust_vec_len, data_len)
         }
-        126 => wire__crate__api__vault__vault_rename_impl(port, ptr, rust_vec_len, data_len),
-        127 => {
+        131 => wire__crate__api__vault__vault_rename_impl(port, ptr, rust_vec_len, data_len),
+        132 => {
             wire__crate__api__vault__vault_save_thumbnail_impl(port, ptr, rust_vec_len, data_len)
         }
-        128 => wire__crate__api__vault__vault_start_export_backup_impl(
+        133 => wire__crate__api__vault__vault_start_export_backup_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        129 => wire__crate__api__vault__vault_start_import_backup_impl(
+        134 => wire__crate__api__vault__vault_start_import_backup_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        130 => wire__crate__api__vault__vault_stats_impl(port, ptr, rust_vec_len, data_len),
-        131 => wire__crate__api__vault__vault_unlock_with_password_impl(
+        135 => wire__crate__api__vault__vault_stats_impl(port, ptr, rust_vec_len, data_len),
+        136 => wire__crate__api__vault__vault_unlock_with_password_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        132 => wire__crate__api__vault__vault_unlock_with_system_key_impl(
+        137 => wire__crate__api__vault__vault_unlock_with_system_key_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        133 => {
+        138 => {
             wire__crate__api__file_manager__write_text_file_impl(port, ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -6914,26 +7168,26 @@ fn pde_ffi_dispatcher_sync_impl(
         51 => wire__crate__api__servers__peer_receiver_status_impl(ptr, rust_vec_len, data_len),
         53 => wire__crate__api__servers__poll_peer_offers_impl(ptr, rust_vec_len, data_len),
         54 => wire__crate__api__tasks__poll_task_progress_impl(ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__servers__respond_peer_offer_impl(ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__tasks__resume_task_impl(ptr, rust_vec_len, data_len),
-        77 => {
+        70 => wire__crate__api__servers__respond_peer_offer_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__tasks__resume_task_impl(ptr, rust_vec_len, data_len),
+        80 => {
             wire__crate__api__file_manager__set_archive_password_impl(ptr, rust_vec_len, data_len)
         }
-        78 => wire__crate__api__tasks__set_task_rate_limit_impl(ptr, rust_vec_len, data_len),
-        97 => wire__crate__api__servers__stop_lan_http_server_impl(ptr, rust_vec_len, data_len),
-        98 => wire__crate__api__servers__stop_lan_webdav_server_impl(ptr, rust_vec_len, data_len),
-        99 => wire__crate__api__servers__stop_media_streams_impl(ptr, rust_vec_len, data_len),
-        100 => wire__crate__api__servers__stop_peer_receiver_impl(ptr, rust_vec_len, data_len),
-        104 => wire__crate__api__metadata__unpin_remote_file_impl(ptr, rust_vec_len, data_len),
-        105 => {
+        83 => wire__crate__api__tasks__set_task_rate_limit_impl(ptr, rust_vec_len, data_len),
+        102 => wire__crate__api__servers__stop_lan_http_server_impl(ptr, rust_vec_len, data_len),
+        103 => wire__crate__api__servers__stop_lan_webdav_server_impl(ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__servers__stop_media_streams_impl(ptr, rust_vec_len, data_len),
+        105 => wire__crate__api__servers__stop_peer_receiver_impl(ptr, rust_vec_len, data_len),
+        109 => wire__crate__api__metadata__unpin_remote_file_impl(ptr, rust_vec_len, data_len),
+        110 => {
             wire__crate__api__vault__vault_backup_task_progress_impl(ptr, rust_vec_len, data_len)
         }
-        106 => wire__crate__api__vault__vault_cancel_backup_task_impl(ptr, rust_vec_len, data_len),
-        117 => wire__crate__api__vault__vault_init_store_impl(ptr, rust_vec_len, data_len),
-        119 => wire__crate__api__vault__vault_list_unlocked_impl(ptr, rust_vec_len, data_len),
-        120 => wire__crate__api__vault__vault_lock_impl(ptr, rust_vec_len, data_len),
-        121 => wire__crate__api__vault__vault_lock_all_impl(ptr, rust_vec_len, data_len),
-        125 => wire__crate__api__vault__vault_remove_backup_task_impl(ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__vault__vault_cancel_backup_task_impl(ptr, rust_vec_len, data_len),
+        122 => wire__crate__api__vault__vault_init_store_impl(ptr, rust_vec_len, data_len),
+        124 => wire__crate__api__vault__vault_list_unlocked_impl(ptr, rust_vec_len, data_len),
+        125 => wire__crate__api__vault__vault_lock_impl(ptr, rust_vec_len, data_len),
+        126 => wire__crate__api__vault__vault_lock_all_impl(ptr, rust_vec_len, data_len),
+        130 => wire__crate__api__vault__vault_remove_backup_task_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -7474,6 +7728,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::pool::PoolNodeConfigDto {
             self.base_prefix.into_into_dart().into_dart(),
             self.failure_domain.into_into_dart().into_dart(),
             self.quota_bytes.into_into_dart().into_dart(),
+            self.weight.into_into_dart().into_dart(),
             self.role.into_into_dart().into_dart(),
             self.is_meta_backup.into_into_dart().into_dart(),
         ]
@@ -7501,8 +7756,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::pool::PoolNodeStatusDto {
             self.failure_domain.into_into_dart().into_dart(),
             self.quota_bytes.into_into_dart().into_dart(),
             self.used_bytes.into_into_dart().into_dart(),
+            self.weight.into_into_dart().into_dart(),
             self.remote_free_bytes.into_into_dart().into_dart(),
             self.remote_total_bytes.into_into_dart().into_dart(),
+            self.space_supported.into_into_dart().into_dart(),
             self.role.into_into_dart().into_dart(),
             self.is_meta_backup.into_into_dart().into_dart(),
             self.health_score.into_into_dart().into_dart(),
@@ -7522,6 +7779,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::pool::PoolNodeStatusDto>
     for crate::api::pool::PoolNodeStatusDto
 {
     fn into_into_dart(self) -> crate::api::pool::PoolNodeStatusDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pool::PoolRemoteCleanupReportDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.deleted_objects.into_into_dart().into_dart(),
+            self.failed_objects.into_into_dart().into_dart(),
+            self.failed_nodes.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pool::PoolRemoteCleanupReportDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pool::PoolRemoteCleanupReportDto>
+    for crate::api::pool::PoolRemoteCleanupReportDto
+{
+    fn into_into_dart(self) -> crate::api::pool::PoolRemoteCleanupReportDto {
         self
     }
 }
@@ -8577,6 +8856,16 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <bool>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<f32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8786,6 +9075,7 @@ impl SseEncode for crate::api::pool::PoolNodeConfigDto {
         <String>::sse_encode(self.base_prefix, serializer);
         <String>::sse_encode(self.failure_domain, serializer);
         <u64>::sse_encode(self.quota_bytes, serializer);
+        <u32>::sse_encode(self.weight, serializer);
         <String>::sse_encode(self.role, serializer);
         <bool>::sse_encode(self.is_meta_backup, serializer);
     }
@@ -8800,8 +9090,10 @@ impl SseEncode for crate::api::pool::PoolNodeStatusDto {
         <String>::sse_encode(self.failure_domain, serializer);
         <u64>::sse_encode(self.quota_bytes, serializer);
         <u64>::sse_encode(self.used_bytes, serializer);
+        <u32>::sse_encode(self.weight, serializer);
         <Option<u64>>::sse_encode(self.remote_free_bytes, serializer);
         <Option<u64>>::sse_encode(self.remote_total_bytes, serializer);
+        <Option<bool>>::sse_encode(self.space_supported, serializer);
         <String>::sse_encode(self.role, serializer);
         <bool>::sse_encode(self.is_meta_backup, serializer);
         <f64>::sse_encode(self.health_score, serializer);
@@ -8809,6 +9101,15 @@ impl SseEncode for crate::api::pool::PoolNodeStatusDto {
         <String>::sse_encode(self.circuit_state, serializer);
         <Option<i64>>::sse_encode(self.last_checked_ms, serializer);
         <Option<String>>::sse_encode(self.last_error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::pool::PoolRemoteCleanupReportDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.deleted_objects, serializer);
+        <u64>::sse_encode(self.failed_objects, serializer);
+        <Vec<String>>::sse_encode(self.failed_nodes, serializer);
     }
 }
 

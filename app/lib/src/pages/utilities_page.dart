@@ -3,20 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../dialogs/vault_dialogs.dart';
 import '../rust/api/file_manager.dart' as fm_api;
-import '../rust/api/metadata.dart' as meta_api;
 import '../rust/api/vault.dart';
 import '../services/file_open_service.dart';
-import '../services/platform_paths.dart';
-import '../services/storage_service.dart';
 import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
-import 'duplicate_finder_page.dart';
-import 'peer_transfer_page.dart';
-import 'photo_backup_page.dart';
-import 'storage_analyzer_page.dart';
-import 'sync_page.dart';
-import 'trash_page.dart';
 
 class UtilitiesPage extends StatefulWidget {
   final ValueChanged<UnlockedVaultDto>? onOpenVault;
@@ -28,7 +19,6 @@ class UtilitiesPage extends StatefulWidget {
 }
 
 class _UtilitiesPageState extends State<UtilitiesPage> {
-  int _trashCount = 0;
   int _cacheSizeBytes = 0;
   int _archiveCacheBytes = 0;
   bool _clearingCache = false;
@@ -99,10 +89,8 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
   }
 
   Future<void> _loadData() async {
-    final List<meta_api.TrashItemDto> trash;
     final int cacheBytes;
     try {
-      trash = await StorageService.instance.getTrashItems();
       cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
     } catch (e) {
       if (!mounted) return;
@@ -121,7 +109,6 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     } catch (_) {}
     if (mounted) {
       setState(() {
-        _trashCount = trash.length;
         _cacheSizeBytes = cacheBytes;
         _archiveCacheBytes = archiveBytes;
       });
@@ -179,56 +166,6 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     }
   }
 
-  Future<void> _emptyTrash() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppLocalizations.of(context).emptyRecycleBin),
-        actionsOverflowButtonSpacing: 8,
-        content: Text(
-          AppLocalizations.of(context).emptyTrashUtilityConfirm(_trashCount),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(AppLocalizations.of(context).cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(AppLocalizations.of(context).emptyAll),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      try {
-        await StorageService.instance.clearTrash();
-        await _loadData();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context).recycleBinEmptied),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                AppLocalizations.of(context).couldNotEmptyTrashError('$e'),
-              ),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
-        }
-      }
-    }
-  }
-
   String _formatSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -271,201 +208,7 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
 
               const SizedBox(height: 12),
 
-              // 1. Recycle Bin Card
-              _buildSectionHeader(l10n.recycleBin),
-              Card(
-                child: ListTile(
-                  leading: const AppCircleBadge(
-                    icon: Icons.delete_outline,
-                    color: Colors.deepOrange,
-                  ),
-                  title: Text(l10n.recycleBin),
-                  subtitle: Text(
-                    l10n.trashCountNotice(_trashCount),
-                    style: const TextStyle(fontSize: 10),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_trashCount > 0)
-                        AppIconButton(
-                          icon: Icons.delete_sweep_outlined,
-                          size: 28,
-                          iconSize: 18,
-                          color: Theme.of(context).colorScheme.error,
-                          tooltip: l10n.emptyRecycleBin,
-                          onPressed: _emptyTrash,
-                        ),
-                      const Icon(Icons.chevron_right, size: 16),
-                    ],
-                  ),
-                  onTap: () {
-                    Navigator.of(context)
-                        .push(
-                          MaterialPageRoute(builder: (_) => const TrashPage()),
-                        )
-                        .then((_) => _loadData());
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 2. Professional Toolbox
-              _buildSectionHeader(l10n.utilities),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.pie_chart_outline,
-                        color: Colors.teal,
-                        size: 32,
-                        iconSize: 18,
-                      ),
-                      title: Text(
-                        l10n.storageAnalyzer,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      subtitle: Text(
-                        l10n.storageAnalyzerSubtitle,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => StorageAnalyzerPage(
-                              root: PlatformPaths.defaultRoot(),
-                              title: l10n.localStorage,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.find_replace,
-                        color: Colors.orange,
-                        size: 32,
-                        iconSize: 18,
-                      ),
-                      title: Text(
-                        l10n.duplicateFinder,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      subtitle: Text(
-                        l10n.duplicateFinderSubtitle,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => DuplicateFinderPage(
-                              root: PlatformPaths.defaultRoot(),
-                              title: l10n.localStorage,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.sync,
-                        color: Colors.blue,
-                        size: 32,
-                        iconSize: 18,
-                      ),
-                      title: Text(
-                        l10n.directorySync,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      subtitle: Text(
-                        l10n.directorySyncSubtitle,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const SyncPage()),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.swap_horiz,
-                        color: Colors.indigo,
-                        size: 32,
-                        iconSize: 18,
-                      ),
-                      title: Text(
-                        l10n.lanTransferAndShareTitle,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      subtitle: Text(
-                        l10n.lanTransferAndShareSubtitle,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const PeerTransferPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.cloud_upload_outlined,
-                        color: Colors.green,
-                        size: 32,
-                        iconSize: 18,
-                      ),
-                      title: Text(
-                        l10n.photoBackupTitle,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      subtitle: Text(
-                        l10n.photoBackupSubtitle,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const PhotoBackupPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 3. Cache cleaner
+              // 1. Cache cleaner
               _buildSectionHeader(l10n.storageAndCache),
               Card(
                 child: Column(

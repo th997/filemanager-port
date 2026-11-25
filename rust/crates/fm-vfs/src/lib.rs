@@ -153,6 +153,12 @@ pub trait Vfs: Send + Sync {
 
     /// Query total and remaining free bytes for the storage volume or quota
     /// backing `path`, when the backend supports reporting it.
+    fn supports_space_info(&self) -> bool {
+        false
+    }
+
+    /// Query total and remaining free bytes for the storage volume or quota
+    /// backing `path`, when the backend supports reporting it.
     async fn space_info(&self, _path: &VfsPath) -> VfsResult<Option<SpaceInfo>> {
         Ok(None)
     }

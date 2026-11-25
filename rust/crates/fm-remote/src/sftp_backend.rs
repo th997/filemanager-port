@@ -899,6 +899,10 @@ impl Vfs for SftpFs {
         .await
     }
 
+    fn supports_space_info(&self) -> bool {
+        true
+    }
+
     async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
         let primary = self.resolve_path(path);
         let fallback_root = if path.is_root() {

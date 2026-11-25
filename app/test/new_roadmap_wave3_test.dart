@@ -489,7 +489,7 @@ void main() {
     }
 
     testWidgets(
-        'UtilitiesPage exposes privacy folder tools and removes LAN HTTP sharing',
+        'UtilitiesPage retains privacy folder & cache cleanup tools without duplicated tool entries',
         (tester) async {
       tester.view.physicalSize = const Size(1280, 1600);
       tester.view.devicePixelRatio = 1.0;
@@ -502,9 +502,49 @@ void main() {
       expect(find.text('Privacy Folders'), findsAtLeastNWidgets(1));
       expect(find.text('Open Privacy Folder'), findsOneWidget);
       expect(find.text('Create Privacy Folder'), findsOneWidget);
-      expect(find.text('LAN Transfer & WebDAV Share'), findsOneWidget);
+      expect(find.text('Export & Preview Cache'), findsOneWidget);
+      expect(find.text('Remote Archive Cache'), findsOneWidget);
+
+      expect(find.text('LAN Transfer & WebDAV Share'), findsNothing);
       expect(find.text('LAN HTTP Web Sharing'), findsNothing);
       expect(find.text('Web Sharing Server'), findsNothing);
+      expect(find.text('Recycle Bin'), findsNothing);
+      expect(find.text('Storage Analyzer'), findsNothing);
+      expect(find.text('Duplicate Finder'), findsNothing);
+      expect(find.text('Directory Sync & Backup'), findsNothing);
+      expect(find.text('Photo Auto Backup'), findsNothing);
+    });
+
+    testWidgets(
+        'DesktopSidebarShell Tools section hides Storage Analyzer and Duplicate Finder',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        wrapLocalized(
+          DesktopSidebarShell(
+            remotes: const [],
+            bookmarks: const [],
+            history: const [],
+            trashCount: 0,
+            activeTaskCount: 0,
+            diskSpace: null,
+            themeMode: ThemeMode.system,
+            onRefreshMetadata: () {},
+            onOpenGlobalSearch: ({root, relPath, onNavigate}) async {},
+            workspaceOverride: const SizedBox.shrink(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Directory Sync & Backup'), findsOneWidget);
+      expect(find.text('Utilities'), findsOneWidget);
+      expect(find.text('Storage Analyzer'), findsNothing);
+      expect(find.text('Duplicate Finder'), findsNothing);
     });
 
     testWidgets(

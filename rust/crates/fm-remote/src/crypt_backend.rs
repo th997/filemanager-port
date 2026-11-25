@@ -564,6 +564,10 @@ impl Vfs for CryptFs {
         self.backing.rename(&enc_from, &enc_to).await
     }
 
+    fn supports_space_info(&self) -> bool {
+        self.backing.supports_space_info()
+    }
+
     async fn space_info(&self, _path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
         self.backing.space_info(&self.base_prefix).await
     }

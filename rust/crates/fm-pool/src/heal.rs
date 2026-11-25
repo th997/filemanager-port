@@ -249,12 +249,13 @@ pub async fn run_heal(
 }
 
 /// Mark `node_id` as `draining`, copy every chunk it holds onto other healthy
-/// nodes so `target_replicas` remain intact without `node_id`, remove its
-/// remote blobs (or queue to `gc_queue` if temporarily unreachable), and mark
-/// the node `offline` once drained.
+/// nodes so `target_replicas` remain intact without `node_id`, optionally remove
+/// its remote blobs (or queue to `gc_queue` if temporarily unreachable), and
+/// mark the node `offline` once drained.
 pub async fn run_drain(
     state: Arc<PoolState>,
     node_id: &str,
+    delete_remote_data: bool,
     progress: &Arc<Mutex<TaskProgress>>,
     cancel: &CancellationToken,
     control: &TaskControl,
@@ -319,12 +320,16 @@ pub async fn run_drain(
                     continue;
                 }
 
-                let remote_removed = state.io.remove_blob(&target_node, &relpath).await.is_ok();
+                let queue_gc = if delete_remote_data {
+                    state.io.remove_blob(&target_node, &relpath).await.is_err()
+                } else {
+                    false
+                };
                 state.meta.remove_replica_and_maybe_queue_gc(
                     &chunk.chunk_hash,
                     node_id,
                     &relpath,
-                    !remote_removed,
+                    queue_gc,
                 )?;
                 report.migrated_chunks += 1;
             }
@@ -343,6 +348,9 @@ pub async fn run_drain(
 
     if state.meta.list_chunks_on_node(node_id)?.is_empty() {
         state.meta.set_node_role(node_id, NodeRole::Offline)?;
+        if delete_remote_data {
+            let _ = state.purge_node_remote_data(node_id).await;
+        }
     }
 
     state.schedule_debounced_sync();

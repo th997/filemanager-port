@@ -438,20 +438,209 @@ impl RemoteNodeIo {
         }
     }
 
-    async fn refresh_node_space(&self, vfs: &dyn Vfs, node_id: &str, target: &VfsPath) {
-        let space = tokio::time::timeout(
-            self.timeouts.probe_timeout,
-            vfs.space_info(target),
-        )
-        .await
-        .ok()
-        .and_then(|r| r.ok())
-        .flatten();
-        let _ = self.meta.update_node_space_db(
-            node_id,
-            space.map(|s| s.free_bytes),
-            space.and_then(|s| s.total_bytes),
-        );
+    async fn refresh_node_space(
+        &self,
+        vfs: &dyn Vfs,
+        node: &NodePlacementInfo,
+        target: &VfsPath,
+        force: bool,
+    ) {
+        if !vfs.supports_space_info() {
+            let _ = self
+                .meta
+                .update_node_space_db(&node.node_id, None, None, Some(false));
+            return;
+        }
+        if !force && node.space_supported == Some(false) {
+            return;
+        }
+        let res = tokio::time::timeout(self.timeouts.probe_timeout, vfs.space_info(target)).await;
+        match res {
+            Ok(Ok(Some(info))) => {
+                let _ = self.meta.update_node_space_db(
+                    &node.node_id,
+                    Some(info.free_bytes),
+                    info.total_bytes,
+                    Some(true),
+                );
+            }
+            Ok(Ok(None)) => {
+                let _ = self
+                    .meta
+                    .update_node_space_db(&node.node_id, None, None, Some(false));
+            }
+            Ok(Err(_)) | Err(_) => {
+                // Transient error or timeout: preserve any previously cached space info.
+            }
+        }
+    }
+
+    pub async fn probe_node_space_only(&self, node: &NodePlacementInfo) {
+        if node.role == crate::scheduler::NodeRole::Offline || node.space_supported == Some(false) {
+            return;
+        }
+        let Ok(vfs) = self.resolve_node(node).await else {
+            return;
+        };
+        if !vfs.supports_space_info() {
+            let _ = self
+                .meta
+                .update_node_space_db(&node.node_id, None, None, Some(false));
+            return;
+        }
+        let prefix_path = node_vfs_path(&node.base_prefix, "");
+        let target = if prefix_path.is_root() {
+            VfsPath::root()
+        } else {
+            prefix_path
+        };
+        self.refresh_node_space(vfs.as_ref(), node, &target, false)
+            .await;
+    }
+
+    /// Recursively removes ONLY `<base_prefix>/blobs` and `<base_prefix>/meta`
+    /// plus any tracked `known_relpaths`, never touching unrelated sibling files
+    /// when `base_prefix` is `/`. Returns `(deleted_objects, failed_objects, node_reachable)`.
+    pub async fn purge_node_pool_data(
+        &self,
+        node: &NodePlacementInfo,
+        known_relpaths: &[String],
+    ) -> (u64, u64, bool) {
+        let Ok(vfs) = self.resolve_node(node).await else {
+            return (0, known_relpaths.len().max(1) as u64, false);
+        };
+
+        let mut deleted = 0u64;
+        let mut failed = 0u64;
+        let mut attempted: HashSet<String> = HashSet::new();
+
+        for sub in ["blobs", "meta"] {
+            let root = node_vfs_path(&node.base_prefix, sub);
+            let (d, f) = self
+                .purge_subtree_recursive(vfs.as_ref(), &root, &mut attempted)
+                .await;
+            deleted = deleted.saturating_add(d);
+            failed = failed.saturating_add(f);
+        }
+
+        for rel in known_relpaths {
+            let target = node_vfs_path(&node.base_prefix, rel);
+            if !attempted.insert(target.to_slash_string()) {
+                continue;
+            }
+            match tokio::time::timeout(self.timeouts.open_timeout, vfs.remove(&target)).await {
+                Ok(Ok(())) | Ok(Err(VfsError::NotFound { .. })) => {
+                    deleted = deleted.saturating_add(1);
+                }
+                Ok(Err(e)) => {
+                    let lower = e.to_string().to_ascii_lowercase();
+                    if lower.contains("not found")
+                        || lower.contains("no such file")
+                        || lower.contains("404")
+                    {
+                        deleted = deleted.saturating_add(1);
+                    } else {
+                        failed = failed.saturating_add(1);
+                    }
+                }
+                Err(_) => {
+                    failed = failed.saturating_add(1);
+                }
+            }
+        }
+
+        let prefix_path = node_vfs_path(&node.base_prefix, "");
+        if !prefix_path.is_root() {
+            if let Ok(Ok(entries)) =
+                tokio::time::timeout(self.timeouts.probe_timeout, vfs.list(&prefix_path)).await
+            {
+                if entries.is_empty() {
+                    let _ =
+                        tokio::time::timeout(self.timeouts.open_timeout, vfs.remove(&prefix_path))
+                            .await;
+                }
+            }
+        }
+
+        self.created_dirs.write().remove(&node.node_id);
+        (deleted, failed, true)
+    }
+
+    async fn purge_subtree_recursive(
+        &self,
+        vfs: &dyn Vfs,
+        subtree_root: &VfsPath,
+        attempted: &mut HashSet<String>,
+    ) -> (u64, u64) {
+        const MAX_DEPTH: usize = 8;
+        let mut queue: Vec<(VfsPath, usize)> = vec![(subtree_root.clone(), 0)];
+        let mut files: Vec<VfsPath> = Vec::new();
+        let mut dirs: Vec<VfsPath> = Vec::new();
+
+        while let Some((dir, depth)) = queue.pop() {
+            let Ok(res) = tokio::time::timeout(self.timeouts.probe_timeout, vfs.list(&dir)).await
+            else {
+                continue;
+            };
+            match res {
+                Ok(entries) => {
+                    dirs.push(dir.clone());
+                    for entry in entries {
+                        if entry.kind == fm_core::EntryKind::Dir {
+                            if depth < MAX_DEPTH {
+                                queue.push((entry.path, depth + 1));
+                            }
+                        } else {
+                            files.push(entry.path);
+                        }
+                    }
+                }
+                Err(VfsError::NotFound { .. }) => {}
+                Err(e) => {
+                    let lower = e.to_string().to_ascii_lowercase();
+                    if !(lower.contains("not found")
+                        || lower.contains("no such file")
+                        || lower.contains("404"))
+                    {
+                        dirs.push(dir);
+                    }
+                }
+            }
+        }
+
+        let mut deleted = 0u64;
+        let mut failed = 0u64;
+
+        for file in files {
+            if !attempted.insert(file.to_slash_string()) {
+                continue;
+            }
+            match tokio::time::timeout(self.timeouts.open_timeout, vfs.remove(&file)).await {
+                Ok(Ok(())) | Ok(Err(VfsError::NotFound { .. })) => {
+                    deleted = deleted.saturating_add(1);
+                }
+                Ok(Err(e)) => {
+                    let lower = e.to_string().to_ascii_lowercase();
+                    if lower.contains("not found")
+                        || lower.contains("no such file")
+                        || lower.contains("404")
+                    {
+                        deleted = deleted.saturating_add(1);
+                    } else {
+                        failed = failed.saturating_add(1);
+                    }
+                }
+                Err(_) => {
+                    failed = failed.saturating_add(1);
+                }
+            }
+        }
+
+        for dir in dirs.into_iter().rev() {
+            let _ = tokio::time::timeout(self.timeouts.open_timeout, vfs.remove(&dir)).await;
+        }
+
+        (deleted, failed)
     }
 
     pub async fn probe_node(&self, node: &NodePlacementInfo) -> Result<u64, String> {
@@ -491,7 +680,8 @@ impl RemoteNodeIo {
                 }
                 self.health.reset_circuit(&node.node_id);
                 self.record_success(&node.node_id, elapsed_ms);
-                self.refresh_node_space(vfs.as_ref(), &node.node_id, &target).await;
+                self.refresh_node_space(vfs.as_ref(), node, &target, true)
+                    .await;
                 Ok(elapsed_ms)
             }
             Ok(Err(e)) => {
@@ -500,7 +690,8 @@ impl RemoteNodeIo {
                 if lower.contains("not found") || lower.contains("no such file") {
                     self.health.reset_circuit(&node.node_id);
                     self.record_success(&node.node_id, elapsed_ms);
-                    self.refresh_node_space(vfs.as_ref(), &node.node_id, &target).await;
+                    self.refresh_node_space(vfs.as_ref(), node, &target, true)
+                        .await;
                     return Ok(elapsed_ms);
                 }
                 self.record_failure(&node.node_id);

@@ -7,8 +7,8 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `dto_to_pool_config`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `dto_to_pool_config`, `load_pool_state_for_action`, `persist_updated_pool_config`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
 
 Future<List<PoolSummaryDto>> listPools({required String dbPath}) =>
     RustLib.instance.api.crateApiPoolListPools(dbPath: dbPath);
@@ -29,11 +29,21 @@ Future<PoolSummaryDto> savePoolConfig({
   config: config,
 );
 
-Future<void> deletePool({required String dbPath, required String poolId}) =>
-    RustLib.instance.api.crateApiPoolDeletePool(dbPath: dbPath, poolId: poolId);
+Future<PoolRemoteCleanupReportDto> deletePool({
+  required String dbPath,
+  required String poolId,
+  required bool deleteRemoteData,
+}) => RustLib.instance.api.crateApiPoolDeletePool(
+  dbPath: dbPath,
+  poolId: poolId,
+  deleteRemoteData: deleteRemoteData,
+);
 
 Future<List<PoolNodeStatusDto>> probePoolHealth({required String poolId}) =>
     RustLib.instance.api.crateApiPoolProbePoolHealth(poolId: poolId);
+
+Future<List<PoolNodeStatusDto>> probePoolSpace({required String poolId}) =>
+    RustLib.instance.api.crateApiPoolProbePoolSpace(poolId: poolId);
 
 Future<PoolSyncReportDto> syncPoolMetadata({required String poolId}) =>
     RustLib.instance.api.crateApiPoolSyncPoolMetadata(poolId: poolId);
@@ -42,11 +52,49 @@ Future<String> startPoolHealTask({required String poolId}) =>
     RustLib.instance.api.crateApiPoolStartPoolHealTask(poolId: poolId);
 
 Future<String> startPoolDrainTask({
+  required String dbPath,
   required String poolId,
   required String nodeId,
+  required bool deleteRemoteData,
 }) => RustLib.instance.api.crateApiPoolStartPoolDrainTask(
+  dbPath: dbPath,
   poolId: poolId,
   nodeId: nodeId,
+  deleteRemoteData: deleteRemoteData,
+);
+
+Future<PoolRemoteCleanupReportDto> setPoolNodeOffline({
+  required String dbPath,
+  required String poolId,
+  required String nodeId,
+  required bool deleteRemoteData,
+}) => RustLib.instance.api.crateApiPoolSetPoolNodeOffline(
+  dbPath: dbPath,
+  poolId: poolId,
+  nodeId: nodeId,
+  deleteRemoteData: deleteRemoteData,
+);
+
+Future<PoolSummaryDto> setPoolNodeOnline({
+  required String dbPath,
+  required String poolId,
+  required String nodeId,
+}) => RustLib.instance.api.crateApiPoolSetPoolNodeOnline(
+  dbPath: dbPath,
+  poolId: poolId,
+  nodeId: nodeId,
+);
+
+Future<PoolRemoteCleanupReportDto> removePoolNode({
+  required String dbPath,
+  required String poolId,
+  required String nodeId,
+  required bool deleteRemoteData,
+}) => RustLib.instance.api.crateApiPoolRemovePoolNode(
+  dbPath: dbPath,
+  poolId: poolId,
+  nodeId: nodeId,
+  deleteRemoteData: deleteRemoteData,
 );
 
 Future<String> startPoolGcTask({
@@ -110,6 +158,7 @@ class PoolNodeConfigDto {
   final String basePrefix;
   final String failureDomain;
   final BigInt quotaBytes;
+  final int weight;
   final String role;
   final bool isMetaBackup;
 
@@ -119,6 +168,7 @@ class PoolNodeConfigDto {
     required this.basePrefix,
     required this.failureDomain,
     required this.quotaBytes,
+    required this.weight,
     required this.role,
     required this.isMetaBackup,
   });
@@ -130,6 +180,7 @@ class PoolNodeConfigDto {
       basePrefix.hashCode ^
       failureDomain.hashCode ^
       quotaBytes.hashCode ^
+      weight.hashCode ^
       role.hashCode ^
       isMetaBackup.hashCode;
 
@@ -143,6 +194,7 @@ class PoolNodeConfigDto {
           basePrefix == other.basePrefix &&
           failureDomain == other.failureDomain &&
           quotaBytes == other.quotaBytes &&
+          weight == other.weight &&
           role == other.role &&
           isMetaBackup == other.isMetaBackup;
 }
@@ -154,8 +206,10 @@ class PoolNodeStatusDto {
   final String failureDomain;
   final BigInt quotaBytes;
   final BigInt usedBytes;
+  final int weight;
   final BigInt? remoteFreeBytes;
   final BigInt? remoteTotalBytes;
+  final bool? spaceSupported;
   final String role;
   final bool isMetaBackup;
   final double healthScore;
@@ -171,8 +225,10 @@ class PoolNodeStatusDto {
     required this.failureDomain,
     required this.quotaBytes,
     required this.usedBytes,
+    required this.weight,
     this.remoteFreeBytes,
     this.remoteTotalBytes,
+    this.spaceSupported,
     required this.role,
     required this.isMetaBackup,
     required this.healthScore,
@@ -190,8 +246,10 @@ class PoolNodeStatusDto {
       failureDomain.hashCode ^
       quotaBytes.hashCode ^
       usedBytes.hashCode ^
+      weight.hashCode ^
       remoteFreeBytes.hashCode ^
       remoteTotalBytes.hashCode ^
+      spaceSupported.hashCode ^
       role.hashCode ^
       isMetaBackup.hashCode ^
       healthScore.hashCode ^
@@ -211,8 +269,10 @@ class PoolNodeStatusDto {
           failureDomain == other.failureDomain &&
           quotaBytes == other.quotaBytes &&
           usedBytes == other.usedBytes &&
+          weight == other.weight &&
           remoteFreeBytes == other.remoteFreeBytes &&
           remoteTotalBytes == other.remoteTotalBytes &&
+          spaceSupported == other.spaceSupported &&
           role == other.role &&
           isMetaBackup == other.isMetaBackup &&
           healthScore == other.healthScore &&
@@ -220,6 +280,34 @@ class PoolNodeStatusDto {
           circuitState == other.circuitState &&
           lastCheckedMs == other.lastCheckedMs &&
           lastError == other.lastError;
+}
+
+class PoolRemoteCleanupReportDto {
+  final BigInt deletedObjects;
+  final BigInt failedObjects;
+  final List<String> failedNodes;
+
+  const PoolRemoteCleanupReportDto({
+    required this.deletedObjects,
+    required this.failedObjects,
+    required this.failedNodes,
+  });
+
+  static Future<PoolRemoteCleanupReportDto> default_() =>
+      RustLib.instance.api.crateApiPoolPoolRemoteCleanupReportDtoDefault();
+
+  @override
+  int get hashCode =>
+      deletedObjects.hashCode ^ failedObjects.hashCode ^ failedNodes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PoolRemoteCleanupReportDto &&
+          runtimeType == other.runtimeType &&
+          deletedObjects == other.deletedObjects &&
+          failedObjects == other.failedObjects &&
+          failedNodes == other.failedNodes;
 }
 
 class PoolSummaryDto {

@@ -672,6 +672,10 @@ impl Vfs for SmbFs {
         })
     }
 
+    fn supports_space_info(&self) -> bool {
+        true
+    }
+
     async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
         let (share_opt, _) = self.split_path(path);
         let Some(share) = share_opt else {

@@ -124,6 +124,8 @@ void main() {
                   BigInt.from(400) * BigInt.from(1024 * 1024 * 1024),
               remoteTotalBytes:
                   BigInt.from(500) * BigInt.from(1024 * 1024 * 1024),
+              weight: 200,
+              spaceSupported: true,
               role: 'rw',
               isMetaBackup: true,
               healthScore: 0.95,
@@ -138,6 +140,8 @@ void main() {
               failureDomain: 'aws',
               quotaBytes: BigInt.from(100) * BigInt.from(1024 * 1024 * 1024),
               usedBytes: BigInt.from(8) * BigInt.from(1024 * 1024 * 1024),
+              weight: 100,
+              spaceSupported: false,
               role: 'rw',
               isMetaBackup: true,
               healthScore: 0.88,
@@ -169,13 +173,13 @@ void main() {
       );
       expect(find.text('Hetzner Box'), findsOneWidget);
       expect(find.text('Dir: /fm_pool'), findsOneWidget);
-      expect(find.text('Free 400.00 GB / 500.00 GB'), findsOneWidget);
-      expect(find.text('Pool used: 12.00 GB'), findsOneWidget);
-      expect(find.text('12.00 GB / 100.00 GB'), findsNothing);
+      expect(find.text('Used 12.00 GB / Quota 100.00 GB'), findsOneWidget);
+      expect(find.text('System free 400.00 GB / 500.00 GB'), findsOneWidget);
+      expect(find.text('Weight 200'), findsOneWidget);
       expect(find.text('Health 95% · 42 ms · closed'), findsOneWidget);
 
       await tester.scrollUntilVisible(
-        find.text('Pool used: 8.00 GB'),
+        find.text('Used 8.00 GB / Quota 100.00 GB'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
@@ -184,8 +188,12 @@ void main() {
       expect(find.text('hetzner · RW'), findsOneWidget);
       expect(find.text('aws · RW'), findsOneWidget);
       expect(find.text('Dir: /'), findsOneWidget);
-      expect(find.text('Free space unavailable'), findsOneWidget);
-      expect(find.text('Pool used: 8.00 GB'), findsOneWidget);
+      expect(
+        find.text('System free space: not supported by protocol'),
+        findsOneWidget,
+      );
+      expect(find.text('Used 8.00 GB / Quota 100.00 GB'), findsOneWidget);
+      expect(find.text('Weight 100'), findsOneWidget);
 
       // Tapping the replication chip opens Set Replication Factor dialog.
       await tester.scrollUntilVisible(
@@ -199,6 +207,182 @@ void main() {
       expect(find.text('Set Replication Factor'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'delete pool and node drain/offline/remove dialogs expose remote-data checkbox',
+        (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final deletedCalls = <(String, bool)>[];
+      final offlineCalls = <(String, String, bool)>[];
+      final drainCalls = <(String, String, bool)>[];
+      final removeCalls = <(String, String, bool)>[];
+
+      const remotes = [
+        RemoteConfigDto(id: 'r1', name: 'Node One', kind: 'sftp', pathStyle: false),
+        RemoteConfigDto(id: 'r2', name: 'Node Two', kind: 'webdav', pathStyle: false),
+      ];
+      final pools = [
+        PoolSummaryDto(
+          id: 'p1',
+          name: 'Managed Pool',
+          chunkSize: 16 * 1024 * 1024,
+          replicationFactor: 2,
+          encrypted: false,
+          totalPhysicalQuota: BigInt.from(200) * BigInt.from(1024 * 1024 * 1024),
+          effectiveLogicalCapacity:
+              BigInt.from(100) * BigInt.from(1024 * 1024 * 1024),
+          totalPhysicalUsed: BigInt.from(10) * BigInt.from(1024 * 1024 * 1024),
+          logicalUsedBytes: BigInt.from(5) * BigInt.from(1024 * 1024 * 1024),
+          fileCount: BigInt.from(3),
+          dirCount: BigInt.from(1),
+          degradedChunks: BigInt.zero,
+          pendingGcCount: BigInt.zero,
+          metaVersion: BigInt.from(1),
+          dirty: false,
+          nodes: [
+            PoolNodeStatusDto(
+              nodeId: 'n1',
+              remoteId: 'r1',
+              basePrefix: 'fm_pool',
+              failureDomain: 'dc1',
+              quotaBytes: BigInt.from(100) * BigInt.from(1024 * 1024 * 1024),
+              usedBytes: BigInt.from(5) * BigInt.from(1024 * 1024 * 1024),
+              weight: 100,
+              spaceSupported: true,
+              role: 'rw',
+              isMetaBackup: true,
+              healthScore: 1.0,
+              avgLatencyMs: BigInt.from(10),
+              circuitState: 'closed',
+              lastCheckedMs: 1000,
+            ),
+            PoolNodeStatusDto(
+              nodeId: 'n2',
+              remoteId: 'r2',
+              basePrefix: 'fm_pool',
+              failureDomain: 'dc2',
+              quotaBytes: BigInt.from(100) * BigInt.from(1024 * 1024 * 1024),
+              usedBytes: BigInt.from(5) * BigInt.from(1024 * 1024 * 1024),
+              weight: 100,
+              spaceSupported: true,
+              role: 'rw',
+              isMetaBackup: true,
+              healthScore: 1.0,
+              avgLatencyMs: BigInt.from(20),
+              circuitState: 'closed',
+              lastCheckedMs: 1000,
+            ),
+          ],
+        ),
+      ];
+
+      await tester.pumpWidget(
+        wrap(
+          PoolDashboardPage(
+            initialPoolsOverride: pools,
+            remotesOverride: remotes,
+            onDeletePoolOverride: (poolId, deleteRemote) async {
+              deletedCalls.add((poolId, deleteRemote));
+            },
+            onOfflineNodeOverride: (poolId, nodeId, deleteRemote) async {
+              offlineCalls.add((poolId, nodeId, deleteRemote));
+            },
+            onDrainNodeOverride: (poolId, nodeId, deleteRemote) async {
+              drainCalls.add((poolId, nodeId, deleteRemote));
+            },
+            onRemoveNodeOverride: (poolId, nodeId, deleteRemote) async {
+              removeCalls.add((poolId, nodeId, deleteRemote));
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Delete Pool -> unchecked by default -> false; checked -> true.
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      final poolCheck = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(CheckboxListTile),
+      );
+      expect(
+        find.text('Also delete remote pool data on member nodes'),
+        findsOneWidget,
+      );
+      expect(tester.widget<CheckboxListTile>(poolCheck).value, isFalse);
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(deletedCalls, [('p1', false)]);
+
+      await tester.tap(find.text('Delete').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Also delete remote pool data on member nodes'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          "Permanently deletes blobs/ and meta/ folders under each node's storage directory. This cannot be undone.",
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(deletedCalls, [('p1', false), ('p1', true)]);
+
+      // 2. Take Offline -> unchecked false, then checked true.
+      final nodeMenus = find.byIcon(Icons.more_vert);
+      await tester.tap(nodeMenus.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Take Offline'));
+      await tester.pumpAndSettle();
+      final nodeCheck = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(CheckboxListTile),
+      );
+      expect(tester.widget<CheckboxListTile>(nodeCheck).value, isFalse);
+      await tester.tap(find.widgetWithText(FilledButton, 'Take Offline'));
+      await tester.pumpAndSettle();
+      expect(offlineCalls, [('p1', 'n1', false)]);
+
+      await tester.tap(nodeMenus.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Take Offline'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Also delete remote data on this node'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Take Offline'));
+      await tester.pumpAndSettle();
+      expect(offlineCalls, [('p1', 'n1', false), ('p1', 'n1', true)]);
+
+      // 3. Drain Node & Remove Node dialogs also expose checkbox.
+      await tester.tap(nodeMenus.first);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(PopupMenuItem<String>),
+          matching: find.text('Drain'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Also delete remote data on this node'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Drain'));
+      await tester.pumpAndSettle();
+      expect(drainCalls, [('p1', 'n1', true)]);
+
+      await tester.tap(nodeMenus.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove Node'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(nodeCheck).value, isFalse);
+      await tester.tap(find.widgetWithText(FilledButton, 'Remove Node'));
+      await tester.pumpAndSettle();
+      expect(removeCalls, [('p1', 'n1', false)]);
       expect(tester.takeException(), isNull);
     });
   });
@@ -348,6 +532,66 @@ void main() {
       expect(submitted!.nodes[0].basePrefix, 'storage/pool_a');
       expect(submitted!.nodes[1].basePrefix, '/');
       expect(submitted!.nodes[2].basePrefix, 'fm_pool');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('validates and submits per-node weight in PoolEditorDialog',
+        (tester) async {
+      PoolConfigDto? submitted;
+      const remotes = [
+        RemoteConfigDto(id: 'r1', name: 'Primary', kind: 'sftp', pathStyle: false),
+        RemoteConfigDto(id: 'r2', name: 'Secondary', kind: 'webdav', pathStyle: false),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () async {
+                  submitted = await PoolEditorDialog.show(ctx, remotes: remotes);
+                },
+                child: const Text('Open Weight Editor'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Weight Editor'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'Weighted Pool');
+      await tester.tap(find.text('Primary (SFTP)'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Secondary (WEBDAV)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Secondary (WEBDAV)'));
+      await tester.pumpAndSettle();
+
+      final weightField = find.widgetWithText(TextField, 'Weight').first;
+      await tester.ensureVisible(weightField);
+      await tester.pumpAndSettle();
+      await tester.enterText(weightField, '0');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(submitted, isNull);
+      expect(
+        find.text('Weight must be an integer between 1 and 1000.'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(weightField, '250');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(submitted, isNotNull);
+      expect(submitted!.nodes.first.weight, 250);
+      expect(submitted!.nodes[1].weight, 100);
       expect(tester.takeException(), isNull);
     });
 

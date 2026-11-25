@@ -1138,7 +1138,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get utilitiesDefaultSubtitle => 'Recycle bin, Web share, Cache';
+  String get utilitiesDefaultSubtitle => 'Privacy folders & cache cleanup';
 
   @override
   String get tasksDefaultSubtitle => 'Transfers and operations';
@@ -4909,4 +4909,116 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get remoteBatchBackStep => 'Back';
+
+  @override
+  String get poolNodeWeightLabel => 'Weight';
+
+  @override
+  String poolNodeWeightBadge(int weight) {
+    return 'Weight $weight';
+  }
+
+  @override
+  String get poolSetNodeWeightTitle => 'Set Node Weight';
+
+  @override
+  String get poolSetNodeWeightHint =>
+      'Higher weight (1–1000) receives more write traffic when free space and health are similar.';
+
+  @override
+  String get poolInvalidWeightError =>
+      'Weight must be an integer between 1 and 1000.';
+
+  @override
+  String poolNodeUsedAndQuota(String used, String quota) {
+    return 'Used $used / Quota $quota';
+  }
+
+  @override
+  String poolNodeSystemFreeWithTotal(String free, String total) {
+    return 'System free $free / $total';
+  }
+
+  @override
+  String poolNodeSystemFreeOnly(String free) {
+    return 'System free $free';
+  }
+
+  @override
+  String get poolNodeSystemSpaceUnsupported =>
+      'System free space: not supported by protocol';
+
+  @override
+  String get poolNodeSystemSpaceUnavailable => 'System free space: unavailable';
+
+  @override
+  String get poolNodeSystemSpaceProbing => 'System free space: checking…';
+
+  @override
+  String get poolDeleteRemoteDataOption =>
+      'Also delete remote pool data on member nodes';
+
+  @override
+  String get poolDeleteRemoteDataWarning =>
+      'Permanently deletes blobs/ and meta/ folders under each node\'s storage directory. This cannot be undone.';
+
+  @override
+  String get poolDeleteNodeRemoteDataOption =>
+      'Also delete remote data on this node';
+
+  @override
+  String get poolDeleteNodeRemoteDataWarning =>
+      'Permanently removes pool chunks and metadata backups stored on this node.';
+
+  @override
+  String get poolOfflineNode => 'Take Offline';
+
+  @override
+  String get poolOnlineNode => 'Bring Online';
+
+  @override
+  String get poolRemoveNode => 'Remove Node';
+
+  @override
+  String poolOfflineConfirm(String node) {
+    return 'Take node \"$node\" offline immediately? Active chunks on this node will no longer be served until brought back online or healed.';
+  }
+
+  @override
+  String poolRemoveNodeConfirm(String node) {
+    return 'Remove node \"$node\" from this storage pool?';
+  }
+
+  @override
+  String poolRemoteCleanupDone(int deleted) {
+    return 'Deleted $deleted remote item(s).';
+  }
+
+  @override
+  String poolRemoteCleanupPartial(int deleted, int failed, String nodes) {
+    return 'Deleted $deleted remote item(s); $failed failed ($nodes).';
+  }
+
+  @override
+  String analyzerSelectedCountAndSize(int count, String size) {
+    return '$count selected ($size)';
+  }
+
+  @override
+  String analyzerBatchDeleteConfirmTitle(int count) {
+    return 'Delete $count file(s)?';
+  }
+
+  @override
+  String analyzerBatchDeleteDone(int count, String size) {
+    return 'Deleted $count file(s), freed $size.';
+  }
+
+  @override
+  String analyzerBatchDeletePartial(int deleted, int failed) {
+    return 'Deleted $deleted file(s); $failed failed.';
+  }
+
+  @override
+  String get analyzerMultiSelectTooltip => 'Select files';
 }

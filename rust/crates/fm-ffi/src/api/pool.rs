@@ -7,7 +7,11 @@ use fm_pool::gc::{run_gc, DEFAULT_GC_GRACE_PERIOD_MS};
 use fm_pool::heal::{run_drain, run_heal};
 use fm_pool::scheduler::NodeRole;
 use fm_pool::sync::PoolSyncReport;
-use fm_pool::{PoolConfig, PoolManager, PoolNodeConfig, PoolNodeStatus, PoolSummary};
+use fm_pool::{
+    PoolConfig, PoolManager, PoolNodeConfig, PoolNodeStatus, PoolRemoteCleanupReport, PoolState,
+    PoolSummary,
+};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct PoolNodeConfigDto {
@@ -16,6 +20,7 @@ pub struct PoolNodeConfigDto {
     pub base_prefix: String,
     pub failure_domain: String,
     pub quota_bytes: u64,
+    pub weight: u32,
     pub role: String,
     pub is_meta_backup: bool,
 }
@@ -40,8 +45,10 @@ pub struct PoolNodeStatusDto {
     pub failure_domain: String,
     pub quota_bytes: u64,
     pub used_bytes: u64,
+    pub weight: u32,
     pub remote_free_bytes: Option<u64>,
     pub remote_total_bytes: Option<u64>,
+    pub space_supported: Option<bool>,
     pub role: String,
     pub is_meta_backup: bool,
     pub health_score: f64,
@@ -49,6 +56,13 @@ pub struct PoolNodeStatusDto {
     pub circuit_state: String,
     pub last_checked_ms: Option<i64>,
     pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PoolRemoteCleanupReportDto {
+    pub deleted_objects: u64,
+    pub failed_objects: u64,
+    pub failed_nodes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +95,16 @@ pub struct PoolSyncReportDto {
     pub conflicts_created: u32,
 }
 
+impl From<PoolRemoteCleanupReport> for PoolRemoteCleanupReportDto {
+    fn from(r: PoolRemoteCleanupReport) -> Self {
+        Self {
+            deleted_objects: r.deleted_objects,
+            failed_objects: r.failed_objects,
+            failed_nodes: r.failed_nodes,
+        }
+    }
+}
+
 impl From<PoolNodeStatus> for PoolNodeStatusDto {
     fn from(s: PoolNodeStatus) -> Self {
         Self {
@@ -90,8 +114,10 @@ impl From<PoolNodeStatus> for PoolNodeStatusDto {
             failure_domain: s.failure_domain,
             quota_bytes: s.quota_bytes,
             used_bytes: s.used_bytes,
+            weight: s.weight,
             remote_free_bytes: s.remote_free_bytes,
             remote_total_bytes: s.remote_total_bytes,
+            space_supported: s.space_supported,
             role: s.role,
             is_meta_backup: s.is_meta_backup,
             health_score: s.health_score,
@@ -158,6 +184,7 @@ impl From<PoolConfig> for PoolConfigDto {
                     base_prefix: n.base_prefix,
                     failure_domain: n.failure_domain,
                     quota_bytes: n.quota_bytes,
+                    weight: n.weight,
                     role: n.role.as_str().to_string(),
                     is_meta_backup: n.is_meta_backup,
                 })
@@ -203,6 +230,11 @@ fn dto_to_pool_config(dto: PoolConfigDto, existing: Option<&PoolConfig>) -> Pool
                 },
                 failure_domain: n.failure_domain,
                 quota_bytes: n.quota_bytes,
+                weight: if n.weight == 0 {
+                    fm_pool::DEFAULT_NODE_WEIGHT
+                } else {
+                    n.weight.clamp(fm_pool::MIN_NODE_WEIGHT, fm_pool::MAX_NODE_WEIGHT)
+                },
                 role: NodeRole::parse(&n.role),
                 is_meta_backup: n.is_meta_backup,
             })
@@ -293,20 +325,87 @@ pub async fn save_pool_config(
     Ok(PoolSummaryDto::from(summary))
 }
 
-pub async fn delete_pool(db_path: String, pool_id: String) -> Result<(), String> {
+fn load_pool_state_for_action(
+    reg: &VfsRegistry,
+    db_path: &str,
+    pool_id: &str,
+) -> Result<Arc<PoolState>, String> {
+    if reg.get_database_path().is_none() {
+        reg.set_database_path(db_path.to_string());
+    }
+    if let Ok(state) = reg.ensure_pool_loaded(pool_id) {
+        return Ok(state);
+    }
+    let db = reg.open_database(db_path)?;
+    let rec = db
+        .get_pool(pool_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("storage pool '{pool_id}' not found"))?;
+    let cfg: PoolConfig = serde_json::from_str(&rec.config_json).map_err(|e| e.to_string())?;
+    PoolManager::global()
+        .register_or_reload_pool(cfg)
+        .map_err(|e| e.to_string())
+}
+
+fn persist_updated_pool_config(
+    reg: &VfsRegistry,
+    db_path: &str,
+    state: &PoolState,
+    next_cfg: PoolConfig,
+) -> Result<PoolSummaryDto, String> {
+    let db = reg.open_database(db_path)?;
+    let pool_id = next_cfg.id.clone();
+    let json = serde_json::to_string(&next_cfg).map_err(|e| e.to_string())?;
+    let record = PoolRecord {
+        id: pool_id.clone(),
+        name: next_cfg.name.clone(),
+        config_json: json,
+        created_at: next_cfg.created_at_ms,
+    };
+    state.update_config(next_cfg).map_err(|e| e.to_string())?;
+    db.save_pool(&record).map_err(|e| e.to_string())?;
+    reg.invalidate_pool(&pool_id);
+    invalidate_dir_cache_for_pool(&pool_id);
+    let summary = state.summary().map_err(|e| e.to_string())?;
+    Ok(PoolSummaryDto::from(summary))
+}
+
+pub async fn delete_pool(
+    db_path: String,
+    pool_id: String,
+    delete_remote_data: bool,
+) -> Result<PoolRemoteCleanupReportDto, String> {
     let reg = VfsRegistry::global();
+    if reg.get_database_path().is_none() {
+        reg.set_database_path(db_path.clone());
+    }
+    let report = if delete_remote_data {
+        match load_pool_state_for_action(reg, &db_path, &pool_id) {
+            Ok(state) => PoolRemoteCleanupReportDto::from(state.purge_all_nodes_remote_data().await),
+            Err(_) => PoolRemoteCleanupReportDto::default(),
+        }
+    } else {
+        PoolRemoteCleanupReportDto::default()
+    };
+
     let db = reg.open_database(&db_path)?;
     db.delete_pool(&pool_id).map_err(|e| e.to_string())?;
     stop_media_streams_for_pool(&pool_id);
     invalidate_dir_cache_for_pool(&pool_id);
     reg.invalidate_pool(&pool_id);
     PoolManager::global().remove_pool(&pool_id, true);
-    Ok(())
+    Ok(report)
 }
 
 pub async fn probe_pool_health(pool_id: String) -> Result<Vec<PoolNodeStatusDto>, String> {
     let state = VfsRegistry::global().ensure_pool_loaded(&pool_id)?;
     let statuses = state.probe_all_nodes().await.map_err(|e| e.to_string())?;
+    Ok(statuses.into_iter().map(PoolNodeStatusDto::from).collect())
+}
+
+pub async fn probe_pool_space(pool_id: String) -> Result<Vec<PoolNodeStatusDto>, String> {
+    let state = VfsRegistry::global().ensure_pool_loaded(&pool_id)?;
+    let statuses = state.probe_space_nodes().await.map_err(|e| e.to_string())?;
     Ok(statuses.into_iter().map(PoolNodeStatusDto::from).collect())
 }
 
@@ -346,33 +445,144 @@ pub async fn start_pool_heal_task(pool_id: String) -> Result<String, String> {
     Ok(task_id)
 }
 
-pub async fn start_pool_drain_task(pool_id: String, node_id: String) -> Result<String, String> {
-    let state = VfsRegistry::global().ensure_pool_loaded(&pool_id)?;
-    let (task_id, progress, cancel, control) = register_sync_task(&format!(
-        "Drain Node ({})",
-        node_id
-    ));
+pub async fn start_pool_drain_task(
+    db_path: String,
+    pool_id: String,
+    node_id: String,
+    delete_remote_data: bool,
+) -> Result<String, String> {
+    let reg = VfsRegistry::global();
+    let state = load_pool_state_for_action(reg, &db_path, &pool_id)?;
+    let (task_id, progress, cancel, control) =
+        register_sync_task(&format!("Drain Node ({})", node_id));
     progress.lock().unwrap_or_else(|e| e.into_inner()).can_pause = true;
 
     tokio::spawn(async move {
-        let res = run_drain(state, &node_id, &progress, &cancel, &control)
-            .await
-            .map(|r| {
-                if r.failed_chunks > 0 {
-                    Err(format!(
-                        "migrated {} chunk(s), {} failed",
-                        r.migrated_chunks, r.failed_chunks
-                    ))
-                } else {
-                    Ok(())
-                }
-            })
-            .unwrap_or_else(|e| Err(e.to_string()));
+        let res = run_drain(
+            Arc::clone(&state),
+            &node_id,
+            delete_remote_data,
+            &progress,
+            &cancel,
+            &control,
+        )
+        .await
+        .map(|r| {
+            if r.failed_chunks > 0 {
+                Err(format!(
+                    "migrated {} chunk(s), {} failed",
+                    r.migrated_chunks, r.failed_chunks
+                ))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_or_else(|e| Err(e.to_string()));
+
+        let is_now_offline = state
+            .meta
+            .list_nodes()
+            .ok()
+            .and_then(|ns| ns.into_iter().find(|n| n.node_id == node_id))
+            .map(|n| n.role == NodeRole::Offline)
+            .unwrap_or(false);
+        if is_now_offline {
+            let mut cfg = state.config_snapshot();
+            if let Some(node_cfg) = cfg.nodes.iter_mut().find(|n| n.node_id == node_id) {
+                node_cfg.role = NodeRole::Offline;
+                let _ = persist_updated_pool_config(VfsRegistry::global(), &db_path, &state, cfg);
+            }
+        }
         invalidate_dir_cache_for_pool(&pool_id);
         finish_sync_task(&progress, &cancel, res);
     });
 
     Ok(task_id)
+}
+
+pub async fn set_pool_node_offline(
+    db_path: String,
+    pool_id: String,
+    node_id: String,
+    delete_remote_data: bool,
+) -> Result<PoolRemoteCleanupReportDto, String> {
+    let reg = VfsRegistry::global();
+    let state = load_pool_state_for_action(reg, &db_path, &pool_id)?;
+    let mut cfg = state.config_snapshot();
+    if !cfg.nodes.iter().any(|n| n.node_id == node_id) {
+        return Err(format!("node '{node_id}' not found in pool '{pool_id}'"));
+    }
+
+    let report = if delete_remote_data {
+        let r = state
+            .purge_node_remote_data(&node_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        state
+            .meta
+            .clear_node_replicas_and_gc(&node_id)
+            .map_err(|e| e.to_string())?;
+        PoolRemoteCleanupReportDto::from(r)
+    } else {
+        PoolRemoteCleanupReportDto::default()
+    };
+
+    if let Some(node_cfg) = cfg.nodes.iter_mut().find(|n| n.node_id == node_id) {
+        node_cfg.role = NodeRole::Offline;
+    }
+    persist_updated_pool_config(reg, &db_path, &state, cfg)?;
+    Ok(report)
+}
+
+pub async fn set_pool_node_online(
+    db_path: String,
+    pool_id: String,
+    node_id: String,
+) -> Result<PoolSummaryDto, String> {
+    let reg = VfsRegistry::global();
+    let state = load_pool_state_for_action(reg, &db_path, &pool_id)?;
+    let mut cfg = state.config_snapshot();
+    let Some(node_cfg) = cfg.nodes.iter_mut().find(|n| n.node_id == node_id) else {
+        return Err(format!("node '{node_id}' not found in pool '{pool_id}'"));
+    };
+    node_cfg.role = NodeRole::Rw;
+    persist_updated_pool_config(reg, &db_path, &state, cfg)
+}
+
+pub async fn remove_pool_node(
+    db_path: String,
+    pool_id: String,
+    node_id: String,
+    delete_remote_data: bool,
+) -> Result<PoolRemoteCleanupReportDto, String> {
+    let reg = VfsRegistry::global();
+    let state = load_pool_state_for_action(reg, &db_path, &pool_id)?;
+    let mut cfg = state.config_snapshot();
+    if !cfg.nodes.iter().any(|n| n.node_id == node_id) {
+        return Err(format!("node '{node_id}' not found in pool '{pool_id}'"));
+    }
+    if cfg.nodes.len() <= 1 {
+        return Err("cannot remove the last remaining node in the pool".to_string());
+    }
+
+    let report = if delete_remote_data {
+        PoolRemoteCleanupReportDto::from(
+            state
+                .purge_node_remote_data(&node_id)
+                .await
+                .map_err(|e| e.to_string())?,
+        )
+    } else {
+        PoolRemoteCleanupReportDto::default()
+    };
+
+    state
+        .meta
+        .remove_node_completely(&node_id)
+        .map_err(|e| e.to_string())?;
+    cfg.nodes.retain(|n| n.node_id != node_id);
+    persist_updated_pool_config(reg, &db_path, &state, cfg)?;
+    Ok(report)
 }
 
 pub async fn start_pool_gc_task(
@@ -454,6 +664,7 @@ mod tests {
                     base_prefix: "fm_pool".into(),
                     failure_domain: "dom-a".into(),
                     quota_bytes: 10 * 1024 * 1024,
+                    weight: 150,
                     role: "rw".into(),
                     is_meta_backup: true,
                 },
@@ -463,6 +674,7 @@ mod tests {
                     base_prefix: "fm_pool".into(),
                     failure_domain: "dom-b".into(),
                     quota_bytes: 10 * 1024 * 1024,
+                    weight: 100,
                     role: "rw".into(),
                     is_meta_backup: true,
                 },

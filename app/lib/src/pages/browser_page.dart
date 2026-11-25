@@ -218,30 +218,37 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
   bool _isEditingAddress = false;
   final TextEditingController _addressController = TextEditingController();
 
-  String get _displayFullPath {
+  String get _displayRootTitle {
     if (isNativeRoot(_root)) {
-      return joinNative(_root, _relPath);
+      return _root;
     }
-    String rootPart = _root;
     if (_root.startsWith('remote://')) {
       final remoteId = _root.substring('remote://'.length);
       final remote = _findRemote(remoteId);
       if (remote != null) {
-        rootPart = 'remote://${remote.name}';
+        return 'remote://${remote.name}';
       }
     } else if (isVaultRoot(_root)) {
       final vid = vaultIdFromRoot(_root);
       final vault = vid == null ? null : VaultService.instance.findUnlockedById(vid);
       if (vault != null) {
-        rootPart = 'vault://${vault.name}';
+        return 'vault://${vault.name}';
       }
     } else if (isPoolRoot(_root)) {
       final pid = poolIdFromRoot(_root);
       final pool = pid == null ? null : PoolService.instance.findById(pid);
       if (pool != null) {
-        rootPart = 'pool://${pool.name}';
+        return 'pool://${pool.name}';
       }
     }
+    return _root;
+  }
+
+  String get _displayFullPath {
+    if (isNativeRoot(_root)) {
+      return joinNative(_root, _relPath);
+    }
+    final rootPart = _displayRootTitle;
     if (_relPath.isEmpty) return rootPart;
     final cleanRel = _relPath.startsWith('/') ? _relPath.substring(1) : _relPath;
     return '$rootPart/$cleanRel';
@@ -4669,7 +4676,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 builder: (_) => StorageAnalyzerPage(
                   root: _root,
                   initialPath: _relPath,
-                  title: _rootTitle,
+                  title: _displayRootTitle,
                 ),
               ),
             );
@@ -4679,7 +4686,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 builder: (_) => DuplicateFinderPage(
                   root: _root,
                   initialPath: _relPath,
-                  title: _rootTitle,
+                  title: _displayRootTitle,
                 ),
               ),
             );

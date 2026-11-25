@@ -5,7 +5,6 @@ import '../dialogs/task_progress_dialog.dart';
 import '../dialogs/vault_dialogs.dart';
 import '../pages/bookmarks_page.dart';
 import '../pages/browser_workspace_page.dart';
-import '../pages/duplicate_finder_page.dart';
 import '../pages/gallery_page.dart';
 import '../pages/offline_pinned_page.dart';
 import '../pages/peer_transfer_page.dart';
@@ -42,7 +41,6 @@ enum _SidebarSection {
   peerTransfer,
   photoBackup,
   storageAnalyzer,
-  duplicateFinder,
   sync,
   utilities,
   tasks,
@@ -179,8 +177,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
         _section == _SidebarSection.trash ||
         _section == _SidebarSection.utilities ||
         _section == _SidebarSection.settings ||
-        _section == _SidebarSection.storageAnalyzer ||
-        _section == _SidebarSection.duplicateFinder;
+        _section == _SidebarSection.storageAnalyzer;
     final switching = _section != section;
     setState(() => _section = section);
     if (switching && leavingMutable) {
@@ -195,8 +192,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
         _section == _SidebarSection.trash ||
         _section == _SidebarSection.utilities ||
         _section == _SidebarSection.settings ||
-        _section == _SidebarSection.storageAnalyzer ||
-        _section == _SidebarSection.duplicateFinder;
+        _section == _SidebarSection.storageAnalyzer;
     setState(() {
       _section = _SidebarSection.browser;
       _activeKey = key;
@@ -624,6 +620,13 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                 tooltip: l10n.offlinePinned,
                 selected: _section == _SidebarSection.offlinePinned,
                 onTap: () => _selectSection(_SidebarSection.offlinePinned),
+              ),
+              _railItem(
+                icon: Icons.sync,
+                iconColor: Colors.blue,
+                tooltip: l10n.directorySync,
+                selected: _section == _SidebarSection.sync,
+                onTap: () => _selectSection(_SidebarSection.sync),
               ),
               _railItem(
                 icon: Icons.wifi_tethering,
@@ -1139,22 +1142,8 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
               _collapsibleSection(
                 groupId: 'tools',
                 title: l10n.navDomainTools,
-                itemCount: 9,
+                itemCount: 7,
                 children: [
-                  _sidebarItem(
-                    icon: Icons.pie_chart_outline,
-                    iconColor: Colors.teal,
-                    title: l10n.storageAnalyzer,
-                    selected: _section == _SidebarSection.storageAnalyzer,
-                    onTap: () => _selectSection(_SidebarSection.storageAnalyzer),
-                  ),
-                  _sidebarItem(
-                    icon: Icons.file_copy_outlined,
-                    iconColor: Colors.deepOrange,
-                    title: l10n.duplicateFinder,
-                    selected: _section == _SidebarSection.duplicateFinder,
-                    onTap: () => _selectSection(_SidebarSection.duplicateFinder),
-                  ),
                   _sidebarItem(
                     icon: Icons.sync,
                     iconColor: Colors.blue,
@@ -1356,11 +1345,6 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
         return const PhotoBackupPage();
       case _SidebarSection.storageAnalyzer:
         return StorageAnalyzerPage(
-          root: PlatformPaths.defaultRoot(),
-          title: l10n.localStorage,
-        );
-      case _SidebarSection.duplicateFinder:
-        return DuplicateFinderPage(
           root: PlatformPaths.defaultRoot(),
           title: l10n.localStorage,
         );

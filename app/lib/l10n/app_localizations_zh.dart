@@ -1106,7 +1106,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get utilitiesDefaultSubtitle => '回收站、局域网共享、缓存';
+  String get utilitiesDefaultSubtitle => '隐私文件夹与缓存清理';
 
   @override
   String get tasksDefaultSubtitle => '传输与文件操作';
@@ -4776,4 +4776,110 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get remoteBatchBackStep => '返回上一步';
+
+  @override
+  String get poolNodeWeightLabel => '权重';
+
+  @override
+  String poolNodeWeightBadge(int weight) {
+    return '权重 $weight';
+  }
+
+  @override
+  String get poolSetNodeWeightTitle => '设置节点权重';
+
+  @override
+  String get poolSetNodeWeightHint => '权重越高（1–1000），在剩余空间与健康度相近时优先写入更多数据。';
+
+  @override
+  String get poolInvalidWeightError => '节点权重必须是 1 到 1000 之间的整数。';
+
+  @override
+  String poolNodeUsedAndQuota(String used, String quota) {
+    return '已用 $used / 配额 $quota';
+  }
+
+  @override
+  String poolNodeSystemFreeWithTotal(String free, String total) {
+    return '系统剩余 $free / 共 $total';
+  }
+
+  @override
+  String poolNodeSystemFreeOnly(String free) {
+    return '系统剩余 $free';
+  }
+
+  @override
+  String get poolNodeSystemSpaceUnsupported => '系统剩余：当前协议不支持查询';
+
+  @override
+  String get poolNodeSystemSpaceUnavailable => '系统剩余：暂未获取';
+
+  @override
+  String get poolNodeSystemSpaceProbing => '系统剩余：正在探测…';
+
+  @override
+  String get poolDeleteRemoteDataOption => '同时删除远程节点上的存储池数据';
+
+  @override
+  String get poolDeleteRemoteDataWarning =>
+      '将永久删除各节点存储目录下的 blobs/ 与 meta/ 数据，删除后无法恢复。';
+
+  @override
+  String get poolDeleteNodeRemoteDataOption => '同时删除该节点的远程数据';
+
+  @override
+  String get poolDeleteNodeRemoteDataWarning => '将永久删除存储在该节点上的分块数据与元数据备份。';
+
+  @override
+  String get poolOfflineNode => '直接下线';
+
+  @override
+  String get poolOnlineNode => '重新上线';
+
+  @override
+  String get poolRemoveNode => '移除节点';
+
+  @override
+  String poolOfflineConfirm(String node) {
+    return '确定立即将节点“$node”下线？该节点上的分块在重新上线或修复前将不可读写。';
+  }
+
+  @override
+  String poolRemoveNodeConfirm(String node) {
+    return '确定将节点“$node”从当前存储池中移除？';
+  }
+
+  @override
+  String poolRemoteCleanupDone(int deleted) {
+    return '已删除 $deleted 个远程对象。';
+  }
+
+  @override
+  String poolRemoteCleanupPartial(int deleted, int failed, String nodes) {
+    return '已删除 $deleted 个远程对象，$failed 项失败（$nodes）。';
+  }
+
+  @override
+  String analyzerSelectedCountAndSize(int count, String size) {
+    return '已选 $count 项（$size）';
+  }
+
+  @override
+  String analyzerBatchDeleteConfirmTitle(int count) {
+    return '删除所选 $count 个文件？';
+  }
+
+  @override
+  String analyzerBatchDeleteDone(int count, String size) {
+    return '已删除 $count 个文件，释放 $size。';
+  }
+
+  @override
+  String analyzerBatchDeletePartial(int deleted, int failed) {
+    return '已删除 $deleted 个文件，$failed 个失败。';
+  }
+
+  @override
+  String get analyzerMultiSelectTooltip => '多选文件';
 }

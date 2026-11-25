@@ -39,6 +39,9 @@ struct FaultProfile {
     read_delay: Option<Duration>,
     write_count: Arc<AtomicUsize>,
     read_count: Arc<AtomicUsize>,
+    space_info_calls: Arc<AtomicUsize>,
+    supports_space: Option<bool>,
+    space_returns_none: bool,
 }
 
 struct FaultyReader {
@@ -186,11 +189,26 @@ impl Vfs for FaultyNodeVfs {
         self.inner.rename(from, to).await
     }
 
+    fn supports_space_info(&self) -> bool {
+        self.fault
+            .read()
+            .supports_space
+            .unwrap_or_else(|| self.inner.supports_space_info())
+    }
+
     async fn space_info(&self, path: &VfsPath) -> VfsResult<Option<fm_core::SpaceInfo>> {
-        if self.fault.read().offline {
+        let (offline, returns_none, calls) = {
+            let g = self.fault.read();
+            (g.offline, g.space_returns_none, g.space_info_calls.clone())
+        };
+        calls.fetch_add(1, Ordering::Relaxed);
+        if offline {
             return Err(VfsError::Connection {
                 message: "simulated offline node".to_string(),
             });
+        }
+        if returns_none {
+            return Ok(None);
         }
         self.inner.space_info(path).await
     }
@@ -257,6 +275,7 @@ fn make_node_cfg(id: &str, domain: &str, quota: u64, backup: bool) -> PoolNodeCo
         base_prefix: "fm_pool".to_string(),
         failure_domain: domain.to_string(),
         quota_bytes: quota,
+        weight: fm_pool::DEFAULT_NODE_WEIGHT,
         role: NodeRole::Rw,
         is_meta_backup: backup,
     }
@@ -804,7 +823,7 @@ async fn drain_node_migrates_data_and_survives_physical_removal() {
     let prog = Arc::new(Mutex::new(TaskProgress::pending()));
     let cancel = CancellationToken::new();
     let ctrl = TaskControl::new();
-    let report = run_drain(state.clone(), "d1", &prog, &cancel, &ctrl)
+    let report = run_drain(state.clone(), "d1", true, &prog, &cancel, &ctrl)
         .await
         .unwrap();
     assert_eq!(report.failed_chunks, 0);
@@ -976,4 +995,144 @@ async fn probe_populates_real_node_space_and_replication_gt_3_writes_all_replica
     let chunks = state.meta.get_file_chunks(entry.id).unwrap();
     let replicas = state.meta.get_chunk_replicas(&chunks[0].chunk_hash).unwrap();
     assert_eq!(replicas.len(), 4);
+}
+
+#[tokio::test]
+async fn unsupported_space_protocol_is_never_probed_and_none_caches_unsupported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let resolver = Arc::new(MockResolver::new());
+    let f_s3 = resolver.add_node("s3", tmp.path().join("s3"));
+    f_s3.write().supports_space = Some(false);
+    let f_none = resolver.add_node("wd_none", tmp.path().join("wd_none"));
+    f_none.write().supports_space = Some(true);
+    f_none.write().space_returns_none = true;
+    let f_ok = resolver.add_node("sftp_ok", tmp.path().join("sftp_ok"));
+    f_ok.write().supports_space = Some(true);
+
+    let cfg = PoolConfig {
+        id: "space-cache".into(),
+        name: "Space Cache Pool".into(),
+        chunk_size: 1024 * 1024,
+        replication_factor: 1,
+        encrypt: false,
+        passphrase: None,
+        kdf_salt: None,
+        kdf_m_cost: None,
+        kdf_t_cost: None,
+        kdf_p_cost: None,
+        device_id: Some("dev1".into()),
+        nodes: vec![
+            make_node_cfg("s3", "d1", 10 * 1024 * 1024, false),
+            make_node_cfg("wd_none", "d2", 10 * 1024 * 1024, false),
+            make_node_cfg("sftp_ok", "d3", 10 * 1024 * 1024, false),
+        ],
+        created_at_ms: 1,
+    };
+
+    let state = PoolState::open(
+        cfg,
+        tmp.path().join("meta"),
+        resolver,
+        fast_timeouts(),
+        Duration::from_secs(30),
+        Duration::from_secs(60),
+    )
+    .unwrap();
+
+    // First background space probe:
+    // - s3 is never called (supports_space_info() == false) and marked space_supported = Some(false)
+    // - wd_none is probed once, returns Ok(None), and cached as space_supported = Some(false)
+    // - sftp_ok is probed once and caches real free space
+    let st1 = state.probe_space_nodes().await.unwrap();
+    assert_eq!(f_s3.read().space_info_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(f_none.read().space_info_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(f_ok.read().space_info_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        st1.iter().find(|s| s.node_id == "s3").unwrap().space_supported,
+        Some(false)
+    );
+    assert_eq!(
+        st1.iter().find(|s| s.node_id == "wd_none").unwrap().space_supported,
+        Some(false)
+    );
+    assert_eq!(
+        st1.iter().find(|s| s.node_id == "sftp_ok").unwrap().space_supported,
+        Some(true)
+    );
+
+    // Second background space probe: only sftp_ok should be queried again!
+    let _ = state.probe_space_nodes().await.unwrap();
+    assert_eq!(f_s3.read().space_info_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(f_none.read().space_info_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(f_ok.read().space_info_calls.load(Ordering::Relaxed), 2);
+}
+
+#[tokio::test]
+async fn drain_keep_vs_delete_and_purge_preserves_unrelated_root_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let resolver = Arc::new(MockResolver::new());
+    let root_dir = tmp.path().join("root_node");
+    let keep_dir = tmp.path().join("keep_node");
+    let extra_dir = tmp.path().join("extra_node");
+    resolver.add_node("root_n", root_dir.clone());
+    resolver.add_node("keep_n", keep_dir.clone());
+    resolver.add_node("extra_n", extra_dir.clone());
+
+    // Place an unrelated user file in root_node when base_prefix is "/".
+    std::fs::write(root_dir.join("user_doc.txt"), b"keep-me").unwrap();
+
+    let mut n1 = make_node_cfg("root_n", "d1", 10 * 1024 * 1024, true);
+    n1.base_prefix = "/".to_string();
+    let n2 = make_node_cfg("keep_n", "d2", 10 * 1024 * 1024, true);
+    let n3 = make_node_cfg("extra_n", "d3", 10 * 1024 * 1024, false);
+
+    let cfg = PoolConfig {
+        id: "purge-safe".into(),
+        name: "Purge Safe Pool".into(),
+        chunk_size: 1024 * 1024,
+        replication_factor: 2,
+        encrypt: false,
+        passphrase: None,
+        kdf_salt: None,
+        kdf_m_cost: None,
+        kdf_t_cost: None,
+        kdf_p_cost: None,
+        device_id: Some("dev1".into()),
+        nodes: vec![n1, n2, n3],
+        created_at_ms: 1,
+    };
+
+    let state = PoolState::open(
+        cfg,
+        tmp.path().join("meta"),
+        resolver,
+        fast_timeouts(),
+        Duration::from_secs(30),
+        Duration::from_secs(60),
+    )
+    .unwrap();
+    let vfs = PoolVfs::new(state.clone());
+    write_pool_file(&vfs, "/hello.bin", b"pool-payload").await;
+    let _ = state.sync_metadata().await.unwrap();
+
+    // Drain keep_n with delete_remote_data = false -> replicas migrate, files on keep_n stay intact.
+    let prog = Arc::new(Mutex::new(TaskProgress::pending()));
+    let cancel = CancellationToken::new();
+    let ctrl = TaskControl::new();
+    let drain_res = run_drain(state.clone(), "keep_n", false, &prog, &cancel, &ctrl)
+        .await
+        .unwrap();
+    assert_eq!(drain_res.failed_chunks, 0);
+    let mut kept_files = Vec::new();
+    collect_files_recursive(&keep_dir.join("fm_pool"), &mut kept_files);
+    assert!(!kept_files.is_empty());
+
+    // Purge root_n (with base_prefix = "/") -> blobs/ and meta/ are removed, user_doc.txt remains!
+    let cleanup = state.purge_node_remote_data("root_n").await.unwrap();
+    assert!(cleanup.deleted_objects >= 1);
+    assert_eq!(cleanup.failed_objects, 0);
+    assert!(!root_dir.join("blobs").exists());
+    assert!(!root_dir.join("meta").exists());
+    assert!(root_dir.join("user_doc.txt").is_file());
+    assert_eq!(std::fs::read(root_dir.join("user_doc.txt")).unwrap(), b"keep-me");
 }

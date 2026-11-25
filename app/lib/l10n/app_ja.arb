@@ -332,7 +332,7 @@
   "grant": "許可",
   "remoteProtocolsSubtitle": "S3、OSS、SFTP、WebDAV...",
   "utilitiesTrashSubtitle": "ゴミ箱に {count} 件 • Web 共有",
-  "utilitiesDefaultSubtitle": "ゴミ箱、Web 共有、キャッシュ",
+  "utilitiesDefaultSubtitle": "プライバシーフォルダとキャッシュ管理",
   "tasksDefaultSubtitle": "転送と操作",
   "bookmarksDefaultSubtitle": "保存済みフォルダ",
   "recentDefaultSubtitle": "閲覧履歴",
@@ -1594,5 +1594,99 @@
   "remoteBatchErrorWrongPassword": "パスワードが間違っているか、バックアップファイルが破損しています。",
   "remoteBatchErrorEmptyBundle": "このバックアップには有効なリモート接続が含まれていません。",
   "remoteBatchErrorFileTooLarge": "選択したファイルが大きすぎるため読み込めません。",
-  "remoteBatchBackStep": "戻る"
+  "remoteBatchBackStep": "戻る",
+  "poolNodeWeightLabel": "重み",
+  "poolNodeWeightBadge": "重み {weight}",
+  "@poolNodeWeightBadge": {
+    "placeholders": {
+      "weight": { "type": "int" }
+    }
+  },
+  "poolSetNodeWeightTitle": "ノードの重みを設定",
+  "poolSetNodeWeightHint": "値が大きいほど（1〜1000）、空き容量や健全性が同等のノードより優先的に書き込まれます。",
+  "poolInvalidWeightError": "重みは 1〜1000 の整数で入力してください。",
+  "poolNodeUsedAndQuota": "使用 {used} / クォータ {quota}",
+  "@poolNodeUsedAndQuota": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "quota": { "type": "String" }
+    }
+  },
+  "poolNodeSystemFreeWithTotal": "システム空き {free} / {total}",
+  "@poolNodeSystemFreeWithTotal": {
+    "placeholders": {
+      "free": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "poolNodeSystemFreeOnly": "システム空き {free}",
+  "@poolNodeSystemFreeOnly": {
+    "placeholders": {
+      "free": { "type": "String" }
+    }
+  },
+  "poolNodeSystemSpaceUnsupported": "システム空き: このプロトコルは非対応",
+  "poolNodeSystemSpaceUnavailable": "システム空き: 未取得",
+  "poolNodeSystemSpaceProbing": "システム空き: 確認中…",
+  "poolDeleteRemoteDataOption": "リモートノード上のプールデータも削除する",
+  "poolDeleteRemoteDataWarning": "各ノードの保存ディレクトリ内の blobs/ および meta/ を完全に削除します（復元不可）。",
+  "poolDeleteNodeRemoteDataOption": "このノードのリモートデータも削除する",
+  "poolDeleteNodeRemoteDataWarning": "このノードに保存されたチャンクとメタデータバックアップを完全に削除します。",
+  "poolOfflineNode": "オフラインにする",
+  "poolOnlineNode": "オンラインに戻す",
+  "poolRemoveNode": "ノードを削除",
+  "poolOfflineConfirm": "ノード「{node}」を直ちにオフラインにしますか？オンラインに戻すか修復するまでこのノードのデータは利用できません。",
+  "@poolOfflineConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolRemoveNodeConfirm": "ノード「{node}」をこのストレージプールから削除しますか？",
+  "@poolRemoveNodeConfirm": {
+    "placeholders": {
+      "node": { "type": "String" }
+    }
+  },
+  "poolRemoteCleanupDone": "{deleted} 件のリモートデータを削除しました。",
+  "@poolRemoteCleanupDone": {
+    "placeholders": {
+      "deleted": { "type": "int" }
+    }
+  },
+  "poolRemoteCleanupPartial": "{deleted} 件を削除しましたが、{failed} 件失敗しました（{nodes}）。",
+  "@poolRemoteCleanupPartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "failed": { "type": "int" },
+      "nodes": { "type": "String" }
+    }
+  },
+  "analyzerSelectedCountAndSize": "{count} 件選択中（{size}）",
+  "@analyzerSelectedCountAndSize": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "analyzerBatchDeleteConfirmTitle": "{count} 件のファイルを削除しますか？",
+  "@analyzerBatchDeleteConfirmTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "analyzerBatchDeleteDone": "{count} 件のファイルを削除し、{size} を解放しました。",
+  "@analyzerBatchDeleteDone": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "size": { "type": "String" }
+    }
+  },
+  "analyzerBatchDeletePartial": "{deleted} 件削除しました（{failed} 件失敗）。",
+  "@analyzerBatchDeletePartial": {
+    "placeholders": {
+      "deleted": { "type": "int" },
+      "failed": { "type": "int" }
+    }
+  },
+  "analyzerMultiSelectTooltip": "ファイルを選択"
 }
