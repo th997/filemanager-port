@@ -529,6 +529,7 @@ Future<void> _executeCopy(
   if (activeContext == null || !activeContext.mounted) return;
   ScaffoldMessenger.of(activeContext).showSnackBar(
     SnackBar(
+      persist: false,
       content: Text('${l10n.savedSharedFilesSuccess}: ${dest.path}'),
       duration: const Duration(seconds: 4),
       action: SnackBarAction(

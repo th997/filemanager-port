@@ -469,8 +469,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-          find.byKey(const ValueKey('sidebar_create_vault_btn')), findsNothing);
-      expect(find.text('Privacy Folders'), findsNothing);
+          find.byKey(const ValueKey('sidebar_manage_vaults_btn')), findsOneWidget);
+      expect(find.text('PRIVACY SPACE'), findsOneWidget);
+      expect(find.text('Manage Privacy Space…'), findsOneWidget);
       expect(find.text('Open Privacy Folder'), findsNothing);
       expect(find.text('Create Privacy Folder'), findsNothing);
     });
@@ -489,7 +490,7 @@ void main() {
     }
 
     testWidgets(
-        'UtilitiesPage retains privacy folder & cache cleanup tools without duplicated tool entries',
+        'UtilitiesPage (PrivacySpacePage) retains privacy space management only without cache or duplicated tools',
         (tester) async {
       tester.view.physicalSize = const Size(1280, 1600);
       tester.view.devicePixelRatio = 1.0;
@@ -499,24 +500,24 @@ void main() {
       await tester.pumpWidget(wrapLocalized(const UtilitiesPage()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Privacy Folders'), findsAtLeastNWidgets(1));
+      expect(find.text('Privacy Space'), findsAtLeastNWidgets(1));
       expect(find.text('Open Privacy Folder'), findsOneWidget);
       expect(find.text('Create Privacy Folder'), findsOneWidget);
-      expect(find.text('Export & Preview Cache'), findsOneWidget);
-      expect(find.text('Remote Archive Cache'), findsOneWidget);
+      expect(find.text('Export & Preview Cache'), findsNothing);
+      expect(find.text('Remote Archive Cache'), findsNothing);
 
-      expect(find.text('LAN Transfer & WebDAV Share'), findsNothing);
+      expect(find.text('LAN Transfer'), findsNothing);
       expect(find.text('LAN HTTP Web Sharing'), findsNothing);
       expect(find.text('Web Sharing Server'), findsNothing);
       expect(find.text('Recycle Bin'), findsNothing);
       expect(find.text('Storage Analyzer'), findsNothing);
       expect(find.text('Duplicate Finder'), findsNothing);
-      expect(find.text('Directory Sync & Backup'), findsNothing);
-      expect(find.text('Photo Auto Backup'), findsNothing);
+      expect(find.text('Folder Sync'), findsNothing);
+      expect(find.text('Photo Backup'), findsNothing);
     });
 
     testWidgets(
-        'DesktopSidebarShell Tools section hides Storage Analyzer and Duplicate Finder',
+        'DesktopSidebarShell shows Transfer & Sync group and bottom-pinned Settings cleanly',
         (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -541,8 +542,17 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Directory Sync & Backup'), findsOneWidget);
-      expect(find.text('Utilities'), findsOneWidget);
+      expect(find.text('Gallery'), findsOneWidget);
+      expect(find.text('FAVORITES'), findsOneWidget);
+      expect(find.text('Folder Sync'), findsOneWidget);
+      expect(find.text('LAN Transfer'), findsOneWidget);
+      expect(find.text('Photo Backup'), findsOneWidget);
+      expect(find.text('Offline Files'), findsOneWidget);
+      expect(find.text('Tasks'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('QUICK VIEWS'), findsNothing);
+      expect(find.text('Recent'), findsNothing);
+      expect(find.text('Utilities'), findsNothing);
       expect(find.text('Storage Analyzer'), findsNothing);
       expect(find.text('Duplicate Finder'), findsNothing);
     });
@@ -558,7 +568,7 @@ void main() {
       await tester.pumpWidget(wrapLocalized(const PeerTransferPage()));
       await tester.pumpAndSettle();
 
-      expect(find.text('LAN Transfer & WebDAV Share'), findsOneWidget);
+      expect(find.text('LAN Transfer'), findsOneWidget);
       expect(find.text('Receive Mode (Discoverable)'), findsOneWidget);
       expect(find.text('Scan LAN Devices'), findsAtLeastNWidgets(1));
       expect(find.text('Target Device Address (Manual)'), findsOneWidget);

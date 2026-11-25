@@ -31,7 +31,6 @@ import 'offline_pinned_page.dart';
 import 'peer_transfer_page.dart';
 import 'photo_backup_page.dart';
 import 'pool_dashboard_page.dart';
-import 'recent_page.dart';
 import 'remotes_page.dart';
 import 'storage_analyzer_page.dart';
 import 'settings_page.dart';
@@ -297,6 +296,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            persist: false,
+            duration: const Duration(seconds: 5),
             content: Text(AppLocalizations.of(context).couldNotRefreshHome('$e')),
             backgroundColor: Theme.of(context).colorScheme.error,
             action: SnackBarAction(label: AppLocalizations.of(context).retry, onPressed: _loadMetadata),
@@ -480,7 +481,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
 
     final l10n = AppLocalizations.of(context);
-    final effectiveDomain = _pickMode ? _domainIndex.clamp(0, 1) : _domainIndex.clamp(0, 2);
+    final effectiveDomain = _pickMode ? _domainIndex.clamp(0, 1) : _domainIndex.clamp(0, 3);
     return _HomeBottomInsetReporter(
       inset: 80.0,
       child: Scaffold(
@@ -497,38 +498,53 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? (widget.pickRequest!.allowMultiple
                   ? l10n.pickFilesTitle
                   : l10n.pickFileTitle)
-              : l10n.appTitle,
+              : (effectiveDomain == 3 ? l10n.navDomainSettings : l10n.appTitle),
         ),
         actions: [
-          if (!_pickMode)
+          if (!_pickMode && effectiveDomain != 3)
             IconButton(
               icon: const Icon(Icons.search),
               tooltip: l10n.globalSearchHint,
               onPressed: () => _openGlobalSearch(),
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: l10n.refresh,
-            onPressed: _loadMetadata,
-          ),
+          if (effectiveDomain != 3)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: l10n.refresh,
+              onPressed: _loadMetadata,
+            ),
         ],
       ),
       body: Column(
         children: [
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadMetadata,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: AppUiTokens.pagePadding,
-                children: switch (effectiveDomain) {
-                  0 => _buildStorageDomainChildren(l10n),
-                  1 => _buildDiscoverDomainChildren(l10n),
-                  _ => _buildToolsDomainChildren(l10n),
-                },
+          if (!_pickMode && effectiveDomain == 3)
+            Expanded(
+              child: SettingsPage(
+                embedded: true,
+                currentThemeMode: widget.themeMode,
+                onThemeModeChanged: widget.onThemeModeChanged ?? (_) {},
+                localeCode: widget.localeCode ?? 'system',
+                onLocaleChanged: widget.onLocaleChanged ?? (_) {},
+                accentCode: widget.accentCode ?? 'dynamic',
+                onAccentChanged: widget.onAccentChanged ?? (_) {},
+                onConfigImported: _loadMetadata,
+              ),
+            )
+          else
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _loadMetadata,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: AppUiTokens.pagePadding,
+                  children: switch (effectiveDomain) {
+                    0 => _buildStorageDomainChildren(l10n),
+                    1 => _buildDiscoverDomainChildren(l10n),
+                    _ => _buildToolsDomainChildren(l10n),
+                  },
+                ),
               ),
             ),
-          ),
           if (!_pickMode) const ActiveTasksBanner(),
         ],
       ),
@@ -541,31 +557,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         destinations: [
           NavigationDestination(
             key: const ValueKey('home_nav_storage'),
-            icon: const Icon(Icons.storage_outlined),
-            selectedIcon: const Icon(Icons.storage),
+            icon: const Icon(Icons.folder_outlined),
+            selectedIcon: const Icon(Icons.folder),
             label: l10n.navDomainStorage,
           ),
           NavigationDestination(
             key: const ValueKey('home_nav_discover'),
-            icon: const Icon(Icons.manage_search_outlined),
-            selectedIcon: const Icon(Icons.manage_search),
+            icon: const Icon(Icons.star_outline),
+            selectedIcon: const Icon(Icons.star),
             label: l10n.navDomainDiscover,
           ),
-          if (!_pickMode)
+          if (!_pickMode) ...[
             NavigationDestination(
               key: const ValueKey('home_nav_tools'),
               icon: Badge(
                 isLabelVisible: _activeTaskCount > 0,
                 label: Text('$_activeTaskCount'),
-                child: const Icon(Icons.handyman_outlined),
+                child: const Icon(Icons.sync_alt_outlined),
               ),
               selectedIcon: Badge(
                 isLabelVisible: _activeTaskCount > 0,
                 label: Text('$_activeTaskCount'),
-                child: const Icon(Icons.handyman),
+                child: const Icon(Icons.sync_alt),
               ),
               label: l10n.navDomainTools,
             ),
+            NavigationDestination(
+              key: const ValueKey('home_nav_settings'),
+              icon: const Icon(Icons.settings_outlined),
+              selectedIcon: const Icon(Icons.settings),
+              label: l10n.navDomainSettings,
+            ),
+          ],
         ],
       ),
       ),
@@ -825,45 +848,79 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         const SizedBox(height: 8),
       ],
       _buildSectionGrid(
-        children: targets.map((t) {
-          IconData icon;
-          Color iconColor;
-          switch (t.kind) {
-            case 'download':
-            case 'downloads':
-              icon = Icons.download;
-              iconColor = Colors.teal;
-            case 'inbox':
-              icon = Icons.inbox_rounded;
-              iconColor = Colors.amber.shade700;
-            case 'dcim':
-            case 'pictures':
-              icon = Icons.photo_library;
-              iconColor = Colors.purple;
-            case 'documents':
-              icon = Icons.description;
-              iconColor = Colors.indigo;
-            case 'home':
-              icon = Icons.home;
-              iconColor = Colors.deepOrange;
-            default:
-              icon = Icons.storage;
-              iconColor = Colors.blueGrey;
-          }
-          return _buildGridCard(
-            icon: icon,
-            iconColor: iconColor,
-            title: t.displayName(l10n),
-            subtitle: t.kind == 'inbox' ? l10n.privateInboxSubtitle : t.path,
-            onTap: () => _openTarget(t.root, t.relPath),
-            onLongPress: () {
-              Clipboard.setData(ClipboardData(text: t.path));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(l10n.copiedPathValue(t.path))),
+        children: [
+          ...targets.map((t) {
+            IconData icon;
+            Color iconColor;
+            switch (t.kind) {
+              case 'download':
+              case 'downloads':
+                icon = Icons.download;
+                iconColor = Colors.teal;
+              case 'inbox':
+                icon = Icons.inbox_rounded;
+                iconColor = Colors.amber.shade700;
+              case 'dcim':
+              case 'pictures':
+                icon = Icons.photo_library;
+                iconColor = Colors.purple;
+              case 'documents':
+                icon = Icons.description;
+                iconColor = Colors.indigo;
+              case 'home':
+                icon = Icons.home;
+                iconColor = Colors.deepOrange;
+              default:
+                icon = Icons.storage;
+                iconColor = Colors.blueGrey;
+            }
+            return _buildGridCard(
+              icon: icon,
+              iconColor: iconColor,
+              title: t.displayName(l10n),
+              subtitle: t.kind == 'inbox' ? l10n.privateInboxSubtitle : t.path,
+              onTap: () => _openTarget(t.root, t.relPath),
+              onLongPress: () {
+                Clipboard.setData(ClipboardData(text: t.path));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(l10n.copiedPathValue(t.path))),
+                );
+              },
+            );
+          }),
+          _buildGridCard(
+            icon: Icons.photo_library,
+            iconColor: const Color(0xFFD81B60),
+            title: l10n.gallery,
+            subtitle: l10n.allPhotos,
+            onTap: () async {
+              final picked = await Navigator.of(context).push<List<String>>(
+                MaterialPageRoute(
+                  builder: (_) => GalleryPage(pickRequest: widget.pickRequest),
+                ),
               );
+              if (picked != null && picked.isNotEmpty && mounted) {
+                Navigator.of(context).pop(picked);
+                return;
+              }
+              _loadMetadata();
             },
-          );
-        }).toList(),
+          ),
+          if (!_pickMode)
+            _buildGridCard(
+              icon: Icons.delete_outline,
+              iconColor: Colors.redAccent,
+              title: l10n.recycleBin,
+              subtitle: _trashCount > 0
+                  ? l10n.utilitiesTrashSubtitle(_trashCount)
+                  : l10n.emptyLabel,
+              onTap: () {
+                Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const TrashPage()))
+                    .then((_) => _loadMetadata());
+              },
+            ),
+        ],
       ),
       const SizedBox(height: 12),
       _sectionHeader(l10n.remote),
@@ -931,32 +988,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ],
         ),
-        if (unlocked.isNotEmpty || lockedPinned.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _sectionHeader(l10n.privacyFolders),
-          _buildSectionGrid(
-            children: [
-              for (final vault in unlocked)
-                _buildGridCard(
-                  icon: Icons.lock_open_rounded,
-                  iconColor: Colors.indigo,
-                  title: vault.name,
-                  subtitle: l10n.unlockedBadge,
-                  onTap: () => _openTarget('vault://${vault.id}', ''),
-                  onLongPress: () => _showUnlockedVaultActions(vault),
-                ),
-              for (final pinned in lockedPinned)
-                _buildGridCard(
-                  icon: Icons.lock_outline,
-                  iconColor: Colors.blueGrey,
-                  title: pinned.name,
-                  subtitle: l10n.lockedBadge,
-                  onTap: () => _openLockedPinnedVault(pinned),
-                  onLongPress: () => _showLockedPinnedVaultActions(pinned),
-                ),
-            ],
-          ),
-        ],
+        const SizedBox(height: 12),
+        _sectionHeader(l10n.privacyFolders),
+        _buildSectionGrid(
+          children: [
+            for (final vault in unlocked)
+              _buildGridCard(
+                icon: Icons.lock_open_rounded,
+                iconColor: Colors.indigo,
+                title: vault.name,
+                subtitle: l10n.unlockedBadge,
+                onTap: () => _openTarget('vault://${vault.id}', ''),
+                onLongPress: () => _showUnlockedVaultActions(vault),
+              ),
+            for (final pinned in lockedPinned)
+              _buildGridCard(
+                icon: Icons.lock_outline,
+                iconColor: Colors.blueGrey,
+                title: pinned.name,
+                subtitle: l10n.lockedBadge,
+                onTap: () => _openLockedPinnedVault(pinned),
+                onLongPress: () => _showLockedPinnedVaultActions(pinned),
+              ),
+            _buildGridCard(
+              icon: Icons.enhanced_encryption_outlined,
+              iconColor: Colors.indigo,
+              title: l10n.privacyFolders,
+              subtitle: l10n.managePrivacySpaceSubtitle,
+              onTap: () {
+                Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const PrivacySpacePage()))
+                    .then((_) => _loadMetadata());
+              },
+            ),
+          ],
+        ),
       ],
       const SizedBox(height: 16),
     ];
@@ -968,29 +1034,114 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _buildGlobalSearchBar(l10n),
         const SizedBox(height: 12),
       ],
-      _sectionHeader(l10n.navDomainDiscover),
-      _buildSectionGrid(
-        children: [
-          _buildGridCard(
-            icon: Icons.photo_library,
-            iconColor: const Color(0xFFD81B60),
-            title: l10n.gallery,
-            subtitle: l10n.allPhotos,
-            onTap: () async {
-              final picked = await Navigator.of(context).push<List<String>>(
-                MaterialPageRoute(
-                  builder: (_) => GalleryPage(pickRequest: widget.pickRequest),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.navDomainDiscover,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
-              );
-              if (picked != null && picked.isNotEmpty && mounted) {
-                Navigator.of(context).pop(picked);
-                return;
-              }
-              _loadMetadata();
-            },
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('home_manage_bookmarks_btn'),
+              icon: Icon(
+                Icons.edit_outlined,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              tooltip: l10n.bookmarkActions,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              onPressed: () async {
+                final picked = await Navigator.of(context).push<List<String>>(
+                  MaterialPageRoute(
+                    builder: (_) => BookmarksPage(pickRequest: widget.pickRequest),
+                  ),
+                );
+                if (picked != null && picked.isNotEmpty && mounted) {
+                  Navigator.of(context).pop(picked);
+                  return;
+                }
+                _loadMetadata();
+              },
+            ),
+          ],
+        ),
+      ),
+      if (_bookmarks.isNotEmpty)
+        _buildSectionGrid(
+          children: [
+            for (final bm in _bookmarks)
+              _buildGridCard(
+                icon: Icons.bookmark_outline,
+                iconColor: const Color(0xFFFB8C00),
+                title: bm.name,
+                subtitle: bm.path.isEmpty ? bm.root : '${bm.root}/${bm.path}',
+                onTap: () => _openTarget(bm.root, bm.path),
+              ),
+          ],
+        )
+      else
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          decoration: BoxDecoration(
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.25),
+            borderRadius: AppUiTokens.borderRadiusMd,
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+            ),
           ),
-          if (!_pickMode &&
-              PlatformCapabilities.supportsHomeSmartCategories) ...[
+          child: Row(
+            children: [
+              const AppCircleBadge(
+                icon: Icons.star_outline,
+                color: Color(0xFFFB8C00),
+                size: 32,
+                iconSize: 17,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.noBookmarksSaved,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l10n.bookmarksEmptyHint,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      if (!_pickMode &&
+          PlatformCapabilities.supportsHomeSmartCategories) ...[
+        const SizedBox(height: 12),
+        _sectionHeader(l10n.smartCategoriesHeader),
+        _buildSectionGrid(
+          children: [
             _buildGridCard(
               icon: Icons.description_outlined,
               iconColor: const Color(0xFF1E88E5),
@@ -1028,67 +1179,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 onTap: () => _openCategory('apk'),
               ),
           ],
-          _buildGridCard(
-            icon: Icons.bookmark,
-            iconColor: const Color(0xFFFB8C00),
-            title: l10n.bookmarks,
-            subtitle: _bookmarks.isEmpty
-                ? l10n.bookmarksDefaultSubtitle
-                : l10n.itemCountBookmarks(_bookmarks.length),
-            onTap: () async {
-              final picked = await Navigator.of(context).push<List<String>>(
-                MaterialPageRoute(
-                  builder: (_) => BookmarksPage(pickRequest: widget.pickRequest),
-                ),
-              );
-              if (picked != null && picked.isNotEmpty && mounted) {
-                Navigator.of(context).pop(picked);
-                return;
-              }
-              _loadMetadata();
-            },
-          ),
-          _buildGridCard(
-            icon: Icons.history,
-            iconColor: const Color(0xFF3949AB),
-            title: l10n.recent,
-            subtitle: _history.isEmpty
-                ? l10n.recentDefaultSubtitle
-                : l10n.itemCountLocations(_history.length),
-            onTap: () async {
-              final picked = await Navigator.of(context).push<List<String>>(
-                MaterialPageRoute(
-                  builder: (_) => RecentPage(pickRequest: widget.pickRequest),
-                ),
-              );
-              if (picked != null && picked.isNotEmpty && mounted) {
-                Navigator.of(context).pop(picked);
-                return;
-              }
-              _loadMetadata();
-            },
-          ),
-          if (!_pickMode)
-            _buildGridCard(
-              icon: Icons.offline_pin_outlined,
-              iconColor: Colors.indigo,
-              title: l10n.offlinePinned,
-              subtitle: l10n.offlinePinnedSubtitle,
-              onTap: () {
-                Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => const OfflinePinnedPage()))
-                    .then((_) => _loadMetadata());
-              },
-            ),
-        ],
-      ),
+        ),
+      ],
       const SizedBox(height: 16),
     ];
   }
 
   List<Widget> _buildToolsDomainChildren(AppLocalizations l10n) {
     return [
-      _sectionHeader(l10n.navDomainTools),
+      _sectionHeader(l10n.sidebarTransferGroup),
       _buildSectionGrid(
         children: [
           _buildGridCard(
@@ -1131,13 +1230,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             },
           ),
           _buildGridCard(
-            icon: Icons.build_outlined,
-            iconColor: const Color(0xFF5E35B1),
-            title: l10n.utilities,
-            subtitle: l10n.utilitiesDefaultSubtitle,
+            icon: Icons.offline_pin_outlined,
+            iconColor: Colors.indigo,
+            title: l10n.offlinePinned,
+            subtitle: l10n.offlinePinnedSubtitle,
             onTap: () {
               Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const UtilitiesPage()))
+                  .push(
+                    MaterialPageRoute(builder: (_) => const OfflinePinnedPage()),
+                  )
                   .then((_) => _loadMetadata());
             },
           ),
@@ -1151,42 +1252,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onTap: () {
               Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const TasksPage()))
-                  .then((_) => _loadMetadata());
-            },
-          ),
-          _buildGridCard(
-            icon: Icons.delete_outline,
-            iconColor: Colors.redAccent,
-            title: l10n.recycleBin,
-            subtitle: _trashCount > 0
-                ? l10n.utilitiesTrashSubtitle(_trashCount)
-                : l10n.emptyLabel,
-            onTap: () {
-              Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const TrashPage()))
-                  .then((_) => _loadMetadata());
-            },
-          ),
-          _buildGridCard(
-            icon: Icons.settings,
-            iconColor: const Color(0xFF546E7A),
-            title: l10n.settings,
-            subtitle: l10n.settingsCardSubtitle,
-            onTap: () {
-              Navigator.of(context)
-                  .push(
-                    MaterialPageRoute(
-                      builder: (_) => SettingsPage(
-                        currentThemeMode: widget.themeMode,
-                        onThemeModeChanged: widget.onThemeModeChanged ?? (_) {},
-                        localeCode: widget.localeCode ?? 'system',
-                        onLocaleChanged: widget.onLocaleChanged ?? (_) {},
-                        accentCode: widget.accentCode ?? 'dynamic',
-                        onAccentChanged: widget.onAccentChanged ?? (_) {},
-                        onConfigImported: _loadMetadata,
-                      ),
-                    ),
-                  )
                   .then((_) => _loadMetadata());
             },
           ),

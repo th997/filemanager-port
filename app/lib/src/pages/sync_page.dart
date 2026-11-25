@@ -514,6 +514,8 @@ class _SyncPageState extends State<SyncPage> {
             : _srcRoot;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            persist: false,
+            duration: const Duration(seconds: 5),
             content: Text(friendlyErrorText(e, AppLocalizations.of(context))),
             action: ErrorRecoveryActionButton.buildSnackBarAction(
               context,

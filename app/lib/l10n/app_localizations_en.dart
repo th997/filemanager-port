@@ -55,7 +55,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ascending => 'Ascending';
 
   @override
-  String get bookmarks => 'Bookmarks';
+  String get bookmarks => 'Favorites';
 
   @override
   String get browseInAppUpload => 'Browse In-App to Upload…';
@@ -327,7 +327,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lightTheme => 'Light theme';
 
   @override
-  String get localStorage => 'Local Storage';
+  String get localStorage => 'Local Files';
 
   @override
   String get mediaPlayback => 'Media Playback (Remote Buffer)';
@@ -506,7 +506,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get recycleBin => 'Recycle Bin';
 
   @override
-  String get remote => 'Remote';
+  String get remote => 'Remotes';
 
   @override
   String get remoteArchiveCache => 'Remote Archive Cache';
@@ -1134,7 +1134,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String utilitiesTrashSubtitle(int count) {
-    return '$count in trash • Web share';
+    return '$count deleted items';
   }
 
   @override
@@ -2738,10 +2738,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readOnlyViewMode => 'Read-only view';
 
   @override
-  String get privacyFolder => 'Privacy Folder';
+  String get privacyFolder => 'Privacy Space';
 
   @override
-  String get privacyFolders => 'Privacy Folders';
+  String get privacyFolders => 'Privacy Space';
 
   @override
   String get privacyFoldersDesc =>
@@ -3300,7 +3300,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pictureInPicture => 'Picture in Picture';
 
   @override
-  String get directorySync => 'Directory Sync & Backup';
+  String get directorySync => 'Folder Sync';
 
   @override
   String get directorySyncSubtitle =>
@@ -3325,13 +3325,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNoChanges => 'Directories are already in sync';
 
   @override
-  String get offlinePinned => 'Offline Pinned Files';
+  String get offlinePinned => 'Offline Files';
 
   @override
   String get offlinePinnedSubtitle => 'Managed offline copies of remote files';
 
   @override
-  String get pinOffline => 'Pin for Offline';
+  String get pinOffline => 'Save Offline';
 
   @override
   String get unpinOffline => 'Remove Offline Pin';
@@ -3652,13 +3652,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get recoveryFreeUpSpace => 'Analyze Space';
 
   @override
-  String get navDomainStorage => 'Storage';
+  String get navDomainStorage => 'Files';
 
   @override
-  String get navDomainDiscover => 'Search & Library';
+  String get navDomainDiscover => 'Favorites';
 
   @override
-  String get navDomainTools => 'Tools & Tasks';
+  String get navDomainTools => 'Transfer';
 
   @override
   String get autoSyncIntervalLabel => 'Auto-sync schedule';
@@ -3837,7 +3837,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get copyVfsPath => 'Copy VFS Path';
 
   @override
-  String get photoBackupTitle => 'Photo Auto Backup';
+  String get photoBackupTitle => 'Photo Backup';
 
   @override
   String get photoBackupSubtitle =>
@@ -4020,7 +4020,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get lanTransferAndShareTitle => 'LAN Transfer & WebDAV Share';
+  String get lanTransferAndShareTitle => 'LAN Transfer';
 
   @override
   String get lanTransferAndShareSubtitle =>
@@ -4165,7 +4165,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backupRestoreConfigSubtitle =>
-      'Export or import remote connections, bookmarks, and preferences (optional AES-256 encrypted .fmbak)';
+      'Export or import remote connections, storage pools, favorites, and settings (AES-256 .fmbak / .json)';
 
   @override
   String get exportAction => 'Export';
@@ -5021,4 +5021,193 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get analyzerMultiSelectTooltip => 'Select files';
+
+  @override
+  String get navDomainSettings => 'Settings';
+
+  @override
+  String get sidebarLocationsGroup => 'Locations';
+
+  @override
+  String get sidebarQuickViewsGroup => 'Quick Views';
+
+  @override
+  String get sidebarTransferGroup => 'Transfer & Sync';
+
+  @override
+  String get importFiles => 'Import Files';
+
+  @override
+  String get importFolder => 'Import Folder';
+
+  @override
+  String get browseInAppImport => 'Browse in App to Import…';
+
+  @override
+  String get createAndImportTooltip => 'New / Import';
+
+  @override
+  String get createAndUploadTooltip => 'New / Upload';
+
+  @override
+  String get menuGroupViewAndSelect => 'View & Select';
+
+  @override
+  String get menuGroupDirectoryTools => 'Folder Tools';
+
+  @override
+  String get menuGroupDevAndPath => 'Developer & Path';
+
+  @override
+  String get menuGroupOpenAndTransfer => 'Open & Transfer';
+
+  @override
+  String get menuGroupOrganizeAndInfo => 'Organize & Info';
+
+  @override
+  String get lanShareMenu => 'LAN Share…';
+
+  @override
+  String get managePrivacySpace => 'Manage Privacy Space…';
+
+  @override
+  String get managePrivacySpaceSubtitle => 'Unlock, create, backup, or import';
+
+  @override
+  String get viewAndSortMenu => 'View & Sort';
+
+  @override
+  String get copyPathMenu => 'Copy Path';
+
+  @override
+  String get smartCategoriesHeader => 'File Categories';
+
+  @override
+  String get configMigrationSettingsCategory => 'Settings & Preferences';
+
+  @override
+  String configMigrationFavoritesCount(int count) {
+    return '$count favorite(s)';
+  }
+
+  @override
+  String configMigrationSettingsCount(int count) {
+    return '$count setting(s)';
+  }
+
+  @override
+  String configMigrationSelectedRatio(int selected, int total) {
+    return '$selected / $total selected';
+  }
+
+  @override
+  String get configMigrationPasswordRequiredHint =>
+      'Setting an encryption password is required when exporting remote connections or storage pools.';
+
+  @override
+  String get configMigrationPasswordOptionalHint =>
+      'Optional password to encrypt favorites and settings as .fmbak, or leave empty for plain .json.';
+
+  @override
+  String get configMigrationConfirmPasswordLabel => 'Confirm Password';
+
+  @override
+  String get configMigrationPasswordMismatch => 'Passwords do not match.';
+
+  @override
+  String configMigrationPoolDependencyBadge(String pools) {
+    return 'Required by pool: $pools';
+  }
+
+  @override
+  String get configMigrationPoolDependencyHint =>
+      'Remotes referenced by selected storage pools remain checked and locked until those pools are unchecked.';
+
+  @override
+  String get configMigrationSelectAtLeastOne =>
+      'Select at least one category or item to continue.';
+
+  @override
+  String get configMigrationShareBackupAction => 'Share .fmbak';
+
+  @override
+  String get configMigrationShareJsonAction => 'Share .json';
+
+  @override
+  String get configMigrationExportSharedNotice => 'Backup shared successfully.';
+
+  @override
+  String get configMigrationChooseBackupAction =>
+      'Choose .fmbak / .fmremotes / .json';
+
+  @override
+  String get configMigrationPasteOrPickHint =>
+      'Choose a backup file or paste JSON / encrypted text below.';
+
+  @override
+  String get configMigrationNextSelectAction => 'Parse & Select Items';
+
+  @override
+  String get configMigrationImportSelectTitle => 'Select Items to Import';
+
+  @override
+  String get configMigrationConfirmImportAction => 'Import Selected';
+
+  @override
+  String configMigrationSummaryNotice(
+    int remotes,
+    int pools,
+    int bookmarks,
+    int prefs,
+  ) {
+    return 'Imported $remotes remote(s), $pools pool(s), $bookmarks favorite(s), $prefs setting(s)';
+  }
+
+  @override
+  String configMigrationPoolImportFailedSummary(int count, String names) {
+    return '; $count pool(s) failed ($names)';
+  }
+
+  @override
+  String get configMigrationNoRemotes => 'No remote connections';
+
+  @override
+  String get configMigrationNoPools => 'No storage pools';
+
+  @override
+  String get configMigrationNoFavorites => 'No favorites';
+
+  @override
+  String get configMigrationMissingPoolRemoteNotice =>
+      'Some storage pool node remotes are not included in this selection and rely on matching local connections.';
+
+  @override
+  String get configMigrationInvalidBundleFormat =>
+      'Invalid backup file or JSON format.';
+
+  @override
+  String get configMigrationWrongPassword =>
+      'Incorrect password or corrupted encrypted backup.';
+
+  @override
+  String get configMigrationDecryptAndPreview => 'Decrypt & Continue';
+
+  @override
+  String get configMigrationSystemAuthPrompt =>
+      'Authenticate to export remote connection credentials';
+
+  @override
+  String get configMigrationSystemAuthRequiredNote =>
+      'Exporting remote connections requires device lock screen or system password authentication.';
+
+  @override
+  String get configMigrationSystemAuthFailed =>
+      'System authentication was cancelled or failed. Export aborted.';
+
+  @override
+  String get configMigrationSystemAuthUnavailable =>
+      'No device passcode or system password is set. Enable device lock screen or OS password before exporting remote connections.';
+
+  @override
+  String get quickFileProvider => 'FP (Files Location)';
 }

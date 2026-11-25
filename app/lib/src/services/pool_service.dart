@@ -46,6 +46,14 @@ class PoolService extends ChangeNotifier {
     return pool_api.getPoolConfig(dbPath: _dbPath, poolId: poolId);
   }
 
+  Future<List<pool_api.PoolConfigDto>> exportConfigs(List<String> poolIds) async {
+    StorageService.instance.ensureInitialized();
+    return pool_api.exportPoolConfigs(
+      dbPath: _dbPath,
+      poolIds: poolIds,
+    );
+  }
+
   Future<pool_api.PoolSummaryDto> saveConfig(pool_api.PoolConfigDto config) async {
     StorageService.instance.ensureInitialized();
     final summary = await pool_api.savePoolConfig(dbPath: _dbPath, config: config);

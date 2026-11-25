@@ -441,7 +441,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Browse and preview your photos inside the file manager.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Authenticate with Face ID or device passcode to unlock your privacy folders.</string>
+	<string>Authenticate with Face ID or device passcode to unlock privacy folders and authorize exporting remote connections.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Discover nearby SMB, SFTP, WebDAV, and FTP servers and share files over the local network.</string>
 	<key>NSBonjourServices</key>

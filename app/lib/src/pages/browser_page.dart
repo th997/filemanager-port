@@ -2140,6 +2140,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       hasClipboard: _clipboard != null,
       clipboardCount: _clipboard?.paths.length,
       isZh: isZh,
+      isNative: isNativeRoot(_root),
       canBookmark: !_isInVault,
     );
 
@@ -3413,6 +3414,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            persist: false,
+            duration: const Duration(seconds: 5),
             content: Text(
               movedPaths.length == 1 ? AppLocalizations.of(context).movedOneToTrash : AppLocalizations.of(context).movedManyToTrash(movedPaths.length),
             ),
@@ -4492,6 +4495,31 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                     ],
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment<bool>(
+                        value: false,
+                        icon: const Icon(Icons.view_list, size: 16),
+                        label: Text(AppLocalizations.of(context).listView),
+                      ),
+                      ButtonSegment<bool>(
+                        value: true,
+                        icon: const Icon(Icons.grid_view, size: 16),
+                        label: Text(AppLocalizations.of(context).gridView),
+                      ),
+                    ],
+                    selected: {_isGrid},
+                    onSelectionChanged: (sel) {
+                      setState(() => _isGrid = sel.first);
+                      setModalState(() {});
+                      _saveViewPreferences();
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
                 for (final field in SortField.values)
                   ListTile(
                     leading: Icon(
@@ -4557,25 +4585,121 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       ];
     }
 
+    final l10n = AppLocalizations.of(context);
+    final nativeRoot = isNativeRoot(_root);
     return [
-      // Upload lived only in the empty-space right-click menu, so a full
-      // list (no blank area to click) had no discoverable way in at all.
-      // Phones get it from the overflow menu to keep the icon row narrow.
-      if (_canWrite && !compact) ...[
-        action(Icons.cloud_upload_outlined, AppLocalizations.of(context).uploadFiles, _uploadFiles),
-        action(Icons.drive_folder_upload_outlined, AppLocalizations.of(context).uploadFolder, _uploadFolder),
-      ],
+      if (_canWrite)
+        PopupMenuButton<String>(
+          key: const ValueKey('browser_create_import_btn'),
+          tooltip: nativeRoot
+              ? l10n.createAndImportTooltip
+              : l10n.createAndUploadTooltip,
+          icon: Icon(Icons.add_circle_outline, size: compact ? 19 : 20),
+          padding: EdgeInsets.zero,
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            fixedSize: Size.square(compact ? 28 : 30),
+          ),
+          onSelected: (val) {
+            switch (val) {
+              case 'new_folder':
+                _createFolder();
+              case 'new_file':
+                _createFile();
+              case 'upload':
+                _uploadFiles();
+              case 'upload_folder':
+                _uploadFolder();
+              case 'upload_inapp':
+                _uploadFiles(forceInApp: true);
+            }
+          },
+          itemBuilder: (ctx) {
+            final menuL10n = AppLocalizations.of(ctx);
+            return [
+              PopupMenuItem<String>(
+                value: 'new_folder',
+                child: Row(
+                  children: [
+                    const Icon(Icons.create_new_folder_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isAtMultiBucketRoot
+                          ? menuL10n.newBucket
+                          : menuL10n.newFolder,
+                    ),
+                  ],
+                ),
+              ),
+              if (!_isAtMultiBucketRoot)
+                PopupMenuItem<String>(
+                  value: 'new_file',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.note_add_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(menuL10n.newTextFile),
+                    ],
+                  ),
+                ),
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'upload',
+                child: Row(
+                  children: [
+                    Icon(
+                      nativeRoot
+                          ? Icons.file_download_outlined
+                          : Icons.cloud_upload_outlined,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(nativeRoot ? menuL10n.importFiles : menuL10n.uploadFiles),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'upload_folder',
+                child: Row(
+                  children: [
+                    const Icon(Icons.drive_folder_upload_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      nativeRoot
+                          ? menuL10n.importFolder
+                          : menuL10n.uploadFolder,
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'upload_inapp',
+                child: Row(
+                  children: [
+                    const Icon(Icons.folder_shared_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      nativeRoot
+                          ? menuL10n.browseInAppImport
+                          : menuL10n.browseInAppUpload,
+                    ),
+                  ],
+                ),
+              ),
+            ];
+          },
+        ),
       if (!compact) ...[
         action(
           _isSearching ? Icons.search_off : Icons.search,
-          AppLocalizations.of(context).searchAction,
+          l10n.searchAction,
           _toggleSearch,
         ),
         if (!widget.embedded)
-          action(Icons.vertical_split, AppLocalizations.of(context).splitView, _toggleSplit),
+          action(Icons.vertical_split, l10n.splitView, _toggleSplit),
         action(
           _isGrid ? Icons.view_list : Icons.grid_view,
-          _isGrid ? AppLocalizations.of(context).listView : AppLocalizations.of(context).gridView,
+          _isGrid ? l10n.listView : l10n.gridView,
           () {
             setState(() => _isGrid = !_isGrid);
             _saveViewPreferences();
@@ -4585,7 +4709,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
         PopupMenuButton<SortField>(
           // The current order was only visible inside the opened menu, so the
           // button looked identical whatever the list was sorted by.
-          tooltip: AppLocalizations.of(context).sortStatusTooltip(_sortField.localizedLabel(AppLocalizations.of(context)), _sortAsc ? '↑' : '↓'),
+          tooltip: l10n.sortStatusTooltip(_sortField.localizedLabel(l10n), _sortAsc ? '↑' : '↓'),
           icon: Icon(Icons.sort, size: compact ? 18 : 20),
           padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
@@ -4620,17 +4744,18 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       if (_isInVault)
         action(
           Icons.lock_outline,
-          AppLocalizations.of(context).lockAndHide,
+          l10n.lockAndHide,
           _lockCurrentVault,
         ),
       if (Navigator.of(context).canPop())
         action(
           Icons.home_outlined,
-          AppLocalizations.of(context).homeDashboard,
+          l10n.homeDashboard,
           () => Navigator.of(context).popUntil((route) => route.isFirst),
         ),
       PopupMenuButton<String>(
-        tooltip: AppLocalizations.of(context).options,
+        key: const ValueKey('browser_dir_more_btn'),
+        tooltip: l10n.options,
         icon: Icon(Icons.more_vert, size: compact ? 18 : 20),
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
@@ -4648,10 +4773,7 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 _searchBusy = false;
               }
             });
-          } else if (val == 'toggle_view') {
-            setState(() => _isGrid = !_isGrid);
-            _saveViewPreferences();
-          } else if (val == 'sort') {
+          } else if (val == 'view_and_sort') {
             _showSortBottomSheet();
           } else if (val == 'split') {
             _toggleSplit();
@@ -4660,14 +4782,6 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
           } else if (val == 'toggle_hidden') {
             setState(() => _showHidden = !_showHidden);
             _saveViewPreferences();
-          } else if (val == 'upload') {
-            _uploadFiles();
-          } else if (val == 'upload_folder') {
-            _uploadFolder();
-          } else if (val == 'upload_inapp') {
-            _uploadFiles(forceInApp: true);
-          } else if (val == 'new_folder') {
-            _createFolder();
           } else if (val == 'advanced_search') {
             _openAdvancedSearch();
           } else if (val == 'storage_analyzer') {
@@ -4699,20 +4813,8 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 ),
               ),
             );
-          } else if (val == 'share_webdav') {
-            _startWebDavForCurrentFolder();
-          } else if (val == 'send_lan_peer') {
-            final paths = _selectedPaths.isNotEmpty
-                ? _selectedPaths.toList()
-                : <String>[];
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => PeerTransferPage(
-                  initialSrcRoot: _root,
-                  initialSrcPaths: paths,
-                ),
-              ),
-            );
+          } else if (val == 'lan_share') {
+            _showLanShareChooser();
           } else if (val == 'open_terminal') {
             final l10n = AppLocalizations.of(context);
             final errorColor = Theme.of(context).colorScheme.error;
@@ -4739,312 +4841,184 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
                 );
               }
             });
-          } else if (val == 'copy_full_path') {
-            Clipboard.setData(
-              ClipboardData(text: joinNative(_root, _relPath)),
-            );
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
-            );
-          } else if (val == 'copy_vfs_path') {
-            final vfsUri = _relPath.isEmpty ? _root : '$_root/$_relPath';
-            Clipboard.setData(ClipboardData(text: vfsUri));
+          } else if (val == 'copy_path') {
+            final copied = nativeRoot
+                ? joinNative(_root, _relPath)
+                : (_relPath.isEmpty ? _root : '$_root/$_relPath');
+            Clipboard.setData(ClipboardData(text: copied));
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(AppLocalizations.of(context).pathCopied)),
             );
           } else if (val == 'pin_home_shortcut') {
             _pinCurrentFolderShortcut();
-          } else if (val == 'vault_always_visible') {
-            _toggleCurrentVaultAlwaysVisible();
-          } else if (val == 'vault_info') {
-            _showCurrentVaultInfo();
-          } else if (val == 'vault_security') {
-            _changeCurrentVaultSecurity();
-          } else if (val == 'rename_vault') {
-            _renameCurrentVault();
-          } else if (val == 'delete_vault') {
-            _deleteCurrentVault();
+          } else if (val == 'vault_manage') {
+            _showManagePrivacySpaceSheet();
           }
         },
-        itemBuilder: (ctx) => [
-          // File-creation actions were only in the empty-space context menu,
-          // which a full list never shows.
-          if (_canWrite) ...[
-            PopupMenuItem<String>(
-              value: 'upload',
-              child: Row(
-                children: [
-                  const Icon(Icons.cloud_upload_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).uploadFiles),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'upload_folder',
-              child: Row(
-                children: [
-                  const Icon(Icons.drive_folder_upload_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).uploadFolder),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'upload_inapp',
-              child: Row(
-                children: [
-                  const Icon(Icons.folder_shared_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).browseInAppUpload),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'new_folder',
-              child: Row(
-                children: [
-                  const Icon(Icons.create_new_folder_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(_isAtMultiBucketRoot ? AppLocalizations.of(context).newBucket : AppLocalizations.of(context).newFolder),
-                ],
-              ),
-            ),
-            const PopupMenuDivider(),
-          ],
-          if (compact) ...[
-            PopupMenuItem<String>(
-              value: 'search',
-              child: Row(
-                children: [
-                  Icon(_isSearching ? Icons.search_off : Icons.search, size: 18),
-                  const SizedBox(width: 8),
-                  Text(_isSearching ? AppLocalizations.of(context).closeSearch : AppLocalizations.of(context).searchFiles),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'toggle_view',
-              child: Row(
-                children: [
-                  Icon(_isGrid ? Icons.view_list : Icons.grid_view, size: 18),
-                  const SizedBox(width: 8),
-                  Text(_isGrid ? AppLocalizations.of(context).switchToList : AppLocalizations.of(context).switchToGrid),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'sort',
-              child: Row(
-                children: [
-                  const Icon(Icons.sort, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).sortBy),
-                ],
-              ),
-            ),
-            if (!widget.embedded)
+        itemBuilder: (ctx) {
+          final menuL10n = AppLocalizations.of(ctx);
+          return [
+            if (compact) ...[
               PopupMenuItem<String>(
-                value: 'split',
+                value: 'search',
                 child: Row(
                   children: [
-                    const Icon(Icons.vertical_split, size: 18),
+                    Icon(_isSearching ? Icons.search_off : Icons.search, size: 18),
                     const SizedBox(width: 8),
-                    Text(AppLocalizations.of(context).splitView),
-                  ],
-                ),
-              ),
-            const PopupMenuDivider(),
-          ],
-          PopupMenuItem<String>(
-            value: 'select',
-            child: Row(
-              children: [
-                const Icon(Icons.checklist, size: 18),
-                const SizedBox(width: 8),
-                Text(AppLocalizations.of(context).selectItems),
-              ],
-            ),
-          ),
-          PopupMenuItem<String>(
-            value: 'advanced_search',
-            child: Row(
-              children: [
-                const Icon(Icons.manage_search, size: 18),
-                const SizedBox(width: 8),
-                Text(AppLocalizations.of(context).advancedSearch),
-              ],
-            ),
-          ),
-          PopupMenuItem<String>(
-            value: 'storage_analyzer',
-            child: Row(
-              children: [
-                const Icon(Icons.pie_chart_outline, size: 18),
-                const SizedBox(width: 8),
-                Text(AppLocalizations.of(context).storageAnalyzer),
-              ],
-            ),
-          ),
-          PopupMenuItem<String>(
-            value: 'duplicate_finder',
-            child: Row(
-              children: [
-                const Icon(Icons.find_replace, size: 18),
-                const SizedBox(width: 8),
-                Text(AppLocalizations.of(context).duplicateFinder),
-              ],
-            ),
-          ),
-          PopupMenuItem<String>(
-            value: 'dir_sync',
-            child: Row(
-              children: [
-                const Icon(Icons.sync, size: 18),
-                const SizedBox(width: 8),
-                Text(AppLocalizations.of(context).directorySync),
-              ],
-            ),
-          ),
-          if (!_isInVault) ...[
-            PopupMenuItem<String>(
-              value: 'share_webdav',
-              child: Row(
-                children: [
-                  const Icon(Icons.dns_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).shareViaLanWebdav),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'send_lan_peer',
-              child: Row(
-                children: [
-                  const Icon(Icons.swap_horiz, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).sendToLanDevice),
-                ],
-              ),
-            ),
-          ],
-          if (PlatformCapabilities.isDesktop) ...[
-            const PopupMenuDivider(),
-            if (isNativeRoot(_root)) ...[
-              PopupMenuItem<String>(
-                value: 'open_terminal',
-                child: Row(
-                  children: [
-                    const Icon(Icons.terminal, size: 18),
-                    const SizedBox(width: 8),
-                    Text(AppLocalizations.of(context).openInTerminal),
+                    Text(_isSearching ? menuL10n.closeSearch : menuL10n.searchFiles),
                   ],
                 ),
               ),
               PopupMenuItem<String>(
-                value: 'open_editor',
+                value: 'view_and_sort',
                 child: Row(
                   children: [
-                    const Icon(Icons.code, size: 18),
+                    const Icon(Icons.tune, size: 18),
                     const SizedBox(width: 8),
-                    Text(AppLocalizations.of(context).openInEditor),
+                    Text(menuL10n.viewAndSortMenu),
                   ],
                 ),
               ),
+              if (!widget.embedded && PlatformCapabilities.supportsSideBySideSplit(ctx))
+                PopupMenuItem<String>(
+                  value: 'split',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.vertical_split, size: 18),
+                      const SizedBox(width: 8),
+                      Text(menuL10n.splitView),
+                    ],
+                  ),
+                ),
+            ],
+            PopupMenuItem<String>(
+              value: 'select',
+              child: Row(
+                children: [
+                  const Icon(Icons.checklist, size: 18),
+                  const SizedBox(width: 8),
+                  Text(menuL10n.selectItems),
+                ],
+              ),
+            ),
+            CheckedPopupMenuItem<String>(
+              value: 'toggle_hidden',
+              checked: _showHidden,
+              child: Text(menuL10n.showHiddenFiles),
+            ),
+            PopupMenuItem<String>(
+              value: 'advanced_search',
+              child: Row(
+                children: [
+                  const Icon(Icons.manage_search, size: 18),
+                  const SizedBox(width: 8),
+                  Text(menuL10n.advancedSearch),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'storage_analyzer',
+              child: Row(
+                children: [
+                  const Icon(Icons.pie_chart_outline, size: 18),
+                  const SizedBox(width: 8),
+                  Text(menuL10n.storageAnalyzer),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'duplicate_finder',
+              child: Row(
+                children: [
+                  const Icon(Icons.find_replace, size: 18),
+                  const SizedBox(width: 8),
+                  Text(menuL10n.duplicateFinder),
+                ],
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'dir_sync',
+              child: Row(
+                children: [
+                  const Icon(Icons.sync, size: 18),
+                  const SizedBox(width: 8),
+                  Text(menuL10n.directorySync),
+                ],
+              ),
+            ),
+            if (!_isInVault)
               PopupMenuItem<String>(
-                value: 'copy_full_path',
+                value: 'lan_share',
+                child: Row(
+                  children: [
+                    const Icon(Icons.wifi_tethering, size: 18),
+                    const SizedBox(width: 8),
+                    Text(menuL10n.lanShareMenu),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            if (PlatformCapabilities.isDesktop) ...[
+              if (nativeRoot) ...[
+                PopupMenuItem<String>(
+                  value: 'open_terminal',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.terminal, size: 18),
+                      const SizedBox(width: 8),
+                      Text(menuL10n.openInTerminal),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'open_editor',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.code, size: 18),
+                      const SizedBox(width: 8),
+                      Text(menuL10n.openInEditor),
+                    ],
+                  ),
+                ),
+              ],
+              PopupMenuItem<String>(
+                value: 'copy_path',
                 child: Row(
                   children: [
                     const Icon(Icons.content_copy, size: 18),
                     const SizedBox(width: 8),
-                    Text(AppLocalizations.of(context).copyFullPath),
+                    Text(menuL10n.copyPathMenu),
+                  ],
+                ),
+              ),
+            ] else if (!_isInVault) ...[
+              PopupMenuItem<String>(
+                value: 'pin_home_shortcut',
+                child: Row(
+                  children: [
+                    const Icon(Icons.add_to_home_screen, size: 18),
+                    const SizedBox(width: 8),
+                    Text(menuL10n.pinToHomeScreen),
                   ],
                 ),
               ),
             ],
-            PopupMenuItem<String>(
-              value: 'copy_vfs_path',
-              child: Row(
-                children: [
-                  const Icon(Icons.link, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).copyVfsPath),
-                ],
+            if (_isInVault) ...[
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'vault_manage',
+                child: Row(
+                  children: [
+                    const Icon(Icons.enhanced_encryption_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Text(menuL10n.managePrivacySpace),
+                  ],
+                ),
               ),
-            ),
-          ] else if (!_isInVault) ...[
-            PopupMenuItem<String>(
-              value: 'pin_home_shortcut',
-              child: Row(
-                children: [
-                  const Icon(Icons.add_to_home_screen, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).pinToHomeScreen),
-                ],
-              ),
-            ),
-          ],
-          CheckedPopupMenuItem<String>(
-            value: 'toggle_hidden',
-            checked: _showHidden,
-            child: Text(AppLocalizations.of(context).showHiddenFiles),
-          ),
-          if (_isInVault) ...[
-            const PopupMenuDivider(),
-            CheckedPopupMenuItem<String>(
-              value: 'vault_always_visible',
-              checked: VaultService.instance.isAlwaysVisible(_currentVaultId!),
-              child: Text(AppLocalizations.of(context).vaultAlwaysVisibleTitle),
-            ),
-            PopupMenuItem<String>(
-              value: 'vault_info',
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).vaultFolderInfo),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'vault_security',
-              child: Row(
-                children: [
-                  const Icon(Icons.security_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).vaultSecuritySettings),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'rename_vault',
-              child: Row(
-                children: [
-                  const Icon(Icons.drive_file_rename_outline, size: 18),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context).renamePrivacyFolder),
-                ],
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'delete_vault',
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.delete_forever_outlined,
-                    size: 18,
-                    color: Theme.of(ctx).colorScheme.error,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    AppLocalizations.of(context).deletePrivacyFolder,
-                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
+            ],
+          ];
+        },
       ),
     ];
   }
@@ -5059,6 +5033,121 @@ class BrowserPageState extends State<BrowserPage> with RouteAware {
       relPath: _relPath,
       displayName: name,
       readOnly: true,
+    );
+  }
+
+  void _showLanShareChooser() {
+    final l10n = AppLocalizations.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: Text(l10n.shareViaLanWebdav),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _startWebDavForCurrentFolder();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz),
+              title: Text(l10n.sendToLanDevice),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                final paths = _selectedPaths.isNotEmpty
+                    ? _selectedPaths.toList()
+                    : <String>[];
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PeerTransferPage(
+                      initialSrcRoot: _root,
+                      initialSrcPaths: paths,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showManagePrivacySpaceSheet() {
+    if (!_isInVault) return;
+    final l10n = AppLocalizations.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final alwaysVisible = VaultService.instance.isAlwaysVisible(_currentVaultId!);
+          final errorColor = Theme.of(ctx).colorScheme.error;
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  secondary: Icon(
+                    alwaysVisible ? Icons.push_pin : Icons.push_pin_outlined,
+                  ),
+                  title: Text(l10n.vaultAlwaysVisibleTitle),
+                  value: alwaysVisible,
+                  onChanged: (_) {
+                    _toggleCurrentVaultAlwaysVisible();
+                    setSheetState(() {});
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(l10n.vaultFolderInfo),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _showCurrentVaultInfo();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.security_outlined),
+                  title: Text(l10n.vaultSecuritySettings),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _changeCurrentVaultSecurity();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.drive_file_rename_outline),
+                  title: Text(l10n.renamePrivacyFolder),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _renameCurrentVault();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_forever_outlined, color: errorColor),
+                  title: Text(
+                    l10n.deletePrivacyFolder,
+                    style: TextStyle(color: errorColor),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _deleteCurrentVault();
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

@@ -21,6 +21,14 @@ Future<PoolConfigDto> getPoolConfig({
   poolId: poolId,
 );
 
+Future<List<PoolConfigDto>> exportPoolConfigs({
+  required String dbPath,
+  required List<String> poolIds,
+}) => RustLib.instance.api.crateApiPoolExportPoolConfigs(
+  dbPath: dbPath,
+  poolIds: poolIds,
+);
+
 Future<PoolSummaryDto> savePoolConfig({
   required String dbPath,
   required PoolConfigDto config,

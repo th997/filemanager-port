@@ -59,7 +59,7 @@
   "appTitle": "FP File Manager",
   "appearance": "Appearance",
   "ascending": "Ascending",
-  "bookmarks": "Bookmarks",
+  "bookmarks": "Favorites",
   "browseInAppUpload": "Browse In-App to Upload…",
   "browserSection": "Browser",
   "bucketName": "Bucket Name",
@@ -261,7 +261,7 @@
   "language": "Language",
   "languageSystem": "Follow system",
   "lightTheme": "Light theme",
-  "localStorage": "Local Storage",
+  "localStorage": "Local Files",
   "mediaPlayback": "Media Playback (Remote Buffer)",
   "minimize": "Minimize",
   "minutesLeft": "About {minutes} min left",
@@ -331,7 +331,7 @@
   "recent": "Recent",
   "recentDirs": "Recent:",
   "recycleBin": "Recycle Bin",
-  "remote": "Remote",
+  "remote": "Remotes",
   "remoteArchiveCache": "Remote Archive Cache",
   "retry": "Retry",
   "retryFailed": "Retry failed: {error}",
@@ -678,7 +678,7 @@
   "requesting": "Requesting…",
   "grant": "Grant",
   "remoteProtocolsSubtitle": "S3, OSS, SFTP, WebDAV...",
-  "utilitiesTrashSubtitle": "{count} in trash • Web share",
+  "utilitiesTrashSubtitle": "{count} deleted items",
   "@utilitiesTrashSubtitle": {
     "placeholders": {
       "count": {
@@ -2002,8 +2002,8 @@
     }
   },
   "readOnlyViewMode": "Read-only view",
-  "privacyFolder": "Privacy Folder",
-  "privacyFolders": "Privacy Folders",
+  "privacyFolder": "Privacy Space",
+  "privacyFolders": "Privacy Space",
   "privacyFoldersDesc": "Create, unlock, back up, or import isolated privacy folders",
   "createPrivacyFolder": "Create Privacy Folder",
   "openPrivacyFolder": "Open Privacy Folder",
@@ -2346,7 +2346,7 @@
     }
   },
   "pictureInPicture": "Picture in Picture",
-  "directorySync": "Directory Sync & Backup",
+  "directorySync": "Folder Sync",
   "directorySyncSubtitle": "Incremental, mirror or two-way sync across local & remote",
   "syncModeIncremental": "Incremental (Copy new & updated)",
   "syncModeMirror": "Mirror (Exact copy, deletes extra files)",
@@ -2354,9 +2354,9 @@
   "syncPreviewChanges": "Preview Changes",
   "syncStart": "Start Sync",
   "syncNoChanges": "Directories are already in sync",
-  "offlinePinned": "Offline Pinned Files",
+  "offlinePinned": "Offline Files",
   "offlinePinnedSubtitle": "Managed offline copies of remote files",
-  "pinOffline": "Pin for Offline",
+  "pinOffline": "Save Offline",
   "unpinOffline": "Remove Offline Pin",
   "pinnedOfflineNotice": "Pinned \"{name}\" for offline access",
   "@pinnedOfflineNotice": {
@@ -2553,9 +2553,9 @@
   "recoveryEditConnection": "Edit Connection",
   "recoveryEnterPassword": "Enter Password",
   "recoveryFreeUpSpace": "Analyze Space",
-  "navDomainStorage": "Storage",
-  "navDomainDiscover": "Search & Library",
-  "navDomainTools": "Tools & Tasks",
+  "navDomainStorage": "Files",
+  "navDomainDiscover": "Favorites",
+  "navDomainTools": "Transfer",
   "autoSyncIntervalLabel": "Auto-sync schedule",
   "autoSyncOff": "Manual only",
   "autoSyncEveryMinutes": "Every {minutes} min",
@@ -2644,7 +2644,7 @@
   "openInEditor": "Open in Editor",
   "copyFullPath": "Copy Full Path",
   "copyVfsPath": "Copy VFS Path",
-  "photoBackupTitle": "Photo Auto Backup",
+  "photoBackupTitle": "Photo Backup",
   "photoBackupSubtitle": "Incrementally back up new photos to NAS, S3, WebDAV, or Privacy Vault",
   "photoBackupEnable": "Enable Automatic Incremental Backup",
   "photoBackupWifiOnly": "Back up on Wi-Fi only",
@@ -2745,7 +2745,7 @@
       "count": { "type": "int" }
     }
   },
-  "lanTransferAndShareTitle": "LAN Transfer & WebDAV Share",
+  "lanTransferAndShareTitle": "LAN Transfer",
   "lanTransferAndShareSubtitle": "Direct LAN drop, WebDAV mount, and browser upload/download",
   "lanWebdavBrowserHint": "Open in any browser to upload/download files, or mount via Finder, Explorer, Infuse, or Kodi.",
   "lanWebdavReadOnlyHint": "Disable read-only to allow browser uploads, new folders, and edits",
@@ -2808,7 +2808,7 @@
   "manageRemotes": "Manage Remotes",
   "manageStoragePools": "Manage Storage Pools",
   "backupRestoreConfigTitle": "Backup & Restore Configuration",
-  "backupRestoreConfigSubtitle": "Export or import remote connections, bookmarks, and preferences (optional AES-256 encrypted .fmbak)",
+  "backupRestoreConfigSubtitle": "Export or import remote connections, storage pools, favorites, and settings (AES-256 .fmbak / .json)",
   "exportAction": "Export",
   "importAction": "Import",
   "exportMigrationTitle": "Export Device Migration Backup",
@@ -3250,5 +3250,87 @@
       "failed": { "type": "int" }
     }
   },
-  "analyzerMultiSelectTooltip": "Select files"
+  "analyzerMultiSelectTooltip": "Select files",
+  "navDomainSettings": "Settings",
+  "sidebarLocationsGroup": "Locations",
+  "sidebarQuickViewsGroup": "Quick Views",
+  "sidebarTransferGroup": "Transfer & Sync",
+  "importFiles": "Import Files",
+  "importFolder": "Import Folder",
+  "browseInAppImport": "Browse in App to Import…",
+  "createAndImportTooltip": "New / Import",
+  "createAndUploadTooltip": "New / Upload",
+  "menuGroupViewAndSelect": "View & Select",
+  "menuGroupDirectoryTools": "Folder Tools",
+  "menuGroupDevAndPath": "Developer & Path",
+  "menuGroupOpenAndTransfer": "Open & Transfer",
+  "menuGroupOrganizeAndInfo": "Organize & Info",
+  "lanShareMenu": "LAN Share…",
+  "managePrivacySpace": "Manage Privacy Space…",
+  "managePrivacySpaceSubtitle": "Unlock, create, backup, or import",
+  "viewAndSortMenu": "View & Sort",
+  "copyPathMenu": "Copy Path",
+  "smartCategoriesHeader": "File Categories",
+  "configMigrationSettingsCategory": "Settings & Preferences",
+  "configMigrationFavoritesCount": "{count} favorite(s)",
+  "@configMigrationFavoritesCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "configMigrationSettingsCount": "{count} setting(s)",
+  "@configMigrationSettingsCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "configMigrationSelectedRatio": "{selected} / {total} selected",
+  "@configMigrationSelectedRatio": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "configMigrationPasswordRequiredHint": "Setting an encryption password is required when exporting remote connections or storage pools.",
+  "configMigrationPasswordOptionalHint": "Optional password to encrypt favorites and settings as .fmbak, or leave empty for plain .json.",
+  "configMigrationConfirmPasswordLabel": "Confirm Password",
+  "configMigrationPasswordMismatch": "Passwords do not match.",
+  "configMigrationPoolDependencyBadge": "Required by pool: {pools}",
+  "@configMigrationPoolDependencyBadge": {
+    "placeholders": { "pools": { "type": "String" } }
+  },
+  "configMigrationPoolDependencyHint": "Remotes referenced by selected storage pools remain checked and locked until those pools are unchecked.",
+  "configMigrationSelectAtLeastOne": "Select at least one category or item to continue.",
+  "configMigrationShareBackupAction": "Share .fmbak",
+  "configMigrationShareJsonAction": "Share .json",
+  "configMigrationExportSharedNotice": "Backup shared successfully.",
+  "configMigrationChooseBackupAction": "Choose .fmbak / .fmremotes / .json",
+  "configMigrationPasteOrPickHint": "Choose a backup file or paste JSON / encrypted text below.",
+  "configMigrationNextSelectAction": "Parse & Select Items",
+  "configMigrationImportSelectTitle": "Select Items to Import",
+  "configMigrationConfirmImportAction": "Import Selected",
+  "configMigrationSummaryNotice": "Imported {remotes} remote(s), {pools} pool(s), {bookmarks} favorite(s), {prefs} setting(s)",
+  "@configMigrationSummaryNotice": {
+    "placeholders": {
+      "remotes": { "type": "int" },
+      "pools": { "type": "int" },
+      "bookmarks": { "type": "int" },
+      "prefs": { "type": "int" }
+    }
+  },
+  "configMigrationPoolImportFailedSummary": "; {count} pool(s) failed ({names})",
+  "@configMigrationPoolImportFailedSummary": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "names": { "type": "String" }
+    }
+  },
+  "configMigrationNoRemotes": "No remote connections",
+  "configMigrationNoPools": "No storage pools",
+  "configMigrationNoFavorites": "No favorites",
+  "configMigrationMissingPoolRemoteNotice": "Some storage pool node remotes are not included in this selection and rely on matching local connections.",
+  "configMigrationInvalidBundleFormat": "Invalid backup file or JSON format.",
+  "configMigrationWrongPassword": "Incorrect password or corrupted encrypted backup.",
+  "configMigrationDecryptAndPreview": "Decrypt & Continue",
+  "configMigrationSystemAuthPrompt": "Authenticate to export remote connection credentials",
+  "configMigrationSystemAuthRequiredNote": "Exporting remote connections requires device lock screen or system password authentication.",
+  "configMigrationSystemAuthFailed": "System authentication was cancelled or failed. Export aborted.",
+  "configMigrationSystemAuthUnavailable": "No device passcode or system password is set. Enable device lock screen or OS password before exporting remote connections.",
+  "quickFileProvider": "FP (Files Location)"
 }

@@ -181,6 +181,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PinnedFileDto> dco_decode_list_pinned_file_dto(dynamic raw);
 
   @protected
+  List<PoolConfigDto> dco_decode_list_pool_config_dto(dynamic raw);
+
+  @protected
   List<PoolNodeConfigDto> dco_decode_list_pool_node_config_dto(dynamic raw);
 
   @protected
@@ -571,6 +574,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<PinnedFileDto> sse_decode_list_pinned_file_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PoolConfigDto> sse_decode_list_pool_config_dto(
     SseDeserializer deserializer,
   );
 
@@ -1059,6 +1067,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_pinned_file_dto(
     List<PinnedFileDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_pool_config_dto(
+    List<PoolConfigDto> self,
     SseSerializer serializer,
   );
 

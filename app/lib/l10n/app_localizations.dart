@@ -193,7 +193,7 @@ abstract class AppLocalizations {
   /// No description provided for @bookmarks.
   ///
   /// In en, this message translates to:
-  /// **'Bookmarks'**
+  /// **'Favorites'**
   String get bookmarks;
 
   /// No description provided for @browseInAppUpload.
@@ -655,7 +655,7 @@ abstract class AppLocalizations {
   /// No description provided for @localStorage.
   ///
   /// In en, this message translates to:
-  /// **'Local Storage'**
+  /// **'Local Files'**
   String get localStorage;
 
   /// No description provided for @mediaPlayback.
@@ -991,7 +991,7 @@ abstract class AppLocalizations {
   /// No description provided for @remote.
   ///
   /// In en, this message translates to:
-  /// **'Remote'**
+  /// **'Remotes'**
   String get remote;
 
   /// No description provided for @remoteArchiveCache.
@@ -2089,7 +2089,7 @@ abstract class AppLocalizations {
   /// No description provided for @utilitiesTrashSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'{count} in trash • Web share'**
+  /// **'{count} deleted items'**
   String utilitiesTrashSubtitle(int count);
 
   /// No description provided for @utilitiesDefaultSubtitle.
@@ -4765,13 +4765,13 @@ abstract class AppLocalizations {
   /// No description provided for @privacyFolder.
   ///
   /// In en, this message translates to:
-  /// **'Privacy Folder'**
+  /// **'Privacy Space'**
   String get privacyFolder;
 
   /// No description provided for @privacyFolders.
   ///
   /// In en, this message translates to:
-  /// **'Privacy Folders'**
+  /// **'Privacy Space'**
   String get privacyFolders;
 
   /// No description provided for @privacyFoldersDesc.
@@ -5749,7 +5749,7 @@ abstract class AppLocalizations {
   /// No description provided for @directorySync.
   ///
   /// In en, this message translates to:
-  /// **'Directory Sync & Backup'**
+  /// **'Folder Sync'**
   String get directorySync;
 
   /// No description provided for @directorySyncSubtitle.
@@ -5797,7 +5797,7 @@ abstract class AppLocalizations {
   /// No description provided for @offlinePinned.
   ///
   /// In en, this message translates to:
-  /// **'Offline Pinned Files'**
+  /// **'Offline Files'**
   String get offlinePinned;
 
   /// No description provided for @offlinePinnedSubtitle.
@@ -5809,7 +5809,7 @@ abstract class AppLocalizations {
   /// No description provided for @pinOffline.
   ///
   /// In en, this message translates to:
-  /// **'Pin for Offline'**
+  /// **'Save Offline'**
   String get pinOffline;
 
   /// No description provided for @unpinOffline.
@@ -6349,19 +6349,19 @@ abstract class AppLocalizations {
   /// No description provided for @navDomainStorage.
   ///
   /// In en, this message translates to:
-  /// **'Storage'**
+  /// **'Files'**
   String get navDomainStorage;
 
   /// No description provided for @navDomainDiscover.
   ///
   /// In en, this message translates to:
-  /// **'Search & Library'**
+  /// **'Favorites'**
   String get navDomainDiscover;
 
   /// No description provided for @navDomainTools.
   ///
   /// In en, this message translates to:
-  /// **'Tools & Tasks'**
+  /// **'Transfer'**
   String get navDomainTools;
 
   /// No description provided for @autoSyncIntervalLabel.
@@ -6685,7 +6685,7 @@ abstract class AppLocalizations {
   /// No description provided for @photoBackupTitle.
   ///
   /// In en, this message translates to:
-  /// **'Photo Auto Backup'**
+  /// **'Photo Backup'**
   String get photoBackupTitle;
 
   /// No description provided for @photoBackupSubtitle.
@@ -7003,7 +7003,7 @@ abstract class AppLocalizations {
   /// No description provided for @lanTransferAndShareTitle.
   ///
   /// In en, this message translates to:
-  /// **'LAN Transfer & WebDAV Share'**
+  /// **'LAN Transfer'**
   String get lanTransferAndShareTitle;
 
   /// No description provided for @lanTransferAndShareSubtitle.
@@ -7237,7 +7237,7 @@ abstract class AppLocalizations {
   /// No description provided for @backupRestoreConfigSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Export or import remote connections, bookmarks, and preferences (optional AES-256 encrypted .fmbak)'**
+  /// **'Export or import remote connections, storage pools, favorites, and settings (AES-256 .fmbak / .json)'**
   String get backupRestoreConfigSubtitle;
 
   /// No description provided for @exportAction.
@@ -8590,6 +8590,329 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Select files'**
   String get analyzerMultiSelectTooltip;
+
+  /// No description provided for @navDomainSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get navDomainSettings;
+
+  /// No description provided for @sidebarLocationsGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Locations'**
+  String get sidebarLocationsGroup;
+
+  /// No description provided for @sidebarQuickViewsGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick Views'**
+  String get sidebarQuickViewsGroup;
+
+  /// No description provided for @sidebarTransferGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer & Sync'**
+  String get sidebarTransferGroup;
+
+  /// No description provided for @importFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Files'**
+  String get importFiles;
+
+  /// No description provided for @importFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Folder'**
+  String get importFolder;
+
+  /// No description provided for @browseInAppImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse in App to Import…'**
+  String get browseInAppImport;
+
+  /// No description provided for @createAndImportTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'New / Import'**
+  String get createAndImportTooltip;
+
+  /// No description provided for @createAndUploadTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'New / Upload'**
+  String get createAndUploadTooltip;
+
+  /// No description provided for @menuGroupViewAndSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'View & Select'**
+  String get menuGroupViewAndSelect;
+
+  /// No description provided for @menuGroupDirectoryTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder Tools'**
+  String get menuGroupDirectoryTools;
+
+  /// No description provided for @menuGroupDevAndPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Developer & Path'**
+  String get menuGroupDevAndPath;
+
+  /// No description provided for @menuGroupOpenAndTransfer.
+  ///
+  /// In en, this message translates to:
+  /// **'Open & Transfer'**
+  String get menuGroupOpenAndTransfer;
+
+  /// No description provided for @menuGroupOrganizeAndInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Organize & Info'**
+  String get menuGroupOrganizeAndInfo;
+
+  /// No description provided for @lanShareMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'LAN Share…'**
+  String get lanShareMenu;
+
+  /// No description provided for @managePrivacySpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Privacy Space…'**
+  String get managePrivacySpace;
+
+  /// No description provided for @managePrivacySpaceSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock, create, backup, or import'**
+  String get managePrivacySpaceSubtitle;
+
+  /// No description provided for @viewAndSortMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'View & Sort'**
+  String get viewAndSortMenu;
+
+  /// No description provided for @copyPathMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy Path'**
+  String get copyPathMenu;
+
+  /// No description provided for @smartCategoriesHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'File Categories'**
+  String get smartCategoriesHeader;
+
+  /// No description provided for @configMigrationSettingsCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings & Preferences'**
+  String get configMigrationSettingsCategory;
+
+  /// No description provided for @configMigrationFavoritesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} favorite(s)'**
+  String configMigrationFavoritesCount(int count);
+
+  /// No description provided for @configMigrationSettingsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} setting(s)'**
+  String configMigrationSettingsCount(int count);
+
+  /// No description provided for @configMigrationSelectedRatio.
+  ///
+  /// In en, this message translates to:
+  /// **'{selected} / {total} selected'**
+  String configMigrationSelectedRatio(int selected, int total);
+
+  /// No description provided for @configMigrationPasswordRequiredHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting an encryption password is required when exporting remote connections or storage pools.'**
+  String get configMigrationPasswordRequiredHint;
+
+  /// No description provided for @configMigrationPasswordOptionalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional password to encrypt favorites and settings as .fmbak, or leave empty for plain .json.'**
+  String get configMigrationPasswordOptionalHint;
+
+  /// No description provided for @configMigrationConfirmPasswordLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Password'**
+  String get configMigrationConfirmPasswordLabel;
+
+  /// No description provided for @configMigrationPasswordMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Passwords do not match.'**
+  String get configMigrationPasswordMismatch;
+
+  /// No description provided for @configMigrationPoolDependencyBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Required by pool: {pools}'**
+  String configMigrationPoolDependencyBadge(String pools);
+
+  /// No description provided for @configMigrationPoolDependencyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Remotes referenced by selected storage pools remain checked and locked until those pools are unchecked.'**
+  String get configMigrationPoolDependencyHint;
+
+  /// No description provided for @configMigrationSelectAtLeastOne.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one category or item to continue.'**
+  String get configMigrationSelectAtLeastOne;
+
+  /// No description provided for @configMigrationShareBackupAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Share .fmbak'**
+  String get configMigrationShareBackupAction;
+
+  /// No description provided for @configMigrationShareJsonAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Share .json'**
+  String get configMigrationShareJsonAction;
+
+  /// No description provided for @configMigrationExportSharedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup shared successfully.'**
+  String get configMigrationExportSharedNotice;
+
+  /// No description provided for @configMigrationChooseBackupAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose .fmbak / .fmremotes / .json'**
+  String get configMigrationChooseBackupAction;
+
+  /// No description provided for @configMigrationPasteOrPickHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a backup file or paste JSON / encrypted text below.'**
+  String get configMigrationPasteOrPickHint;
+
+  /// No description provided for @configMigrationNextSelectAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Parse & Select Items'**
+  String get configMigrationNextSelectAction;
+
+  /// No description provided for @configMigrationImportSelectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Items to Import'**
+  String get configMigrationImportSelectTitle;
+
+  /// No description provided for @configMigrationConfirmImportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Import Selected'**
+  String get configMigrationConfirmImportAction;
+
+  /// No description provided for @configMigrationSummaryNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {remotes} remote(s), {pools} pool(s), {bookmarks} favorite(s), {prefs} setting(s)'**
+  String configMigrationSummaryNotice(
+    int remotes,
+    int pools,
+    int bookmarks,
+    int prefs,
+  );
+
+  /// No description provided for @configMigrationPoolImportFailedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'; {count} pool(s) failed ({names})'**
+  String configMigrationPoolImportFailedSummary(int count, String names);
+
+  /// No description provided for @configMigrationNoRemotes.
+  ///
+  /// In en, this message translates to:
+  /// **'No remote connections'**
+  String get configMigrationNoRemotes;
+
+  /// No description provided for @configMigrationNoPools.
+  ///
+  /// In en, this message translates to:
+  /// **'No storage pools'**
+  String get configMigrationNoPools;
+
+  /// No description provided for @configMigrationNoFavorites.
+  ///
+  /// In en, this message translates to:
+  /// **'No favorites'**
+  String get configMigrationNoFavorites;
+
+  /// No description provided for @configMigrationMissingPoolRemoteNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Some storage pool node remotes are not included in this selection and rely on matching local connections.'**
+  String get configMigrationMissingPoolRemoteNotice;
+
+  /// No description provided for @configMigrationInvalidBundleFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid backup file or JSON format.'**
+  String get configMigrationInvalidBundleFormat;
+
+  /// No description provided for @configMigrationWrongPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password or corrupted encrypted backup.'**
+  String get configMigrationWrongPassword;
+
+  /// No description provided for @configMigrationDecryptAndPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Decrypt & Continue'**
+  String get configMigrationDecryptAndPreview;
+
+  /// No description provided for @configMigrationSystemAuthPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Authenticate to export remote connection credentials'**
+  String get configMigrationSystemAuthPrompt;
+
+  /// No description provided for @configMigrationSystemAuthRequiredNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Exporting remote connections requires device lock screen or system password authentication.'**
+  String get configMigrationSystemAuthRequiredNote;
+
+  /// No description provided for @configMigrationSystemAuthFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'System authentication was cancelled or failed. Export aborted.'**
+  String get configMigrationSystemAuthFailed;
+
+  /// No description provided for @configMigrationSystemAuthUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'No device passcode or system password is set. Enable device lock screen or OS password before exporting remote connections.'**
+  String get configMigrationSystemAuthUnavailable;
+
+  /// No description provided for @quickFileProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'FP (Files Location)'**
+  String get quickFileProvider;
 }
 
 class _AppLocalizationsDelegate

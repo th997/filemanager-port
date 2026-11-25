@@ -10,7 +10,6 @@ import '../pages/offline_pinned_page.dart';
 import '../pages/peer_transfer_page.dart';
 import '../pages/photo_backup_page.dart';
 import '../pages/pool_dashboard_page.dart';
-import '../pages/recent_page.dart';
 import '../pages/remotes_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/storage_analyzer_page.dart';
@@ -36,7 +35,6 @@ enum _SidebarSection {
   remotes,
   pools,
   bookmarks,
-  recent,
   offlinePinned,
   peerTransfer,
   photoBackup,
@@ -497,12 +495,110 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
     );
   }
 
+  Future<void> _showCollapsedTransferMenu(
+    BuildContext anchorContext,
+    AppLocalizations l10n,
+  ) async {
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(anchorContext).context.findRenderObject() as RenderBox?;
+    final RelativeRect position;
+    if (box != null && overlay != null) {
+      final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+      final bottomRight = box.localToGlobal(
+        box.size.bottomRight(Offset.zero),
+        ancestor: overlay,
+      );
+      position = RelativeRect.fromRect(
+        Rect.fromLTRB(
+          bottomRight.dx + 4,
+          topLeft.dy,
+          bottomRight.dx + 220,
+          bottomRight.dy,
+        ),
+        Offset.zero & overlay.size,
+      );
+    } else {
+      position = const RelativeRect.fromLTRB(56, 200, 260, 400);
+    }
+
+    final entries = <({
+      _SidebarSection section,
+      IconData icon,
+      Color color,
+      String label,
+      String? badge,
+    })>[
+      (
+        section: _SidebarSection.sync,
+        icon: Icons.sync,
+        color: Colors.blue,
+        label: l10n.directorySync,
+        badge: null,
+      ),
+      (
+        section: _SidebarSection.peerTransfer,
+        icon: Icons.wifi_tethering,
+        color: const Color(0xFF00897B),
+        label: l10n.lanTransferAndShareTitle,
+        badge: null,
+      ),
+      (
+        section: _SidebarSection.photoBackup,
+        icon: Icons.cloud_upload_outlined,
+        color: const Color(0xFF7B1FA2),
+        label: l10n.photoBackupTitle,
+        badge: null,
+      ),
+      (
+        section: _SidebarSection.offlinePinned,
+        icon: Icons.offline_pin_outlined,
+        color: Colors.indigo,
+        label: l10n.offlinePinned,
+        badge: null,
+      ),
+      (
+        section: _SidebarSection.tasks,
+        icon: Icons.task_alt,
+        color: const Color(0xFF00897B),
+        label: l10n.tasks,
+        badge: widget.activeTaskCount > 0 ? '${widget.activeTaskCount}' : null,
+      ),
+    ];
+
+    final chosen = await showMenu<_SidebarSection>(
+      context: anchorContext,
+      position: position,
+      items: [
+        for (final entry in entries)
+          PopupMenuItem<_SidebarSection>(
+            value: entry.section,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(entry.icon, size: 18, color: entry.color),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    entry.badge != null
+                        ? '${entry.label} (${entry.badge})'
+                        : entry.label,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (chosen != null && mounted) {
+      _selectSection(chosen);
+    }
+  }
+
   Widget _buildCollapsedRail(
     AppLocalizations l10n,
     ColorScheme scheme,
     List<QuickTarget> targets,
-    List<UnlockedVaultDto> vaults,
-    List<PinnedVaultEntry> lockedPinned,
   ) {
     final homeTarget = targets.isNotEmpty ? targets.first : null;
     return Column(
@@ -527,152 +623,97 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: 6),
             children: [
-              if (homeTarget != null)
-                _railItem(
-                  icon: Icons.home_outlined,
-                  iconColor: scheme.primary,
-                  tooltip: homeTarget.displayName(l10n),
-                  selected: _section == _SidebarSection.browser &&
-                      _activeKey == 'local:${homeTarget.root}:${homeTarget.relPath}',
-                  dropDstRoot: homeTarget.root,
-                  dropDstRelPath: homeTarget.relPath,
-                  onTap: () => _navigateBrowser(
-                    homeTarget.root,
-                    homeTarget.relPath,
-                    homeTarget.displayName(l10n),
-                    'local:${homeTarget.root}:${homeTarget.relPath}',
-                  ),
-                ),
               _railItem(
-                icon: Icons.photo_library_outlined,
-                iconColor: const Color(0xFFD81B60),
-                tooltip: l10n.gallery,
-                selected: _section == _SidebarSection.gallery,
-                onTap: () => _selectSection(_SidebarSection.gallery),
-              ),
-              for (final v in vaults)
-                _railItem(
-                  icon: Icons.lock_open_rounded,
-                  iconColor: Colors.indigo,
-                  tooltip: v.name,
-                  selected: _section == _SidebarSection.browser &&
-                      _activeKey == 'vault:${v.id}',
-                  dropDstRoot: 'vault://${v.id}',
-                  onTap: () => _navigateBrowser(
-                    'vault://${v.id}',
-                    '',
-                    v.name,
-                    'vault:${v.id}',
-                  ),
-                ),
-              for (final p in lockedPinned)
-                _railItem(
-                  icon: Icons.lock_outline,
-                  iconColor: scheme.onSurfaceVariant,
-                  tooltip: p.name,
-                  selected: false,
-                  onTap: () async {
-                    final unlocked = await OpenVaultDialog.show(
-                      context,
-                      initialName: p.name,
+                icon: Icons.folder_outlined,
+                iconColor: scheme.primary,
+                tooltip: l10n.localStorage,
+                selected: (_section == _SidebarSection.browser &&
+                        (_activeKey?.startsWith('local:') ?? false)) ||
+                    _section == _SidebarSection.gallery ||
+                    _section == _SidebarSection.trash,
+                dropDstRoot: homeTarget?.root,
+                dropDstRelPath: homeTarget?.relPath ?? '',
+                onTap: () {
+                  if (homeTarget != null) {
+                    _navigateBrowser(
+                      homeTarget.root,
+                      homeTarget.relPath,
+                      homeTarget.displayName(l10n),
+                      'local:${homeTarget.root}:${homeTarget.relPath}',
                     );
-                    if (unlocked != null && mounted) {
-                      _navigateBrowser(
-                        'vault://${unlocked.id}',
-                        '',
-                        unlocked.name,
-                        'vault:${unlocked.id}',
-                      );
-                    }
-                  },
-                ),
+                  } else {
+                    final root = _defaultRoot;
+                    _navigateBrowser(
+                      root,
+                      '',
+                      l10n.localStorage,
+                      'local:$root:',
+                    );
+                  }
+                },
+              ),
               _railItem(
                 icon: Icons.cloud_outlined,
                 iconColor: const Color(0xFF1E88E5),
                 tooltip: l10n.remote,
-                selected: _section == _SidebarSection.remotes,
+                selected: _section == _SidebarSection.remotes ||
+                    (_section == _SidebarSection.browser &&
+                        (_activeKey?.startsWith('remote:') ?? false)),
                 onTap: () => _selectSection(_SidebarSection.remotes),
               ),
               _railItem(
                 icon: Icons.hub_outlined,
                 iconColor: const Color(0xFF00897B),
                 tooltip: l10n.storagePools,
-                selected: _section == _SidebarSection.pools,
+                selected: _section == _SidebarSection.pools ||
+                    (_section == _SidebarSection.browser &&
+                        (_activeKey?.startsWith('pool:') ?? false)),
                 onTap: () => _selectSection(_SidebarSection.pools),
               ),
               _railItem(
-                icon: Icons.bookmark_outline,
-                iconColor: const Color(0xFFFB8C00),
-                tooltip: l10n.bookmarks,
-                selected: _section == _SidebarSection.bookmarks,
-                onTap: () => _selectSection(_SidebarSection.bookmarks),
-              ),
-              _railItem(
-                icon: Icons.history,
-                iconColor: const Color(0xFF3949AB),
-                tooltip: l10n.recent,
-                selected: _section == _SidebarSection.recent,
-                onTap: () => _selectSection(_SidebarSection.recent),
-              ),
-              _railItem(
-                icon: Icons.offline_pin_outlined,
+                icon: Icons.enhanced_encryption_outlined,
                 iconColor: Colors.indigo,
-                tooltip: l10n.offlinePinned,
-                selected: _section == _SidebarSection.offlinePinned,
-                onTap: () => _selectSection(_SidebarSection.offlinePinned),
-              ),
-              _railItem(
-                icon: Icons.sync,
-                iconColor: Colors.blue,
-                tooltip: l10n.directorySync,
-                selected: _section == _SidebarSection.sync,
-                onTap: () => _selectSection(_SidebarSection.sync),
-              ),
-              _railItem(
-                icon: Icons.wifi_tethering,
-                iconColor: const Color(0xFF00897B),
-                tooltip: l10n.lanTransferAndShareTitle,
-                selected: _section == _SidebarSection.peerTransfer,
-                onTap: () => _selectSection(_SidebarSection.peerTransfer),
-              ),
-              _railItem(
-                icon: Icons.cloud_upload_outlined,
-                iconColor: const Color(0xFF7B1FA2),
-                tooltip: l10n.photoBackupTitle,
-                selected: _section == _SidebarSection.photoBackup,
-                onTap: () => _selectSection(_SidebarSection.photoBackup),
-              ),
-              _railItem(
-                icon: Icons.build_outlined,
-                iconColor: const Color(0xFF5E35B1),
-                tooltip: l10n.utilities,
-                selected: _section == _SidebarSection.utilities,
+                tooltip: l10n.privacyFolders,
+                selected: _section == _SidebarSection.utilities ||
+                    (_section == _SidebarSection.browser &&
+                        (_activeKey?.startsWith('vault:') ?? false)),
                 onTap: () => _selectSection(_SidebarSection.utilities),
               ),
               _railItem(
-                icon: Icons.task_alt,
-                iconColor: const Color(0xFF00897B),
-                tooltip: l10n.tasks,
-                badge: widget.activeTaskCount > 0 ? '${widget.activeTaskCount}' : null,
-                selected: _section == _SidebarSection.tasks,
-                onTap: () => _selectSection(_SidebarSection.tasks),
+                icon: Icons.star_outline,
+                iconColor: const Color(0xFFFB8C00),
+                tooltip: l10n.navDomainDiscover,
+                selected: _section == _SidebarSection.bookmarks ||
+                    (_section == _SidebarSection.browser &&
+                        (_activeKey?.startsWith('bm:') ?? false)),
+                onTap: () => _selectSection(_SidebarSection.bookmarks),
               ),
-              _railItem(
-                icon: Icons.delete_outline,
-                iconColor: Colors.redAccent,
-                tooltip: l10n.recycleBin,
-                badge: widget.trashCount > 0 ? '${widget.trashCount}' : null,
-                selected: _section == _SidebarSection.trash,
-                onTap: () => _selectSection(_SidebarSection.trash),
-              ),
-              _railItem(
-                icon: Icons.settings_outlined,
-                iconColor: const Color(0xFF546E7A),
-                tooltip: l10n.settings,
-                selected: _section == _SidebarSection.settings,
-                onTap: () => _selectSection(_SidebarSection.settings),
+              Builder(
+                builder: (btnCtx) => _railItem(
+                  icon: Icons.sync_alt_outlined,
+                  iconColor: const Color(0xFF00897B),
+                  tooltip: l10n.sidebarTransferGroup,
+                  badge: widget.activeTaskCount > 0 ? '${widget.activeTaskCount}' : null,
+                  selected: _section == _SidebarSection.sync ||
+                      _section == _SidebarSection.peerTransfer ||
+                      _section == _SidebarSection.photoBackup ||
+                      _section == _SidebarSection.offlinePinned ||
+                      _section == _SidebarSection.tasks,
+                  onTap: () => _showCollapsedTransferMenu(btnCtx, l10n),
+                ),
               ),
             ],
+          ),
+        ),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: _railItem(
+            icon: Icons.settings_outlined,
+            iconColor: const Color(0xFF546E7A),
+            tooltip: l10n.settings,
+            selected: _section == _SidebarSection.settings,
+            onTap: () => _selectSection(_SidebarSection.settings),
           ),
         ),
       ],
@@ -724,41 +765,6 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
             ],
           ),
         ),
-        if (disk != null && disk.totalBytes > BigInt.zero)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => _selectSection(_SidebarSection.storageAnalyzer),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: LinearProgressIndicator(
-                        minHeight: 5,
-                        value: (disk.usedBytes.toDouble() / disk.totalBytes.toDouble())
-                            .clamp(0.0, 1.0),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      l10n.storageUsedOf(
-                        formatBytes(disk.usedBytes),
-                        formatBytes(disk.totalBytes),
-                        formatBytes(disk.availableBytes),
-                      ),
-                      style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         const Divider(height: 1),
         Expanded(
           child: ListView(
@@ -767,7 +773,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
               _collapsibleSection(
                 groupId: 'local',
                 title: l10n.localStorage,
-                itemCount: targets.length,
+                itemCount: targets.length + 2,
                 children: [
                   for (final t in targets)
                     _sidebarItem(
@@ -792,177 +798,23 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                         'local:${t.root}:${t.relPath}',
                       ),
                     ),
+                  _sidebarItem(
+                    icon: Icons.photo_library_outlined,
+                    iconColor: const Color(0xFFD81B60),
+                    title: l10n.gallery,
+                    selected: _section == _SidebarSection.gallery,
+                    onTap: () => _selectSection(_SidebarSection.gallery),
+                  ),
+                  _sidebarItem(
+                    icon: Icons.delete_outline,
+                    iconColor: Colors.redAccent,
+                    title: l10n.recycleBin,
+                    badge: widget.trashCount > 0 ? '${widget.trashCount}' : null,
+                    selected: _section == _SidebarSection.trash,
+                    onTap: () => _selectSection(_SidebarSection.trash),
+                  ),
                 ],
               ),
-              if (vaults.isNotEmpty || lockedPinned.isNotEmpty)
-                _collapsibleSection(
-                  groupId: 'vaults',
-                  title: l10n.privacyFolders,
-                  itemCount: vaults.length + lockedPinned.length,
-                  children: [
-                    for (final v in vaults)
-                      _sidebarItem(
-                        icon: Icons.lock_open_rounded,
-                        iconColor: Colors.indigo,
-                        title: v.name,
-                        selected: _section == _SidebarSection.browser &&
-                            _activeKey == 'vault:${v.id}',
-                        dropDstRoot: 'vault://${v.id}',
-                        onTap: () => _navigateBrowser(
-                          'vault://${v.id}',
-                          '',
-                          v.name,
-                          'vault:${v.id}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.lock_outline, size: 15),
-                              tooltip: l10n.lockVaultNow,
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                              onPressed: () => VaultService.instance.lockVault(v.id),
-                            ),
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_horiz, size: 15),
-                              tooltip: l10n.privacyFolders,
-                              padding: EdgeInsets.zero,
-                              onSelected: (action) async {
-                                switch (action) {
-                                  case 'pin':
-                                    final next = !VaultService.instance.isAlwaysVisible(v.id);
-                                    VaultService.instance.setAlwaysVisible(
-                                      vaultId: v.id,
-                                      name: v.name,
-                                      alwaysVisible: next,
-                                    );
-                                    break;
-                                  case 'info':
-                                    await VaultInfoDialog.show(context, v);
-                                    break;
-                                  case 'security':
-                                    final updated = await ChangeVaultSecurityDialog.show(context, v);
-                                    if (updated != null && mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(l10n.vaultSecurityUpdatedNotice)),
-                                      );
-                                    }
-                                    break;
-                                  case 'rename':
-                                    final updated = await RenameVaultDialog.show(context, v);
-                                    if (updated != null && updated.name != v.name && mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(l10n.privacyFolderRenamedNotice(updated.name))),
-                                      );
-                                    }
-                                    break;
-                                  case 'delete':
-                                    final deleted = await DeleteVaultDialog.show(context, v);
-                                    if (deleted && mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(l10n.privacyFolderDeletedNotice(v.name))),
-                                      );
-                                    }
-                                    break;
-                                }
-                              },
-                              itemBuilder: (ctx) {
-                                final pinned = VaultService.instance.isAlwaysVisible(v.id);
-                                return [
-                                  PopupMenuItem(
-                                    value: 'pin',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                                          size: 16,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.vaultAlwaysVisibleTitle),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'info',
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.info_outline, size: 16),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.vaultFolderInfo),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'security',
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.security_outlined, size: 16),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.vaultSecuritySettings),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'rename',
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.drive_file_rename_outline, size: 16),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.renamePrivacyFolder),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete_forever_outlined, size: 16, color: scheme.error),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          l10n.deletePrivacyFolder,
-                                          style: TextStyle(color: scheme.error),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ];
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    for (final p in lockedPinned)
-                      _sidebarItem(
-                        icon: Icons.lock_outline,
-                        iconColor: scheme.onSurfaceVariant,
-                        title: p.name,
-                        badge: l10n.lockedBadge,
-                        selected: false,
-                        onTap: () async {
-                          final unlocked = await OpenVaultDialog.show(
-                            context,
-                            initialName: p.name,
-                          );
-                          if (unlocked != null && mounted) {
-                            _navigateBrowser(
-                              'vault://${unlocked.id}',
-                              '',
-                              unlocked.name,
-                              'vault:${unlocked.id}',
-                            );
-                          }
-                        },
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close, size: 14),
-                          tooltip: l10n.vaultUnpinAlwaysVisible,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => VaultService.instance.unpinVault(p.id),
-                        ),
-                      ),
-                  ],
-                ),
               _collapsibleSection(
                 groupId: 'remotes',
                 title: l10n.remote,
@@ -1064,85 +916,239 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                   );
                 },
               ),
-              if (widget.bookmarks.isNotEmpty)
-                _collapsibleSection(
-                  groupId: 'bookmarks',
-                  title: l10n.bookmarks,
-                  itemCount: widget.bookmarks.length,
-                  trailing: IconButton(
-                    key: const ValueKey('sidebar_manage_bookmarks_btn'),
-                    icon: Icon(
-                      Icons.edit_outlined,
-                      size: 15,
-                      color: _section == _SidebarSection.bookmarks
-                          ? scheme.primary
-                          : scheme.onSurfaceVariant,
-                    ),
-                    tooltip: l10n.bookmarkActions,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                    onPressed: () => _selectSection(_SidebarSection.bookmarks),
-                  ),
-                  children: [
-                    for (final bm in widget.bookmarks)
-                      _sidebarItem(
-                        icon: Icons.bookmark_outline,
-                        iconColor: const Color(0xFFFB8C00),
-                        title: bm.name,
-                        selected: _section == _SidebarSection.browser &&
-                            _activeKey == 'bm:${bm.id}',
-                        dropDstRoot: bm.root,
-                        dropDstRelPath: bm.path,
-                        onTap: () => _navigateBrowser(
-                          bm.root,
-                          bm.path,
-                          bm.name,
-                          'bm:${bm.id}',
-                        ),
-                      ),
-                  ],
-                ),
               _collapsibleSection(
-                groupId: 'discover',
-                title: l10n.navDomainDiscover,
-                itemCount: widget.bookmarks.isEmpty ? 4 : 3,
+                groupId: 'vaults',
+                title: l10n.privacyFolders,
+                itemCount: vaults.length + lockedPinned.length,
+                trailing: IconButton(
+                  key: const ValueKey('sidebar_manage_vaults_btn'),
+                  icon: Icon(
+                    Icons.tune,
+                    size: 15,
+                    color: _section == _SidebarSection.utilities
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                  tooltip: l10n.managePrivacySpace,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: () => _selectSection(_SidebarSection.utilities),
+                ),
                 children: [
-                  _sidebarItem(
-                    icon: Icons.photo_library_outlined,
-                    iconColor: const Color(0xFFD81B60),
-                    title: l10n.gallery,
-                    selected: _section == _SidebarSection.gallery,
-                    onTap: () => _selectSection(_SidebarSection.gallery),
-                  ),
-                  if (widget.bookmarks.isEmpty)
+                  for (final v in vaults)
                     _sidebarItem(
-                      icon: Icons.bookmark_border,
-                      iconColor: const Color(0xFFFB8C00),
-                      title: l10n.bookmarks,
-                      selected: _section == _SidebarSection.bookmarks,
-                      onTap: () => _selectSection(_SidebarSection.bookmarks),
+                      icon: Icons.lock_open_rounded,
+                      iconColor: Colors.indigo,
+                      title: v.name,
+                      selected: _section == _SidebarSection.browser &&
+                          _activeKey == 'vault:${v.id}',
+                      dropDstRoot: 'vault://${v.id}',
+                      onTap: () => _navigateBrowser(
+                        'vault://${v.id}',
+                        '',
+                        v.name,
+                        'vault:${v.id}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.lock_outline, size: 15),
+                            tooltip: l10n.lockVaultNow,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                            onPressed: () => VaultService.instance.lockVault(v.id),
+                          ),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_horiz, size: 15),
+                            tooltip: l10n.privacyFolders,
+                            padding: EdgeInsets.zero,
+                            onSelected: (action) async {
+                              switch (action) {
+                                case 'pin':
+                                  final next = !VaultService.instance.isAlwaysVisible(v.id);
+                                  VaultService.instance.setAlwaysVisible(
+                                    vaultId: v.id,
+                                    name: v.name,
+                                    alwaysVisible: next,
+                                  );
+                                  break;
+                                case 'info':
+                                  await VaultInfoDialog.show(context, v);
+                                  break;
+                                case 'security':
+                                  final updated = await ChangeVaultSecurityDialog.show(context, v);
+                                  if (updated != null && mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(l10n.vaultSecurityUpdatedNotice)),
+                                    );
+                                  }
+                                  break;
+                                case 'rename':
+                                  final updated = await RenameVaultDialog.show(context, v);
+                                  if (updated != null && updated.name != v.name && mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(l10n.privacyFolderRenamedNotice(updated.name))),
+                                    );
+                                  }
+                                  break;
+                                case 'delete':
+                                  final deleted = await DeleteVaultDialog.show(context, v);
+                                  if (deleted && mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(l10n.privacyFolderDeletedNotice(v.name))),
+                                    );
+                                  }
+                                  break;
+                              }
+                            },
+                            itemBuilder: (ctx) {
+                              final pinned = VaultService.instance.isAlwaysVisible(v.id);
+                              return [
+                                PopupMenuItem(
+                                  value: 'pin',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(l10n.vaultAlwaysVisibleTitle),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'info',
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.info_outline, size: 16),
+                                      const SizedBox(width: 8),
+                                      Text(l10n.vaultFolderInfo),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'security',
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.security_outlined, size: 16),
+                                      const SizedBox(width: 8),
+                                      Text(l10n.vaultSecuritySettings),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'rename',
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.drive_file_rename_outline, size: 16),
+                                      const SizedBox(width: 8),
+                                      Text(l10n.renamePrivacyFolder),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_forever_outlined, size: 16, color: scheme.error),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        l10n.deletePrivacyFolder,
+                                        style: TextStyle(color: scheme.error),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ];
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  _sidebarItem(
-                    icon: Icons.history,
-                    iconColor: const Color(0xFF3949AB),
-                    title: l10n.recent,
-                    selected: _section == _SidebarSection.recent,
-                    onTap: () => _selectSection(_SidebarSection.recent),
+                  for (final p in lockedPinned)
+                    _sidebarItem(
+                      icon: Icons.lock_outline,
+                      iconColor: scheme.onSurfaceVariant,
+                      title: p.name,
+                      badge: l10n.lockedBadge,
+                      selected: false,
+                      onTap: () async {
+                        final unlocked = await OpenVaultDialog.show(
+                          context,
+                          initialName: p.name,
+                        );
+                        if (unlocked != null && mounted) {
+                          _navigateBrowser(
+                            'vault://${unlocked.id}',
+                            '',
+                            unlocked.name,
+                            'vault:${unlocked.id}',
+                          );
+                        }
+                      },
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close, size: 14),
+                        tooltip: l10n.vaultUnpinAlwaysVisible,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => VaultService.instance.unpinVault(p.id),
+                      ),
+                    ),
+                  if (vaults.isEmpty && lockedPinned.isEmpty)
+                    _sidebarItem(
+                      icon: Icons.enhanced_encryption_outlined,
+                      iconColor: Colors.indigo,
+                      title: l10n.managePrivacySpace,
+                      selected: _section == _SidebarSection.utilities,
+                      onTap: () => _selectSection(_SidebarSection.utilities),
+                    ),
+                ],
+              ),
+              _collapsibleSection(
+                groupId: 'bookmarks',
+                title: l10n.navDomainDiscover,
+                itemCount: widget.bookmarks.length,
+                trailing: IconButton(
+                  key: const ValueKey('sidebar_manage_bookmarks_btn'),
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 15,
+                    color: _section == _SidebarSection.bookmarks
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
                   ),
-                  _sidebarItem(
-                    icon: Icons.offline_pin_outlined,
-                    iconColor: Colors.indigo,
-                    title: l10n.offlinePinned,
-                    selected: _section == _SidebarSection.offlinePinned,
-                    onTap: () => _selectSection(_SidebarSection.offlinePinned),
-                  ),
+                  tooltip: l10n.bookmarkActions,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: () => _selectSection(_SidebarSection.bookmarks),
+                ),
+                children: [
+                  for (final bm in widget.bookmarks)
+                    _sidebarItem(
+                      icon: Icons.bookmark_outline,
+                      iconColor: const Color(0xFFFB8C00),
+                      title: bm.name,
+                      selected: _section == _SidebarSection.browser &&
+                          _activeKey == 'bm:${bm.id}',
+                      dropDstRoot: bm.root,
+                      dropDstRelPath: bm.path,
+                      onTap: () => _navigateBrowser(
+                        bm.root,
+                        bm.path,
+                        bm.name,
+                        'bm:${bm.id}',
+                      ),
+                    ),
                 ],
               ),
               _collapsibleSection(
                 groupId: 'tools',
-                title: l10n.navDomainTools,
-                itemCount: 7,
+                title: l10n.sidebarTransferGroup,
+                itemCount: 5,
                 children: [
                   _sidebarItem(
                     icon: Icons.sync,
@@ -1166,11 +1172,11 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                     onTap: () => _selectSection(_SidebarSection.photoBackup),
                   ),
                   _sidebarItem(
-                    icon: Icons.build_outlined,
-                    iconColor: const Color(0xFF5E35B1),
-                    title: l10n.utilities,
-                    selected: _section == _SidebarSection.utilities,
-                    onTap: () => _selectSection(_SidebarSection.utilities),
+                    icon: Icons.offline_pin_outlined,
+                    iconColor: Colors.indigo,
+                    title: l10n.offlinePinned,
+                    selected: _section == _SidebarSection.offlinePinned,
+                    onTap: () => _selectSection(_SidebarSection.offlinePinned),
                   ),
                   _sidebarItem(
                     icon: Icons.task_alt,
@@ -1180,24 +1186,55 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                     selected: _section == _SidebarSection.tasks,
                     onTap: () => _selectSection(_SidebarSection.tasks),
                   ),
-                  _sidebarItem(
-                    icon: Icons.delete_outline,
-                    iconColor: Colors.redAccent,
-                    title: l10n.recycleBin,
-                    badge: widget.trashCount > 0 ? '${widget.trashCount}' : null,
-                    selected: _section == _SidebarSection.trash,
-                    onTap: () => _selectSection(_SidebarSection.trash),
-                  ),
-                  _sidebarItem(
-                    icon: Icons.settings_outlined,
-                    iconColor: const Color(0xFF546E7A),
-                    title: l10n.settings,
-                    selected: _section == _SidebarSection.settings,
-                    onTap: () => _selectSection(_SidebarSection.settings),
-                  ),
                 ],
               ),
             ],
+          ),
+        ),
+        const Divider(height: 1),
+        if (disk != null && disk.totalBytes > BigInt.zero)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _selectSection(_SidebarSection.storageAnalyzer),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        minHeight: 5,
+                        value: (disk.usedBytes.toDouble() / disk.totalBytes.toDouble())
+                            .clamp(0.0, 1.0),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.storageUsedOf(
+                        formatBytes(disk.usedBytes),
+                        formatBytes(disk.totalBytes),
+                        formatBytes(disk.availableBytes),
+                      ),
+                      style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: _sidebarItem(
+            icon: Icons.settings_outlined,
+            iconColor: const Color(0xFF546E7A),
+            title: l10n.settings,
+            selected: _section == _SidebarSection.settings,
+            onTap: () => _selectSection(_SidebarSection.settings),
           ),
         ),
       ],
@@ -1232,7 +1269,7 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
                   minWidth: targetWidth,
                   maxWidth: targetWidth,
                   child: _collapsed
-                      ? _buildCollapsedRail(l10n, scheme, targets, vaults, lockedPinned)
+                      ? _buildCollapsedRail(l10n, scheme, targets)
                       : _buildExpandedSidebar(l10n, scheme, targets, vaults, lockedPinned, disk),
                 ),
               ),
@@ -1335,8 +1372,6 @@ class _DesktopSidebarShellState extends State<DesktopSidebarShell> {
         );
       case _SidebarSection.bookmarks:
         return const BookmarksPage();
-      case _SidebarSection.recent:
-        return const RecentPage();
       case _SidebarSection.offlinePinned:
         return const OfflinePinnedPage();
       case _SidebarSection.peerTransfer:

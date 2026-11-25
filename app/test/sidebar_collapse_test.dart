@@ -84,9 +84,23 @@ void main() {
     expect(find.byKey(const ValueKey('sidebar_collapse_btn')), findsNothing);
     final railBox = tester.getSize(find.byType(AnimatedContainer).first);
     expect(railBox.width, 52.0);
-    // Task/trash badges still surface on the compact icon rail.
+    // Active task badge surfaces on Transfer & Sync, while sub-items stay hidden on the compact rail.
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('2'), findsNothing);
+    for (final tip in const [
+      '本机文件',
+      '远程连接',
+      '存储池',
+      '隐私空间',
+      '收藏',
+      '传输与同步',
+      '设置',
+    ]) {
+      expect(find.byTooltip(tip), findsOneWidget);
+    }
+    for (final subTip in const ['相册', '回收站', '目录同步']) {
+      expect(find.byTooltip(subTip), findsNothing);
+    }
 
     // Expand back -> restores full width and group list.
     await tester.tap(find.byKey(const ValueKey('sidebar_expand_btn')));
@@ -111,21 +125,52 @@ void main() {
     expect(find.text('Work Docs'), findsOneWidget);
     expect(find.text('Office NAS'), findsOneWidget);
     expect(find.text('回收站'), findsOneWidget);
+    final sidebarScroll = find.descendant(
+      of: find.byType(DesktopSidebarShell),
+      matching: find.byType(Scrollable),
+    ).first;
+    await tester.scrollUntilVisible(
+      find.text('目录同步'),
+      150,
+      scrollable: sidebarScroll,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('目录同步'), findsOneWidget);
 
     // Fold bookmarks group -> hides Work Docs and shows item count '1'.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('sidebar_group_bookmarks')),
+      -150,
+      scrollable: sidebarScroll,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('sidebar_group_bookmarks')));
     await tester.pumpAndSettle();
     expect(find.text('Work Docs'), findsNothing);
     expect(PreferencesService.instance.sidebarCollapsedGroups.contains('bookmarks'), isTrue);
 
-    // Fold remotes and tools groups -> hides Office NAS and 回收站.
+    // Fold remotes and tools (Transfer & Sync) groups -> hides Office NAS and 目录同步,
+    // while 回收站 remains in the Locations zone.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('sidebar_group_remotes')),
+      -150,
+      scrollable: sidebarScroll,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('sidebar_group_remotes')));
     await tester.pumpAndSettle();
     expect(find.text('Office NAS'), findsNothing);
 
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('sidebar_group_tools')),
+      150,
+      scrollable: sidebarScroll,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('sidebar_group_tools')));
     await tester.pumpAndSettle();
-    expect(find.text('回收站'), findsNothing);
+    expect(find.text('目录同步'), findsNothing);
+    expect(find.text('回收站'), findsOneWidget);
 
     expect(
       PreferencesService.instance.sidebarCollapsedGroups,
@@ -137,6 +182,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Work Docs'), findsOneWidget);
     expect(PreferencesService.instance.sidebarCollapsedGroups.contains('bookmarks'), isFalse);
+
+    // Folding local hides Gallery and Recycle Bin (confirming both are children of Local Files).
+    expect(find.text('相册'), findsOneWidget);
+    expect(find.text('回收站'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sidebar_group_local')));
+    await tester.pumpAndSettle();
+    expect(find.text('相册'), findsNothing);
+    expect(find.text('回收站'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sidebar_group_local')));
+    await tester.pumpAndSettle();
+    expect(find.text('相册'), findsOneWidget);
+    expect(find.text('回收站'), findsOneWidget);
   });
 
   testWidgets('trailing add button in remotes header switches section without folding remotes group',

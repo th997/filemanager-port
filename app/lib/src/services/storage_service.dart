@@ -257,7 +257,7 @@ class StorageService {
       'version': 2,
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
       'remotes': remotes.map(remoteConfigToMap).toList(),
-      'bookmarks': bookmarks.map(_bookmarkToMap).toList(),
+      'bookmarks': bookmarks.map(bookmarkToMap).toList(),
       'preferences': preferences,
     };
     return meta_api.encryptMigrationBundle(
@@ -405,7 +405,7 @@ class StorageService {
   Future<void> _syncBookmarksBackup() async {
     try {
       final list = await meta_api.listBookmarks(dbPath: dbPath);
-      final jsonStr = jsonEncode(list.map(_bookmarkToMap).toList());
+      final jsonStr = jsonEncode(list.map(bookmarkToMap).toList());
       if (KeychainService.isSupported) {
         await KeychainService.save(_keychainBookmarksKey, jsonStr);
       }
@@ -676,21 +676,21 @@ class StorageService {
       if (decoded is List) {
         return decoded
             .whereType<Map>()
-            .map((m) => _bookmarkFromMap(m.cast<String, dynamic>()))
+            .map((m) => bookmarkFromMap(m.cast<String, dynamic>()))
             .toList();
       }
     } catch (_) {}
     return [];
   }
 
-  static Map<String, dynamic> _bookmarkToMap(meta_api.BookmarkDto b) => {
+  static Map<String, dynamic> bookmarkToMap(meta_api.BookmarkDto b) => {
     'id': b.id,
     'name': b.name,
     'root': b.root,
     'path': b.path,
   };
 
-  static meta_api.BookmarkDto _bookmarkFromMap(Map<String, dynamic> m) =>
+  static meta_api.BookmarkDto bookmarkFromMap(Map<String, dynamic> m) =>
       meta_api.BookmarkDto(
         id: m['id'] as String? ?? '',
         name: m['name'] as String? ?? '',

@@ -55,7 +55,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ascending => '升序';
 
   @override
-  String get bookmarks => '书签';
+  String get bookmarks => '收藏夹';
 
   @override
   String get browseInAppUpload => '应用内浏览上传…';
@@ -323,7 +323,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lightTheme => '浅色主题';
 
   @override
-  String get localStorage => '本地存储';
+  String get localStorage => '本机文件';
 
   @override
   String get mediaPlayback => '媒体播放 (远程缓冲)';
@@ -490,7 +490,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readOnlyMode => '只读模式 (禁止网页端上传)';
 
   @override
-  String get recent => '最近';
+  String get recent => '最近访问';
 
   @override
   String get recentDirs => '最近目录:';
@@ -499,7 +499,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recycleBin => '回收站';
 
   @override
-  String get remote => '远程';
+  String get remote => '远程连接';
 
   @override
   String get remoteArchiveCache => '远程与压缩包缓存';
@@ -641,7 +641,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get taskMove => '移动';
 
   @override
-  String get tasks => '任务';
+  String get tasks => '任务队列';
 
   @override
   String get tasksEmptySubtitle => '复制、移动以及其他长时间运行的操作将显示在此处。';
@@ -1102,7 +1102,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String utilitiesTrashSubtitle(int count) {
-    return '回收站 $count 项 • 局域网共享';
+    return '$count 个已删除项目';
   }
 
   @override
@@ -2674,10 +2674,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readOnlyViewMode => '只读查看模式';
 
   @override
-  String get privacyFolder => '隐私文件夹';
+  String get privacyFolder => '隐私空间';
 
   @override
-  String get privacyFolders => '隐私文件夹';
+  String get privacyFolders => '隐私空间';
 
   @override
   String get privacyFoldersDesc => '创建、解锁、备份或导入相互独立的隐私文件夹';
@@ -3218,7 +3218,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pictureInPicture => '画中画';
 
   @override
-  String get directorySync => '目录同步与备份';
+  String get directorySync => '目录同步';
 
   @override
   String get directorySyncSubtitle => '本地与远程目录增量、镜像或双向同步';
@@ -3242,13 +3242,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncNoChanges => '两个目录内容已完全一致';
 
   @override
-  String get offlinePinned => '离线固定文件';
+  String get offlinePinned => '离线文件';
 
   @override
   String get offlinePinnedSubtitle => '远程文件的本地离线缓存与 LRU 管理';
 
   @override
-  String get pinOffline => '离线固定';
+  String get pinOffline => '离线保存';
 
   @override
   String get unpinOffline => '取消离线固定';
@@ -3562,13 +3562,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recoveryFreeUpSpace => '清理存储空间';
 
   @override
-  String get navDomainStorage => '存储空间';
+  String get navDomainStorage => '文件';
 
   @override
-  String get navDomainDiscover => '高效检索';
+  String get navDomainDiscover => '收藏';
 
   @override
-  String get navDomainTools => '工具与任务';
+  String get navDomainTools => '传输';
 
   @override
   String get autoSyncIntervalLabel => '定时自动同步';
@@ -3745,7 +3745,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get copyVfsPath => '复制 VFS 路径';
 
   @override
-  String get photoBackupTitle => '相册自动增量备份';
+  String get photoBackupTitle => '相册备份';
 
   @override
   String get photoBackupSubtitle => '将新增照片/视频增量备份至 NAS、S3、WebDAV 或隐私保险箱';
@@ -3793,7 +3793,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pinToHomeScreenUnsupported => '当前平台不支持桌面快捷方式';
 
   @override
-  String get storagePools => '分布式存储池';
+  String get storagePools => '存储池';
 
   @override
   String get storagePoolsSubtitle => '聚合多个 SFTP / S3 / WebDAV 节点为统一 2 副本空间';
@@ -3923,7 +3923,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get lanTransferAndShareTitle => '局域网直传与 WebDAV 共享';
+  String get lanTransferAndShareTitle => '局域网传输';
 
   @override
   String get lanTransferAndShareSubtitle => '局域网点对点直传、WebDAV 挂载与浏览器上传下载';
@@ -4066,7 +4066,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get backupRestoreConfigSubtitle =>
-      '导出或导入远程连接、书签和偏好设置（支持 AES-256 加密 .fmbak）';
+      '导出或导入远程连接、存储池、收藏夹和设置（支持加密 .fmbak / .json）';
 
   @override
   String get exportAction => '导出';
@@ -4882,4 +4882,185 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get analyzerMultiSelectTooltip => '多选文件';
+
+  @override
+  String get navDomainSettings => '设置';
+
+  @override
+  String get sidebarLocationsGroup => '位置';
+
+  @override
+  String get sidebarQuickViewsGroup => '快捷视图';
+
+  @override
+  String get sidebarTransferGroup => '传输与同步';
+
+  @override
+  String get importFiles => '导入文件';
+
+  @override
+  String get importFolder => '导入文件夹';
+
+  @override
+  String get browseInAppImport => '应用内浏览导入…';
+
+  @override
+  String get createAndImportTooltip => '新建 / 导入';
+
+  @override
+  String get createAndUploadTooltip => '新建 / 上传';
+
+  @override
+  String get menuGroupViewAndSelect => '视图与选择';
+
+  @override
+  String get menuGroupDirectoryTools => '目录工具';
+
+  @override
+  String get menuGroupDevAndPath => '开发者与路径';
+
+  @override
+  String get menuGroupOpenAndTransfer => '打开与传输';
+
+  @override
+  String get menuGroupOrganizeAndInfo => '整理与信息';
+
+  @override
+  String get lanShareMenu => '局域网共享…';
+
+  @override
+  String get managePrivacySpace => '隐私空间管理…';
+
+  @override
+  String get managePrivacySpaceSubtitle => '解锁、新建、备份或导入加密空间';
+
+  @override
+  String get viewAndSortMenu => '视图与排序';
+
+  @override
+  String get copyPathMenu => '复制路径';
+
+  @override
+  String get smartCategoriesHeader => '文件类型';
+
+  @override
+  String get configMigrationSettingsCategory => '设置';
+
+  @override
+  String configMigrationFavoritesCount(int count) {
+    return '$count 个收藏夹';
+  }
+
+  @override
+  String configMigrationSettingsCount(int count) {
+    return '$count 项设置';
+  }
+
+  @override
+  String configMigrationSelectedRatio(int selected, int total) {
+    return '已选 $selected / $total';
+  }
+
+  @override
+  String get configMigrationPasswordRequiredHint => '导出远程连接或存储池时必须设置加密密码。';
+
+  @override
+  String get configMigrationPasswordOptionalHint =>
+      '可选密码：填写将加密导出为 .fmbak，留空将导出为明文 .json。';
+
+  @override
+  String get configMigrationConfirmPasswordLabel => '确认密码';
+
+  @override
+  String get configMigrationPasswordMismatch => '两次输入的密码不一致。';
+
+  @override
+  String configMigrationPoolDependencyBadge(String pools) {
+    return '存储池依赖: $pools';
+  }
+
+  @override
+  String get configMigrationPoolDependencyHint =>
+      '已选存储池关联的远程连接会保持必选并锁定，取消对应存储池后方可取消。';
+
+  @override
+  String get configMigrationSelectAtLeastOne => '请至少选择一项再继续。';
+
+  @override
+  String get configMigrationShareBackupAction => '分享 .fmbak';
+
+  @override
+  String get configMigrationShareJsonAction => '分享 .json';
+
+  @override
+  String get configMigrationExportSharedNotice => '已调起系统分享导出备份。';
+
+  @override
+  String get configMigrationChooseBackupAction =>
+      '选择 .fmbak / .fmremotes / .json 文件';
+
+  @override
+  String get configMigrationPasteOrPickHint => '请选择备份文件，或在下方粘贴 JSON / 加密文本内容。';
+
+  @override
+  String get configMigrationNextSelectAction => '解析并选择导入项';
+
+  @override
+  String get configMigrationImportSelectTitle => '选择要导入的配置项';
+
+  @override
+  String get configMigrationConfirmImportAction => '确认导入';
+
+  @override
+  String configMigrationSummaryNotice(
+    int remotes,
+    int pools,
+    int bookmarks,
+    int prefs,
+  ) {
+    return '已导入 $remotes 个远程连接、$pools 个存储池、$bookmarks 个收藏夹、$prefs 项设置';
+  }
+
+  @override
+  String configMigrationPoolImportFailedSummary(int count, String names) {
+    return '；$count 个存储池失败（$names）';
+  }
+
+  @override
+  String get configMigrationNoRemotes => '暂无远程连接';
+
+  @override
+  String get configMigrationNoPools => '暂无存储池';
+
+  @override
+  String get configMigrationNoFavorites => '暂无收藏夹';
+
+  @override
+  String get configMigrationMissingPoolRemoteNotice =>
+      '部分存储池节点关联的远程连接不在本次选择中，将依赖本机已有对应连接。';
+
+  @override
+  String get configMigrationInvalidBundleFormat => '无效的备份文件或 JSON 格式。';
+
+  @override
+  String get configMigrationWrongPassword => '密码错误或加密备份已损坏。';
+
+  @override
+  String get configMigrationDecryptAndPreview => '解密并继续';
+
+  @override
+  String get configMigrationSystemAuthPrompt => '请验证手机锁屏或电脑系统密码以导出远程连接';
+
+  @override
+  String get configMigrationSystemAuthRequiredNote => '导出远程连接时将验证手机锁屏或电脑系统密码。';
+
+  @override
+  String get configMigrationSystemAuthFailed => '系统认证已取消或失败，已取消导出。';
+
+  @override
+  String get configMigrationSystemAuthUnavailable =>
+      '当前设备未设置锁屏密码或系统密码，请先开启后再导出远程连接。';
+
+  @override
+  String get quickFileProvider => 'FP（文件位置）';
 }

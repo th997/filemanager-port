@@ -1,22 +1,24 @@
-import 'dart:convert';
 import 'dart:io';
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:filemanager/l10n/app_localizations.dart';
+import '../dialogs/config_migration_dialogs.dart';
 import '../dialogs/history_retention_dialog.dart';
 import '../rust/api/file_manager.dart' show clearArchiveCache, archiveCacheSize;
 import '../rust/api/metadata.dart' show isSecretEncryptionActive;
+import '../services/file_open_service.dart';
 import '../services/platform_capabilities.dart';
 import '../services/preferences_service.dart';
 import '../services/semantic_colors.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
+import 'recent_page.dart';
 
 class SettingsPage extends StatefulWidget {
+  final bool embedded;
   final ThemeMode currentThemeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final String localeCode;
@@ -27,6 +29,7 @@ class SettingsPage extends StatefulWidget {
 
   const SettingsPage({
     super.key,
+    this.embedded = false,
     required this.currentThemeMode,
     required this.onThemeModeChanged,
     required this.localeCode,
@@ -302,6 +305,9 @@ class _SettingsPageState extends State<SettingsPage> {
       try {
         clearArchiveCache();
       } catch (_) {}
+      try {
+        await FileOpenService.instance.clearExports();
+      } catch (_) {}
 
       final tempDir = await getTemporaryDirectory();
       if (tempDir.existsSync()) {
@@ -394,150 +400,18 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _exportAppConfig() async {
-    final passwordController = TextEditingController();
-    var includeRemotes = true;
-    var obscurePassword = true;
-    final outerL10n = AppLocalizations.of(context);
-    final action = await showDialog<String>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final l10n = AppLocalizations.of(ctx);
-          final hasPassword = passwordController.text.isNotEmpty;
-          return AlertDialog(
-            title: Text(l10n.exportMigrationTitle),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.exportMigrationPasswordHint,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: obscurePassword,
-                    onChanged: (_) => setDialogState(() {}),
-                    decoration: InputDecoration(
-                      labelText: l10n.exportMigrationPasswordLabel,
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                        onPressed: () => setDialogState(
-                          () => obscurePassword = !obscurePassword,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: hasPassword && includeRemotes,
-                    onChanged: hasPassword
-                        ? (v) => setDialogState(() => includeRemotes = v ?? true)
-                        : null,
-                    title: Text(
-                      l10n.exportIncludeCredentials,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    subtitle: hasPassword
-                        ? null
-                        : Text(
-                            l10n.exportMigrationPasswordHint,
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(l10n.cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop('clipboard'),
-                child: Text(
-                  hasPassword ? l10n.copyEncryptedAction : l10n.copyJsonAction,
-                ),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop('file'),
-                child: Text(
-                  hasPassword
-                      ? l10n.saveBackupFileAction
-                      : l10n.saveJsonFileAction,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+    final outcome = await ConfigExportDialog.show(context);
+    if (outcome == null || !mounted) return;
+    final l10n = AppLocalizations.of(context);
+    final message = switch (outcome.method) {
+      ConfigExportMethod.saveFile =>
+        l10n.exportSavedNotice(outcome.savedPath ?? ''),
+      ConfigExportMethod.shareFile => l10n.configMigrationExportSharedNotice,
+      ConfigExportMethod.copyClipboard => l10n.exportCopiedNotice,
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
-    final password = passwordController.text;
-    passwordController.dispose();
-    if (action == null || !mounted) return;
-    try {
-      final isEncrypted = password.isNotEmpty;
-      final payload = isEncrypted
-          ? await StorageService.instance.exportEncryptedMigrationBundle(
-              password,
-              includeRemotes: includeRemotes,
-            )
-          : await StorageService.instance.exportAppConfigBundleJson();
-      if (action == 'file') {
-        final loc = await getSaveLocation(
-          suggestedName: isEncrypted
-              ? 'filemanager-migration.fmbak'
-              : 'filemanager-config.json',
-          acceptedTypeGroups: const [
-            XTypeGroup(
-              label: 'FileManager Migration Backup',
-              extensions: ['fmbak', 'json'],
-            ),
-          ],
-        );
-        if (loc == null) return;
-        await File(loc.path).writeAsString(payload);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(outerL10n.exportSavedNotice(loc.path))),
-        );
-      } else {
-        await Clipboard.setData(ClipboardData(text: payload));
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(outerL10n.exportCopiedNotice)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
-
-  bool _looksLikeEncryptedMigrationEnvelope(String raw) {
-    try {
-      final decoded = jsonDecode(raw);
-      return decoded is Map<String, dynamic> &&
-          decoded.containsKey('ciphertext') &&
-          decoded.containsKey('salt') &&
-          decoded.containsKey('nonce');
-    } catch (_) {
-      return false;
-    }
   }
 
   void _syncPreferencesAfterImport() {
@@ -571,183 +445,40 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _importAppConfig() async {
-    final contentController = TextEditingController();
-    final passwordController = TextEditingController();
-    var obscurePassword = true;
-    String? dialogError;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final l10n = AppLocalizations.of(ctx);
-          final rawText = contentController.text.trim();
-          final isEncrypted = _looksLikeEncryptedMigrationEnvelope(rawText);
-          final canSubmit =
-              rawText.isNotEmpty && (!isEncrypted || passwordController.text.isNotEmpty);
-          return AlertDialog(
-            title: Text(l10n.importMigrationTitle),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      try {
-                        final file = await openFile(
-                          acceptedTypeGroups: const [
-                            XTypeGroup(
-                              label: 'FileManager Migration Backup',
-                              extensions: ['fmbak', 'json'],
-                            ),
-                          ],
-                        );
-                        if (file == null) return;
-                        final text = await file.readAsString();
-                        contentController.text = text;
-                        dialogError = null;
-                        setDialogState(() {});
-                      } catch (e) {
-                        dialogError = '$e';
-                        setDialogState(() {});
-                      }
-                    },
-                    icon: const Icon(Icons.file_open_outlined),
-                    label: Text(l10n.chooseBackupFileAction),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: contentController,
-                    maxLines: 6,
-                    onChanged: (_) {
-                      dialogError = null;
-                      setDialogState(() {});
-                    },
-                    decoration: InputDecoration(
-                      border: const OutlineInputBorder(),
-                      hintText: l10n.importPasteHint,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: obscurePassword,
-                    onChanged: (_) {
-                      dialogError = null;
-                      setDialogState(() {});
-                    },
-                    decoration: InputDecoration(
-                      labelText: l10n.importPasswordLabel,
-                      hintText: l10n.importPasswordHint,
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                        onPressed: () => setDialogState(
-                          () => obscurePassword = !obscurePassword,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (isEncrypted && passwordController.text.isEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      l10n.importPasswordRequiredError,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Theme.of(ctx).colorScheme.warning,
-                      ),
-                    ),
-                  ],
-                  if (dialogError != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      dialogError!,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Theme.of(ctx).colorScheme.error,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(l10n.cancel),
-              ),
-              FilledButton(
-                onPressed: canSubmit ? () => Navigator.of(ctx).pop(true) : null,
-                child: Text(l10n.ok),
-              ),
-            ],
+    final res = await ConfigImportDialog.show(context);
+    if (res == null || !mounted) return;
+    _syncPreferencesAfterImport();
+    final l10n = AppLocalizations.of(context);
+    final remoteFailNote = res.failedRemotes.isEmpty
+        ? ''
+        : l10n.remoteImportFailedSummary(
+            res.failedRemotes.length,
+            res.failedRemotes.join(', '),
           );
-        },
+    final poolFailNote = res.failedPools.isEmpty
+        ? ''
+        : l10n.configMigrationPoolImportFailedSummary(
+            res.failedPools.length,
+            res.failedPools.join(', '),
+          );
+    final hasFailures = res.failedRemotes.isNotEmpty || res.failedPools.isNotEmpty;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${l10n.configMigrationSummaryNotice(res.remotes, res.pools, res.bookmarks, res.preferences)}'
+          '$remoteFailNote$poolFailNote',
+        ),
+        backgroundColor: hasFailures ? Theme.of(context).colorScheme.error : null,
       ),
     );
-    final raw = contentController.text.trim();
-    final password = passwordController.text;
-    contentController.dispose();
-    passwordController.dispose();
-    if (confirmed != true || raw.isEmpty || !mounted) return;
-    final l10n = AppLocalizations.of(context);
-    try {
-      if (_looksLikeEncryptedMigrationEnvelope(raw) || password.isNotEmpty) {
-        final res = await StorageService.instance.importEncryptedMigrationBundle(
-          raw,
-          password,
-        );
-        if (!mounted) return;
-        _syncPreferencesAfterImport();
-        final failed = StorageService.instance.lastImportFailures;
-        final failNote = failed.isEmpty
-            ? ''
-            : l10n.remoteImportFailedSummary(failed.length, failed.join(', '));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${l10n.importSummaryNotice(res.remotes, res.bookmarks, res.preferences)}$failNote',
-            ),
-            backgroundColor: failed.isNotEmpty ? Theme.of(context).colorScheme.error : null,
-          ),
-        );
-      } else {
-        final res = await StorageService.instance.importAppConfigBundleJson(raw);
-        if (!mounted) return;
-        _syncPreferencesAfterImport();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.importSummaryNotice(0, res.bookmarks, res.preferences)),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return AppSwipeBack(
-      child: Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.settings),
-      ),
-      body: ListView(
-        padding: AppUiTokens.pagePadding,
-        children: [
+    final body = ListView(
+      padding: AppUiTokens.pagePadding,
+      children: [
           _buildSectionHeader(context, l10n.appearance),
           Card(
             child: Column(
@@ -1214,6 +945,25 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Divider(height: 1),
                 ListTile(
+                  key: const ValueKey('settings_recent_tile'),
+                  leading: const AppCircleBadge(
+                    icon: Icons.history,
+                    color: Color(0xFF3949AB),
+                  ),
+                  title: Text(l10n.recent),
+                  subtitle: Text(
+                    l10n.recentDefaultSubtitle,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RecentPage()),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
                   leading: const AppCircleBadge(
                     icon: Icons.import_export_rounded,
                     color: Colors.teal,
@@ -1337,7 +1087,14 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ],
-      ),
+    );
+    if (widget.embedded) return body;
+    return AppSwipeBack(
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(l10n.settings),
+        ),
+        body: body,
       ),
     );
   }

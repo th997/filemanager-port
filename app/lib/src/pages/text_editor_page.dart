@@ -1022,6 +1022,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
         if (_isTemporaryInbox) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
+              persist: false,
               content: Text(AppLocalizations.of(context).savedToCachePrompt),
               action: SnackBarAction(
                 label: AppLocalizations.of(context).saveAs,

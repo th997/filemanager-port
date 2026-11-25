@@ -90,6 +90,8 @@ class _OfflinePinnedPageState extends State<OfflinePinnedPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            persist: false,
+            duration: const Duration(seconds: 5),
             content: Text(friendlyErrorText(e, AppLocalizations.of(context))),
             action: ErrorRecoveryActionButton.buildSnackBarAction(
               context,
@@ -206,6 +208,8 @@ class _OfflinePinnedPageState extends State<OfflinePinnedPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            persist: false,
+            duration: const Duration(seconds: 5),
             content: Text(friendlyErrorText(e, l10n)),
             action: ErrorRecoveryActionButton.buildSnackBarAction(
               context,

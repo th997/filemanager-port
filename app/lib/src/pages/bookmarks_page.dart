@@ -391,8 +391,11 @@ class _BookmarksPageState extends State<BookmarksPage> {
       return;
     }
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        persist: false,
+        duration: const Duration(seconds: 4),
         content: Text(AppLocalizations.of(context).removedName(bm.name)),
         action: SnackBarAction(
           label: AppLocalizations.of(context).undo,

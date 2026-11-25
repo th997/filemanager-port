@@ -55,7 +55,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get ascending => '昇順';
 
   @override
-  String get bookmarks => 'ブックマーク';
+  String get bookmarks => 'お気に入り';
 
   @override
   String get browseInAppUpload => 'アプリ内で選択してアップロード…';
@@ -324,7 +324,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get lightTheme => 'ライトテーマ';
 
   @override
-  String get localStorage => 'ローカルストレージ';
+  String get localStorage => 'ローカル';
 
   @override
   String get mediaPlayback => 'メディア再生（リモートバッファ）';
@@ -1108,7 +1108,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String utilitiesTrashSubtitle(int count) {
-    return 'ゴミ箱に $count 件 • Web 共有';
+    return '$count 件の削除済み項目';
   }
 
   @override
@@ -2686,10 +2686,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get readOnlyViewMode => '読み取り専用表示';
 
   @override
-  String get privacyFolder => 'プライバシーフォルダ';
+  String get privacyFolder => 'プライバシー領域';
 
   @override
-  String get privacyFolders => 'プライバシーフォルダ';
+  String get privacyFolders => 'プライバシー領域';
 
   @override
   String get privacyFoldersDesc => '独立したプライバシーフォルダの作成・解除・バックアップ・インポート';
@@ -3235,7 +3235,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get pictureInPicture => 'ピクチャ・イン・ピクチャ';
 
   @override
-  String get directorySync => 'フォルダ同期・バックアップ';
+  String get directorySync => 'フォルダ同期';
 
   @override
   String get directorySyncSubtitle => 'ローカルとリモートの増分・ミラー・双方向同期';
@@ -3259,13 +3259,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get syncNoChanges => 'フォルダはすでに同期されています';
 
   @override
-  String get offlinePinned => 'オフライン固定ファイル';
+  String get offlinePinned => 'オフライン';
 
   @override
   String get offlinePinnedSubtitle => 'リモートファイルのオフラインキャッシュ管理';
 
   @override
-  String get pinOffline => 'オフラインに固定';
+  String get pinOffline => 'オフライン保存';
 
   @override
   String get unpinOffline => 'オフライン固定を解除';
@@ -3579,13 +3579,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get recoveryFreeUpSpace => '空き容量を確保';
 
   @override
-  String get navDomainStorage => 'ストレージ';
+  String get navDomainStorage => 'ファイル';
 
   @override
-  String get navDomainDiscover => '検索・ライブラリ';
+  String get navDomainDiscover => 'お気に入り';
 
   @override
-  String get navDomainTools => 'ツール・タスク';
+  String get navDomainTools => '転送';
 
   @override
   String get autoSyncIntervalLabel => '自動同期スケジュール';
@@ -3763,7 +3763,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get copyVfsPath => 'VFS パスをコピー';
 
   @override
-  String get photoBackupTitle => '写真自動増分バックアップ';
+  String get photoBackupTitle => '写真バックアップ';
 
   @override
   String get photoBackupSubtitle =>
@@ -3942,7 +3942,7 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get lanTransferAndShareTitle => 'LAN 転送と WebDAV 共有';
+  String get lanTransferAndShareTitle => 'LAN 転送';
 
   @override
   String get lanTransferAndShareSubtitle =>
@@ -4086,7 +4086,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get backupRestoreConfigSubtitle =>
-      'リモート接続・ブックマーク・設定をエクスポートまたはインポート（AES-256 暗号化 .fmbak 対応）';
+      'リモート接続・ストレージプール・お気に入り・設定をエクスポートまたはインポート（.fmbak / .json）';
 
   @override
   String get exportAction => 'エクスポート';
@@ -4914,4 +4914,190 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get analyzerMultiSelectTooltip => 'ファイルを選択';
+
+  @override
+  String get navDomainSettings => '設定';
+
+  @override
+  String get sidebarLocationsGroup => '場所';
+
+  @override
+  String get sidebarQuickViewsGroup => 'クイック表示';
+
+  @override
+  String get sidebarTransferGroup => '転送と同期';
+
+  @override
+  String get importFiles => 'ファイルをインポート';
+
+  @override
+  String get importFolder => 'フォルダをインポート';
+
+  @override
+  String get browseInAppImport => 'アプリ内からインポート…';
+
+  @override
+  String get createAndImportTooltip => '新規 / インポート';
+
+  @override
+  String get createAndUploadTooltip => '新規 / アップロード';
+
+  @override
+  String get menuGroupViewAndSelect => '表示と選択';
+
+  @override
+  String get menuGroupDirectoryTools => 'フォルダツール';
+
+  @override
+  String get menuGroupDevAndPath => '開発者とパス';
+
+  @override
+  String get menuGroupOpenAndTransfer => '開く・転送';
+
+  @override
+  String get menuGroupOrganizeAndInfo => '整理・詳細';
+
+  @override
+  String get lanShareMenu => 'LAN 共有…';
+
+  @override
+  String get managePrivacySpace => 'プライバシー領域を管理…';
+
+  @override
+  String get managePrivacySpaceSubtitle => 'ロック解除・作成・バックアップ・インポート';
+
+  @override
+  String get viewAndSortMenu => '表示と並び替え';
+
+  @override
+  String get copyPathMenu => 'パスをコピー';
+
+  @override
+  String get smartCategoriesHeader => 'ファイル種別';
+
+  @override
+  String get configMigrationSettingsCategory => '設定';
+
+  @override
+  String configMigrationFavoritesCount(int count) {
+    return '$count 件のお気に入り';
+  }
+
+  @override
+  String configMigrationSettingsCount(int count) {
+    return '$count 件の設定';
+  }
+
+  @override
+  String configMigrationSelectedRatio(int selected, int total) {
+    return '$selected / $total 件選択';
+  }
+
+  @override
+  String get configMigrationPasswordRequiredHint =>
+      'リモート接続またはストレージプールをエクスポートする場合は暗号化パスワードの設定が必須です。';
+
+  @override
+  String get configMigrationPasswordOptionalHint =>
+      '任意パスワード：入力すると .fmbak として暗号化、空欄なら平文 .json として出力します。';
+
+  @override
+  String get configMigrationConfirmPasswordLabel => 'パスワードの確認';
+
+  @override
+  String get configMigrationPasswordMismatch => 'パスワードが一致しません。';
+
+  @override
+  String configMigrationPoolDependencyBadge(String pools) {
+    return 'プール依存: $pools';
+  }
+
+  @override
+  String get configMigrationPoolDependencyHint =>
+      '選択中のストレージプールが参照するリモート接続は必須となり、該当プールを解除するまで選択解除できません。';
+
+  @override
+  String get configMigrationSelectAtLeastOne => '少なくとも 1 つの項目を選択してください。';
+
+  @override
+  String get configMigrationShareBackupAction => '.fmbak を共有';
+
+  @override
+  String get configMigrationShareJsonAction => '.json を共有';
+
+  @override
+  String get configMigrationExportSharedNotice => 'バックアップの共有を開始しました。';
+
+  @override
+  String get configMigrationChooseBackupAction =>
+      '.fmbak / .fmremotes / .json を選択';
+
+  @override
+  String get configMigrationPasteOrPickHint =>
+      'バックアップファイルを選択するか、下に JSON / 暗号化テキストを貼り付けてください。';
+
+  @override
+  String get configMigrationNextSelectAction => '解析して項目を選択';
+
+  @override
+  String get configMigrationImportSelectTitle => 'インポートする項目を選択';
+
+  @override
+  String get configMigrationConfirmImportAction => '選択項目をインポート';
+
+  @override
+  String configMigrationSummaryNotice(
+    int remotes,
+    int pools,
+    int bookmarks,
+    int prefs,
+  ) {
+    return '$remotes 件のリモート、$pools 件のストレージプール、$bookmarks 件のお気に入り、$prefs 件の設定をインポートしました';
+  }
+
+  @override
+  String configMigrationPoolImportFailedSummary(int count, String names) {
+    return '（$count 件のプールに失敗: $names）';
+  }
+
+  @override
+  String get configMigrationNoRemotes => 'リモート接続はありません';
+
+  @override
+  String get configMigrationNoPools => 'ストレージプールはありません';
+
+  @override
+  String get configMigrationNoFavorites => 'お気に入りはありません';
+
+  @override
+  String get configMigrationMissingPoolRemoteNotice =>
+      '一部のプールノードが参照するリモート接続が今回の選択に含まれていません。既存の接続が必要です。';
+
+  @override
+  String get configMigrationInvalidBundleFormat => '無効なバックアップまたは JSON 形式です。';
+
+  @override
+  String get configMigrationWrongPassword => 'パスワードが正しくないか、バックアップが破損しています。';
+
+  @override
+  String get configMigrationDecryptAndPreview => '復号して次へ';
+
+  @override
+  String get configMigrationSystemAuthPrompt =>
+      'リモート接続をエクスポートするには端末の認証を行ってください';
+
+  @override
+  String get configMigrationSystemAuthRequiredNote =>
+      'リモート接続をエクスポートする際、端末ロック解除またはシステムパスワード認証が必要です。';
+
+  @override
+  String get configMigrationSystemAuthFailed =>
+      'システム認証がキャンセルまたは失敗したため、エクスポートを中止しました。';
+
+  @override
+  String get configMigrationSystemAuthUnavailable =>
+      '端末のロック画面パスコードまたはシステムパスワードが未設定のため、エクスポートできません。';
+
+  @override
+  String get quickFileProvider => 'FP（ファイル場所）';
 }

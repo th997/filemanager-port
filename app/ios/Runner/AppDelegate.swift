@@ -4,6 +4,7 @@ import Security
 import AVFoundation
 import AVKit
 import BackgroundTasks
+import FileProvider
 import MediaPlayer
 
 private var avPlayerSwizzled = false
@@ -651,6 +652,7 @@ private class NowPlayingManager {
       setupOpenFileChannel(messenger: messenger)
       setupShortcutsChannel(messenger: messenger)
       setupBackgroundKeepAliveChannel(messenger: messenger)
+      setupFileProviderChannel(messenger: messenger)
       NowPlayingManager.shared.setupChannel(messenger: messenger)
       NSLog("AppDelegate: all method channels configured")
     }
@@ -1225,11 +1227,115 @@ private class NowPlayingManager {
     }
   }
 
+  private static let fpDomainIdentifier = NSFileProviderDomainIdentifier("fp-files")
+  private static var cachedFpRootUrl: URL?
+
+  private static func resolveFileProviderRootUrl(
+    domain: NSFileProviderDomain,
+    completion: @escaping (String?) -> Void
+  ) {
+    if #available(iOS 16.0, *) {
+      if let cached = cachedFpRootUrl {
+        completion(cached.path)
+        return
+      }
+      guard let manager = NSFileProviderManager(for: domain) else {
+        completion(nil)
+        return
+      }
+      manager.getUserVisibleURL(for: .rootContainer) { url, error in
+        if let url = url {
+          _ = url.startAccessingSecurityScopedResource()
+          cachedFpRootUrl = url
+          NSLog("[FileProvider] rootURL = \(url.path)")
+          completion(url.path)
+        } else {
+          NSLog("[FileProvider] getUserVisibleURL failed: \(String(describing: error))")
+          completion(nil)
+        }
+      }
+    } else {
+      completion(nil)
+    }
+  }
+
+  private static func registerFileProviderDomainIfAvailable() {
+    guard #available(iOS 16.0, *) else { return }
+    let domain = NSFileProviderDomain(identifier: fpDomainIdentifier, displayName: "")
+    NSFileProviderManager.add(domain) { error in
+      if let error = error {
+        let nsErr = error as NSError
+        NSLog("[FileProvider] addDomain failed: \(nsErr.localizedDescription) (\(nsErr.domain) \(nsErr.code))")
+      } else {
+        NSLog("[FileProvider] addDomain succeeded for \(domain.identifier.rawValue)")
+        resolveFileProviderRootUrl(domain: domain) { _ in }
+      }
+    }
+  }
+
+  private static func setupFileProviderChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.github.th997.filemanager/file_provider",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getRootPath":
+        if #available(iOS 16.0, *) {
+          if let cached = cachedFpRootUrl {
+            DispatchQueue.main.async {
+              result(cached.path)
+            }
+            return
+          }
+          let domain = NSFileProviderDomain(identifier: fpDomainIdentifier, displayName: "")
+          NSFileProviderManager.add(domain) { error in
+            if let error = error {
+              let nsErr = error as NSError
+              NSLog("[FileProvider] getRootPath addDomain failed: \(nsErr.localizedDescription) (\(nsErr.domain) \(nsErr.code))")
+              DispatchQueue.main.async {
+                result(nil)
+              }
+              return
+            }
+            resolveFileProviderRootUrl(domain: domain) { path in
+              DispatchQueue.main.async {
+                result(path)
+              }
+            }
+          }
+        } else {
+          DispatchQueue.main.async {
+            result(nil)
+          }
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private static func ensureVisibleDocumentsFolderForFilesApp() {
+    let fileManager = FileManager.default
+    guard let docsUrl = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+      return
+    }
+    try? fileManager.createDirectory(at: docsUrl, withIntermediateDirectories: true, attributes: nil)
+    let entries = (try? fileManager.contentsOfDirectory(atPath: docsUrl.path)) ?? []
+    let hasVisibleEntry = entries.contains { !$0.hasPrefix(".") }
+    if !hasVisibleEntry {
+      let downloadsUrl = docsUrl.appendingPathComponent("Downloads", isDirectory: true)
+      try? fileManager.createDirectory(at: downloadsUrl, withIntermediateDirectories: true, attributes: nil)
+    }
+  }
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     let launchResult = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    AppDelegate.ensureVisibleDocumentsFolderForFilesApp()
+    AppDelegate.registerFileProviderDomainIfAvailable()
     AppDelegate.registerBackgroundTasksIfNeeded()
 
     application.beginReceivingRemoteControlEvents()

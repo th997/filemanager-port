@@ -2,12 +2,12 @@ import 'package:filemanager/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 
 import '../dialogs/vault_dialogs.dart';
-import '../rust/api/file_manager.dart' as fm_api;
 import '../rust/api/vault.dart';
-import '../services/file_open_service.dart';
 import '../services/vault_service.dart';
 import '../theme/app_ui_tokens.dart';
 import 'browser_page.dart';
+
+typedef PrivacySpacePage = UtilitiesPage;
 
 class UtilitiesPage extends StatefulWidget {
   final ValueChanged<UnlockedVaultDto>? onOpenVault;
@@ -19,15 +19,10 @@ class UtilitiesPage extends StatefulWidget {
 }
 
 class _UtilitiesPageState extends State<UtilitiesPage> {
-  int _cacheSizeBytes = 0;
-  int _archiveCacheBytes = 0;
-  bool _clearingCache = false;
-
   @override
   void initState() {
     super.initState();
     VaultService.instance.addListener(_onVaultChanged);
-    _loadData();
   }
 
   @override
@@ -88,93 +83,6 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
     }
   }
 
-  Future<void> _loadData() async {
-    final int cacheBytes;
-    try {
-      cacheBytes = await FileOpenService.instance.getExportCacheSizeBytes();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text(AppLocalizations.of(context).couldNotReadStorageStats('$e')),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-      return;
-    }
-    int archiveBytes = 0;
-    try {
-      archiveBytes = fm_api.archiveCacheSize().toInt();
-    } catch (_) {}
-    if (mounted) {
-      setState(() {
-        _cacheSizeBytes = cacheBytes;
-        _archiveCacheBytes = archiveBytes;
-      });
-    }
-  }
-
-  Future<void> _clearArchiveCache() async {
-    try {
-      fm_api.clearArchiveCache();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(context).couldNotClearArchiveCache('$e'),
-            ),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-      return;
-    }
-    if (mounted) {
-      setState(() => _archiveCacheBytes = 0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).archiveCacheCleared)),
-      );
-    }
-  }
-
-  Future<void> _clearCache() async {
-    setState(() => _clearingCache = true);
-    try {
-      await FileOpenService.instance.clearExports();
-      final cacheBytes =
-          await FileOpenService.instance.getExportCacheSizeBytes();
-      if (mounted) {
-        setState(() => _cacheSizeBytes = cacheBytes);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).tempCacheCleared)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text(AppLocalizations.of(context).couldNotClearCache('$e')),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _clearingCache = false);
-    }
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -182,99 +90,22 @@ class _UtilitiesPageState extends State<UtilitiesPage> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(
-            l10n.utilities,
+            l10n.privacyFolders,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 20),
-              tooltip: l10n.refresh,
-              onPressed: _loadData,
-            ),
-          ],
         ),
         body: LayoutBuilder(
           builder: (context, constraints) {
             final horizontalPad =
                 constraints.maxWidth > 884 ? (constraints.maxWidth - 860) / 2 : 12.0;
-            return RefreshIndicator(
-              onRefresh: _loadData,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(horizontalPad, 6, horizontalPad, 12),
-                children: [
-              // 0. Privacy Folders Card
-              _buildPrivacyFoldersSection(l10n),
-
-              const SizedBox(height: 12),
-
-              // 1. Cache cleaner
-              _buildSectionHeader(l10n.storageAndCache),
-              Card(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.cleaning_services,
-                        color: Colors.teal,
-                      ),
-                      title: Text(l10n.exportPreviewCache),
-                      subtitle: Text(
-                        _formatSize(_cacheSizeBytes),
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: _clearingCache
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 10),
-                              ),
-                              onPressed:
-                                  _cacheSizeBytes > 0 ? _clearCache : null,
-                              child: Text(
-                                l10n.clear,
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const AppCircleBadge(
-                        icon: Icons.archive_outlined,
-                        color: Colors.deepPurple,
-                      ),
-                      title: Text(l10n.remoteArchiveCache),
-                      subtitle: Text(
-                        _formatSize(_archiveCacheBytes),
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                        ),
-                        onPressed:
-                            _archiveCacheBytes > 0 ? _clearArchiveCache : null,
-                        child: Text(
-                          l10n.clear,
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-        },
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(horizontalPad, 6, horizontalPad, 12),
+              children: [
+                _buildPrivacyFoldersSection(l10n),
+              ],
+            );
+          },
         ),
       ),
     );

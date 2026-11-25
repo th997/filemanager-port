@@ -20,6 +20,19 @@ class PlatformPaths {
       try {
         _iosDocuments = (await getApplicationDocumentsDirectory()).path;
         _iosSupport = (await getApplicationSupportDirectory()).path;
+        if (_iosDocuments != null) {
+          final docsDir = Directory(_iosDocuments!);
+          if (!docsDir.existsSync()) {
+            docsDir.createSync(recursive: true);
+          }
+          final hasVisible = docsDir.listSync().any((entity) {
+            final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).lastOrNull ?? '';
+            return name.isNotEmpty && !name.startsWith('.');
+          });
+          if (!hasVisible) {
+            Directory('${_iosDocuments!}/Downloads').createSync(recursive: true);
+          }
+        }
       } catch (_) {}
     } else if (Platform.isMacOS) {
       try {

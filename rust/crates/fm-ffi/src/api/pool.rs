@@ -281,6 +281,30 @@ pub async fn get_pool_config(db_path: String, pool_id: String) -> Result<PoolCon
     Ok(PoolConfigDto::from(cfg))
 }
 
+pub async fn export_pool_configs(
+    db_path: String,
+    pool_ids: Vec<String>,
+) -> Result<Vec<PoolConfigDto>, String> {
+    let reg = VfsRegistry::global();
+    if reg.get_database_path().is_none() {
+        reg.set_database_path(db_path.clone());
+    }
+    let db = reg.open_database(&db_path)?;
+    let records = db.list_pools().map_err(|e| e.to_string())?;
+    let filter: std::collections::HashSet<String> = pool_ids.into_iter().collect();
+    let mut configs = Vec::new();
+    for rec in records {
+        if !filter.is_empty() && !filter.contains(&rec.id) {
+            continue;
+        }
+        let cfg: PoolConfig =
+            serde_json::from_str(&rec.config_json).map_err(|e| e.to_string())?;
+        // Keep passphrase & kdf_salt intact for encrypted migration export.
+        configs.push(PoolConfigDto::from(cfg));
+    }
+    Ok(configs)
+}
+
 pub async fn save_pool_config(
     db_path: String,
     config: PoolConfigDto,
@@ -720,5 +744,91 @@ mod tests {
         assert_eq!(summary_dto.file_count, 1);
         assert_eq!(summary_dto.degraded_chunks, 0);
         assert!(summary_dto.encrypted);
+    }
+
+    #[tokio::test]
+    async fn export_pool_configs_filters_by_id_and_preserves_passphrase_and_salt() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_file = dir.path().join("fm_export.db");
+        let db_path = db_file.to_string_lossy().to_string();
+        let db = VfsRegistry::global().open_database(&db_path).unwrap();
+
+        let cfg_a = dto_to_pool_config(
+            PoolConfigDto {
+                id: "export-pool-a".into(),
+                name: "Pool A".into(),
+                chunk_size: 1024 * 1024,
+                replication_factor: 1,
+                encrypt: true,
+                passphrase: Some("secret-pass-a".into()),
+                kdf_salt: None,
+                nodes: vec![PoolNodeConfigDto {
+                    node_id: "n1".into(),
+                    remote_id: "rem-a".into(),
+                    base_prefix: "fm_pool".into(),
+                    failure_domain: "dom-a".into(),
+                    quota_bytes: 1024 * 1024,
+                    weight: 100,
+                    role: "data_and_meta".into(),
+                    is_meta_backup: true,
+                }],
+            },
+            None,
+        );
+        let cfg_b = dto_to_pool_config(
+            PoolConfigDto {
+                id: "export-pool-b".into(),
+                name: "Pool B".into(),
+                chunk_size: 1024 * 1024,
+                replication_factor: 1,
+                encrypt: false,
+                passphrase: None,
+                kdf_salt: None,
+                nodes: vec![PoolNodeConfigDto {
+                    node_id: "n2".into(),
+                    remote_id: "rem-b".into(),
+                    base_prefix: "fm_pool".into(),
+                    failure_domain: "dom-b".into(),
+                    quota_bytes: 1024 * 1024,
+                    weight: 100,
+                    role: "data_and_meta".into(),
+                    is_meta_backup: true,
+                }],
+            },
+            None,
+        );
+
+        for cfg in [&cfg_a, &cfg_b] {
+            let json = serde_json::to_string(cfg).unwrap();
+            db.save_pool(&PoolRecord {
+                id: cfg.id.clone(),
+                name: cfg.name.clone(),
+                config_json: json,
+                created_at: cfg.created_at_ms,
+            })
+            .unwrap();
+        }
+
+        let got_single = get_pool_config(db_path.clone(), "export-pool-a".into())
+            .await
+            .unwrap();
+        assert!(got_single.passphrase.is_none());
+        assert!(got_single.kdf_salt.is_some());
+
+        let exported_filtered = export_pool_configs(db_path.clone(), vec!["export-pool-a".into()])
+            .await
+            .unwrap();
+        assert_eq!(exported_filtered.len(), 1);
+        assert_eq!(exported_filtered[0].id, "export-pool-a");
+        assert_eq!(
+            exported_filtered[0].passphrase.as_deref(),
+            Some("secret-pass-a")
+        );
+        assert_eq!(exported_filtered[0].kdf_salt, got_single.kdf_salt);
+
+        let exported_all = export_pool_configs(db_path, Vec::new()).await.unwrap();
+        assert!(exported_all.len() >= 2);
+        assert!(exported_all.iter().any(|c| c.id == "export-pool-a"));
+        assert!(exported_all.iter().any(|c| c.id == "export-pool-b"));
     }
 }

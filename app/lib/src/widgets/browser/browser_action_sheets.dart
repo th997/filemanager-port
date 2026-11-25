@@ -24,133 +24,184 @@ Future<String?> showBrowserEntryModalBottomSheet({
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (ctx) => ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
-      ),
-      child: SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.only(bottom: 16),
-          children: [
-            ListTile(
-              leading: Icon(item.icon, color: item.iconColor(ctx)),
-              title: Text(item.name, overflow: TextOverflow.ellipsis),
-              subtitle: Text(item.isDir ? l10n.folderLabel : item.formattedSize),
-            ),
-            const Divider(height: 1),
-            if (item.isDir && canOpenInNewTab)
-              ListTile(
-                leading: const Icon(Icons.tab_outlined),
-                title: Text(l10n.openInNewTab),
-                onTap: () => Navigator.of(ctx).pop('open_in_new_tab'),
-              ),
-            if (!item.isDir) ...[
-              ListTile(
-                leading: const Icon(Icons.open_in_new),
-                title: Text(l10n.openWith),
-                onTap: () => Navigator.of(ctx).pop('open_with'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: Text(l10n.openAsText),
-                onTap: () => Navigator.of(ctx).pop('open_as_text'),
-              ),
-            ],
-            if (canShare && !item.isDir)
-              ListTile(
-                leading: const Icon(Icons.ios_share),
-                title: Text(l10n.share),
-                onTap: () => Navigator.of(ctx).pop('share'),
-              ),
-      if (canShareLan)
-              ListTile(
-                leading: const Icon(Icons.wifi_tethering, color: Colors.teal),
-                title: Text(l10n.shareViaLan),
-                onTap: () => Navigator.of(ctx).pop('share_lan'),
-              ),
-            if (canPinOffline && !item.isDir)
-              ListTile(
-                leading: const Icon(Icons.offline_pin_outlined, color: Colors.indigo),
-                title: Text(l10n.pinOffline),
-                onTap: () => Navigator.of(ctx).pop('pin_offline'),
-              ),
-            if (isRemoteOrArchive)
-              ListTile(
-                leading: const Icon(Icons.download_outlined, color: Colors.blue),
-                title: Text(l10n.downloadToLocal),
-                onTap: () => Navigator.of(ctx).pop('download'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: Text(l10n.copy),
-              onTap: () => Navigator.of(ctx).pop('copy'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: Text(l10n.copyPath),
-              onTap: () => Navigator.of(ctx).pop('copy_path'),
-            ),
-            if (canWrite)
-              ListTile(
-                leading: const Icon(Icons.cut),
-                title: Text(l10n.cut),
-                onTap: () => Navigator.of(ctx).pop('cut'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.checklist),
-              title: Text(l10n.selectItems),
-              onTap: () => Navigator.of(ctx).pop('select'),
-            ),
-            if (item.isArchive && canWrite && canArchive)
-              ListTile(
-                leading: const Icon(Icons.unarchive),
-                title: Text(l10n.extractHere),
-                onTap: () => Navigator.of(ctx).pop('extract'),
-              )
-            else if (canWrite && canArchive)
-              ListTile(
-                leading: const Icon(Icons.archive),
-                title: Text(l10n.compressToZip),
-                onTap: () => Navigator.of(ctx).pop('compress'),
-              ),
-            if (item.isDir && canBookmark)
-              ListTile(
-                leading: const Icon(Icons.bookmark_add_outlined),
-                title: Text(l10n.bookmarkThisFolder),
-                onTap: () => Navigator.of(ctx).pop('bookmark'),
-              ),
-            if (!item.isDir && canShare)
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: Text(l10n.share),
-                onTap: () => Navigator.of(ctx).pop('share'),
-              ),
-            if (canWrite)
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline),
-                title: Text(l10n.rename),
-                onTap: () => Navigator.of(ctx).pop('rename'),
-              ),
-            if (canWrite)
-              ListTile(
-                leading: const Icon(Icons.control_point_duplicate),
-                title: Text(l10n.duplicate),
-                onTap: () => Navigator.of(ctx).pop('duplicate'),
-              ),
-            if (canWrite)
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
-                onTap: () => Navigator.of(ctx).pop('delete'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: Text(l10n.properties),
-              onTap: () => Navigator.of(ctx).pop('info'),
-            ),
-          ],
+    builder: (ctx) {
+      final scheme = Theme.of(ctx).colorScheme;
+      final quickActions = canWrite
+          ? <_SheetQuickAction>[
+              _SheetQuickAction(Icons.copy, l10n.copy, 'copy'),
+              _SheetQuickAction(Icons.cut, l10n.cut, 'cut'),
+              _SheetQuickAction(Icons.drive_file_rename_outline, l10n.rename, 'rename'),
+              _SheetQuickAction(Icons.delete_outline, l10n.delete, 'delete', color: scheme.error),
+            ]
+          : <_SheetQuickAction>[
+              _SheetQuickAction(Icons.copy, l10n.copy, 'copy'),
+              _SheetQuickAction(Icons.link, l10n.copyPath, 'copy_path'),
+              if (isRemoteOrArchive)
+                _SheetQuickAction(Icons.download_outlined, l10n.downloadToLocal, 'download', color: Colors.blue),
+              _SheetQuickAction(Icons.info_outline, l10n.properties, 'info'),
+            ];
+
+      return ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
         ),
+        child: SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.only(bottom: 16),
+            children: [
+              ListTile(
+                leading: Icon(item.icon, color: item.iconColor(ctx)),
+                title: Text(item.name, overflow: TextOverflow.ellipsis),
+                subtitle: Text(item.isDir ? l10n.folderLabel : item.formattedSize),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    for (final act in quickActions)
+                      Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => Navigator.of(ctx).pop(act.value),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(act.icon, size: 20, color: act.color ?? scheme.onSurface),
+                                const SizedBox(height: 4),
+                                Text(
+                                  act.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: act.color ?? scheme.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              _buildSheetGroupHeader(ctx, l10n.menuGroupOpenAndTransfer),
+              if (item.isDir && canOpenInNewTab)
+                ListTile(
+                  leading: const Icon(Icons.tab_outlined),
+                  title: Text(l10n.openInNewTab),
+                  onTap: () => Navigator.of(ctx).pop('open_in_new_tab'),
+                ),
+              if (!item.isDir) ...[
+                ListTile(
+                  leading: const Icon(Icons.open_in_new),
+                  title: Text(l10n.openWith),
+                  onTap: () => Navigator.of(ctx).pop('open_with'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: Text(l10n.openAsText),
+                  onTap: () => Navigator.of(ctx).pop('open_as_text'),
+                ),
+              ],
+              if (isRemoteOrArchive && canWrite)
+                ListTile(
+                  leading: const Icon(Icons.download_outlined, color: Colors.blue),
+                  title: Text(l10n.downloadToLocal),
+                  onTap: () => Navigator.of(ctx).pop('download'),
+                ),
+              if (canPinOffline && !item.isDir)
+                ListTile(
+                  leading: const Icon(Icons.offline_pin_outlined, color: Colors.indigo),
+                  title: Text(l10n.pinOffline),
+                  onTap: () => Navigator.of(ctx).pop('pin_offline'),
+                ),
+              if (canShare && !item.isDir)
+                ListTile(
+                  leading: const Icon(Icons.ios_share),
+                  title: Text(l10n.share),
+                  onTap: () => Navigator.of(ctx).pop('share'),
+                ),
+              if (canShareLan)
+                ListTile(
+                  leading: const Icon(Icons.wifi_tethering, color: Colors.teal),
+                  title: Text(l10n.shareViaLan),
+                  onTap: () => Navigator.of(ctx).pop('share_lan'),
+                ),
+              const Divider(height: 1),
+              _buildSheetGroupHeader(ctx, l10n.menuGroupOrganizeAndInfo),
+              ListTile(
+                leading: const Icon(Icons.checklist),
+                title: Text(l10n.selectItems),
+                onTap: () => Navigator.of(ctx).pop('select'),
+              ),
+              if (item.isArchive && canWrite && canArchive)
+                ListTile(
+                  leading: const Icon(Icons.unarchive),
+                  title: Text(l10n.extractHere),
+                  onTap: () => Navigator.of(ctx).pop('extract'),
+                )
+              else if (canWrite && canArchive)
+                ListTile(
+                  leading: const Icon(Icons.archive),
+                  title: Text(l10n.compressToZip),
+                  onTap: () => Navigator.of(ctx).pop('compress'),
+                ),
+              if (canWrite)
+                ListTile(
+                  leading: const Icon(Icons.control_point_duplicate),
+                  title: Text(l10n.duplicate),
+                  onTap: () => Navigator.of(ctx).pop('duplicate'),
+                ),
+              if (item.isDir && canBookmark)
+                ListTile(
+                  leading: const Icon(Icons.bookmark_add_outlined),
+                  title: Text(l10n.bookmarkThisFolder),
+                  onTap: () => Navigator.of(ctx).pop('bookmark'),
+                ),
+              if (canWrite) ...[
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: Text(l10n.copyPath),
+                  onTap: () => Navigator.of(ctx).pop('copy_path'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(l10n.properties),
+                  onTap: () => Navigator.of(ctx).pop('info'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _SheetQuickAction {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? color;
+
+  const _SheetQuickAction(this.icon, this.label, this.value, {this.color});
+}
+
+Widget _buildSheetGroupHeader(BuildContext context, String title) {
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w600,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
     ),
   );
@@ -393,6 +444,7 @@ Future<String?> showBrowserBackgroundContextMenu({
   required bool hasClipboard,
   required int? clipboardCount,
   bool isZh = false,
+  bool isNative = false,
   bool canBookmark = true,
 }) {
   final l10n = AppLocalizations.of(context);
@@ -445,9 +497,14 @@ Future<String?> showBrowserBackgroundContextMenu({
           value: 'upload',
           child: Row(
             children: [
-              const Icon(Icons.cloud_upload_outlined, size: 18),
+              Icon(
+                isNative
+                    ? Icons.file_download_outlined
+                    : Icons.cloud_upload_outlined,
+                size: 18,
+              ),
               const SizedBox(width: 8),
-              Text(l10n.uploadFiles),
+              Text(isNative ? l10n.importFiles : l10n.uploadFiles),
             ],
           ),
         ),
@@ -457,7 +514,7 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.drive_folder_upload_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(l10n.uploadFolder),
+              Text(isNative ? l10n.importFolder : l10n.uploadFolder),
             ],
           ),
         ),
@@ -467,7 +524,7 @@ Future<String?> showBrowserBackgroundContextMenu({
             children: [
               const Icon(Icons.folder_shared_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(l10n.browseInAppUpload),
+              Text(isNative ? l10n.browseInAppImport : l10n.browseInAppUpload),
             ],
           ),
         ),

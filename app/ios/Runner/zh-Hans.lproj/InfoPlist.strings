@@ -1,3 +1,4 @@
 CFBundleDisplayName = "FP文件管理器";
 CFBundleName = "FP文件管理器";
 NSPhotoLibraryUsageDescription = "用于在文件管理器中浏览和预览您的照片。";
+NSFaceIDUsageDescription = "用于通过面容 ID 或锁屏密码解锁隐私空间及验证导出远程连接。";

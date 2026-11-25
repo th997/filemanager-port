@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../dialogs/remote_batch_transfer_dialogs.dart';
 import '../dialogs/remote_wizard_dialog.dart';
 import '../rust/api/file_manager.dart' show invalidateRoot;
 import '../rust/api/metadata.dart' show isSecretEncryptionActive;
@@ -12,7 +11,6 @@ import '../services/semantic_colors.dart';
 import '../services/error_text.dart';
 import '../widgets/error_recovery_action.dart';
 import '../services/pool_service.dart';
-import '../services/remote_transfer_service.dart';
 import '../services/shortcut_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_ui_tokens.dart';
@@ -448,6 +446,8 @@ class _RemotesPageState extends State<RemotesPage> {
           ok ? AppLocalizations.of(context).connectedToRemote(remote.name) : '${AppLocalizations.of(context).cannotReachRemote(remote.name)}${error == null ? '' : ': $error'}',
         ),
         backgroundColor: ok ? Theme.of(context).colorScheme.success : Theme.of(context).colorScheme.error,
+        persist: false,
+        duration: const Duration(seconds: 5),
         action: (!ok && error != null)
             ? ErrorRecoveryActionButton.buildSnackBarAction(
                 context,
@@ -479,81 +479,6 @@ class _RemotesPageState extends State<RemotesPage> {
       default:
         return (Icons.cloud, Colors.blue);
     }
-  }
-
-  Future<void> _exportRemotes() async {
-    final l10n = AppLocalizations.of(context);
-    if (_remotes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.noConnectionsToExport)),
-      );
-      return;
-    }
-    if (!_remotes.any(RemoteTransferService.isReadableRemote)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.remoteBatchNoReadableToExport)),
-      );
-      return;
-    }
-    final sortedRemotes = List<RemoteConfigDto>.of(_remotes)
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    final outcome = await RemoteBatchExportDialog.show(
-      context,
-      remotes: sortedRemotes,
-    );
-    if (outcome == null || !mounted) return;
-    final currentL10n = AppLocalizations.of(context);
-    final message = switch (outcome.method) {
-      RemoteBatchExportMethod.saveFile => currentL10n.remoteBatchExportSavedNotice(
-          outcome.count,
-          outcome.savedPath ?? '',
-        ),
-      RemoteBatchExportMethod.shareFile =>
-        currentL10n.remoteBatchExportSharedNotice(outcome.count),
-      RemoteBatchExportMethod.copyClipboard =>
-        currentL10n.remoteBatchExportCopiedNotice(outcome.count),
-    };
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Theme.of(context).colorScheme.success,
-      ),
-    );
-  }
-
-  Future<void> _importRemotes() async {
-    final result = await RemoteBatchImportDialog.show(
-      context,
-      existingRemotes: _remotes,
-    );
-    if (result == null || !mounted) return;
-    await _loadRemotes();
-    widget.onRemotesChanged?.call();
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context);
-    final detail = result.failures.isEmpty
-        ? ''
-        : l10n.remoteImportFailedSummary(
-            result.failures.length,
-            result.failures.join(', '),
-          );
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          l10n.remoteBatchImportSummary(
-            result.totalImported,
-            result.added,
-            result.overwritten,
-            result.duplicated,
-            result.skipped,
-            detail,
-          ),
-        ),
-        backgroundColor: result.failures.isEmpty
-            ? Theme.of(context).colorScheme.success
-            : Theme.of(context).colorScheme.error,
-      ),
-    );
   }
 
   @override
@@ -589,39 +514,6 @@ class _RemotesPageState extends State<RemotesPage> {
             icon: const Icon(Icons.refresh),
             tooltip: AppLocalizations.of(context).refresh,
             onPressed: _loadRemotes,
-          ),
-          PopupMenuButton<String>(
-            tooltip: AppLocalizations.of(context).backupRestore,
-            icon: const Icon(Icons.more_vert),
-            onSelected: (val) {
-              if (val == 'export') {
-                _exportRemotes();
-              } else if (val == 'import') {
-                _importRemotes();
-              }
-            },
-            itemBuilder: (ctx) => [
-              PopupMenuItem(
-                value: 'export',
-                child: Row(
-                  children: [
-                    const Icon(Icons.upload_file, size: 18),
-                    const SizedBox(width: 8),
-                    Text(l10n.remoteBatchExportAction),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'import',
-                child: Row(
-                  children: [
-                    const Icon(Icons.download_for_offline, size: 18),
-                    const SizedBox(width: 8),
-                    Text(l10n.remoteBatchImportAction),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -691,25 +583,10 @@ class _RemotesPageState extends State<RemotesPage> {
                                   icon: Icons.cloud_queue,
                                   title: AppLocalizations.of(context).noRemoteConnections,
                                   subtitle: AppLocalizations.of(context).noRemoteConnectionsDesc,
-                                  action: Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    alignment: WrapAlignment.center,
-                                    children: [
-                                      FilledButton.icon(
-                                        onPressed: _addRemote,
-                                        icon: const Icon(Icons.add, size: 18),
-                                        label: Text(l10n.addRemoteStorage),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: _importRemotes,
-                                        icon: const Icon(
-                                          Icons.download_for_offline_outlined,
-                                          size: 18,
-                                        ),
-                                        label: Text(l10n.remoteBatchImportAction),
-                                      ),
-                                    ],
+                                  action: FilledButton.icon(
+                                    onPressed: _addRemote,
+                                    icon: const Icon(Icons.add, size: 18),
+                                    label: Text(l10n.addRemoteStorage),
                                   ),
                                 ),
                               ),

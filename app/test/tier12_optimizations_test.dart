@@ -158,18 +158,61 @@ void main() {
       expect(find.byKey(const ValueKey('home_nav_storage')), findsOneWidget);
       expect(find.byKey(const ValueKey('home_nav_discover')), findsOneWidget);
       expect(find.byKey(const ValueKey('home_nav_tools')), findsOneWidget);
+      expect(find.byKey(const ValueKey('home_nav_settings')), findsOneWidget);
+      expect(find.text('收藏'), findsOneWidget);
+      expect(find.text('相册'), findsOneWidget);
+      expect(find.text('回收站'), findsOneWidget);
 
-      // Switch to Search & Library domain -> shows Offline Pinned & Bookmarks.
+      // Gallery and Recycle Bin should sit inside Local Files below its header and above Remote Connections.
+      final localTop = tester.getTopLeft(find.text('本机文件').first).dy;
+      final galleryTop = tester.getTopLeft(find.text('相册').first).dy;
+      final trashTop = tester.getTopLeft(find.text('回收站').first).dy;
+      final remoteTop = tester.getTopLeft(find.text('远程连接').first).dy;
+      expect(galleryTop, greaterThan(localTop));
+      expect(galleryTop, lessThan(remoteTop));
+      expect(trashTop, greaterThan(localTop));
+      expect(trashTop, lessThan(remoteTop));
+
+      await tester.scrollUntilVisible(
+        find.text('解锁、新建、备份或导入加密空间'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('隐私空间'), findsAtLeastNWidgets(1));
+
+      // Switch to Favorites tab -> shows empty state and manage button without duplicate 收藏夹 card.
       await tester.tap(find.byKey(const ValueKey('home_nav_discover')));
       await tester.pumpAndSettle();
-      expect(find.text('离线固定文件'), findsOneWidget);
+      expect(find.text('收藏夹'), findsNothing);
+      expect(find.byKey(const ValueKey('home_manage_bookmarks_btn')), findsOneWidget);
+      expect(find.text('暂无保存的书签'), findsOneWidget);
+      expect(find.text('离线文件'), findsNothing);
+      expect(find.text('最近访问'), findsNothing);
+      expect(find.text('相册'), findsNothing);
 
-      // Switch to Tools & Tasks domain -> shows Directory Sync & Utilities without duplicate Storage Analyzer / Duplicate Finder.
+      // Switch to Transfer tab -> shows Folder Sync and Offline Files without duplicate analyzer entries.
       await tester.tap(find.byKey(const ValueKey('home_nav_tools')));
       await tester.pumpAndSettle();
-      expect(find.text('目录同步与备份'), findsOneWidget);
+      expect(find.text('目录同步'), findsOneWidget);
+      expect(find.text('离线文件'), findsOneWidget);
       expect(find.text('存储空间分析'), findsNothing);
       expect(find.text('重复文件清理'), findsNothing);
+
+      // Switch to Settings tab -> shows Temporary Cache followed below by Recent.
+      await tester.tap(find.byKey(const ValueKey('home_nav_settings')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('settings_recent_tile')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('临时缓存'), findsOneWidget);
+      expect(find.text('最近访问'), findsOneWidget);
+      final tempCacheTop = tester.getTopLeft(find.text('临时缓存')).dy;
+      final recentTop = tester.getTopLeft(find.text('最近访问')).dy;
+      expect(recentTop, greaterThan(tempCacheTop));
     });
   });
 

@@ -212,8 +212,11 @@ class _RecentPageState extends State<RecentPage> {
       return;
     }
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        persist: false,
+        duration: const Duration(seconds: 4),
         content: Text(AppLocalizations.of(context).removedName(title)),
         action: SnackBarAction(
           label: AppLocalizations.of(context).undo,
@@ -276,8 +279,11 @@ class _RecentPageState extends State<RecentPage> {
     }
     await _loadHistory();
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        persist: false,
+        duration: const Duration(seconds: 4),
         content: Text(AppLocalizations.of(context).clearedRecentLocations(cleared.length)),
         action: SnackBarAction(
           label: AppLocalizations.of(context).undo,
